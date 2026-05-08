@@ -1,76 +1,91 @@
-# Erie Verilog Generator
+<p align="center">
+  <a href="README.md"><strong>English</strong></a>
+  <span>&nbsp;|&nbsp;</span>
+  <a href="README-CN.md">中文</a>
+</p>
 
-![Erie Verilog Generator architecture](docs/assets/hero.svg)
+<p align="center">
+  <img src="docs/assets/hero.svg" alt="Verilog Generator" width="100%">
+</p>
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB.svg)](pyproject.toml)
-[![Skill](https://img.shields.io/badge/agent-skill-B4F8C8.svg)](SKILL.md)
-[![Target](https://img.shields.io/badge/target-Verilog--2001-FFB86B.svg)](ENGINEERING_DESIGN_GOALS.md)
+<p align="center">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-1f6feb"></a>
+  <a href="pyproject.toml"><img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2f81f7"></a>
+  <a href="SKILL.md"><img alt="Agent Skill" src="https://img.shields.io/badge/agent-skill-16a34a"></a>
+  <a href="ENGINEERING_DESIGN_GOALS.md"><img alt="Target" src="https://img.shields.io/badge/target-Verilog--2001-f59e0b"></a>
+</p>
 
-**Erie Verilog Generator is a Codex-ready agent skill for disciplined Verilog-2001 RTL generation.** It gives an AI coding agent a structured path from confirmed hardware intent to synthesizable Verilog, self-checking testbenches, validation evidence, and reviewable workflow traces.
+<h1 align="center">Verilog Generator</h1>
 
-**Erie Verilog Generator 是一个面向 Codex/Agent 的 Verilog RTL Skill。** 它不是普通脚本项目，而是一套让 AI 编程代理稳定完成 RTL 需求确认、参考模型构建、Verilog 生成、testbench 生成和验证证据归档的专业工作流。
+<p align="center">
+  A Codex-ready agent skill for disciplined Verilog-2001 RTL workflows.
+</p>
 
-## What This Skill Does / 作用定位
+Verilog Generator turns an AI coding agent into a more reliable RTL engineering assistant. It provides trigger metadata, workflow instructions, interface templates, deterministic runtime helpers, examples, and validation gates for moving from confirmed hardware intent to synthesizable Verilog and self-checking testbenches.
 
-This repository packages the complete skill surface:
+This repository is primarily an **agent skill package**. The Python CLI is included as the deterministic execution layer, but the main interface is the skill surface an agent can load and follow.
 
-- `SKILL.md` tells the agent when and how to run the Verilog workflow.
-- `references/` stores integration, configuration, and workflow-contract documentation.
-- `assets/interface_templates/` provides reusable AXI-Stream, AXI4-Lite, AXI4, AHB, and APB interface patterns.
-- `assets/examples/` provides fixed RTL fixtures and generation specs.
-- `runtime/verilog_generator/` provides deterministic scaffolding, prompt rendering, extraction, reference contracts, validation, tracing, and CLI support.
-- `integration/verilog_adapter.py` is the stable local facade for host applications.
+## Why It Exists
 
-这个仓库的核心价值是让 Agent “有章法地写 RTL”，包括：
+RTL work needs precision before code. Verilog Generator makes the agent confirm module names, ports, clock/reset behavior, pipeline expectations, interface family, reference behavior, and verification cases before producing artifacts.
 
-- 先确认模块名、端口、时钟/复位、行为、流水线期望、接口族和验证用例。
-- 使用固定阶段约束输出：`requirements -> codegen_plan -> python -> rtl`。
-- 在 RTL 之前生成 Python reference model，作为 testbench 的语义契约。
-- 生成可综合 Verilog-2001 RTL 和自检查 Verilog testbench。
-- 明确边界：本 skill 不生成 HLS/C++ kernel，也不把 SystemVerilog 当作目标方言。
+Use it when an agent needs to work on:
 
-## Agent Architecture
+- Synthesizable Verilog-2001 RTL modules.
+- Self-checking Verilog testbenches.
+- Python reference contracts for semantic comparison.
+- AXI-Stream, AXI4-Lite, AXI4, AHB, APB, native, or custom interface shapes.
+- Static validation, simulator readiness, workflow traces, and generated artifact review.
+
+## Skill Architecture
 
 ```mermaid
 flowchart LR
-    U["Hardware intent<br/>硬件意图"] --> A["Agent loads skill<br/>触发 SKILL.md"]
-    A --> R["Confirmed RTL contract<br/>端口/时钟/行为/验证"]
-    R --> T["Templates + references<br/>接口模板与规则"]
-    T --> P["Runtime pipeline<br/>deterministic workflow"]
-    P --> V["Verilog RTL + testbench<br/>RTL 与自检查测试"]
-    V --> E["Validation evidence<br/>静态/仿真证据"]
+    intent["Confirmed RTL intent"] --> skill["SKILL.md<br/>agent workflow"]
+    skill --> templates["interface templates<br/>AXI · AHB · APB"]
+    templates --> runtime["runtime/verilog_generator<br/>deterministic pipeline"]
+    runtime --> rtl["Verilog artifacts<br/>RTL · testbench"]
+    rtl --> evidence["validation evidence<br/>static checks · simulator output"]
 ```
 
-## Workflow Pipeline
+## Workflow
 
 ```mermaid
 sequenceDiagram
     participant User
     participant Agent
-    participant Skill as SKILL.md
-    participant Runtime as runtime/verilog_generator
-    participant Sim as Simulator / Static Tools
+    participant Skill as Agent Skill
+    participant Runtime
+    participant Tools as Static / Simulation Tools
 
     User->>Agent: Describe RTL behavior
-    Agent->>Skill: Load Verilog-only workflow rules
-    Skill->>Agent: Require confirmed module and verification contract
-    Agent->>Runtime: Scaffold / render prompt / run workflow
-    Runtime->>Runtime: Build plan, vectors, Python reference, RTL files
-    Runtime->>Sim: Optional simulator/static validation
-    Sim-->>Runtime: Tool output when available
-    Runtime-->>Agent: workflow_result.json and validation evidence
+    Agent->>Skill: Load Verilog workflow
+    Skill->>Agent: Require confirmed module contract
+    Agent->>Runtime: Scaffold, prompt, or run workflow
+    Runtime->>Runtime: Plan, vectors, Python reference, RTL files
+    Runtime->>Tools: Optional external validation
+    Tools-->>Runtime: Tool output when available
+    Runtime-->>Agent: Artifacts and validation evidence
 ```
 
-## Quick Start / 快速开始
+## Repository Map
 
-Use it as an agent skill by placing this repository in a Codex skill search path, or invoke the deterministic runtime directly while developing the skill.
+| Path | Purpose |
+| --- | --- |
+| `SKILL.md` | Agent-facing routing, workflow, constraints, and tool usage rules. |
+| `agents/openai.yaml` | UI metadata for skill lists and invocation chips. |
+| `runtime/verilog_generator/` | Deterministic scaffolding, prompt rendering, extraction, validation, traces, and workflow state. |
+| `integration/verilog_adapter.py` | Stable host-facing facade for workflow, prompt, and validation calls. |
+| `assets/interface_templates/` | Reusable AXI-Stream, AXI4-Lite, AXI4, AHB, and APB interface patterns. |
+| `assets/examples/` | Example specs and fixed RTL fixtures for validation and regression checks. |
 
-将本仓库放入 Codex skill 搜索路径即可作为 Agent Skill 使用；开发和验证时也可以直接调用 runtime。
+## Quick Start
+
+Place this repository in a Codex skill search path to use it as an agent skill. For runtime development and local checks:
 
 ```powershell
 python -m runtime.verilog_generator --version
-python -m runtime.verilog_generator scaffold --name erie_adapter --out .\reports\verilog\spec.json
+python -m runtime.verilog_generator scaffold --name rtl_adapter --out .\reports\verilog\spec.json
 python -m runtime.verilog_generator prompt --spec .\reports\verilog\spec.json --out .\reports\verilog\prompt.md
 ```
 
@@ -80,11 +95,9 @@ Static validation without external HDL tools:
 python -m runtime.verilog_generator validate --spec .\reports\verilog\spec.json --path .\reports\verilog\generated --no-external
 ```
 
-When Vivado/xsim, VCS, iverilog, or yosys is available, the runtime can perform stronger simulator or implementation-readiness checks. This project does **not** claim external tool acceptance unless those tools actually run.
+External validation requires real HDL tools. This project does not claim Vivado/xsim, VCS, iverilog, or yosys acceptance unless those tools actually run.
 
 ## Integration API
-
-Host applications should use the stable facade:
 
 ```python
 from integration.verilog_adapter import (
@@ -94,27 +107,39 @@ from integration.verilog_adapter import (
 )
 ```
 
-Use `run_verilog_workflow(...)` for full staged execution or resume, `render_verilog_prompt(...)` when a host owns the model call, and `validate_verilog_artifacts(...)` before using generated RTL downstream.
+- `run_verilog_workflow(...)`: run or resume the staged RTL workflow.
+- `render_verilog_prompt(...)`: render prompts when a host owns the model call.
+- `validate_verilog_artifacts(...)`: validate generated RTL before downstream use.
 
-## Interface Templates / 接口模板
+## Scope
 
-The skill ships standard bus templates for:
+Verilog Generator is intentionally narrow:
 
-- AXI-Stream streaming interfaces.
-- AXI4-Lite control/status registers.
-- AXI4 memory-mapped transfer paths.
-- AHB and APB platform interfaces.
+- It generates Verilog-2001 `.v` artifacts and self-checking Verilog testbenches.
+- It does not generate HLS, C/C++ kernels, or alternate RTL dialects.
+- It prefers explicit logic over Verilog `function` and `task` blocks for easier waveform debugging.
+- Local secrets, proprietary hardware designs, generated caches, and private remote-server details should stay out of the repository.
 
-Agents should prefer these templates when the confirmed spec matches the interface family. Deviations should be explicit and traceable.
+## Contact
 
-## Boundaries / 边界
+For questions, collaboration, or academic use, contact: [erie@seu.edu.cn](mailto:erie@seu.edu.cn).
 
-- Generate Verilog-2001 `.v` artifacts and self-checking Verilog testbenches.
-- Do not generate HLS, C/C++ kernels, or alternate RTL dialects.
-- Do not claim simulator or implementation validation unless the external tool actually ran.
-- Keep local secrets, remote server details, generated caches, and proprietary hardware designs out of the repository.
+## Citation
+
+If this skill helps your research, teaching, or engineering workflow, please cite it:
+
+```bibtex
+@software{verilog_generator_skill,
+  title        = {Verilog Generator: An Agent Skill for Verilog-2001 RTL Workflows},
+  author       = {{Verilog Generator Authors}},
+  year         = {2026},
+  license      = {Apache-2.0},
+  contact      = {erie@seu.edu.cn}
+}
+```
+
+GitHub citation metadata is also available in [CITATION.cff](CITATION.cff).
 
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
-

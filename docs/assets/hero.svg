@@ -1,46 +1,69 @@
-<svg width="1200" height="420" viewBox="0 0 1200 420" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">Erie Verilog Generator architecture banner</title>
-  <desc id="desc">A refined RTL pipeline diagram showing an agent skill transforming hardware intent into Verilog, testbenches, and validation evidence.</desc>
+<svg width="1280" height="520" viewBox="0 0 1280 520" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Verilog Generator hero</title>
+  <desc id="desc">A polished technical banner for an agent skill that converts confirmed RTL intent into Verilog artifacts and validation evidence.</desc>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="420" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#111827"/>
-      <stop offset="0.52" stop-color="#24364B"/>
-      <stop offset="1" stop-color="#0F172A"/>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1002 126) rotate(145) scale(650 310)">
+      <stop stop-color="#A3E635" stop-opacity="0.28"/>
+      <stop offset="0.45" stop-color="#60A5FA" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#0B1020" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1020"/>
+      <stop offset="0.55" stop-color="#111827"/>
+      <stop offset="1" stop-color="#071019"/>
     </linearGradient>
-    <linearGradient id="line" x1="210" y1="218" x2="1010" y2="218" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#B4F8C8"/>
-      <stop offset="0.5" stop-color="#8CCBFF"/>
-      <stop offset="1" stop-color="#FFB86B"/>
+    <linearGradient id="stroke" x1="168" y1="322" x2="1020" y2="322" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A3E635"/>
+      <stop offset="0.5" stop-color="#60A5FA"/>
+      <stop offset="1" stop-color="#FDBA74"/>
     </linearGradient>
-    <filter id="shadow" x="-20%" y="-40%" width="140%" height="180%">
-      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.30"/>
+    <filter id="shadow" x="-20%" y="-40%" width="140%" height="190%">
+      <feDropShadow dx="0" dy="22" stdDeviation="20" flood-color="#000" flood-opacity="0.34"/>
     </filter>
   </defs>
-  <rect width="1200" height="420" fill="url(#bg)"/>
-  <g opacity="0.18">
-    <path d="M0 320 C180 210 300 350 480 268 C675 179 790 90 1200 150" stroke="#8CCBFF" stroke-width="2"/>
-    <path d="M0 125 C220 185 310 70 515 126 C760 192 860 315 1200 270" stroke="#FFB86B" stroke-width="2"/>
-    <path d="M120 80 h70 v42 h70 v-42 h70 v42 h70 v-42 h70 v42 h70 v-42 h70 v42 h70" stroke="#FFFFFF" stroke-width="2"/>
-    <path d="M120 310 h70 v-42 h70 v42 h70 v-42 h70 v42 h70 v-42 h70 v42 h70 v-42 h70" stroke="#FFFFFF" stroke-width="2"/>
-  </g>
-  <text x="80" y="96" fill="#F8FBFF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="38" font-weight="700">Erie Verilog Generator</text>
-  <text x="82" y="132" fill="#B9C7D8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18">Agent skill for disciplined Verilog-2001 RTL generation</text>
-  <g filter="url(#shadow)">
-    <rect x="86" y="206" width="178" height="74" rx="12" fill="#182438" stroke="#B4F8C8" stroke-width="2"/>
-    <rect x="324" y="206" width="178" height="74" rx="12" fill="#182438" stroke="#8CCBFF" stroke-width="2"/>
-    <rect x="562" y="206" width="178" height="74" rx="12" fill="#182438" stroke="#8CCBFF" stroke-width="2"/>
-    <rect x="800" y="206" width="178" height="74" rx="12" fill="#182438" stroke="#FFB86B" stroke-width="2"/>
-  </g>
-  <path d="M264 243 H324 M502 243 H562 M740 243 H800" stroke="url(#line)" stroke-width="4" stroke-linecap="round"/>
-  <path d="M312 236 L324 243 L312 250 M550 236 L562 243 L550 250 M788 236 L800 243 L788 250" stroke="#F8FBFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="124" y="236" fill="#FFFFFF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">RTL Intent</text>
-  <text x="118" y="260" fill="#B9C7D8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13">ports, clocks, behavior</text>
-  <text x="366" y="236" fill="#FFFFFF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">Skill</text>
-  <text x="350" y="260" fill="#B9C7D8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13">workflow + templates</text>
-  <text x="594" y="236" fill="#FFFFFF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">Runtime</text>
-  <text x="596" y="260" fill="#B9C7D8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13">reference + extraction</text>
-  <text x="840" y="236" fill="#FFFFFF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">RTL Evidence</text>
-  <text x="835" y="260" fill="#B9C7D8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13">Verilog + testbench</text>
-  <text x="80" y="352" fill="#E8F1FF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16">requirements -> codegen plan -> Python reference -> Verilog RTL -> self-checking testbench -> validation</text>
-</svg>
 
+  <rect width="1280" height="520" rx="28" fill="url(#bg)"/>
+  <rect width="1280" height="520" rx="28" fill="url(#glowA)"/>
+  <g opacity="0.16">
+    <path d="M104 156h72v44h72v-44h72v44h72v-44h72v44h72v-44h72v44h72v-44h72v44h72v-44h72" stroke="#E6EDF3" stroke-width="2"/>
+    <path d="M104 414h72v-44h72v44h72v-44h72v44h72v-44h72v44h72v-44h72v44h72v-44h72v44h72" stroke="#E6EDF3" stroke-width="2"/>
+    <path d="M88 242H1192M88 322H1192" stroke="#E6EDF3"/>
+  </g>
+
+  <g transform="translate(88 76)">
+    <text x="0" y="34" fill="#E6EDF3" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="3">AGENT SKILL</text>
+    <text x="0" y="98" fill="#FFFFFF" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="58" font-weight="800">Verilog Generator</text>
+    <text x="2" y="140" fill="#A9B8C8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22">Disciplined Verilog-2001 RTL workflows for AI coding agents</text>
+  </g>
+
+  <g filter="url(#shadow)" font-family="Inter, Segoe UI, Arial, sans-serif">
+    <rect x="94" y="286" width="214" height="88" rx="18" fill="#101D31" stroke="#A3E635" stroke-width="1.6"/>
+    <rect x="382" y="286" width="214" height="88" rx="18" fill="#101D31" stroke="#60A5FA" stroke-width="1.6"/>
+    <rect x="670" y="286" width="214" height="88" rx="18" fill="#101D31" stroke="#60A5FA" stroke-width="1.6"/>
+    <rect x="958" y="286" width="214" height="88" rx="18" fill="#101D31" stroke="#FDBA74" stroke-width="1.6"/>
+
+    <path d="M308 330H382M596 330H670M884 330H958" stroke="url(#stroke)" stroke-width="4" stroke-linecap="round"/>
+    <path d="M370 320L382 330L370 340M658 320L670 330L658 340M946 320L958 330L946 340" stroke="#D8E7F5" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <text x="124" y="324" fill="#FFFFFF" font-size="20" font-weight="800">RTL Contract</text>
+    <text x="124" y="350" fill="#9FB0C3" font-size="14">ports, clocks, behavior</text>
+
+    <text x="414" y="324" fill="#FFFFFF" font-size="20" font-weight="800">Templates</text>
+    <text x="414" y="350" fill="#9FB0C3" font-size="14">AXI, AHB, APB patterns</text>
+
+    <text x="702" y="324" fill="#FFFFFF" font-size="20" font-weight="800">Runtime</text>
+    <text x="702" y="350" fill="#9FB0C3" font-size="14">prompt, extract, validate</text>
+
+    <text x="990" y="324" fill="#FFFFFF" font-size="20" font-weight="800">Evidence</text>
+    <text x="990" y="350" fill="#9FB0C3" font-size="14">RTL, tests, traces</text>
+  </g>
+
+  <g transform="translate(88 432)" font-family="Inter, Segoe UI, Arial, sans-serif">
+    <rect x="0" y="0" width="152" height="36" rx="18" fill="#17233A" stroke="#31415F"/>
+    <rect x="168" y="0" width="118" height="36" rx="18" fill="#17233A" stroke="#31415F"/>
+    <rect x="302" y="0" width="146" height="36" rx="18" fill="#17233A" stroke="#31415F"/>
+    <text x="22" y="23" fill="#D8E7F5" font-size="14" font-weight="700">Verilog-2001</text>
+    <text x="190" y="23" fill="#D8E7F5" font-size="14" font-weight="700">RTL</text>
+    <text x="324" y="23" fill="#D8E7F5" font-size="14" font-weight="700">Self-checking TB</text>
+  </g>
+</svg>
