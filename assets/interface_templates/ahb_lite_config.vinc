@@ -1,0 +1,21 @@
+	//--------------AHB-Lite配置总线------------//
+	input i_ahb_hclk,							//AHB总线时钟
+	input i_ahb_hrstn,							//AHB总线复位信号
+	
+	//参数通道
+	input [1:0]i_ahb_htrans,					//传输请求,2'b00->IDLE,从机忽略此次传输;2'b01->BUSY,忙,从机忽略此次传输;2'b10->NONSEQ,单次数据/Burst突发第一次数据;2'b11->SEQ,Burst突发传输剩余数据
+	input [2:0]i_ahb_hburst,					//传输突发类型,3'b000->SINGLE,单次数据;3'b001->INCR,不定长自增批量传输;3'b010->WRAP4,4个数据回绕批量传输;3'b011->INCR4,4个数据递增批量传输;3'b100->WRAP8;3'b101->INCR8;3'b110->WRAP16;3'b111->INCR16
+	input [3:0]i_ahb_hprot,						//保护控制,[0]->1'b0代表预取址,1'b1代表数据访问;[1]->1'b0代表用户模式,1'b1代表特权模式;[2]->1'b0代表无缓冲,1'b1代表有缓冲;[3]->1'b0代表无高速缓冲,1'b1代表有高速缓冲
+	input [2:0]i_ahb_hsize,						//传输大小,每次突发传输的字节数支持{3'b000~3'b111}->{1,2,4,8,16,32,64,128}
+	
+	//控制通道
+	input i_ahb_hsel,							//写传输片选信号,1'b1代表选中当前接口'1'b0代表未选中
+	input i_ahb_hready,							//传输状态,1'b1表示当前传输准备好;1'b0代表当前传输尚未准备好
+	input i_ahb_hwrite,							//传输数据方向,1'b1代表写数据传输;1'b0代表读数据传输
+	output o_ahb_hreadyout,						//写传输状态,1'b1表示当前传输完成;1'b0表示当前传输尚未完成,总线等待时间至多16个周期(AHB5),防止任何访问长时间占用
+	output [1:0]o_ahb_hresp,					//写传输响应,2'b00->OKAY,从机可用用ready拉高与OKAY响应,代表传输完成;2'b01->ERROR,传输错误,维持2个时钟周期;2'b10->RETRY,传输未完成,主机应尝试再次发起传输直到传输完毕,维持2个时钟周期;2'b11->SPLIT,从机表示此次无法完成传输,需要分段方式传输,等从机可以完成时会告知仲裁器,让重提数据传输给目标主机
+	
+	//数据通道
+	input [C_AHB_ADDR_WIDTH - 1:0]i_ahb_haddr,	//传输地址
+	input [C_AHB_DATA_WIDTH - 1:0]i_ahb_hwdata,	//写数据
+	output [C_AHB_DATA_WIDTH - 1:0]o_ahb_hrdata	//读数据

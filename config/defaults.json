@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "paths": {
+    "skill_root": "${skill_dir}",
+    "smoke_dir": "${skill_dir}/_smoke_runs",
+    "reports_dir": "${skill_dir}/reports",
+    "example_spec": "${skill_dir}/assets/examples/rtl_erie_verilog_spec.json",
+    "quick_validate": "${home}/.codex/skills/.system/skill-creator/scripts/quick_validate.py"
+  },
+  "workflow": {
+    "target": "rtl",
+    "readiness": "static",
+    "max_attempts": 3,
+    "comment_language": "zh",
+    "model_provider": "command",
+    "stop_on_human": true,
+    "run_external": true,
+    "model_timeout_s": 120
+  },
+  "validation": {
+    "local_readiness": "static",
+    "remote_readiness": "execute",
+    "blocked_implement_readiness": "implement",
+    "external_tools": [
+      "xvlog",
+      "xelab",
+      "xsim",
+      "vcs",
+      "verdi",
+      "iverilog",
+      "vvp",
+      "yosys"
+    ],
+    "simulators": {
+      "selection_policy": "fallback",
+      "priority": [
+        "xsim",
+        "vcs_verdi",
+        "iverilog"
+      ],
+      "backends": {
+        "xsim": {
+          "tools": [
+            "xvlog",
+            "xelab",
+            "xsim"
+          ]
+        },
+        "vcs_verdi": {
+          "tools": [
+            "vcs",
+            "verdi"
+          ]
+        },
+        "iverilog": {
+          "tools": [
+            "iverilog",
+            "vvp"
+          ]
+        }
+      }
+    },
+    "legacy_term_allowlist": [
+      "ENGINEERING_DESIGN_GOALS.md",
+      "README.md"
+    ],
+    "forbidden_residuals": [
+      "__pycache__",
+      "_smoke_runs",
+      "workflow-state.json"
+    ]
+  },
+  "remote": {
+    "helper": "${env:ERIE_REMOTE_SSH_HELPER}",
+    "settings": "${env:ERIE_REMOTE_SSH_SETTINGS}",
+    "server_list": "${env:ERIE_REMOTE_SSH_SERVER_LIST}",
+    "server": "example-server",
+    "server_name": "",
+    "server_confirmed": false,
+    "python": "python3",
+    "remote_root": ".erie-verilog-generator-validation",
+    "toolchain_config": "${home}/.codex/erie-verilog-generator/remote_toolchain_selection.json",
+    "timeout_s": 120
+  }
+}

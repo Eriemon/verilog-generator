@@ -1,0 +1,29 @@
+	//----------------AXI4总线S-----------------//
+	//地址通道--写通道
+	input [C_S_AXI_ADDR_WIDTH - 1:0]i_s_axi_awaddr,//写地址信号,[C_S_AXI_ADDR_WIDTH - 1:0]
+	input [C_S_AXI_BURST_WIDTH - 1:0]i_s_axi_awlen,//写长度信号,[C_S_AXI_BURST_WIDTH - 1:0]
+	input i_s_axi_awvalid,						//写地址有效信号
+	output o_s_axi_awready,						//写地址准备好信号
+	
+	//数据通道--写通道
+	input [C_S_AXI_DATA_WIDTH - 1:0]i_s_axi_wdata,//写数据,[C_S_AXI_DATA_WIDTH - 1:0]
+	input [C_S_AXI_DATA_WIDTH / 8 - 1:0]i_s_axi_wstrb,//写数据段有效信号,wstrb[n]->wdata[8n+7:8n],[C_S_AXI_DATA_WIDTH / 8 - 1:0]
+	input i_s_axi_wvalid,						//写数据有效信号,高电平有效
+	input i_s_axi_wlast,						//写数据结束信号,高电平有效
+	output o_s_axi_wready,						//写数据准备好信号,高电平有效
+  
+	//响应通道--写通道
+	output o_s_axi_bwvalid,						//写响应有效信号,高电平有效
+	input i_s_axi_bwready,						//写响应准备好信号,高电平有效
+	
+	//地址通道--读通道
+	input [C_S_AXI_ADDR_WIDTH - 1:0]i_s_axi_araddr,//读地址信号,[C_S_AXI_ADDR_WIDTH - 1:0]
+	input [C_S_AXI_BURST_WIDTH - 1:0]i_s_axi_arlen,//读长度信号,[C_S_AXI_BURST_WIDTH - 1:0]
+	input i_s_axi_arvalid,						//读地址有效信号
+	output o_s_axi_arready,						//读地址准备好信号
+	
+	//数据通道--读通道
+	output [C_S_AXI_DATA_WIDTH - 1:0]o_s_axi_rdata,//读数据,[C_S_AXI_DATA_WIDTH - 1:0]
+	output o_s_axi_rvalid,						//读数据有效信号
+	output o_s_axi_rlast,						//读数据结束信号
+	input i_s_axi_rready						//读数据准备好信号

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Erie Verilog Generator"
+  short_description: "Generate, modify, debug, and validate Verilog RTL."
+  default_prompt: "Use $erie-verilog-generator to design, modify, debug, and validate synthesizable Verilog RTL."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,15 @@
+	//----------------APB配置总线---------------//
+	input i_apb_pclk,							//APB总线配置时钟
+	input i_apb_prstn,							//APB总线复位信号
+	
+	//控制通道
+	input i_apb_psel,							//传输片选信号,高电平有效
+	input i_apb_penable,						//传输使能信号,高电平有效
+	output o_apb_pready,						//传输准备好信号,拉高之后,当此传输结束
+	output [1:0]o_apb_pslverr,					//传输错误标志,默认为0
+	input i_apb_pwrite,							//读写操作,高电平代表写;低电平代表读
+	
+	//数据通道
+	input [C_APB_ADDR_WIDTH - 1:0]i_apb_paddr,	//写地址
+	input [C_APB_DATA_WIDTH - 1:0]i_apb_pwdata,	//写数据
+	output [C_APB_DATA_WIDTH - 1:0]o_apb_prdata	//读数据

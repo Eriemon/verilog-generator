@@ -1,0 +1,33 @@
+	//--------------AXI-Lite配置总线------------//
+	input i_axi_aclk,							//AXI-Lite时钟
+	input i_axi_arstn,							//AXI-Lite复位
+	input i_axi_aclk_en,						//AXI-Lite时钟使能
+	
+	//写通道--写地址
+	input [C_AXI_ADDR_WIDTH - 1:0]i_axi_awaddr,	//写地址
+	input i_axi_awvalid,						//写地址有效
+	output o_axi_awready,						//写地址准备好信号
+	
+	//写通道--写数据
+	input [C_AXI_DATA_WIDTH - 1:0]i_axi_wdata,	//写数据
+	input [C_AXI_DATA_WIDTH / 8 - 1:0]i_axi_wstrb,//写数据段有效信号,wstrb[n]->wdata[8n+7:8n]
+	input i_axi_wvalid,							//写数据有效信号
+	output o_axi_wready,						//写数据准备好信号
+	
+	//写通道--写响应
+	output [1:0]o_axi_bwresp,					//写响应传输状态
+	output o_axi_bwvalid,						//写响应有效信号
+	input i_axi_bwready,						//写响应准备好信号
+	
+	//读通道--读地址
+	input [C_AXI_ADDR_WIDTH - 1:0]i_axi_araddr,	//读地址
+	input i_axi_arvalid,						//读地址有效
+	output o_axi_arready,						//读地址准备好信号
+	
+	//读通道--读数据
+	output [C_AXI_DATA_WIDTH - 1:0]o_axi_rdata,	//读数据
+	output o_axi_rvalid,						//读数据有效信号
+	input i_axi_rready,							//读数据准备好信号
+	
+	//读通道--读响应
+	output [1:0]o_axi_brresp,					//读响应传输状态

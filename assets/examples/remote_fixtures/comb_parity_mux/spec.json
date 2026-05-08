@@ -1,0 +1,76 @@
+{
+  "name": "comb_parity_mux",
+  "target": "rtl",
+  "rtl_dialect": "verilog",
+  "design_requirements": {
+    "target": "rtl",
+    "pipeline_required": false,
+    "streamability": "non_streamable",
+    "interface_family": "native",
+    "interface_profile": {},
+    "confirmed_by_user": true,
+    "confirmation_notes": "Remote confidence fixture for pure combinational RTL."
+  },
+  "streamability": "non_streamable",
+  "interface_family": "native",
+  "interface_profile": {},
+  "pipeline_required": false,
+  "codegen_plan_required": true,
+  "description": "Select one of two 8-bit inputs and report odd parity for the selected value.",
+  "interfaces": {
+    "ports": [
+      {
+        "name": "i_sel",
+        "direction": "input",
+        "width": 1
+      },
+      {
+        "name": "i_a",
+        "direction": "input",
+        "width": 8
+      },
+      {
+        "name": "i_b",
+        "direction": "input",
+        "width": 8
+      },
+      {
+        "name": "o_y",
+        "direction": "output",
+        "width": 8
+      },
+      {
+        "name": "o_parity",
+        "direction": "output",
+        "width": 1
+      }
+    ]
+  },
+  "behavior": [
+    "When i_sel is 0, drive o_y from i_a.",
+    "When i_sel is 1, drive o_y from i_b.",
+    "Drive o_parity as the XOR reduction of o_y."
+  ],
+  "clock": {},
+  "reset": {},
+  "constraints": [
+    "Use synthesizable Verilog-2001.",
+    "Do not infer sequential storage."
+  ],
+  "outputs": [
+    {
+      "path": "rtl/comb_parity_mux.v",
+      "kind": "source",
+      "language": "verilog"
+    },
+    {
+      "path": "tb/comb_parity_mux_tb.v",
+      "kind": "testbench",
+      "language": "verilog"
+    }
+  ],
+  "notes": [],
+  "subfunctions": [],
+  "workflow": {},
+  "performance": {}
+}

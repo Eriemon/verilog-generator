@@ -1,0 +1,20 @@
+	input i_axis_aclk,							//时钟信号
+	input i_axis_arstn,							//复位信号,低电平复位
+	
+	//--------------AXI-Stream总线S-------------//
+	//数据通道
+	input [C_S_AXIS_DATA_WIDTH - 1:0]i_s_axis_wdata,//AXI-Stream写数据信号,[C_S_AXIS_DATA_WIDTH - 1:0]
+	
+	//控制通道
+	input i_s_axis_wvalid,						//AXI-Stream写数据有效信号
+	input i_s_axis_wlast,						//AXI-Stream写数据结束信号;C_AXIS_LAST_ENABLE为"ON"时有效
+	output o_s_axis_wready,						//AXI-Stream写数据准备好信号
+	
+	//--------------AXI-Stream总线M-------------//
+	//数据通道
+	output [C_M_AXIS_DATA_WIDTH - 1:0]o_m_axis_rdata,//AXI-Stream读数据信号,[C_M_AXIS_DATA_WIDTH - 1:0]
+	
+	//控制通道
+	output o_m_axis_rvalid,						//AXI-Stream读数据有效信号
+	output o_m_axis_rlast,						//AXI-Stream读数据结束信号;C_AXIS_LAST_ENABLE为"ON"时有效
+	input i_m_axis_rready						//AXI-Stream读数据准备好信号

@@ -1,0 +1,105 @@
+{
+  "name": "ready_valid_slice",
+  "target": "rtl",
+  "rtl_dialect": "verilog",
+  "design_requirements": {
+    "target": "rtl",
+    "pipeline_required": true,
+    "streamability": "streamable",
+    "interface_family": "native",
+    "interface_profile": {
+      "protocol": "ready_valid"
+    },
+    "confirmed_by_user": true,
+    "confirmation_notes": "Remote confidence fixture for a one-entry ready/valid slice."
+  },
+  "streamability": "streamable",
+  "interface_family": "native",
+  "interface_profile": {
+    "protocol": "ready_valid"
+  },
+  "pipeline_required": true,
+  "codegen_plan_required": true,
+  "description": "Buffer one 8-bit ready/valid transfer and apply backpressure when full.",
+  "interfaces": {
+    "ports": [
+      {
+        "name": "i_clk",
+        "direction": "input",
+        "width": 1,
+        "role": "clock"
+      },
+      {
+        "name": "i_rstn",
+        "direction": "input",
+        "width": 1,
+        "role": "reset"
+      },
+      {
+        "name": "i_in_valid",
+        "direction": "input",
+        "width": 1
+      },
+      {
+        "name": "o_in_ready",
+        "direction": "output",
+        "width": 1
+      },
+      {
+        "name": "i_in_data",
+        "direction": "input",
+        "width": 8
+      },
+      {
+        "name": "o_out_valid",
+        "direction": "output",
+        "width": 1
+      },
+      {
+        "name": "i_out_ready",
+        "direction": "input",
+        "width": 1
+      },
+      {
+        "name": "o_out_data",
+        "direction": "output",
+        "width": 8
+      }
+    ]
+  },
+  "behavior": [
+    "Accept input when i_in_valid and o_in_ready are high.",
+    "Hold output valid and data until i_out_ready is high.",
+    "Apply backpressure when the internal entry is full and the output is not ready."
+  ],
+  "clock": {
+    "name": "i_clk",
+    "edge": "posedge",
+    "frequency_mhz": 100
+  },
+  "reset": {
+    "name": "i_rstn",
+    "active": "low",
+    "synchronous": false
+  },
+  "constraints": [
+    "Use synthesizable Verilog-2001.",
+    "Avoid combinational loops in ready/valid control."
+  ],
+  "outputs": [
+    {
+      "path": "rtl/ready_valid_slice.v",
+      "kind": "source",
+      "language": "verilog"
+    },
+    {
+      "path": "tb/ready_valid_slice_tb.v",
+      "kind": "testbench",
+      "language": "verilog"
+    }
+  ],
+  "notes": [],
+  "subfunctions": [],
+  "workflow": {},
+  "performance": {}
+}
