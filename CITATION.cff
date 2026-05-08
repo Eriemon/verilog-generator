@@ -3,7 +3,8 @@ message: "If you use this agent skill, please cite it using the metadata below."
 title: "Verilog Generator: An Agent Skill for Verilog-2001 RTL Workflows"
 type: software
 authors:
-  - name: "Verilog Generator Authors"
+  - family-names: "Liu"
+    given-names: "Jiyuan"
     email: "erie@seu.edu.cn"
 year: 2026
 license: "Apache-2.0"

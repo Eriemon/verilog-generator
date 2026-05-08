@@ -11,6 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-1f6feb"></a>
   <a href="pyproject.toml"><img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2f81f7"></a>
+  <img alt="Version" src="https://img.shields.io/badge/version-v0.1.1-7c3aed">
   <a href="SKILL.md"><img alt="Agent Skill" src="https://img.shields.io/badge/agent-skill-16a34a"></a>
   <a href="ENGINEERING_DESIGN_GOALS.md"><img alt="Target" src="https://img.shields.io/badge/target-Verilog--2001-f59e0b"></a>
 </p>
@@ -40,18 +41,45 @@ Use it when an agent needs to work on:
 ## Skill Architecture
 
 ```mermaid
-flowchart LR
-    intent["Confirmed RTL intent"] --> skill["SKILL.md<br/>agent workflow"]
-    skill --> templates["interface templates<br/>AXI · AHB · APB"]
-    templates --> runtime["runtime/verilog_generator<br/>deterministic pipeline"]
-    runtime --> rtl["Verilog artifacts<br/>RTL · testbench"]
-    rtl --> evidence["validation evidence<br/>static checks · simulator output"]
+%%{init: {"theme": "base", "themeVariables": {"background": "#0b1220", "primaryColor": "#101d31", "primaryTextColor": "#e6edf3", "primaryBorderColor": "#60a5fa", "lineColor": "#93c5fd", "secondaryColor": "#17233a", "tertiaryColor": "#0f172a", "fontFamily": "Inter, Segoe UI, Arial"}}}%%
+flowchart TB
+    intent["<b>Confirmed RTL Intent</b><br/>ports · clock/reset · behavior · checks"]
+
+    subgraph skill["Agent Skill Layer"]
+      direction LR
+      guide["Operating Contract<br/><code>SKILL.md</code>"]
+      templates["Interface Templates<br/>AXI · AHB · APB"]
+      refs["Workflow Context<br/><code>references/</code>"]
+    end
+
+    subgraph runtime["Deterministic Runtime"]
+      direction LR
+      plan["Requirement Plan"]
+      oracle["Python Reference"]
+      rtl["RTL Extraction"]
+      gate["Validation Gate"]
+    end
+
+    artifacts["<b>Verilog Artifact Set</b><br/>RTL · self-checking testbench · manifests"]
+    evidence["<b>Evidence Package</b><br/>static findings · simulator output · traces"]
+
+    intent --> guide --> templates --> refs --> plan
+    plan --> oracle --> rtl --> gate --> artifacts --> evidence
+
+    classDef anchor fill:#1d4ed8,stroke:#93c5fd,color:#ffffff,stroke-width:2px;
+    classDef node fill:#101d31,stroke:#60a5fa,color:#e6edf3;
+    classDef output fill:#3a220f,stroke:#fb923c,color:#fff7ed,stroke-width:2px;
+    class intent,evidence anchor;
+    class guide,templates,refs,plan,oracle,rtl,gate node;
+    class artifacts output;
 ```
 
 ## Workflow
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"background": "#0b1220", "actorBkg": "#101d31", "actorBorder": "#60a5fa", "actorTextColor": "#e6edf3", "signalColor": "#bfdbfe", "signalTextColor": "#dbeafe", "noteBkgColor": "#17233a", "noteTextColor": "#e6edf3", "fontFamily": "Inter, Segoe UI, Arial"}}}%%
 sequenceDiagram
+    autonumber
     participant User
     participant Agent
     participant Skill as Agent Skill
@@ -59,13 +87,15 @@ sequenceDiagram
     participant Tools as Static / Simulation Tools
 
     User->>Agent: Describe RTL behavior
-    Agent->>Skill: Load Verilog workflow
-    Skill->>Agent: Require confirmed module contract
-    Agent->>Runtime: Scaffold, prompt, or run workflow
-    Runtime->>Runtime: Plan, vectors, Python reference, RTL files
-    Runtime->>Tools: Optional external validation
-    Tools-->>Runtime: Tool output when available
-    Runtime-->>Agent: Artifacts and validation evidence
+    Skill-->>Agent: Load Verilog-only rules and interface policy
+    Agent->>User: Confirm module, ports, reset, and verification cases
+    Agent->>Runtime: Scaffold spec and render staged prompts
+    Runtime->>Runtime: Build plan, vectors, Python reference, RTL, and testbench
+    opt External readiness requested
+      Runtime->>Tools: Run selected static/simulation backend
+      Tools-->>Runtime: Diagnostics and tool output
+    end
+    Runtime-->>Agent: RTL artifacts, trace, and validation evidence
 ```
 
 ## Repository Map
@@ -131,7 +161,7 @@ If this skill helps your research, teaching, or engineering workflow, please cit
 ```bibtex
 @software{verilog_generator_skill,
   title        = {Verilog Generator: An Agent Skill for Verilog-2001 RTL Workflows},
-  author       = {{Verilog Generator Authors}},
+  author       = {Jiyuan Liu},
   year         = {2026},
   license      = {Apache-2.0},
   contact      = {erie@seu.edu.cn}

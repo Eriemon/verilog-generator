@@ -11,6 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-1f6feb"></a>
   <a href="pyproject.toml"><img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2f81f7"></a>
+  <img alt="Version" src="https://img.shields.io/badge/version-v0.1.1-7c3aed">
   <a href="SKILL.md"><img alt="Agent Skill" src="https://img.shields.io/badge/agent-skill-16a34a"></a>
   <a href="ENGINEERING_DESIGN_GOALS.md"><img alt="Target" src="https://img.shields.io/badge/target-Verilog--2001-f59e0b"></a>
 </p>
@@ -40,18 +41,45 @@ RTL 工作在写代码之前就需要精确确认。Verilog Generator 会要求 
 ## Skill 架构
 
 ```mermaid
-flowchart LR
-    intent["已确认的 RTL 意图"] --> skill["SKILL.md<br/>Agent 工作流"]
-    skill --> templates["接口模板<br/>AXI · AHB · APB"]
-    templates --> runtime["runtime/verilog_generator<br/>确定性流水线"]
-    runtime --> rtl["Verilog 产物<br/>RTL · testbench"]
-    rtl --> evidence["验证证据<br/>静态检查 · 仿真输出"]
+%%{init: {"theme": "base", "themeVariables": {"background": "#0b1220", "primaryColor": "#101d31", "primaryTextColor": "#e6edf3", "primaryBorderColor": "#60a5fa", "lineColor": "#93c5fd", "secondaryColor": "#17233a", "tertiaryColor": "#0f172a", "fontFamily": "Inter, Segoe UI, Arial"}}}%%
+flowchart TB
+    intent["<b>已确认 RTL 意图</b><br/>端口 · 时钟/复位 · 行为 · 检查项"]
+
+    subgraph skill["Agent Skill 层"]
+      direction LR
+      guide["执行契约<br/><code>SKILL.md</code>"]
+      templates["接口模板<br/>AXI · AHB · APB"]
+      refs["工作流上下文<br/><code>references/</code>"]
+    end
+
+    subgraph runtime["确定性 Runtime"]
+      direction LR
+      plan["需求计划"]
+      oracle["Python Reference"]
+      rtl["RTL 抽取"]
+      gate["验证门禁"]
+    end
+
+    artifacts["<b>Verilog 产物集</b><br/>RTL · 自检查 testbench · manifests"]
+    evidence["<b>证据包</b><br/>静态发现 · 仿真输出 · traces"]
+
+    intent --> guide --> templates --> refs --> plan
+    plan --> oracle --> rtl --> gate --> artifacts --> evidence
+
+    classDef anchor fill:#1d4ed8,stroke:#93c5fd,color:#ffffff,stroke-width:2px;
+    classDef node fill:#101d31,stroke:#60a5fa,color:#e6edf3;
+    classDef output fill:#3a220f,stroke:#fb923c,color:#fff7ed,stroke-width:2px;
+    class intent,evidence anchor;
+    class guide,templates,refs,plan,oracle,rtl,gate node;
+    class artifacts output;
 ```
 
 ## 工作流
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"background": "#0b1220", "actorBkg": "#101d31", "actorBorder": "#60a5fa", "actorTextColor": "#e6edf3", "signalColor": "#bfdbfe", "signalTextColor": "#dbeafe", "noteBkgColor": "#17233a", "noteTextColor": "#e6edf3", "fontFamily": "Inter, Segoe UI, Arial"}}}%%
 sequenceDiagram
+    autonumber
     participant User as 用户
     participant Agent
     participant Skill as Agent Skill
@@ -59,13 +87,15 @@ sequenceDiagram
     participant Tools as 静态/仿真工具
 
     User->>Agent: 描述 RTL 行为
-    Agent->>Skill: 加载 Verilog 工作流
-    Skill->>Agent: 要求确认模块契约
-    Agent->>Runtime: scaffold、prompt 或运行 workflow
-    Runtime->>Runtime: 规划、向量、Python reference、RTL 文件
-    Runtime->>Tools: 可选外部验证
-    Tools-->>Runtime: 工具可用时返回输出
-    Runtime-->>Agent: 产物与验证证据
+    Skill-->>Agent: 加载 Verilog-only 规则和接口策略
+    Agent->>User: 确认模块、端口、复位和验证用例
+    Agent->>Runtime: 生成 spec 并渲染分阶段 prompt
+    Runtime->>Runtime: 构建 plan、vectors、Python reference、RTL 和 testbench
+    opt 请求外部工具就绪验证
+      Runtime->>Tools: 运行选定静态/仿真后端
+      Tools-->>Runtime: 返回诊断和工具输出
+    end
+    Runtime-->>Agent: RTL 产物、trace 与验证证据
 ```
 
 ## 仓库结构
@@ -129,7 +159,7 @@ from integration.verilog_adapter import (
 ```bibtex
 @software{verilog_generator_skill,
   title        = {Verilog Generator: An Agent Skill for Verilog-2001 RTL Workflows},
-  author       = {{Verilog Generator Authors}},
+  author       = {Jiyuan Liu},
   year         = {2026},
   license      = {Apache-2.0},
   contact      = {erie@seu.edu.cn}
