@@ -3,13 +3,13 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "erie-verilog-generator-skill"
+name = "verilog-generator-skill"
 version = "0.1.1"
 description = "Agent-usable Codex skill for Verilog-2001 RTL generation workflows."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
-authors = [{ name = "Eriemon" }]
+authors = [{ name = "Jiyuan Liu", email = "erie@seu.edu.cn" }]
 keywords = ["codex-skill", "agent-skill", "verilog", "rtl", "fpga", "hardware-generation"]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -31,4 +31,3 @@ include = ["runtime*", "integration*"]
 
 [tool.setuptools.package-data]
 "config" = ["defaults.json"]
-

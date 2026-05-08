@@ -40,63 +40,15 @@ Use it when an agent needs to work on:
 
 ## Skill Architecture
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"background": "#0b1220", "primaryColor": "#101d31", "primaryTextColor": "#e6edf3", "primaryBorderColor": "#60a5fa", "lineColor": "#93c5fd", "secondaryColor": "#17233a", "tertiaryColor": "#0f172a", "fontFamily": "Inter, Segoe UI, Arial"}}}%%
-flowchart TB
-    intent["<b>Confirmed RTL Intent</b><br/>ports · clock/reset · behavior · checks"]
-
-    subgraph skill["Agent Skill Layer"]
-      direction LR
-      guide["Operating Contract<br/><code>SKILL.md</code>"]
-      templates["Interface Templates<br/>AXI · AHB · APB"]
-      refs["Workflow Context<br/><code>references/</code>"]
-    end
-
-    subgraph runtime["Deterministic Runtime"]
-      direction LR
-      plan["Requirement Plan"]
-      oracle["Python Reference"]
-      rtl["RTL Extraction"]
-      gate["Validation Gate"]
-    end
-
-    artifacts["<b>Verilog Artifact Set</b><br/>RTL · self-checking testbench · manifests"]
-    evidence["<b>Evidence Package</b><br/>static findings · simulator output · traces"]
-
-    intent --> guide --> templates --> refs --> plan
-    plan --> oracle --> rtl --> gate --> artifacts --> evidence
-
-    classDef anchor fill:#1d4ed8,stroke:#93c5fd,color:#ffffff,stroke-width:2px;
-    classDef node fill:#101d31,stroke:#60a5fa,color:#e6edf3;
-    classDef output fill:#3a220f,stroke:#fb923c,color:#fff7ed,stroke-width:2px;
-    class intent,evidence anchor;
-    class guide,templates,refs,plan,oracle,rtl,gate node;
-    class artifacts output;
-```
+<p align="center">
+  <img src="docs/assets/architecture.svg" alt="Verilog Generator skill architecture" width="100%">
+</p>
 
 ## Workflow
 
-```mermaid
-%%{init: {"theme": "base", "themeVariables": {"background": "#0b1220", "actorBkg": "#101d31", "actorBorder": "#60a5fa", "actorTextColor": "#e6edf3", "signalColor": "#bfdbfe", "signalTextColor": "#dbeafe", "noteBkgColor": "#17233a", "noteTextColor": "#e6edf3", "fontFamily": "Inter, Segoe UI, Arial"}}}%%
-sequenceDiagram
-    autonumber
-    participant User
-    participant Agent
-    participant Skill as Agent Skill
-    participant Runtime
-    participant Tools as Static / Simulation Tools
-
-    User->>Agent: Describe RTL behavior
-    Skill-->>Agent: Load Verilog-only rules and interface policy
-    Agent->>User: Confirm module, ports, reset, and verification cases
-    Agent->>Runtime: Scaffold spec and render staged prompts
-    Runtime->>Runtime: Build plan, vectors, Python reference, RTL, and testbench
-    opt External readiness requested
-      Runtime->>Tools: Run selected static/simulation backend
-      Tools-->>Runtime: Diagnostics and tool output
-    end
-    Runtime-->>Agent: RTL artifacts, trace, and validation evidence
-```
+<p align="center">
+  <img src="docs/assets/workflow.svg" alt="Verilog Generator workflow" width="100%">
+</p>
 
 ## Repository Map
 
@@ -156,19 +108,20 @@ For questions, collaboration, or academic use, contact: [erie@seu.edu.cn](mailto
 
 ## Citation
 
-If this skill helps your research, teaching, or engineering workflow, please cite it:
+If this skill helps your research, teaching, or engineering workflow, please cite it. The canonical citation metadata is maintained in [CITATION.cff](CITATION.cff).
 
 ```bibtex
-@software{verilog_generator_skill,
-  title        = {Verilog Generator: An Agent Skill for Verilog-2001 RTL Workflows},
+@software{liu_2026_verilog_generator,
   author       = {Jiyuan Liu},
+  title        = {{Verilog Generator}: An Agent Skill for Verilog-2001 RTL Workflows},
   year         = {2026},
+  version      = {0.1.1},
+  date         = {2026-05-08},
+  url          = {https://github.com/Eriemon/verilog-generator},
   license      = {Apache-2.0},
-  contact      = {erie@seu.edu.cn}
+  note         = {Agent skill package for disciplined Verilog-2001 RTL workflows}
 }
 ```
-
-GitHub citation metadata is also available in [CITATION.cff](CITATION.cff).
 
 ## License
 

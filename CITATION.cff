@@ -6,5 +6,18 @@ authors:
   - family-names: "Liu"
     given-names: "Jiyuan"
     email: "erie@seu.edu.cn"
+abstract: "Verilog Generator is a Codex-ready agent skill package for disciplined Verilog-2001 RTL workflows, including confirmed hardware specifications, deterministic runtime helpers, synthesizable RTL generation, self-checking testbenches, and validation evidence."
+keywords:
+  - agent skill
+  - Codex
+  - Verilog
+  - Verilog-2001
+  - RTL
+  - FPGA
+  - hardware generation
+repository-code: "https://github.com/Eriemon/verilog-generator"
+url: "https://github.com/Eriemon/verilog-generator"
+version: "0.1.1"
+date-released: "2026-05-08"
 year: 2026
 license: "Apache-2.0"

@@ -1,0 +1,61 @@
+<svg width="1280" height="360" viewBox="0 0 1280 360" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Verilog Generator skill architecture</title>
+  <desc id="desc">A five-stage architecture from RTL intent to validated Verilog evidence.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="360" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1020"/>
+      <stop offset="0.58" stop-color="#111827"/>
+      <stop offset="1" stop-color="#071019"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1000 70) rotate(148) scale(570 230)">
+      <stop stop-color="#A3E635" stop-opacity="0.25"/>
+      <stop offset="0.48" stop-color="#60A5FA" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#0B1020" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="flow" x1="260" y1="206" x2="1020" y2="206" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A3E635"/>
+      <stop offset="0.5" stop-color="#60A5FA"/>
+      <stop offset="1" stop-color="#FDBA74"/>
+    </linearGradient>
+    <filter id="shadow" x="-18%" y="-38%" width="136%" height="180%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="360" rx="26" fill="url(#bg)"/>
+  <rect width="1280" height="360" rx="26" fill="url(#glow)"/>
+  <g opacity="0.15">
+    <path d="M92 112h70v36h70v-36h70v36h70v-36h70v36h70v-36h70v36h70v-36h70v36h70v-36h70" stroke="#E6EDF3" stroke-width="2"/>
+    <path d="M72 192H1208M72 272H1208" stroke="#E6EDF3"/>
+  </g>
+  <g font-family="Inter, Segoe UI, Arial, sans-serif">
+    <text x="72" y="58" fill="#E6EDF3" font-size="17" font-weight="800" letter-spacing="3">SKILL ARCHITECTURE</text>
+    <text x="72" y="91" fill="#9FB0C3" font-size="18">How the skill turns confirmed RTL intent into reviewable Verilog evidence.</text>
+  </g>
+  <g filter="url(#shadow)" font-family="Inter, Segoe UI, Arial, sans-serif">
+    <rect x="70" y="156" width="190" height="100" rx="18" fill="#101D31" stroke="#A3E635" stroke-width="1.7"/>
+    <rect x="306" y="156" width="190" height="100" rx="18" fill="#101D31" stroke="#60A5FA" stroke-width="1.7"/>
+    <rect x="542" y="156" width="190" height="100" rx="18" fill="#101D31" stroke="#60A5FA" stroke-width="1.7"/>
+    <rect x="778" y="156" width="190" height="100" rx="18" fill="#101D31" stroke="#60A5FA" stroke-width="1.7"/>
+    <rect x="1014" y="156" width="190" height="100" rx="18" fill="#101D31" stroke="#FDBA74" stroke-width="1.7"/>
+    <path d="M260 206H306M496 206H542M732 206H778M968 206H1014" stroke="url(#flow)" stroke-width="4" stroke-linecap="round"/>
+    <path d="M294 196L306 206L294 216M530 196L542 206L530 216M766 196L778 206L766 216M1002 196L1014 206L1002 216" stroke="#D8E7F5" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="96" y="194" fill="#FFFFFF" font-size="21" font-weight="800">RTL Intent</text>
+    <text x="96" y="224" fill="#9FB0C3" font-size="15">behavior + checks</text>
+    <text x="332" y="194" fill="#FFFFFF" font-size="21" font-weight="800">Skill Contract</text>
+    <text x="332" y="224" fill="#9FB0C3" font-size="15">rules + templates</text>
+    <text x="568" y="194" fill="#FFFFFF" font-size="21" font-weight="800">Runtime Helpers</text>
+    <text x="568" y="224" fill="#9FB0C3" font-size="15">plan, oracle, extract</text>
+    <text x="804" y="194" fill="#FFFFFF" font-size="21" font-weight="800">RTL Artifacts</text>
+    <text x="804" y="224" fill="#9FB0C3" font-size="15">modules + testbench</text>
+    <text x="1040" y="194" fill="#FFFFFF" font-size="21" font-weight="800">Evidence</text>
+    <text x="1040" y="224" fill="#9FB0C3" font-size="15">traces + diagnostics</text>
+  </g>
+  <g transform="translate(72 298)" font-family="Inter, Segoe UI, Arial, sans-serif">
+    <rect width="142" height="34" rx="17" fill="#17233A" stroke="#31415F"/>
+    <rect x="158" width="116" height="34" rx="17" fill="#17233A" stroke="#31415F"/>
+    <rect x="290" width="164" height="34" rx="17" fill="#17233A" stroke="#31415F"/>
+    <text x="22" y="22" fill="#D8E7F5" font-size="13" font-weight="700">Verilog-2001</text>
+    <text x="180" y="22" fill="#D8E7F5" font-size="13" font-weight="700">RTL</text>
+    <text x="312" y="22" fill="#D8E7F5" font-size="13" font-weight="700">Self-checking TB</text>
+  </g>
+</svg>
