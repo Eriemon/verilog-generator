@@ -1,7 +1,7 @@
 ---
 name: erie-verilog-generator
 description: >-
-  Use when Codex needs verilog开发, verilog设计, verilog修改, verilog debug, verilog调试, RTL开发, RTL设计, RTL修改, RTL debug, or RTL调试 for a Verilog-target design, including synthesizable Verilog-2001 RTL modules, self-checking Verilog testbenches, compile/simulation/validation with local or remote Vivado/xsim, artifact extraction, or workflow trace diagnosis.
+  Use when Codex needs Chinese-language Verilog development requests, Verilog design, Verilog modification, Verilog debug, RTL development, RTL design, RTL modification, RTL debug, or RTL troubleshooting for a Verilog-target design, including synthesizable Verilog-2001 RTL modules, self-checking Verilog testbenches, compile/simulation/validation with local or remote Vivado/xsim, artifact extraction, or workflow trace diagnosis.
 ---
 
 # Erie Verilog Generator

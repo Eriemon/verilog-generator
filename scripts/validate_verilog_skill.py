@@ -58,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
 
     run([sys.executable, str(path_setting(settings, "quick_validate")), str(SKILL_ROOT)], cwd=PROJECT_ROOT)
     verify_dependency_schema(settings)
+    verify_markdown_ascii()
     run([sys.executable, "-m", "compileall", "-q", "runtime", "integration", "smoke", "scripts"], cwd=SKILL_ROOT)
     run([sys.executable, "smoke/run_smoke.py", "--settings", str(settings_path)], cwd=SKILL_ROOT)
     run_cli_gate(settings, smoke_dir)
@@ -112,6 +113,21 @@ def run_cli_gate(settings: dict, smoke_dir: Path) -> None:
         ],
         cwd=SKILL_ROOT,
     )
+
+
+def verify_markdown_ascii() -> None:
+    violations: list[str] = []
+    for path in iter_skill_files():
+        if path.suffix.lower() != ".md":
+            continue
+        rel = path.relative_to(SKILL_ROOT).as_posix()
+        if rel in {"README.md", "README-CN.md"}:
+            continue
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if any(ord(char) > 127 for char in line):
+                violations.append(f"{rel}:{line_number}")
+    if violations:
+        raise AssertionError("Markdown files must be ASCII-only for install safety: " + ", ".join(sorted(violations)))
 
 
 def verify_legacy_terms(settings: dict) -> None:
@@ -246,7 +262,16 @@ def run(command: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
     print(f"[run] {printable}")
     env = os.environ.copy()
     env.setdefault("PYTHONUTF8", "1")
-    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=False, env=env)
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+        env=env,
+    )
     if result.stdout:
         print(result.stdout.rstrip())
     if result.stderr:

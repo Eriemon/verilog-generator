@@ -30,7 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="verilog-gen",
         description="Prompt engineering CLI for Verilog-2001 RTL generation.",
     )
-    parser.add_argument("--version", action="version", version="erie-verilog-gen 0.1.2")
+    parser.add_argument("--version", action="version", version="erie-verilog-gen 0.1.3")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     scaffold = subparsers.add_parser("scaffold", help="Create a Verilog JSON generation spec template.")

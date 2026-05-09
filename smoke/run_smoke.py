@@ -41,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
         shutil.rmtree(base)
     base.mkdir(parents=True)
     try:
+        _run_markdown_ascii_gate()
         _run_skill_metadata_gate()
         _run_mock_workflow(base, example_spec)
         _run_invalid_response(base)
@@ -66,6 +67,18 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _run_markdown_ascii_gate() -> None:
+    violations: list[str] = []
+    for path in ROOT.rglob("*.md"):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel in {"README.md", "README-CN.md"}:
+            continue
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if any(ord(char) > 127 for char in line):
+                violations.append(f"{rel}:{line_number}")
+    assert not violations, "Markdown files must be ASCII-only for install safety: " + ", ".join(violations)
+
+
 def _run_skill_metadata_gate() -> None:
     skill_text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
     assert skill_text.startswith("---\n"), "SKILL.md must start with YAML frontmatter."
@@ -79,16 +92,15 @@ def _run_skill_metadata_gate() -> None:
     description = frontmatter.split("description: >-", 1)[1].strip().replace("\n", " ")
     assert description.startswith("Use when"), description
     for keyword in (
-        "verilog开发",
-        "verilog设计",
-        "verilog修改",
-        "verilog debug",
-        "verilog调试",
-        "RTL开发",
-        "RTL设计",
-        "RTL修改",
+        "Chinese-language Verilog development requests",
+        "Verilog design",
+        "Verilog modification",
+        "Verilog debug",
+        "RTL development",
+        "RTL design",
+        "RTL modification",
         "RTL debug",
-        "RTL调试",
+        "RTL troubleshooting",
     ):
         assert keyword in description, keyword
     assert "Generate, prompt, run, resume" not in description, description
