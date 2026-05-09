@@ -7,6 +7,198 @@
     "example_spec": "${skill_dir}/assets/examples/rtl_erie_verilog_spec.json",
     "quick_validate": "${home}/.codex/skills/.system/skill-creator/scripts/quick_validate.py"
   },
+  "skill_dependencies": {
+    "state_path": "${home}/.codex/erie-verilog-generator/dependency-state.json",
+    "install_policy": "ask_each_missing",
+    "adaptation_policy": "required",
+    "required": [
+      {
+        "id": "erie-remote-ssh",
+        "url": "https://github.com/Eriemon/remote-ssh.git",
+        "purpose": "Remote SSH server selection and remote Verilog development/validation.",
+        "skills": [
+          "erie-remote-ssh"
+        ],
+        "install_specs": [
+          {
+            "skill": "erie-remote-ssh",
+            "source_path": ".",
+            "dest_name": "erie-remote-ssh"
+          }
+        ],
+        "adaptation": "remote_ssh_helper"
+      },
+      {
+        "id": "fpga-agent-skills",
+        "url": "https://github.com/adeleempurpled290/FPGA-Agent-skills.git",
+        "purpose": "Vivado/Vitis FPGA development workflow support.",
+        "skills": [
+          "vivado-tcl",
+          "vivado-sim",
+          "vivado-synth",
+          "vivado-impl",
+          "vivado-analysis",
+          "vivado-constraints",
+          "vivado-debug",
+          "vitis-hls-synthesis"
+        ],
+        "install_specs": [
+          {
+            "skill": "vivado-tcl",
+            "source_path": "vivado-tcl"
+          },
+          {
+            "skill": "vivado-sim",
+            "source_path": "vivado-sim"
+          },
+          {
+            "skill": "vivado-synth",
+            "source_path": "vivado-synth"
+          },
+          {
+            "skill": "vivado-impl",
+            "source_path": "vivado-impl"
+          },
+          {
+            "skill": "vivado-analysis",
+            "source_path": "vivado-analysis"
+          },
+          {
+            "skill": "vivado-constraints",
+            "source_path": "vivado-constraints"
+          },
+          {
+            "skill": "vivado-debug",
+            "source_path": "vivado-debug"
+          },
+          {
+            "skill": "vitis-hls-synthesis",
+            "source_path": "vitis-hls-synthesis"
+          }
+        ],
+        "adaptation": "skill_routing"
+      }
+    ],
+    "recommended": [
+      {
+        "id": "superpowers",
+        "url": "https://github.com/obra/superpowers.git",
+        "purpose": "Task planning, multi-step execution, and verification workflows.",
+        "skills": [
+          "using-superpowers",
+          "writing-plans",
+          "executing-plans",
+          "test-driven-development"
+        ],
+        "install_specs": [
+          {
+            "skill": "using-superpowers",
+            "source_path": "skills/using-superpowers"
+          },
+          {
+            "skill": "writing-plans",
+            "source_path": "skills/writing-plans"
+          },
+          {
+            "skill": "executing-plans",
+            "source_path": "skills/executing-plans"
+          },
+          {
+            "skill": "test-driven-development",
+            "source_path": "skills/test-driven-development"
+          }
+        ],
+        "alternative": "superpowers_plugin_namespace",
+        "adaptation": "optional_workflow"
+      },
+      {
+        "id": "context-engineering",
+        "url": "https://github.com/muratcankoylan/Agent-Skills-for-Context-Engineering.git",
+        "purpose": "Engineering task debugging, context optimization, and agent workflow diagnosis.",
+        "skills": [
+          "context-engineering"
+        ],
+        "alternative_skill_sets": [
+          [
+            "advanced-evaluation",
+            "bdi-mental-states",
+            "context-compression",
+            "context-degradation",
+            "context-fundamentals",
+            "context-optimization",
+            "evaluation",
+            "filesystem-context",
+            "hosted-agents",
+            "latent-briefing",
+            "memory-systems",
+            "multi-agent-patterns",
+            "project-development",
+            "tool-design"
+          ]
+        ],
+        "install_specs": [
+          {
+            "skill": "advanced-evaluation",
+            "source_path": "skills/advanced-evaluation"
+          },
+          {
+            "skill": "bdi-mental-states",
+            "source_path": "skills/bdi-mental-states"
+          },
+          {
+            "skill": "context-compression",
+            "source_path": "skills/context-compression"
+          },
+          {
+            "skill": "context-degradation",
+            "source_path": "skills/context-degradation"
+          },
+          {
+            "skill": "context-fundamentals",
+            "source_path": "skills/context-fundamentals"
+          },
+          {
+            "skill": "context-optimization",
+            "source_path": "skills/context-optimization"
+          },
+          {
+            "skill": "evaluation",
+            "source_path": "skills/evaluation"
+          },
+          {
+            "skill": "filesystem-context",
+            "source_path": "skills/filesystem-context"
+          },
+          {
+            "skill": "hosted-agents",
+            "source_path": "skills/hosted-agents"
+          },
+          {
+            "skill": "latent-briefing",
+            "source_path": "skills/latent-briefing"
+          },
+          {
+            "skill": "memory-systems",
+            "source_path": "skills/memory-systems"
+          },
+          {
+            "skill": "multi-agent-patterns",
+            "source_path": "skills/multi-agent-patterns"
+          },
+          {
+            "skill": "project-development",
+            "source_path": "skills/project-development"
+          },
+          {
+            "skill": "tool-design",
+            "source_path": "skills/tool-design"
+          }
+        ],
+        "alternative": "aggregate_or_upstream_multi_skill",
+        "adaptation": "optional_debug"
+      }
+    ]
+  },
   "workflow": {
     "target": "rtl",
     "readiness": "static",
@@ -61,8 +253,7 @@
       }
     },
     "legacy_term_allowlist": [
-      "ENGINEERING_DESIGN_GOALS.md",
-      "README.md"
+      "ENGINEERING_DESIGN_GOALS.md"
     ],
     "forbidden_residuals": [
       "__pycache__",
@@ -71,11 +262,11 @@
     ]
   },
   "remote": {
-    "helper": "${env:ERIE_REMOTE_SSH_HELPER}",
-    "settings": "${env:ERIE_REMOTE_SSH_SETTINGS}",
-    "server_list": "${env:ERIE_REMOTE_SSH_SERVER_LIST}",
-    "server": "example-server",
-    "server_name": "",
+    "helper": "${home}/.codex/skills/erie-remote-ssh/scripts/remote_ssh.py",
+    "settings": "${home}/.codex/skills/erie-remote-ssh/config/defaults.json",
+    "server_list": "${home}/.codex/erie-verilog-generator/server_list.local.json",
+    "server": "<selected-server>",
+    "server_name": "<user-selected-server>",
     "server_confirmed": false,
     "python": "python3",
     "remote_root": ".erie-verilog-generator-validation",

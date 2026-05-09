@@ -15,7 +15,7 @@ PROJECT_ROOT = SKILL_ROOT.parent
 if str(SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(SKILL_ROOT))
 
-from runtime.verilog_generator.config import load_settings, path_setting  # noqa: E402
+from runtime.verilog_generator.config import load_settings, path_setting, skill_dependency_settings  # noqa: E402
 
 LEGACY_TERMS = (
     "H" + "LS",
@@ -57,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     cleanup_residuals(settings)
 
     run([sys.executable, str(path_setting(settings, "quick_validate")), str(SKILL_ROOT)], cwd=PROJECT_ROOT)
+    verify_dependency_schema(settings)
     run([sys.executable, "-m", "compileall", "-q", "runtime", "integration", "smoke", "scripts"], cwd=SKILL_ROOT)
     run([sys.executable, "smoke/run_smoke.py", "--settings", str(settings_path)], cwd=SKILL_ROOT)
     run_cli_gate(settings, smoke_dir)
@@ -119,10 +120,59 @@ def verify_legacy_terms(settings: dict) -> None:
     for path in iter_skill_files():
         rel = path.relative_to(SKILL_ROOT).as_posix()
         text = path.read_text(encoding="utf-8", errors="ignore")
-        if any(term in text for term in LEGACY_TERMS) and rel not in allowlist:
-            violations.append(rel)
+        if rel in allowlist:
+            continue
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if _contains_legacy_term(line) and not _allowed_dependency_term_line(rel, line):
+                violations.append(f"{rel}:{line_number}")
     if violations:
         raise AssertionError("Legacy generation terms found outside allowlist: " + ", ".join(sorted(violations)))
+
+
+def _allowed_dependency_term_line(rel: str, line: str) -> bool:
+    if rel in {"README.md", "README-CN.md"}:
+        return "does not generate " + "H" + "LS" in line or "不生成 " + "H" + "LS" in line
+    if rel == "config/defaults.json":
+        return any(marker in line for marker in ("fpga-agent-skills", "Vivado/Vitis", "vitis-hls-synthesis", '"skill": "vitis-', '"source_path": "vitis-'))
+    if rel == "SKILL.md":
+        return "dependency" in line.lower() or "route to the installed FPGA" in line
+    if rel == "references/configuration.md":
+        return any(marker in line for marker in ("dependency", "provides", "recommended groups", "required groups", "Vivado/Vitis", "vitis-hls-synthesis"))
+    if rel == "scripts/validate_verilog_skill.py":
+        return "FPGA-Agent-skills dependency" in line or "vitis-hls-synthesis" in line
+    if rel == "smoke/run_smoke.py":
+        return "vitis-hls-synthesis" in line or "Vivado/Vitis" in line
+    return False
+
+
+def _contains_legacy_term(line: str) -> bool:
+    for term in LEGACY_TERMS:
+        if term == "." + "sv":
+            if re.search(r"(?<![A-Za-z0-9_])\." + "sv" + r"(?![A-Za-z0-9_])", line):
+                return True
+            continue
+        if term in line:
+            return True
+    return False
+
+
+def verify_dependency_schema(settings: dict) -> None:
+    dependencies = skill_dependency_settings(settings)
+    required_urls = {item["url"] for item in dependencies["required"]}
+    recommended_urls = {item["url"] for item in dependencies["recommended"]}
+    if required_urls != {
+        "https://github.com/Eriemon/remote-ssh.git",
+        "https://github.com/adeleempurpled290/FPGA-Agent-skills.git",
+    }:
+        raise AssertionError(f"Unexpected required dependency URLs: {sorted(required_urls)}")
+    if recommended_urls != {
+        "https://github.com/obra/superpowers.git",
+        "https://github.com/muratcankoylan/Agent-Skills-for-Context-Engineering.git",
+    }:
+        raise AssertionError(f"Unexpected recommended dependency URLs: {sorted(recommended_urls)}")
+    fpga = next(item for item in dependencies["required"] if item["id"] == "fpga-agent-skills")
+    if len(fpga["skills"]) != 8:
+        raise AssertionError("FPGA-Agent-skills dependency must include all 8 Vivado/Vitis skills.")
 
 
 def verify_hardcoded_paths() -> None:
@@ -177,7 +227,7 @@ def remove_inside_skill(path: Path) -> None:
 
 
 def iter_skill_files() -> list[Path]:
-    ignored_parts = {"__pycache__", "_smoke_runs", "reports"}
+    ignored_parts = {".git", "__pycache__", "_smoke_runs", "reports"}
     files: list[Path] = []
     for path in SKILL_ROOT.rglob("*"):
         if not path.is_file():

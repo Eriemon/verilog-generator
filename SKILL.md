@@ -8,6 +8,22 @@ description: >-
 
 Use this skill for Verilog-2001 RTL generation backed by the bundled `runtime/verilog_generator` Python workflow. Keep all generated design artifacts as Verilog `.v` files and use the stable facade in `integration/verilog_adapter.py`.
 
+## Dependency Preflight
+
+On first use in a Codex installation, and before any remote/Vivado/Vitis-related workflow, run the dependency check from this skill root:
+
+```powershell
+python .\scripts\manage_skill_dependencies.py check --settings .\config\defaults.json
+```
+
+If required dependencies are missing, run `prompt` and ask the user whether to install each missing dependency before continuing:
+
+```powershell
+python .\scripts\manage_skill_dependencies.py prompt --settings .\config\defaults.json
+```
+
+Install only after the user confirms, then run `adapt` and tell the user to restart Codex so newly installed skills are discovered. If the user declines required dependency installation, continue only with local static Verilog generation/validation and block remote SSH, Vivado, Vitis, execute, and implement readiness paths. If recommended dependencies are missing, ask the user whether to install or skip them; use `skip <dependency-id>` only for a user-declined recommended dependency.
+
 ## Workflow
 
 1. Confirm the design intent before generation: module name, ports, clock/reset, behavior, pipeline expectation, interface family, and verification cases.
@@ -30,6 +46,8 @@ python <erie-remote-ssh>\scripts\remote_ssh.py choices --settings <remote-settin
 
 Ask the user to select a remote server unless they already named one in the current request. A configured default server is only a recommendation; it is not user confirmation. After selection, use `erie-remote-ssh` for `check`, `scan-software`, `workspace-check`, request creation, and `run-request --execute`. If remote discovery sees multiple Vivado `settings64.sh` candidates, stop and ask the user which version to use; persist that confirmed choice in the user-level toolchain config before development or validation continues. Remote validation directories are retained by default under `.erie-verilog-generator-validation/run-YYYYMMDDTHHMMSS/erie-verilog-generator`, including `_smoke_runs` outputs; use `--cleanup-remote` only when the user wants the validation directory deleted. The remote gate must execute the canonical workflow plus the fixed RTL fixtures in `assets/examples/remote_fixtures` and retain each fixture `validation.json`. Use `--report-runs` for a read-only summary of retained remote runs. Do not add direct `ssh` or `scp` commands to this skill.
 
+For Vivado/Vitis project creation, Tcl execution, synthesis/implementation strategy, timing analysis, constraints, debug, simulation, or Vitis HLS work, route to the installed FPGA dependency skills (`vivado-tcl`, `vivado-sim`, `vivado-synth`, `vivado-impl`, `vivado-analysis`, `vivado-constraints`, `vivado-debug`, and `vitis-hls-synthesis`) instead of duplicating their guidance here.
+
 ## Host Integration
 
 Use `integration.verilog_adapter`:
@@ -48,10 +66,19 @@ Run smoke validation from this skill root:
 python .\scripts\validate_verilog_skill.py --settings .\config\defaults.json
 ```
 
+Check, prompt for, install, or adapt dependency skills:
+
+```powershell
+python .\scripts\manage_skill_dependencies.py check --settings .\config\defaults.json
+python .\scripts\manage_skill_dependencies.py prompt --settings .\config\defaults.json
+python .\scripts\manage_skill_dependencies.py install --settings .\config\defaults.json --dependency-id erie-remote-ssh --yes
+python .\scripts\manage_skill_dependencies.py adapt --settings .\config\defaults.json
+```
+
 Record a user-confirmed remote toolchain selection in the user folder:
 
 ```powershell
-python .\scripts\remote_validate_verilog_skill.py --settings .\config\defaults.json --server <server-id> --write-toolchain-selection --simulator-backend xsim --vivado-settings /tools/Xilinx/Vivado/<version>/settings64.sh
+python .\scripts\remote_validate_verilog_skill.py --settings .\config\defaults.json --server <selected-server> --write-toolchain-selection --simulator-backend xsim --vivado-settings /tools/Xilinx/Vivado/<version>/settings64.sh
 ```
 
 Run the underlying CLI from this skill root:

@@ -23,7 +23,7 @@ from integration.verilog_adapter import (  # noqa: E402
     validate_verilog_artifacts,
 )
 from runtime.verilog_generator.extractor import extract_response  # noqa: E402
-from runtime.verilog_generator.config import load_settings, path_setting  # noqa: E402
+from runtime.verilog_generator.config import load_settings, path_setting, remote_setting, skill_dependency_settings  # noqa: E402
 from runtime.verilog_generator.interface_templates import list_interface_templates, resolve_interface_template  # noqa: E402
 from runtime.verilog_generator.model_provider import _mock_erie_rtl_source_text, _mock_erie_rtl_testbench_text, _mock_vectors  # noqa: E402
 from runtime.verilog_generator.requirements import apply_requirement_defaults, build_codegen_plan, validate_requirement_confirmation  # noqa: E402
@@ -50,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
         _run_interface_bus_policy_gate()
         _run_interface_template_gate(base)
         _run_verilog_only_artifact_gate(base)
+        _run_dependency_config_gate(settings)
+        _run_dependency_manager_gate(base, settings)
         _run_remote_selection_preflight_gate(base)
         _run_remote_vivado_activation_gate()
         _run_remote_retention_policy_gate()
@@ -377,6 +379,231 @@ def _run_verilog_only_artifact_gate(base: Path) -> None:
             assert any("Only declared Verilog .v artifacts" in item["message"] and item["path"] == rel_path for item in report["issues"]), report
 
 
+def _run_dependency_config_gate(settings: dict) -> None:
+    dependency_settings = skill_dependency_settings(settings)
+    assert dependency_settings["install_policy"] == "ask_each_missing", dependency_settings
+    assert dependency_settings["adaptation_policy"] == "required", dependency_settings
+    assert str(dependency_settings["state_path"]).endswith("dependency-state.json"), dependency_settings
+    assert str(settings["remote"]["server_list"]).endswith(".codex/erie-verilog-generator/server_list.local.json") or str(settings["remote"]["server_list"]).endswith(".codex\\erie-verilog-generator\\server_list.local.json"), settings["remote"]
+    assert "SKILL.md" not in settings["validation"]["legacy_term_allowlist"], settings["validation"]["legacy_term_allowlist"]
+    assert "config/defaults.json" not in settings["validation"]["legacy_term_allowlist"], settings["validation"]["legacy_term_allowlist"]
+    required = dependency_settings["required"]
+    recommended = dependency_settings["recommended"]
+    assert {item["url"] for item in required} == {
+        "https://github.com/Eriemon/remote-ssh.git",
+        "https://github.com/adeleempurpled290/FPGA-Agent-skills.git",
+    }, required
+    assert {item["url"] for item in recommended} == {
+        "https://github.com/obra/superpowers.git",
+        "https://github.com/muratcankoylan/Agent-Skills-for-Context-Engineering.git",
+    }, recommended
+    fpga = next(item for item in required if item["id"] == "fpga-agent-skills")
+    remote = next(item for item in required if item["id"] == "erie-remote-ssh")
+    assert remote["install_specs"] == [{"skill": "erie-remote-ssh", "source_path": ".", "dest_name": "erie-remote-ssh"}], remote
+    assert fpga["skills"] == [
+        "vivado-tcl",
+        "vivado-sim",
+        "vivado-synth",
+        "vivado-impl",
+        "vivado-analysis",
+        "vivado-constraints",
+        "vivado-debug",
+        "vitis-hls-synthesis",
+    ], fpga
+    assert fpga["install_specs"][-1] == {"skill": "vitis-hls-synthesis", "source_path": "vitis-hls-synthesis"}, fpga
+
+
+def _run_dependency_manager_gate(base: Path, settings: dict) -> None:
+    module = _load_dependency_manager_module()
+    empty_root = base / "empty-skills"
+    empty_root.mkdir()
+    empty_state = base / "empty-state.json"
+    empty_report = module.check_dependencies(settings, skills_root=empty_root, plugin_cache=base / "empty-plugin-cache", state_path=empty_state)
+    assert empty_report["ok"] is False, empty_report
+    assert empty_report["required_ok"] is False, empty_report
+    assert empty_report["recommended_ok"] is False, empty_report
+    assert [item["id"] for item in empty_report["missing_required"]] == ["erie-remote-ssh", "fpga-agent-skills"], empty_report
+    assert [item["id"] for item in empty_report["missing_recommended"]] == ["superpowers", "context-engineering"], empty_report
+    prompt = module.prompt_for_missing(empty_report)
+    assert "required dependency" in prompt, prompt
+    assert "recommended dependency" in prompt, prompt
+    assert "https://github.com/Eriemon/remote-ssh.git" in prompt, prompt
+    module.record_skip(settings, "superpowers", state_path=empty_state)
+    skipped_report = module.check_dependencies(settings, skills_root=empty_root, plugin_cache=base / "empty-plugin-cache", state_path=empty_state)
+    assert "superpowers" not in [item["id"] for item in skipped_report["missing_recommended"]], skipped_report
+    assert "superpowers" in skipped_report["skipped_recommended"], skipped_report
+    changed_settings = json.loads(json.dumps(settings))
+    changed_superpowers = next(item for item in changed_settings["skill_dependencies"]["recommended"] if item["id"] == "superpowers")
+    changed_superpowers["skills"].append("verification-before-completion")
+    changed_report = module.check_dependencies(changed_settings, skills_root=empty_root, plugin_cache=base / "empty-plugin-cache", state_path=empty_state)
+    assert "superpowers" in [item["id"] for item in changed_report["missing_recommended"]], changed_report
+    fake_installer = base / "fake-install-skill-from-github.py"
+    fake_installer.write_text("# fake installer\n", encoding="utf-8")
+    old_run = module.subprocess.run
+    commands: list[list[str]] = []
+
+    def fake_run(command, check):
+        commands.append([str(item) for item in command])
+        return subprocess.CompletedProcess(command, 0)
+
+    module.subprocess.run = fake_run
+    try:
+        installed_remote = module.install_missing(settings, empty_report, "erie-remote-ssh", installer=fake_installer)
+    finally:
+        module.subprocess.run = old_run
+    assert installed_remote["installed"] == ["erie-remote-ssh"], installed_remote
+    assert len(commands) == 1, commands
+    assert commands[0][-4:] == ["--path", ".", "--name", "erie-remote-ssh"], commands
+    commands = []
+    module.subprocess.run = fake_run
+    try:
+        installed_context = module.install_missing(settings, empty_report, "context-engineering", installer=fake_installer)
+    finally:
+        module.subprocess.run = old_run
+    assert "advanced-evaluation" in installed_context["installed"], installed_context
+    assert "tool-design" in installed_context["installed"], installed_context
+    assert all("--path" in command and "--name" not in command for command in commands), commands
+    assert any("skills/context-fundamentals" in command for command in commands), commands
+
+    skills_root = base / "installed-skills"
+    _write_fake_skill(skills_root / "erie-remote-ssh")
+    remote_helper = skills_root / "erie-remote-ssh" / "scripts" / "remote_ssh.py"
+    remote_helper.parent.mkdir(parents=True, exist_ok=True)
+    remote_helper.write_text("# fake remote helper\n", encoding="utf-8")
+    remote_settings = skills_root / "erie-remote-ssh" / "config" / "defaults.json"
+    remote_settings.parent.mkdir(parents=True, exist_ok=True)
+    remote_settings.write_text('{"version": 1}\n', encoding="utf-8")
+    for name in (
+        "vivado-tcl",
+        "vivado-sim",
+        "vivado-synth",
+        "vivado-impl",
+        "vivado-analysis",
+        "vivado-constraints",
+        "vivado-debug",
+        "context-engineering",
+    ):
+        _write_fake_skill(skills_root / name)
+    plugin_skills = base / "plugins" / "cache" / "superpowers-dev" / "superpowers" / "1.0.0" / "skills"
+    for name in ("using-superpowers", "writing-plans", "executing-plans", "test-driven-development"):
+        _write_fake_skill(plugin_skills / name)
+    full_state = base / "full-state.json"
+    partial_report = module.check_dependencies(settings, skills_root=skills_root, plugin_cache=base / "plugins" / "cache", state_path=full_state)
+    missing_fpga = next(item for item in partial_report["missing_required"] if item["id"] == "fpga-agent-skills")
+    assert missing_fpga["missing_skills"] == ["vitis-hls-synthesis"], partial_report
+    commands = []
+    module.subprocess.run = fake_run
+    try:
+        installed_fpga = module.install_missing(settings, partial_report, "fpga-agent-skills", installer=fake_installer)
+    finally:
+        module.subprocess.run = old_run
+    assert installed_fpga["installed"] == ["vitis-hls-synthesis"], installed_fpga
+    assert len(commands) == 1 and commands[0][-2:] == ["--path", "vitis-hls-synthesis"], commands
+    _write_fake_skill(skills_root / "vitis-hls-synthesis")
+    full_report = module.check_dependencies(settings, skills_root=skills_root, plugin_cache=base / "plugins" / "cache", state_path=full_state)
+    assert full_report["ok"] is True, full_report
+    upstream_context_root = base / "upstream-context-skills"
+    for path in skills_root.iterdir():
+        if path.is_dir() and path.name != "context-engineering":
+            shutil.copytree(path, upstream_context_root / path.name)
+    for name in (
+        "advanced-evaluation",
+        "bdi-mental-states",
+        "context-compression",
+        "context-degradation",
+        "context-fundamentals",
+        "context-optimization",
+        "evaluation",
+        "filesystem-context",
+        "hosted-agents",
+        "latent-briefing",
+        "memory-systems",
+        "multi-agent-patterns",
+        "project-development",
+        "tool-design",
+    ):
+        _write_fake_skill(upstream_context_root / name)
+    upstream_report = module.check_dependencies(settings, skills_root=upstream_context_root, plugin_cache=base / "plugins" / "cache", state_path=base / "upstream-state.json")
+    upstream_context = next(item for item in upstream_report["recommended"] if item["id"] == "context-engineering")
+    assert upstream_context["present"] is True, upstream_context
+    assert "context-fundamentals" in upstream_context["selected_skill_set"], upstream_context
+    partial_context_root = base / "partial-context-skills"
+    for path in skills_root.iterdir():
+        if path.is_dir() and path.name != "context-engineering":
+            shutil.copytree(path, partial_context_root / path.name)
+    for name in (
+        "advanced-evaluation",
+        "bdi-mental-states",
+        "context-compression",
+        "context-degradation",
+        "context-fundamentals",
+        "context-optimization",
+        "evaluation",
+        "filesystem-context",
+        "hosted-agents",
+        "latent-briefing",
+        "memory-systems",
+        "multi-agent-patterns",
+        "project-development",
+    ):
+        _write_fake_skill(partial_context_root / name)
+    partial_context_report = module.check_dependencies(settings, skills_root=partial_context_root, plugin_cache=base / "plugins" / "cache", state_path=base / "partial-context-state.json")
+    partial_context = next(item for item in partial_context_report["missing_recommended"] if item["id"] == "context-engineering")
+    assert partial_context["missing_skills"] == ["tool-design"], partial_context
+    commands = []
+    module.subprocess.run = fake_run
+    try:
+        installed_partial_context = module.install_missing(settings, partial_context_report, "context-engineering", installer=fake_installer)
+    finally:
+        module.subprocess.run = old_run
+    assert installed_partial_context["installed"] == ["tool-design"], installed_partial_context
+    assert len(commands) == 1 and "skills/tool-design" in commands[0], commands
+    adapted = module.adapt_dependencies(settings, skills_root=skills_root, plugin_cache=base / "plugins" / "cache", state_path=full_state)
+    assert adapted["adapted"] == ["erie-remote-ssh"], adapted
+    state = json.loads(full_state.read_text(encoding="utf-8"))
+    assert state["adaptations"]["remote"]["helper"] == str(remote_helper.resolve()), state
+    assert state["adaptations"]["remote"]["settings"] == str(remote_settings.resolve()), state
+    stale_state = base / "stale-state.json"
+    stale_state.write_text(
+        json.dumps({"version": 1, "adaptations": {"remote": {"helper": str(base / "missing-helper.py"), "settings": str(base / "missing-settings.json")}}}),
+        encoding="utf-8",
+    )
+    stale_settings = json.loads(json.dumps(settings))
+    stale_settings["skill_dependencies"]["state_path"] = str(stale_state)
+    stale_settings["remote"]["helper"] = "fallback-helper.py"
+    stale_settings["remote"]["settings"] = "fallback-settings.json"
+    assert remote_setting(stale_settings, "helper") == "fallback-helper.py", stale_settings
+    assert remote_setting(stale_settings, "settings") == "fallback-settings.json", stale_settings
+    space_settings = base / "space-settings.json"
+    space_settings.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "paths": {"space_dir": "~/Codex Skill Space/output"},
+                "workflow": {},
+                "skill_dependencies": {
+                    "state_path": str(base / "dependency-state.json"),
+                    "install_policy": "ask_each_missing",
+                    "adaptation_policy": "required",
+                    "required": [{"id": "x", "url": "https://github.com/example/x.git", "skills": ["x"], "install_specs": [{"skill": "x", "source_path": "x"}]}],
+                    "recommended": [{"id": "y", "url": "https://github.com/example/y.git", "skills": ["y"], "install_specs": [{"skill": "y", "source_path": "y"}]}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    loaded_space = load_settings(space_settings)
+    assert not str(path_setting(loaded_space, "space_dir")).startswith("~"), loaded_space
+
+
+def _write_fake_skill(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    path.joinpath("SKILL.md").write_text(
+        f"---\nname: {path.name}\ndescription: fake skill for smoke tests\n---\n\n# {path.name}\n",
+        encoding="utf-8",
+    )
+
+
 def _run_remote_selection_preflight_gate(base: Path) -> None:
     with _fake_tool_path(base, "preflight-no-vivado", ()):
         cli = subprocess.run(
@@ -396,7 +623,12 @@ def _run_remote_selection_preflight_gate(base: Path) -> None:
     assert cli.returncode == 0, cli.stderr
     report = json.loads(cli.stdout)
     assert report["remote_selection_required"] is True, report
-    assert report["remote"]["recommended_server"] == "example-server", report
+    assert report["remote"]["recommended_server"] == "<selected-server>", report
+    assert report["remote"]["recommended_server_name"] == "<user-selected-server>", report
+    forbidden_server_id = "server" + "_2"
+    forbidden_server_name = "FPGA" + "-Server-U50"
+    assert forbidden_server_id not in json.dumps(report), report
+    assert forbidden_server_name not in json.dumps(report), report
     assert report["remote"]["server_confirmed"] is False, report
     assert "erie-remote-ssh discover and choices" in report["required_action"], report
 
@@ -465,8 +697,9 @@ def _run_remote_toolchain_selection_gate(base: Path) -> None:
         "confirmed_by_user": True,
         "updated_at": "2026-05-08T00:00:00Z",
     }
-    module.write_toolchain_selection(config_path, "example-server", selection)
-    loaded = module.load_toolchain_selection(config_path, "example-server")
+    selected_server = "selected-server"
+    module.write_toolchain_selection(config_path, selected_server, selection)
+    loaded = module.load_toolchain_selection(config_path, selected_server)
     assert loaded["simulator_backend"] == "xsim", loaded
     assert loaded["vivado_settings64"] == "/tools/Xilinx/Vivado/2023.2/settings64.sh", loaded
 
@@ -607,7 +840,7 @@ def _run_remote_report_gate(base: Path) -> None:
 
     module.run_helper = fake_run_helper
     try:
-        report = module.report_remote_runs(Path("helper.py"), Path("settings.json"), Path("servers.json"), "example-server", ".erie-verilog-generator-validation", 1)
+        report = module.report_remote_runs(Path("helper.py"), Path("settings.json"), Path("servers.json"), "selected-server", ".erie-verilog-generator-validation", 1)
     finally:
         module.run_helper = old_run_helper
     assert report["status"] == "ok", report
@@ -620,6 +853,15 @@ def _run_remote_report_gate(base: Path) -> None:
 def _load_remote_validate_module():
     script_path = ROOT / "scripts" / "remote_validate_verilog_skill.py"
     spec = importlib.util.spec_from_file_location("remote_validate_verilog_skill", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_dependency_manager_module():
+    script_path = ROOT / "scripts" / "manage_skill_dependencies.py"
+    spec = importlib.util.spec_from_file_location("manage_skill_dependencies", script_path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
