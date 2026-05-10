@@ -519,7 +519,22 @@ def _run_dependency_manager_gate(base: Path, settings: dict) -> None:
         installed_fpga = module.install_missing(settings, partial_report, "fpga-agent-skills", installer=fake_installer)
     finally:
         module.subprocess.run = old_run
-    assert installed_fpga["installed"] == ["vitis-hls-synthesis"], installed_fpga
+    assert installed_fpga["installed"] == [], installed_fpga
+    assert installed_fpga["skipped"] == [{"dependency_id": "fpga-agent-skills", "reason": "manual fallback approval required"}], installed_fpga
+    assert commands == [], commands
+    commands = []
+    module.subprocess.run = fake_run
+    try:
+        installed_fpga_fallback = module.install_missing(
+            settings,
+            partial_report,
+            "fpga-agent-skills",
+            installer=fake_installer,
+            allow_fpga_agent_fallback=True,
+        )
+    finally:
+        module.subprocess.run = old_run
+    assert installed_fpga_fallback["installed"] == ["vitis-hls-synthesis"], installed_fpga_fallback
     assert len(commands) == 1 and commands[0][-2:] == ["--path", "vitis-hls-synthesis"], commands
     _write_fake_skill(skills_root / "vitis-hls-synthesis")
     full_report = module.check_dependencies(settings, skills_root=skills_root, plugin_cache=base / "plugins" / "cache", state_path=full_state)
@@ -548,6 +563,42 @@ def _run_dependency_manager_gate(base: Path, settings: dict) -> None:
     assert skipped_fpga["installed"] == [], skipped_fpga
     assert skipped_fpga["skipped"] == [{"dependency_id": "fpga-agent-skills", "reason": "developer skill is installed"}], skipped_fpga
     assert commands == [], commands
+    cleanup_root = base / "cleanup-skills"
+    cleanup_backup = base / "cleanup-backups"
+    for name in (
+        "vivado-tcl",
+        "vivado-sim",
+        "vivado-synth",
+        "vivado-impl",
+        "vivado-analysis",
+        "vivado-constraints",
+        "vivado-debug",
+        "vitis-hls-synthesis",
+        "vivado-developer",
+        "vitis-developer",
+    ):
+        _write_fake_skill(cleanup_root / name)
+    try:
+        module.cleanup_fpga_agent_skills(settings, skills_root=cleanup_root, backup_root=cleanup_backup, yes=False)
+    except ValueError as exc:
+        assert "--yes" in str(exc), exc
+    else:
+        raise AssertionError("cleanup-fpga-agent-skills must require explicit --yes.")
+    cleanup_result = module.cleanup_fpga_agent_skills(settings, skills_root=cleanup_root, backup_root=cleanup_backup, yes=True)
+    assert set(cleanup_result["moved"]) == {
+        "vivado-tcl",
+        "vivado-sim",
+        "vivado-synth",
+        "vivado-impl",
+        "vivado-analysis",
+        "vivado-constraints",
+        "vivado-debug",
+        "vitis-hls-synthesis",
+    }, cleanup_result
+    assert (cleanup_root / "vivado-developer").is_dir(), cleanup_result
+    assert (cleanup_root / "vitis-developer").is_dir(), cleanup_result
+    assert not (cleanup_root / "vivado-tcl").exists(), cleanup_result
+    assert Path(cleanup_result["backup_dir"]).is_dir(), cleanup_result
     amd_selection = module.select_fpga_vendor(settings, "amd_xilinx", skills_root=developer_root, plugin_cache=base / "plugins" / "cache", state_path=developer_state)
     assert amd_selection["selected_vendor"] == "amd_xilinx", amd_selection
     amd_route = module.fpga_route(settings, skills_root=developer_root, plugin_cache=base / "plugins" / "cache", state_path=developer_state)

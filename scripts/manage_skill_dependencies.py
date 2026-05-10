@@ -54,11 +54,30 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "adapt":
         print_json(adapt_dependencies(settings, skills_root=skills_root, plugin_cache=plugin_cache, state_path=state_path))
         return 0
+    if args.command == "cleanup-fpga-agent-skills":
+        print_json(
+            cleanup_fpga_agent_skills(
+                settings,
+                skills_root=skills_root,
+                plugin_cache=plugin_cache,
+                backup_root=args.backup_root,
+                yes=args.yes,
+            )
+        )
+        return 0
     if args.command == "install":
         if not args.yes:
             parser.error("install requires --yes after the user confirms installation.")
         report = check_dependencies(settings, skills_root=skills_root, plugin_cache=plugin_cache, state_path=state_path)
-        print_json(install_missing(settings, report, args.dependency_id, installer=args.installer))
+        print_json(
+            install_missing(
+                settings,
+                report,
+                args.dependency_id,
+                installer=args.installer,
+                allow_fpga_agent_fallback=args.allow_fpga_agent_fallback,
+            )
+        )
         return 0
     raise AssertionError(f"Unhandled command: {args.command}")
 
@@ -82,11 +101,16 @@ def build_parser() -> argparse.ArgumentParser:
     route = subparsers.add_parser("fpga-route", help="Report the selected FPGA developer skill route.")
     _add_common_args(route)
     route.set_defaults(command="fpga-route")
+    cleanup = subparsers.add_parser("cleanup-fpga-agent-skills", help="Move legacy FPGA-Agent Vivado/Vitis skills to a backup directory.")
+    _add_common_args(cleanup)
+    cleanup.add_argument("--backup-root", type=Path, help="Override backup root for moved FPGA-Agent skills.")
+    cleanup.add_argument("--yes", action="store_true", help="Required confirmation to move legacy FPGA-Agent skills.")
     install = subparsers.add_parser("install", help="Install missing dependencies after user confirmation.")
     _add_common_args(install)
     install.add_argument("--dependency-id", help="Install only one dependency id.")
     install.add_argument("--installer", type=Path, help="Override skill-installer helper script.")
     install.add_argument("--yes", action="store_true", help="Required confirmation that the user approved installation.")
+    install.add_argument("--allow-fpga-agent-fallback", action="store_true", help="Explicitly allow FPGA-Agent-Skills fallback installation when no developer skill exists.")
     return parser
 
 
@@ -165,9 +189,15 @@ def prompt_for_missing(report: dict) -> str:
             lines.append(f"- {vendor.get('label', vendor_id)}: select-fpga-vendor {vendor_id}")
         lines.append("")
     if missing_required:
-        lines.append("Missing required dependency groups. These block remote/Vivado-related workflows until installed:")
+        lines.append("Missing required dependency groups. These block remote/Vivado-related workflows until resolved:")
         for item in missing_required:
-            lines.append(f"- {item['id']}: {item['url']} ({', '.join(item['missing_skills'])})")
+            if item["id"] == "fpga-agent-skills":
+                lines.append(
+                    "- fpga-agent-skills: manual fallback only. Prefer installing or enabling vivado-developer, "
+                    "vitis-developer, or pds-developer instead of installing FPGA-Agent Vivado/Vitis child skills."
+                )
+            else:
+                lines.append(f"- {item['id']}: {item['url']} ({', '.join(item['missing_skills'])})")
         lines.append("")
     if missing_recommended:
         lines.append("Missing recommended dependency groups. Ask the user whether to install or skip them for this version:")
@@ -343,7 +373,26 @@ def fpga_route(
     }
 
 
-def install_missing(settings: dict, report: dict, dependency_id: str | None = None, *, installer: Path | None = None) -> dict:
+FPGA_AGENT_CHILD_SKILLS = (
+    "vivado-tcl",
+    "vivado-sim",
+    "vivado-synth",
+    "vivado-impl",
+    "vivado-analysis",
+    "vivado-constraints",
+    "vivado-debug",
+    "vitis-hls-synthesis",
+)
+
+
+def install_missing(
+    settings: dict,
+    report: dict,
+    dependency_id: str | None = None,
+    *,
+    installer: Path | None = None,
+    allow_fpga_agent_fallback: bool = False,
+) -> dict:
     dependency_settings = skill_dependency_settings(settings)
     dependencies = {item["id"]: item for item in [*dependency_settings["required"], *dependency_settings["recommended"]]}
     missing = [*report.get("missing_required", []), *report.get("missing_recommended", [])]
@@ -362,6 +411,9 @@ def install_missing(settings: dict, report: dict, dependency_id: str | None = No
         if status["id"] == "fpga-agent-skills" and report.get("fpga_agent_skipped_by_developer_skill"):
             skipped.append({"dependency_id": "fpga-agent-skills", "reason": "developer skill is installed"})
             continue
+        if status["id"] == "fpga-agent-skills" and not allow_fpga_agent_fallback:
+            skipped.append({"dependency_id": "fpga-agent-skills", "reason": "manual fallback approval required"})
+            continue
         dependency = dependencies[status["id"]]
         repo = github_repo_slug(dependency["url"])
         selected_specs = _selected_install_specs(dependency, status["missing_skills"])
@@ -372,6 +424,49 @@ def install_missing(settings: dict, report: dict, dependency_id: str | None = No
             subprocess.run(command, check=True)
             installed.append(str(spec["skill"]))
     return {"installed": installed, "skipped": skipped, "restart_required": bool(installed)}
+
+
+def cleanup_fpga_agent_skills(
+    settings: dict,
+    *,
+    skills_root: Path | None = None,
+    plugin_cache: Path | None = None,
+    backup_root: Path | None = None,
+    yes: bool = False,
+) -> dict:
+    if not yes:
+        raise ValueError("cleanup-fpga-agent-skills requires --yes.")
+    skills_root = (skills_root or default_skills_root()).expanduser()
+    plugin_cache = (plugin_cache or default_plugin_cache()).expanduser()
+    backup_root = (backup_root or (default_skills_root().parent / "skill-backups")).expanduser()
+    developer_status = fpga_developer_status(settings, skills_root=skills_root, plugin_cache=plugin_cache)
+    if not developer_status["available_vendors"]:
+        raise ValueError("Refusing cleanup because no FPGA developer skill is installed.")
+    resolved_skills_root = skills_root.resolve()
+    resolved_backup_root = backup_root.resolve()
+    backup_dir = backup_root / f"fpga-agent-skills.bak.{time.strftime('%Y%m%dT%H%M%S')}"
+    moved: list[str] = []
+    for skill in FPGA_AGENT_CHILD_SKILLS:
+        source = skills_root / skill
+        if not source.exists():
+            continue
+        source.resolve().relative_to(resolved_skills_root)
+        if not (source / "SKILL.md").is_file():
+            raise ValueError(f"Refusing to move unexpected skill directory without SKILL.md: {source}")
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        target = backup_dir / skill
+        target.parent.resolve().relative_to(resolved_backup_root)
+        if target.exists():
+            raise ValueError(f"Backup target already exists: {target}")
+        source.rename(target)
+        moved.append(skill)
+    return {
+        "moved": moved,
+        "backup_dir": str(backup_dir),
+        "skills_root": str(skills_root),
+        "plugin_cache": str(plugin_cache),
+        "developer_vendors": developer_status["available_vendors"],
+    }
 
 
 def _fpga_selection_from_state(state: dict) -> dict:

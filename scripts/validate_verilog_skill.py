@@ -156,6 +156,8 @@ def _allowed_dependency_term_line(rel: str, line: str) -> bool:
         return any(marker in line for marker in ("dependency", "provides", "recommended groups", "required groups", "Vivado/Vitis", "vitis-hls-synthesis", "vitis-developer", "developer routing"))
     if rel == "scripts/validate_verilog_skill.py":
         return "FPGA-Agent-skills dependency" in line or "vitis-hls-synthesis" in line or "vitis-developer" in line
+    if rel == "scripts/manage_skill_dependencies.py":
+        return any(marker in line for marker in ("FPGA-Agent", "Vivado/Vitis", "vitis-developer", "vitis-hls-synthesis", '"vivado-'))
     if rel == "smoke/run_smoke.py":
         return "vitis-hls-synthesis" in line or "vitis-developer" in line or "Vivado/Vitis" in line
     return False
