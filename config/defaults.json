@@ -199,6 +199,27 @@
       }
     ]
   },
+  "fpga_developer_routing": {
+    "state_path": "${home}/.codex/erie-verilog-generator/dependency-state.json",
+    "selection_policy": "ask_on_first_fpga_workflow",
+    "persist_selection": true,
+    "fpga_agent_required_when_developer_present": false,
+    "vendors": {
+      "amd_xilinx": {
+        "label": "AMD-Xilinx",
+        "skills": [
+          "vivado-developer",
+          "vitis-developer"
+        ]
+      },
+      "pangomicro": {
+        "label": "PangoMicro",
+        "skills": [
+          "pds-developer"
+        ]
+      }
+    }
+  },
   "workflow": {
     "target": "rtl",
     "readiness": "static",

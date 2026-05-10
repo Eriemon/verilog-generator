@@ -102,6 +102,41 @@ def skill_dependency_settings(settings: dict[str, Any] | None = None) -> dict[st
     return result
 
 
+def fpga_developer_routing_settings(settings: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return validated FPGA developer skill routing settings."""
+
+    payload = settings or load_settings()
+    routing = payload.get("fpga_developer_routing")
+    if not isinstance(routing, dict):
+        raise ValueError("settings.fpga_developer_routing must be an object.")
+    result = deepcopy(routing)
+    state_path = result.get("state_path")
+    if not isinstance(state_path, str) or not state_path:
+        raise ValueError("settings.fpga_developer_routing.state_path must be a non-empty path.")
+    result["state_path"] = Path(state_path).expanduser()
+    if result.get("selection_policy") != "ask_on_first_fpga_workflow":
+        raise ValueError("settings.fpga_developer_routing.selection_policy must be ask_on_first_fpga_workflow.")
+    if result.get("persist_selection") is not True:
+        raise ValueError("settings.fpga_developer_routing.persist_selection must be true.")
+    if result.get("fpga_agent_required_when_developer_present") is not False:
+        raise ValueError("settings.fpga_developer_routing.fpga_agent_required_when_developer_present must be false.")
+    vendors = result.get("vendors")
+    if not isinstance(vendors, dict) or not vendors:
+        raise ValueError("settings.fpga_developer_routing.vendors must be a non-empty object.")
+    for vendor_id, vendor in vendors.items():
+        if not isinstance(vendor_id, str) or not vendor_id:
+            raise ValueError("settings.fpga_developer_routing vendor ids must be non-empty strings.")
+        if not isinstance(vendor, dict):
+            raise ValueError(f"settings.fpga_developer_routing.vendors.{vendor_id} must be an object.")
+        label = vendor.get("label")
+        if not isinstance(label, str) or not label:
+            raise ValueError(f"settings.fpga_developer_routing.vendors.{vendor_id}.label must be non-empty.")
+        skills = vendor.get("skills")
+        if not isinstance(skills, list) or not skills or not all(isinstance(skill, str) and skill for skill in skills):
+            raise ValueError(f"settings.fpga_developer_routing.vendors.{vendor_id}.skills must be non-empty strings.")
+    return result
+
+
 def _validate_dependency_item(item: Any, list_name: str) -> None:
     if not isinstance(item, dict):
         raise ValueError(f"settings.skill_dependencies.{list_name} entries must be objects.")

@@ -38,6 +38,18 @@ python .\scripts\manage_skill_dependencies.py adapt --settings .\config\defaults
 
 `install` requires `--yes` and must be used only after the user confirms installation. `skip` is valid only for recommended dependencies. `adapt` writes user-level dependency state to `${home}/.codex/erie-verilog-generator/dependency-state.json`; for `erie-remote-ssh`, this records the installed `scripts/remote_ssh.py` and `config/defaults.json` paths so remote validation can use the local installation without storing machine-specific helper paths in this skill.
 
+`fpga_developer_routing` records vendor-level developer skill preferences. AMD-Xilinx work recognizes `vivado-developer` and `vitis-developer`; PangoMicro work recognizes `pds-developer`. When any developer skill is installed, FPGA-Agent-Skills is not required and its Vivado/Vitis skills are not installed by this skill. If both vendor families are available, ask the user which vendor to use for the current FPGA workflow and persist only that vendor choice in the user-level state file.
+
+Developer routing commands:
+
+```powershell
+python .\scripts\manage_skill_dependencies.py fpga-route --settings .\config\defaults.json
+python .\scripts\manage_skill_dependencies.py select-fpga-vendor --settings .\config\defaults.json amd_xilinx
+python .\scripts\manage_skill_dependencies.py select-fpga-vendor --settings .\config\defaults.json pangomicro
+```
+
+If a persisted vendor choice becomes stale because its developer skill was removed, `fpga-route` reports `selection_stale`; ask again instead of silently falling back to another vendor.
+
 ## Local Validation
 
 Run the local confidence gate from the project root:

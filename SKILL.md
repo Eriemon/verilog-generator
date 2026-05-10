@@ -24,6 +24,23 @@ python .\scripts\manage_skill_dependencies.py prompt --settings .\config\default
 
 Install only after the user confirms, then run `adapt` and tell the user to restart Codex so newly installed skills are discovered. If the user declines required dependency installation, continue only with local static Verilog generation/validation and block remote SSH, Vivado, Vitis, execute, and implement readiness paths. If recommended dependencies are missing, ask the user whether to install or skip them; use `skip <dependency-id>` only for a user-declined recommended dependency.
 
+## FPGA Developer Routing
+
+Before FPGA simulation, synthesis, implementation, constraints, debug, project creation, or other vendor tool work, inspect the developer routing state:
+
+```powershell
+python .\scripts\manage_skill_dependencies.py fpga-route --settings .\config\defaults.json
+```
+
+If both AMD-Xilinx and PangoMicro developer skills are available and no current selection exists, ask the user which vendor to use for this workflow. Persist only the user-confirmed vendor choice:
+
+```powershell
+python .\scripts\manage_skill_dependencies.py select-fpga-vendor --settings .\config\defaults.json amd_xilinx
+python .\scripts\manage_skill_dependencies.py select-fpga-vendor --settings .\config\defaults.json pangomicro
+```
+
+Developer routing preference is: `vivado-developer`, then `vitis-developer`, for AMD-Xilinx work; `pds-developer` for PangoMicro work. When any of these developer skills is installed, do not install the FPGA-Agent-Skills Vivado/Vitis group. If no developer skill is installed, fall back to the FPGA-Agent-Skills dependency group.
+
 ## Workflow
 
 1. Confirm the design intent before generation: module name, ports, clock/reset, behavior, pipeline expectation, interface family, and verification cases.
@@ -46,7 +63,7 @@ python <erie-remote-ssh>\scripts\remote_ssh.py choices --settings <remote-settin
 
 Ask the user to select a remote server unless they already named one in the current request. A configured default server is only a recommendation; it is not user confirmation. After selection, use `erie-remote-ssh` for `check`, `scan-software`, `workspace-check`, request creation, and `run-request --execute`. If remote discovery sees multiple Vivado `settings64.sh` candidates, stop and ask the user which version to use; persist that confirmed choice in the user-level toolchain config before development or validation continues. Remote validation directories are retained by default under `.erie-verilog-generator-validation/run-YYYYMMDDTHHMMSS/erie-verilog-generator`, including `_smoke_runs` outputs; use `--cleanup-remote` only when the user wants the validation directory deleted. The remote gate must execute the canonical workflow plus the fixed RTL fixtures in `assets/examples/remote_fixtures` and retain each fixture `validation.json`. Use `--report-runs` for a read-only summary of retained remote runs. Do not add direct `ssh` or `scp` commands to this skill.
 
-For Vivado/Vitis project creation, Tcl execution, synthesis/implementation strategy, timing analysis, constraints, debug, simulation, or Vitis HLS work, route to the installed FPGA dependency skills (`vivado-tcl`, `vivado-sim`, `vivado-synth`, `vivado-impl`, `vivado-analysis`, `vivado-constraints`, `vivado-debug`, and `vitis-hls-synthesis`) instead of duplicating their guidance here.
+For Vivado/Vitis project creation, Tcl execution, synthesis/implementation strategy, timing analysis, constraints, debug, simulation, or Vitis HLS work, follow FPGA developer routing first. Use `vivado-developer` or `vitis-developer` for AMD-Xilinx, use `pds-developer` for PangoMicro, and route to the FPGA-Agent-Skills dependency skills (`vivado-tcl`, `vivado-sim`, `vivado-synth`, `vivado-impl`, `vivado-analysis`, `vivado-constraints`, `vivado-debug`, and `vitis-hls-synthesis`) only when no developer skill is installed.
 
 ## Host Integration
 
@@ -73,6 +90,8 @@ python .\scripts\manage_skill_dependencies.py check --settings .\config\defaults
 python .\scripts\manage_skill_dependencies.py prompt --settings .\config\defaults.json
 python .\scripts\manage_skill_dependencies.py install --settings .\config\defaults.json --dependency-id erie-remote-ssh --yes
 python .\scripts\manage_skill_dependencies.py adapt --settings .\config\defaults.json
+python .\scripts\manage_skill_dependencies.py fpga-route --settings .\config\defaults.json
+python .\scripts\manage_skill_dependencies.py select-fpga-vendor --settings .\config\defaults.json amd_xilinx
 ```
 
 Record a user-confirmed remote toolchain selection in the user folder:

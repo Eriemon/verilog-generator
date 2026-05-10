@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-1f6feb"></a>
   <a href="pyproject.toml"><img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2f81f7"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-v0.1.3-7c3aed">
+  <img alt="Version" src="https://img.shields.io/badge/version-v0.1.4-7c3aed">
   <a href="SKILL.md"><img alt="Agent Skill" src="https://img.shields.io/badge/agent-skill-16a34a"></a>
   <a href="ENGINEERING_DESIGN_GOALS.md"><img alt="Target" src="https://img.shields.io/badge/target-Verilog--2001-f59e0b"></a>
 </p>
@@ -113,8 +113,8 @@ from integration.verilog_adapter import (
   author       = {Jiyuan Liu},
   title        = {{Verilog Generator}: An Agent Skill for Verilog-2001 RTL Workflows},
   year         = {2026},
-  version      = {0.1.3},
-  date         = {2026-05-09},
+  version      = {0.1.4},
+  date         = {2026-05-10},
   url          = {https://github.com/Eriemon/verilog-generator},
   license      = {Apache-2.0},
   note         = {Agent skill package for disciplined Verilog-2001 RTL workflows}

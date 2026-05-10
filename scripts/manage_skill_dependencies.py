@@ -16,7 +16,7 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 if str(SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(SKILL_ROOT))
 
-from runtime.verilog_generator.config import load_settings, skill_dependency_settings  # noqa: E402
+from runtime.verilog_generator.config import fpga_developer_routing_settings, load_settings, skill_dependency_settings  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -36,6 +36,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "skip":
         record_skip(settings, args.dependency_id, state_path=state_path)
         print_json({"skipped": args.dependency_id, "state_path": str(state_path)})
+        return 0
+    if args.command == "select-fpga-vendor":
+        print_json(
+            select_fpga_vendor(
+                settings,
+                args.vendor_id,
+                skills_root=skills_root,
+                plugin_cache=plugin_cache,
+                state_path=state_path,
+            )
+        )
+        return 0
+    if args.command == "fpga-route":
+        print_json(fpga_route(settings, skills_root=skills_root, plugin_cache=plugin_cache, state_path=state_path))
         return 0
     if args.command == "adapt":
         print_json(adapt_dependencies(settings, skills_root=skills_root, plugin_cache=plugin_cache, state_path=state_path))
@@ -62,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
     skip = subparsers.add_parser("skip", help="Record a recommended dependency as skipped.")
     _add_common_args(skip)
     skip.add_argument("dependency_id")
+    select_vendor = subparsers.add_parser("select-fpga-vendor", help="Persist the user-selected FPGA vendor for developer skill routing.")
+    _add_common_args(select_vendor)
+    select_vendor.add_argument("vendor_id", choices=("amd_xilinx", "pangomicro"))
+    route = subparsers.add_parser("fpga-route", help="Report the selected FPGA developer skill route.")
+    _add_common_args(route)
+    route.set_defaults(command="fpga-route")
     install = subparsers.add_parser("install", help="Install missing dependencies after user confirmation.")
     _add_common_args(install)
     install.add_argument("--dependency-id", help="Install only one dependency id.")
@@ -91,7 +111,18 @@ def check_dependencies(
     state = read_state(state_path)
     skipped = _active_skipped_recommended(state, dependency_settings, settings.get("version"))
 
-    required = [_dependency_status(item, "required", skills_root, plugin_cache) for item in dependency_settings["required"]]
+    developer_skills = fpga_developer_status(settings, skills_root=skills_root, plugin_cache=plugin_cache, state_path=state_path)
+    developer_present = bool(developer_skills["available_vendors"])
+    fpga_agent_skipped = developer_present and not developer_skills["fpga_agent_required_when_developer_present"]
+
+    required = []
+    for item in dependency_settings["required"]:
+        status = _dependency_status(item, "required", skills_root, plugin_cache)
+        if item["id"] == "fpga-agent-skills" and fpga_agent_skipped:
+            status["present"] = True
+            status["missing_skills"] = []
+            status["skipped_by_developer_skill"] = True
+        required.append(status)
     recommended_all = [_dependency_status(item, "recommended", skills_root, plugin_cache) for item in dependency_settings["recommended"]]
     recommended = [item for item in recommended_all if item["id"] not in skipped]
 
@@ -105,6 +136,9 @@ def check_dependencies(
         "skills_root": str(skills_root),
         "plugin_cache": str(plugin_cache),
         "state_path": str(state_path),
+        "developer_skills": developer_skills,
+        "active_fpga_dependency_mode": "developer_skill" if developer_present else "fpga_agent_required",
+        "fpga_agent_skipped_by_developer_skill": fpga_agent_skipped,
         "required": required,
         "recommended": recommended_all,
         "missing_required": missing_required,
@@ -116,12 +150,20 @@ def check_dependencies(
 def prompt_for_missing(report: dict) -> str:
     missing_required = report.get("missing_required", [])
     missing_recommended = report.get("missing_recommended", [])
-    if not missing_required and not missing_recommended:
+    developer_skills = report.get("developer_skills", {})
+    selection_required = bool(developer_skills.get("selection_required"))
+    if not missing_required and not missing_recommended and not selection_required:
         return "All erie-verilog-generator skill dependencies are installed. Run adapt after a fresh install to refresh user-level helper paths."
     lines = [
         "erie-verilog-generator dependency check found missing skills.",
         "",
     ]
+    if selection_required:
+        lines.append("Multiple FPGA developer vendors are available. Ask the user which vendor to use for this FPGA workflow:")
+        for vendor_id in developer_skills.get("available_vendors", []):
+            vendor = developer_skills.get("vendors", {}).get(vendor_id, {})
+            lines.append(f"- {vendor.get('label', vendor_id)}: select-fpga-vendor {vendor_id}")
+        lines.append("")
     if missing_required:
         lines.append("Missing required dependency groups. These block remote/Vivado-related workflows until installed:")
         for item in missing_required:
@@ -196,6 +238,111 @@ def adapt_dependencies(
     return {"adapted": adapted, "blocked": [], "state_path": str(state_path)}
 
 
+def fpga_developer_status(
+    settings: dict,
+    *,
+    skills_root: Path | None = None,
+    plugin_cache: Path | None = None,
+    state_path: Path | None = None,
+) -> dict:
+    routing = fpga_developer_routing_settings(settings)
+    skills_root = (skills_root or default_skills_root()).expanduser()
+    plugin_cache = (plugin_cache or default_plugin_cache()).expanduser()
+    state_path = (state_path or routing["state_path"]).expanduser()
+    state = read_state(state_path)
+    selected = _fpga_selection_from_state(state)
+    vendors: dict[str, dict] = {}
+    available_vendors: list[str] = []
+    for vendor_id, vendor in routing["vendors"].items():
+        skill_paths: dict[str, str] = {}
+        for skill in vendor["skills"]:
+            found = find_skill(skill, skills_root, plugin_cache)
+            if found:
+                skill_paths[skill] = str(found)
+        selected_skill = next((skill for skill in vendor["skills"] if skill in skill_paths), None)
+        present = selected_skill is not None
+        if present:
+            available_vendors.append(vendor_id)
+        vendors[vendor_id] = {
+            "label": vendor["label"],
+            "skills": vendor["skills"],
+            "present": present,
+            "selected_skill": selected_skill,
+            "skill_paths": skill_paths,
+        }
+    selected_vendor = selected.get("vendor") if isinstance(selected, dict) else None
+    selection_valid = bool(selected_vendor in available_vendors)
+    selection_stale = bool(selected_vendor and not selection_valid)
+    selection_required = len(available_vendors) > 1 and not selection_valid
+    return {
+        "state_path": str(state_path),
+        "available_vendors": available_vendors,
+        "vendors": vendors,
+        "selected_vendor": selected_vendor if selection_valid else None,
+        "selection_required": selection_required,
+        "selection_stale": selection_stale,
+        "fpga_agent_required_when_developer_present": routing["fpga_agent_required_when_developer_present"],
+    }
+
+
+def select_fpga_vendor(
+    settings: dict,
+    vendor_id: str,
+    *,
+    skills_root: Path | None = None,
+    plugin_cache: Path | None = None,
+    state_path: Path | None = None,
+) -> dict:
+    status = fpga_developer_status(settings, skills_root=skills_root, plugin_cache=plugin_cache, state_path=state_path)
+    vendor = status["vendors"].get(vendor_id)
+    if not vendor:
+        raise ValueError(f"Unknown FPGA vendor: {vendor_id}")
+    if not vendor["present"]:
+        raise ValueError(f"FPGA vendor {vendor_id} has no installed developer skill.")
+    path = Path(state_path or status["state_path"]).expanduser()
+    state = read_state(path)
+    state["fpga_developer_selection"] = {
+        "vendor": vendor_id,
+        "skill": vendor["selected_skill"],
+        "updated_at": utc_now(),
+    }
+    state.setdefault("version", 1)
+    state["updated_at"] = utc_now()
+    write_state(path, state)
+    return {
+        "selected_vendor": vendor_id,
+        "selected_skill": vendor["selected_skill"],
+        "state_path": str(path),
+    }
+
+
+def fpga_route(
+    settings: dict,
+    *,
+    skills_root: Path | None = None,
+    plugin_cache: Path | None = None,
+    state_path: Path | None = None,
+) -> dict:
+    status = fpga_developer_status(settings, skills_root=skills_root, plugin_cache=plugin_cache, state_path=state_path)
+    available = status["available_vendors"]
+    if not available:
+        dependency_settings = skill_dependency_settings(settings)
+        fpga = next(item for item in dependency_settings["required"] if item["id"] == "fpga-agent-skills")
+        return {"status": "fpga_agent", "fallback_skills": fpga["skills"]}
+    if status["selection_stale"]:
+        return {"status": "selection_stale", "available_vendors": available}
+    if status["selection_required"]:
+        return {"status": "selection_required", "available_vendors": available}
+    selected_vendor = status["selected_vendor"] or available[0]
+    vendor = status["vendors"][selected_vendor]
+    return {
+        "status": "ready",
+        "selected_vendor": selected_vendor,
+        "selected_skill": vendor["selected_skill"],
+        "skill_path": vendor["skill_paths"][vendor["selected_skill"]],
+    }
+
+
 def install_missing(settings: dict, report: dict, dependency_id: str | None = None, *, installer: Path | None = None) -> dict:
     dependency_settings = skill_dependency_settings(settings)
     dependencies = {item["id"]: item for item in [*dependency_settings["required"], *dependency_settings["recommended"]]}
@@ -203,12 +350,18 @@ def install_missing(settings: dict, report: dict, dependency_id: str | None = No
     if dependency_id:
         missing = [item for item in missing if item["id"] == dependency_id]
     if not missing:
+        if dependency_id == "fpga-agent-skills" and report.get("fpga_agent_skipped_by_developer_skill"):
+            return {"installed": [], "skipped": [{"dependency_id": "fpga-agent-skills", "reason": "developer skill is installed"}], "restart_required": False}
         return {"installed": [], "message": "No missing dependencies selected."}
     installer = installer or default_installer_script()
     if not installer.is_file():
         raise FileNotFoundError(f"Missing skill installer helper: {installer}")
     installed: list[str] = []
+    skipped: list[dict] = []
     for status in missing:
+        if status["id"] == "fpga-agent-skills" and report.get("fpga_agent_skipped_by_developer_skill"):
+            skipped.append({"dependency_id": "fpga-agent-skills", "reason": "developer skill is installed"})
+            continue
         dependency = dependencies[status["id"]]
         repo = github_repo_slug(dependency["url"])
         selected_specs = _selected_install_specs(dependency, status["missing_skills"])
@@ -218,7 +371,12 @@ def install_missing(settings: dict, report: dict, dependency_id: str | None = No
                 command.extend(["--name", str(spec["dest_name"])])
             subprocess.run(command, check=True)
             installed.append(str(spec["skill"]))
-    return {"installed": installed, "restart_required": True}
+    return {"installed": installed, "skipped": skipped, "restart_required": bool(installed)}
+
+
+def _fpga_selection_from_state(state: dict) -> dict:
+    selection = state.get("fpga_developer_selection", {})
+    return selection if isinstance(selection, dict) else {}
 
 
 def _install_specs_by_skill(dependency: dict) -> dict[str, dict]:

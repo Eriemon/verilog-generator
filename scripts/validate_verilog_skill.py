@@ -15,7 +15,7 @@ PROJECT_ROOT = SKILL_ROOT.parent
 if str(SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(SKILL_ROOT))
 
-from runtime.verilog_generator.config import load_settings, path_setting, skill_dependency_settings  # noqa: E402
+from runtime.verilog_generator.config import fpga_developer_routing_settings, load_settings, path_setting, skill_dependency_settings  # noqa: E402
 
 LEGACY_TERMS = (
     "H" + "LS",
@@ -149,15 +149,15 @@ def _allowed_dependency_term_line(rel: str, line: str) -> bool:
     if rel in {"README.md", "README-CN.md"}:
         return "does not generate " + "H" + "LS" in line or "不生成 " + "H" + "LS" in line
     if rel == "config/defaults.json":
-        return any(marker in line for marker in ("fpga-agent-skills", "Vivado/Vitis", "vitis-hls-synthesis", '"skill": "vitis-', '"source_path": "vitis-'))
+        return any(marker in line for marker in ("fpga-agent-skills", "Vivado/Vitis", "vitis-hls-synthesis", "vitis-developer", '"skill": "vitis-', '"source_path": "vitis-'))
     if rel == "SKILL.md":
-        return "dependency" in line.lower() or "route to the installed FPGA" in line
+        return "dependency" in line.lower() or "route to the installed FPGA" in line or "developer routing" in line.lower()
     if rel == "references/configuration.md":
-        return any(marker in line for marker in ("dependency", "provides", "recommended groups", "required groups", "Vivado/Vitis", "vitis-hls-synthesis"))
+        return any(marker in line for marker in ("dependency", "provides", "recommended groups", "required groups", "Vivado/Vitis", "vitis-hls-synthesis", "vitis-developer", "developer routing"))
     if rel == "scripts/validate_verilog_skill.py":
-        return "FPGA-Agent-skills dependency" in line or "vitis-hls-synthesis" in line
+        return "FPGA-Agent-skills dependency" in line or "vitis-hls-synthesis" in line or "vitis-developer" in line
     if rel == "smoke/run_smoke.py":
-        return "vitis-hls-synthesis" in line or "Vivado/Vitis" in line
+        return "vitis-hls-synthesis" in line or "vitis-developer" in line or "Vivado/Vitis" in line
     return False
 
 
@@ -174,6 +174,7 @@ def _contains_legacy_term(line: str) -> bool:
 
 def verify_dependency_schema(settings: dict) -> None:
     dependencies = skill_dependency_settings(settings)
+    routing = fpga_developer_routing_settings(settings)
     required_urls = {item["url"] for item in dependencies["required"]}
     recommended_urls = {item["url"] for item in dependencies["recommended"]}
     if required_urls != {
@@ -189,6 +190,14 @@ def verify_dependency_schema(settings: dict) -> None:
     fpga = next(item for item in dependencies["required"] if item["id"] == "fpga-agent-skills")
     if len(fpga["skills"]) != 8:
         raise AssertionError("FPGA-Agent-skills dependency must include all 8 Vivado/Vitis skills.")
+    if routing["selection_policy"] != "ask_on_first_fpga_workflow":
+        raise AssertionError("FPGA developer routing must ask on first FPGA workflow.")
+    if routing["fpga_agent_required_when_developer_present"] is not False:
+        raise AssertionError("FPGA-Agent-skills must not be required when a developer skill is installed.")
+    if routing["vendors"]["amd_xilinx"]["skills"] != ["vivado-developer", "vitis-developer"]:
+        raise AssertionError("AMD-Xilinx developer routing must recognize vivado-developer and vitis-developer.")
+    if routing["vendors"]["pangomicro"]["skills"] != ["pds-developer"]:
+        raise AssertionError("PangoMicro developer routing must recognize pds-developer.")
 
 
 def verify_hardcoded_paths() -> None:
