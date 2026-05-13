@@ -113,7 +113,7 @@ For questions, collaboration, or academic use, contact: [erie@seu.edu.cn](mailto
 
 ## Citation
 
-This skill is maintained by authors from the Heterogeneous Intelligence and Quantum Computing Laboratory, School of Electronic Science and Engineering, Southeast University.
+This skill is maintained by authors from the Heterogeneous Intelligence and Quantum Computing Laboratory(HIQC), School of Electronic Science and Engineering, Southeast University.
 
 If this skill helps your research, teaching, or engineering workflow, please cite it. The canonical citation metadata is maintained in [CITATION.cff](CITATION.cff).
 
