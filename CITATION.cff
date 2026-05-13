@@ -6,6 +6,10 @@ authors:
   - family-names: "Liu"
     given-names: "Jiyuan"
     email: "erie@seu.edu.cn"
+    affiliation: "Southeast University"
+  - family-names: "Li"
+    given-names: "He"
+    affiliation: "Southeast University"
 abstract: "Verilog Generator is a Codex-ready agent skill package for disciplined Verilog-2001 RTL workflows, including confirmed hardware specifications, deterministic runtime helpers, synthesizable RTL generation, self-checking testbenches, and validation evidence."
 keywords:
   - agent skill

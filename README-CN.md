@@ -100,17 +100,24 @@ from integration.verilog_adapter import (
 - 为了更容易进行波形调试，优先使用显式逻辑，而不是 Verilog `function` 和 `task`。
 - 本地密钥、私有硬件设计、生成缓存和私有远程服务器细节不应进入仓库。
 
+## 机构说明
+
+Jiyuan Liu 和 He Li 隶属于东南大学电子科学与工程学院。
+两位作者所在团队为东南大学电子科学与工程学院异构智能与量子计算实验室（HIQC课题组），相关工作面向异构智能、量子计算及相关计算系统研究。
+
 ## 联系方式
 
 问题、合作或学术使用，请联系：[erie@seu.edu.cn](mailto:erie@seu.edu.cn)。
 
 ## 引用
 
+本 skill 由东南大学电子科学与工程学院异构智能与量子计算实验室（HIQC课题组）相关作者维护。
+
 如果本 skill 对你的研究、教学或工程流程有帮助，请引用。规范引用元数据以 [CITATION.cff](CITATION.cff) 为准。
 
 ```bibtex
 @software{liu_2026_verilog_generator,
-  author       = {Jiyuan Liu},
+  author       = {Jiyuan Liu and He Li},
   title        = {{Verilog Generator}: An Agent Skill for Verilog-2001 RTL Workflows},
   year         = {2026},
   version      = {0.1.5},

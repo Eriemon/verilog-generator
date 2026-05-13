@@ -9,7 +9,10 @@ description = "Agent-usable Codex skill for Verilog-2001 RTL generation workflow
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
-authors = [{ name = "Jiyuan Liu", email = "erie@seu.edu.cn" }]
+authors = [
+  { name = "Jiyuan Liu", email = "erie@seu.edu.cn" },
+  { name = "He Li" },
+]
 keywords = ["codex-skill", "agent-skill", "verilog", "rtl", "fpga", "hardware-generation"]
 classifiers = [
   "Development Status :: 3 - Alpha",
