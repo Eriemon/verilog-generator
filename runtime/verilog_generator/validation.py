@@ -17,6 +17,7 @@ from .config import load_settings
 from .interface_contract import audit_interface
 from .prompt import require_comment_language
 from .spec import normalize_spec
+from .static_lint import lint_generated_rtl
 from .vectors import VECTOR_HASH_TAG, extract_vector_hashes, find_vector_contracts
 from .verifier import plan_contract_interface_issues
 
@@ -151,6 +152,7 @@ def validate_generated(
     issues.extend(_validate_expected_outputs(normalized, root))
     issues.extend(_validate_vector_contracts(root))
     issues.extend(_validate_rtl(normalized, root))
+    issues.extend(_static_lint_issues(normalized, root))
     issues.extend(_contract_gate_issues(plan_contract_interface_issues(normalized, audit_interface("rtl", root))))
     issues.extend(_validate_rtl_reviewability(root, comment_language))
     issues.extend(_validate_rtl_style_profile(normalized, root))
@@ -174,6 +176,24 @@ def _contract_gate_issues(raw_issues: list[dict[str, Any]]) -> list[ValidationIs
         )
         for item in raw_issues
     ]
+
+
+def _static_lint_issues(spec: dict[str, Any], root: Path) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    for issue in lint_generated_rtl(spec, root):
+        detail = f"{issue.code} at line {issue.line}"
+        issues.append(
+            ValidationIssue(
+                issue.severity,
+                issue.message,
+                issue.path,
+                "static",
+                issue.source,
+                tool="erie_static_lint",
+                detail=detail,
+            )
+        )
+    return issues
 
 
 def _validate_expected_outputs(spec: dict[str, Any], root: Path) -> list[ValidationIssue]:

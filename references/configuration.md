@@ -6,8 +6,8 @@ Use `config/defaults.json` as the single source for local and remote validation 
 
 Settings support these placeholders:
 
-- `${skill_dir}`: the `erie-verilog-generator` skill directory.
-- `${project_root}`: the directory that contains `erie-verilog-generator`.
+- `${skill_dir}`: the `skills/erie-verilog-generator` skill directory.
+- `${project_root}`: the repository root that contains `skills/`.
 - `${settings_dir}`: the directory that contains the settings JSON being loaded.
 - `${home}`: the current user's home directory.
 - `${env:NAME}`: an environment variable value.
@@ -58,7 +58,7 @@ If a persisted vendor choice becomes stale because its developer skill was remov
 Run the local confidence gate from the project root:
 
 ```powershell
-python .\erie-verilog-generator\scripts\validate_verilog_skill.py --settings .\erie-verilog-generator\config\defaults.json
+python .\skills\erie-verilog-generator\scripts\validate_verilog_skill.py --settings .\skills\erie-verilog-generator\config\defaults.json
 ```
 
 The script runs standard skill validation, compile checks, smoke tests, CLI checks, legacy-term scanning, hardcoded-path scanning, and residual-artifact cleanup.
@@ -66,7 +66,7 @@ The script runs standard skill validation, compile checks, smoke tests, CLI chec
 Run the local toolchain preflight when a caller asks for compile, execute, or implement readiness:
 
 ```powershell
-python .\erie-verilog-generator\scripts\preflight_verilog_toolchain.py --settings .\erie-verilog-generator\config\defaults.json --readiness execute
+python .\skills\erie-verilog-generator\scripts\preflight_verilog_toolchain.py --settings .\skills\erie-verilog-generator\config\defaults.json --readiness execute
 ```
 
 If the report sets `remote_selection_required=true`, run `erie-remote-ssh discover` and `choices`, then ask the user to select a server before remote validation. A configured default server is only a recommendation unless `server_confirmed=true`.
@@ -98,13 +98,13 @@ The default remote settings point to:
 - helper: `${home}/.codex/skills/erie-remote-ssh/scripts/remote_ssh.py`, overridden by dependency adaptation state after `adapt`
 - remote settings: `${home}/.codex/skills/erie-remote-ssh/config/defaults.json`, overridden by dependency adaptation state after `adapt`
 - server list: `${home}/.codex/erie-verilog-generator/server_list.local.json`; create this user-local file with the `erie-remote-ssh` server-list JSON before remote validation
-- recommended server selector: `<selected-server>` after the user chooses a target from `erie-remote-ssh choices`
+- recommended server selector: `server_2` (`FPGA-Server-U50`)
 - user toolchain selection config: `${home}/.codex/erie-verilog-generator/remote_toolchain_selection.json`
 
 Run the remote gate:
 
 ```powershell
-python .\erie-verilog-generator\scripts\remote_validate_verilog_skill.py --settings .\erie-verilog-generator\config\defaults.json --server <selected-server>
+python .\skills\erie-verilog-generator\scripts\remote_validate_verilog_skill.py --settings .\skills\erie-verilog-generator\config\defaults.json --server server_2
 ```
 
 The remote script uses `python -X utf8` to avoid Windows console decoding failures while invoking `erie-remote-ssh`. It performs `discover`, `list`, `check`, `scan-software`, and `workspace-check`, then stages a temporary validation copy on the remote server through `request-mkdir`, `request-upload`, `request-command`, and `run-request --execute`. Before selecting a simulator, the remote command scans Vivado `settings64.sh` candidates from `$XILINX_VIVADO`, `/tools/Xilinx/Vivado/*/settings64.sh`, and `/opt/Xilinx/Vivado/*/settings64.sh`. If more than one Vivado candidate exists and no user-confirmed config is present, the gate fails with `TOOLCHAIN_SELECTION_REQUIRED=1` and prints the available choices.
@@ -112,7 +112,7 @@ The remote script uses `python -X utf8` to avoid Windows console decoding failur
 Write a confirmed toolchain choice after the user selects a version:
 
 ```powershell
-python .\erie-verilog-generator\scripts\remote_validate_verilog_skill.py --settings .\erie-verilog-generator\config\defaults.json --server <selected-server> --write-toolchain-selection --simulator-backend xsim --vivado-settings /tools/Xilinx/Vivado/<version>/settings64.sh
+python .\skills\erie-verilog-generator\scripts\remote_validate_verilog_skill.py --settings .\skills\erie-verilog-generator\config\defaults.json --server server_2 --write-toolchain-selection --simulator-backend xsim --vivado-settings /tools/Xilinx/Vivado/<version>/settings64.sh
 ```
 
 The user config records selections by server id under `remote_toolchains`, for example `simulator_backend=xsim` and `vivado_settings64=/tools/Xilinx/Vivado/<version>/settings64.sh`. A selected backend can also be `iverilog`; in that case Vivado activation is skipped and validation uses the configured simulator priority override for that run.
@@ -124,7 +124,7 @@ Each remote gate validates the canonical workflow and the fixed RTL fixtures in 
 List retained runs without staging a new run:
 
 ```powershell
-python .\erie-verilog-generator\scripts\remote_validate_verilog_skill.py --settings .\erie-verilog-generator\config\defaults.json --server <selected-server> --report-runs
+python .\skills\erie-verilog-generator\scripts\remote_validate_verilog_skill.py --settings .\skills\erie-verilog-generator\config\defaults.json --server server_2 --report-runs
 ```
 
 The gate must use the highest simulator backend actually available on the selected server: Vivado xsim, then VCS+Verdi, then iverilog/vvp. If higher-priority simulators are later provided, the same gate must require the highest available backend instead of preserving an older fallback expectation. If `yosys` is not detected, implement readiness must block with `toolchain_issue`; if `yosys` is later provided, implement readiness must pass instead of preserving an older blocked expectation.

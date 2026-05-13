@@ -121,8 +121,6 @@ def verify_markdown_ascii() -> None:
         if path.suffix.lower() != ".md":
             continue
         rel = path.relative_to(SKILL_ROOT).as_posix()
-        if rel in {"README.md", "README-CN.md"}:
-            continue
         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if any(ord(char) > 127 for char in line):
                 violations.append(f"{rel}:{line_number}")
@@ -139,15 +137,13 @@ def verify_legacy_terms(settings: dict) -> None:
         if rel in allowlist:
             continue
         for line_number, line in enumerate(text.splitlines(), start=1):
-            if _contains_legacy_term(line) and not _allowed_dependency_term_line(rel, line):
+            if any(term in line for term in LEGACY_TERMS) and not _allowed_dependency_term_line(rel, line):
                 violations.append(f"{rel}:{line_number}")
     if violations:
         raise AssertionError("Legacy generation terms found outside allowlist: " + ", ".join(sorted(violations)))
 
 
 def _allowed_dependency_term_line(rel: str, line: str) -> bool:
-    if rel in {"README.md", "README-CN.md"}:
-        return "does not generate " + "H" + "LS" in line or "不生成 " + "H" + "LS" in line
     if rel == "config/defaults.json":
         return any(marker in line for marker in ("fpga-agent-skills", "Vivado/Vitis", "vitis-hls-synthesis", "vitis-developer", '"skill": "vitis-', '"source_path": "vitis-'))
     if rel == "SKILL.md":
@@ -160,17 +156,6 @@ def _allowed_dependency_term_line(rel: str, line: str) -> bool:
         return any(marker in line for marker in ("FPGA-Agent", "Vivado/Vitis", "vitis-developer", "vitis-hls-synthesis", '"vivado-'))
     if rel == "smoke/run_smoke.py":
         return "vitis-hls-synthesis" in line or "vitis-developer" in line or "Vivado/Vitis" in line
-    return False
-
-
-def _contains_legacy_term(line: str) -> bool:
-    for term in LEGACY_TERMS:
-        if term == "." + "sv":
-            if re.search(r"(?<![A-Za-z0-9_])\." + "sv" + r"(?![A-Za-z0-9_])", line):
-                return True
-            continue
-        if term in line:
-            return True
     return False
 
 
@@ -254,7 +239,7 @@ def remove_inside_skill(path: Path) -> None:
 
 
 def iter_skill_files() -> list[Path]:
-    ignored_parts = {".git", "__pycache__", "_smoke_runs", "reports"}
+    ignored_parts = {"__pycache__", "_smoke_runs", "reports"}
     files: list[Path] = []
     for path in SKILL_ROOT.rglob("*"):
         if not path.is_file():

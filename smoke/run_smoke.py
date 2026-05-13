@@ -14,6 +14,7 @@ from pathlib import Path
 import importlib.util
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = ROOT.parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -43,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         _run_markdown_ascii_gate()
         _run_skill_metadata_gate()
+        _run_repo_governance_version_gate()
         _run_mock_workflow(base, example_spec)
         _run_invalid_response(base)
         _run_target_rejection(base)
@@ -50,7 +52,11 @@ def main(argv: list[str] | None = None) -> int:
         _run_prompt_extract_validate(base)
         _run_interface_bus_policy_gate()
         _run_interface_template_gate(base)
+        _run_static_lint_quality_gate(base)
         _run_verilog_only_artifact_gate(base)
+        _run_reference_loading_gate()
+        _run_verilog_lint_script_gate(base)
+        _run_tb_generator_script_gate(base)
         _run_dependency_config_gate(settings)
         _run_dependency_manager_gate(base, settings)
         _run_remote_selection_preflight_gate(base)
@@ -71,8 +77,6 @@ def _run_markdown_ascii_gate() -> None:
     violations: list[str] = []
     for path in ROOT.rglob("*.md"):
         rel = path.relative_to(ROOT).as_posix()
-        if rel in {"README.md", "README-CN.md"}:
-            continue
         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if any(ord(char) > 127 for char in line):
                 violations.append(f"{rel}:{line_number}")
@@ -109,6 +113,33 @@ def _run_skill_metadata_gate() -> None:
     assert 'short_description: "Generate, modify, debug, and validate Verilog RTL."' in openai_yaml
     assert 'default_prompt: "Use $erie-verilog-generator to design, modify, debug, and validate synthesizable Verilog RTL."' in openai_yaml
     assert "allow_implicit_invocation: true" in openai_yaml
+    assert "ASIC quality review" in skill_text
+    assert "independent static lint" in skill_text
+    assert "testbench scaffold" in skill_text
+    assert "optional workflow steps" in skill_text
+    assert "Strict quality control is mandatory." in skill_text
+    assert "Optional helper tools are inside the workflow" in skill_text
+    assert "references/asic-verilog-quality.md" in skill_text
+    assert "references/lint-checklist.md" in skill_text
+    assert "references/testbench-patterns.md" in skill_text
+
+
+def _run_repo_governance_version_gate() -> None:
+    if not (REPO_ROOT / "AGENTS.md").exists():
+        return
+    if not (REPO_ROOT / "docs").exists():
+        return
+    root_agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    assert "agents_version=v0.4.9; generator_version=v0.4.9" in root_agents, root_agents
+    assert "- Version: v0.4.9." in root_agents, root_agents
+
+    development_doc = (REPO_ROOT / "docs" / "development" / "DEVELOPMENT.md").read_text(encoding="utf-8")
+    assert "v0.4.9-agents-bootstrap" in development_doc, development_doc
+    assert "v0.4.6" not in development_doc and "v0.4.7" not in development_doc and "v0.4.8" not in development_doc, development_doc
+
+    handoff_doc = (REPO_ROOT / "docs" / "handoff" / "HANDOFF.md").read_text(encoding="utf-8")
+    assert "rebuild_required=false" not in handoff_doc, handoff_doc
+    assert "v0.4.6" not in handoff_doc and "v0.4.7" not in handoff_doc and "v0.4.8" not in handoff_doc, handoff_doc
 
 
 def _run_mock_workflow(base: Path, example_spec: Path) -> None:
@@ -164,6 +195,9 @@ def _run_prompt_extract_validate(base: Path) -> None:
     assert "RTL implementation generation" in prompt_text
     assert "Verilog-2001" in prompt_text
     assert "Avoid Verilog function/task blocks" in prompt_text
+    assert "Do not create raw gated clocks" in prompt_text
+    assert "Use complete combinational assignments" in prompt_text
+    assert "Document CDC and reset assumptions" in prompt_text
     assert "state-task processing" not in prompt_text
     assert "main-task processing" not in prompt_text
     assert "AXI-Stream for streaming data" in prompt_text
@@ -389,6 +423,163 @@ def _run_verilog_only_artifact_gate(base: Path) -> None:
             assert any("Unexpected Verilog artifact" in item["message"] and item["path"] == rel_path for item in report["issues"]), report
         else:
             assert any("Only declared Verilog .v artifacts" in item["message"] and item["path"] == rel_path for item in report["issues"]), report
+
+
+def _run_static_lint_quality_gate(base: Path) -> None:
+    spec = _rtl_smoke_spec()
+
+    generated_dir = _write_mock_rtl_artifacts(spec, base / "static-lint" / "task-function" / "generated")
+    rtl_path = generated_dir / "rtl" / "erie_adapter.v"
+    rtl_path.write_text(
+        rtl_path.read_text(encoding="utf-8")
+        + "\nfunction bad_helper;\n    input bad_in;\n    bad_helper = bad_in;\nendfunction\n",
+        encoding="utf-8",
+    )
+    report = validate_verilog_artifacts(spec, generated_dir, run_external=False)
+    assert report["ok"] is False, report
+    assert any(item["tool"] == "erie_static_lint" and "function" in item["message"] for item in report["issues"]), report
+
+    generated_dir = _write_mock_rtl_artifacts(spec, base / "static-lint" / "case-default" / "generated")
+    rtl_path = generated_dir / "rtl" / "erie_adapter.v"
+    rtl_path.write_text(
+        rtl_path.read_text(encoding="utf-8")
+        + "\nalways @(*) begin\n    case (i_in_data[0])\n        1'b0: flag_tmp = 1'b0;\n        1'b1: flag_tmp = 1'b1;\n    endcase\nend\n",
+        encoding="utf-8",
+    )
+    report = validate_verilog_artifacts(spec, generated_dir, run_external=False)
+    assert report["ok"] is True, report
+    assert any(item["tool"] == "erie_static_lint" and item["severity"] == "warning" and "default" in item["message"] for item in report["issues"]), report
+
+    generated_dir = _write_mock_rtl_artifacts(spec, base / "static-lint" / "raw-gated-clock" / "generated")
+    rtl_path = generated_dir / "rtl" / "erie_adapter.v"
+    rtl_path.write_text(
+        rtl_path.read_text(encoding="utf-8")
+        + "\nwire gated_clk;\nassign gated_clk = i_clk & i_in_valid;\n",
+        encoding="utf-8",
+    )
+    report = validate_verilog_artifacts(spec, generated_dir, run_external=False)
+    assert report["ok"] is False, report
+    assert any(item["tool"] == "erie_static_lint" and "gated clock" in item["message"] for item in report["issues"]), report
+
+    generated_dir = _write_mock_rtl_artifacts(spec, base / "static-lint" / "tb-constructs" / "generated")
+    report = validate_verilog_artifacts(spec, generated_dir, run_external=False)
+    assert report["ok"] is True, report
+    assert not any(item["tool"] == "erie_static_lint" and item["source"] == "testbench_issue" for item in report["issues"]), report
+
+
+def _run_reference_loading_gate() -> None:
+    lint_checklist = (ROOT / "references" / "lint-checklist.md").read_text(encoding="utf-8")
+    assert "Category A: Synthesis Errors" in lint_checklist, lint_checklist
+    assert "CDC" in lint_checklist and "RDC" in lint_checklist, lint_checklist
+    assert "verilator" in lint_checklist and "verible" in lint_checklist and "slang" in lint_checklist, lint_checklist
+
+    testbench_patterns = (ROOT / "references" / "testbench-patterns.md").read_text(encoding="utf-8")
+    assert "Simple Directed Testbench" in testbench_patterns, testbench_patterns
+    assert "Self-Checking Testbench" in testbench_patterns, testbench_patterns
+    assert "class-based verification environments" in testbench_patterns, testbench_patterns
+    assert "out of the current skill boundary" in testbench_patterns, testbench_patterns
+
+
+def _run_verilog_lint_script_gate(base: Path) -> None:
+    rtl_path = base / "lint-script" / "bad_rtl.v"
+    rtl_path.parent.mkdir(parents=True, exist_ok=True)
+    rtl_path.write_text(
+        "module bad_rtl(input wire i_clk, input wire i_rstn, output reg o_flag);\n"
+        "always @(i_clk) begin\n"
+        "    o_flag = 1'b0;\n"
+        "end\n"
+        "function bad_helper;\n"
+        "    input bad_in;\n"
+        "    bad_helper = bad_in;\n"
+        "endfunction\n"
+        "endmodule\n",
+        encoding="utf-8",
+    )
+    lint_cli = subprocess.run(
+        [sys.executable, "scripts/verilog_lint.py", str(rtl_path)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert lint_cli.returncode != 0, lint_cli.stdout
+    lint_output = lint_cli.stdout + lint_cli.stderr
+    assert "NO_TASK_FUNCTION" in lint_output, lint_output
+    assert "ALWAYS_STAR" in lint_output, lint_output
+    assert "UTF-8" in lint_output, lint_output
+
+    tb_path = base / "lint-script" / "good_tb_tb.v"
+    tb_path.write_text(
+        "module good_tb_tb;\n"
+        "initial begin\n"
+        "    #10;\n"
+        "    $display(\"PASS\");\n"
+        "end\n"
+        "endmodule\n",
+        encoding="utf-8",
+    )
+    tb_cli = subprocess.run(
+        [sys.executable, "scripts/verilog_lint.py", str(tb_path), "--mode", "tb"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert tb_cli.returncode == 0, tb_cli.stdout + tb_cli.stderr
+
+
+def _run_tb_generator_script_gate(base: Path) -> None:
+    rtl_path = base / "tb-generator" / "sample_module.v"
+    rtl_path.parent.mkdir(parents=True, exist_ok=True)
+    rtl_path.write_text(
+        "module sample_module(\n"
+        "    input wire i_clk,\n"
+        "    input wire i_rstn,\n"
+        "    input wire [7:0] i_data,\n"
+        "    output wire [7:0] o_data\n"
+        ");\n"
+        "assign o_data = i_data;\n"
+        "endmodule\n",
+        encoding="utf-8",
+    )
+    out_path = base / "tb-generator" / "tb_sample_module.v"
+    tb_cli = subprocess.run(
+        [sys.executable, "scripts/tb_generator.py", str(rtl_path), "--output", str(out_path)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert tb_cli.returncode == 0, tb_cli.stdout + tb_cli.stderr
+    tb_text = out_path.read_text(encoding="utf-8")
+    assert "Reference vector hash placeholder" in tb_text, tb_text
+    assert "PASS" in tb_text and "FAIL" in tb_text, tb_text
+    assert "always #(CLK_PERIOD/2)" in tb_text, tb_text
+    assert "task apply_reset;" in tb_text, tb_text
+
+    body_style_path = base / "tb-generator" / "body_style_module.v"
+    body_style_path.write_text(
+        "module body_style_module(i_clk, i_rstn, i_data, o_data);\n"
+        "input i_clk;\n"
+        "input i_rstn;\n"
+        "input [15:0] i_data;\n"
+        "output [15:0] o_data;\n"
+        "assign o_data = i_data;\n"
+        "endmodule\n",
+        encoding="utf-8",
+    )
+    body_out = base / "tb-generator" / "tb_body_style_module.v"
+    body_cli = subprocess.run(
+        [sys.executable, "scripts/tb_generator.py", str(body_style_path), "--output", str(body_out)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert body_cli.returncode == 0, body_cli.stdout + body_cli.stderr
+    body_text = body_out.read_text(encoding="utf-8")
+    assert "[15:0] i_data;" in body_text, body_text
+    assert "module tb_body_style_module;" in body_text, body_text
 
 
 def _run_dependency_config_gate(settings: dict) -> None:
@@ -743,12 +934,7 @@ def _run_remote_selection_preflight_gate(base: Path) -> None:
     assert cli.returncode == 0, cli.stderr
     report = json.loads(cli.stdout)
     assert report["remote_selection_required"] is True, report
-    assert report["remote"]["recommended_server"] == "<selected-server>", report
-    assert report["remote"]["recommended_server_name"] == "<user-selected-server>", report
-    forbidden_server_id = "server" + "_2"
-    forbidden_server_name = "FPGA" + "-Server-U50"
-    assert forbidden_server_id not in json.dumps(report), report
-    assert forbidden_server_name not in json.dumps(report), report
+    assert report["remote"]["recommended_server"] == "server_2", report
     assert report["remote"]["server_confirmed"] is False, report
     assert "erie-remote-ssh discover and choices" in report["required_action"], report
 
@@ -817,9 +1003,8 @@ def _run_remote_toolchain_selection_gate(base: Path) -> None:
         "confirmed_by_user": True,
         "updated_at": "2026-05-08T00:00:00Z",
     }
-    selected_server = "selected-server"
-    module.write_toolchain_selection(config_path, selected_server, selection)
-    loaded = module.load_toolchain_selection(config_path, selected_server)
+    module.write_toolchain_selection(config_path, "server_2", selection)
+    loaded = module.load_toolchain_selection(config_path, "server_2")
     assert loaded["simulator_backend"] == "xsim", loaded
     assert loaded["vivado_settings64"] == "/tools/Xilinx/Vivado/2023.2/settings64.sh", loaded
 
@@ -960,7 +1145,7 @@ def _run_remote_report_gate(base: Path) -> None:
 
     module.run_helper = fake_run_helper
     try:
-        report = module.report_remote_runs(Path("helper.py"), Path("settings.json"), Path("servers.json"), "selected-server", ".erie-verilog-generator-validation", 1)
+        report = module.report_remote_runs(Path("helper.py"), Path("settings.json"), Path("servers.json"), "server_2", ".erie-verilog-generator-validation", 1)
     finally:
         module.run_helper = old_run_helper
     assert report["status"] == "ok", report

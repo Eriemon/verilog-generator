@@ -17,6 +17,8 @@ The skill combines four standard skill design patterns:
 
 The Python runtime is kept because deterministic scaffolding, prompt rendering, extraction, validation, tracing, and resume behavior are too fragile to repeat only through prose instructions. The runtime must remain Verilog-only at its public interfaces and internal target checks.
 
+Independent static lint and testbench scaffold helpers are part of the overall skill flow, but they are optional helper steps rather than mandatory gates. Strict quality control remains mandatory and is anchored by the staged workflow validation chain.
+
 ## Scope Boundaries
 
 - Generate only Verilog-2001 `.v` artifacts.
@@ -25,6 +27,7 @@ The Python runtime is kept because deterministic scaffolding, prompt rendering, 
 - Prefer Vivado xsim for external simulation, fall back to VCS+Verdi, then to iverilog/vvp; use `yosys` only for implementation readiness.
 - Keep local and remote validation paths configurable through JSON settings; remote validation must use `erie-remote-ssh` and server-list JSON rather than direct SSH/SCP logic.
 - Keep all implementation and generated support files inside this skill folder or caller-selected run directories.
+- Keep helper scripts optional: `scripts/verilog_lint.py` and `scripts/tb_generator.py` must never become mandatory prerequisites for the main workflow.
 
 ## Acceptance Criteria
 
@@ -33,6 +36,7 @@ The Python runtime is kept because deterministic scaffolding, prompt rendering, 
 - The CLI no longer requires a target argument and always resolves to Verilog RTL.
 - HLS examples and runtime modules are removed.
 - Smoke tests cover successful Verilog workflow execution, target rejection, prompt cleanliness, and Verilog-only artifact validation.
+- Smoke tests prove helper-tool placement and policy: independent static lint and testbench scaffold are available, optional, and do not replace the mandatory quality gate.
 - Smoke tests cover simulator fallback order with fake tools and local preflight behavior that requires remote selection when Vivado/xsim is unavailable.
 - Remote confidence validation covers `erie-remote-ssh` discovery, selected-server checks, software scan, workspace checks, request-based staging, and simulator fallback on the selected server.
 - `quick_validate.py` passes for the skill folder.
