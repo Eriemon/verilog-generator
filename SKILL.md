@@ -125,7 +125,7 @@ python .\scripts\manage_skill_dependencies.py cleanup-fpga-agent-skills --settin
 Record a user-confirmed remote toolchain selection in the user folder:
 
 ```powershell
-python .\scripts\remote_validate_verilog_skill.py --settings .\config\defaults.json --server server_2 --write-toolchain-selection --simulator-backend xsim --vivado-settings /tools/Xilinx/Vivado/<version>/settings64.sh
+python .\scripts\remote_validate_verilog_skill.py --settings .\config\defaults.json --server <selected-server> --write-toolchain-selection --simulator-backend xsim --vivado-settings /tools/Xilinx/Vivado/<version>/settings64.sh
 ```
 
 Run the underlying CLI from this skill root:
@@ -154,4 +154,5 @@ python -m runtime.verilog_generator validate --spec .\reports\verilog\spec.json 
 - Do not generate non-Verilog hardware flows, C/C++ kernels, or alternate RTL dialects.
 - Do not claim external tool validation happened unless the tool actually ran.
 - Do not add direct SSH/SCP logic; use `erie-remote-ssh` and configured JSON for remote validation.
+- Treat VCS+Verdi support as scripted backend invocation only; full Verdi GUI/session automation is out of scope unless it is explicitly added and validated.
 - Keep workflow outputs in caller-selected run directories such as `reports/`; do not store generated run artifacts inside the skill.

@@ -57,6 +57,8 @@ The workflow may call these environment-provided tools when readiness requires t
 - iverilog backend: `iverilog`, `vvp`
 - Implementation readiness: `yosys`
 
+VCS+Verdi coverage in this skill means scripted backend selection, availability checks, compile, and simulation execution. It does not imply complete Verdi GUI/session automation, waveform-debug orchestration, or arbitrary Verdi feature coverage.
+
 Simulation backend selection uses the configured fallback order: xsim, then VCS+Verdi, then
 iverilog/vvp. Missing higher-priority simulators are recorded in validation metrics and warnings,
 but they do not block if a lower-priority backend actually runs. If no simulator backend is

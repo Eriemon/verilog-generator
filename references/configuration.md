@@ -98,13 +98,13 @@ The default remote settings point to:
 - helper: `${home}/.codex/skills/erie-remote-ssh/scripts/remote_ssh.py`, overridden by dependency adaptation state after `adapt`
 - remote settings: `${home}/.codex/skills/erie-remote-ssh/config/defaults.json`, overridden by dependency adaptation state after `adapt`
 - server list: `${home}/.codex/erie-verilog-generator/server_list.local.json`; create this user-local file with the `erie-remote-ssh` server-list JSON before remote validation
-- recommended server selector: `server_2` (`FPGA-Server-U50`)
+- no packaged default server selector; the user must choose a server from `erie-remote-ssh choices` or persist one in user-local state after confirmation
 - user toolchain selection config: `${home}/.codex/erie-verilog-generator/remote_toolchain_selection.json`
 
 Run the remote gate:
 
 ```powershell
-python .\skills\erie-verilog-generator\scripts\remote_validate_verilog_skill.py --settings .\skills\erie-verilog-generator\config\defaults.json --server server_2
+python .\skills\erie-verilog-generator\scripts\remote_validate_verilog_skill.py --settings .\skills\erie-verilog-generator\config\defaults.json --server <selected-server>
 ```
 
 The remote script uses `python -X utf8` to avoid Windows console decoding failures while invoking `erie-remote-ssh`. It performs `discover`, `list`, `check`, `scan-software`, and `workspace-check`, then stages a temporary validation copy on the remote server through `request-mkdir`, `request-upload`, `request-command`, and `run-request --execute`. Before selecting a simulator, the remote command scans Vivado `settings64.sh` candidates from `$XILINX_VIVADO`, `/tools/Xilinx/Vivado/*/settings64.sh`, and `/opt/Xilinx/Vivado/*/settings64.sh`. If more than one Vivado candidate exists and no user-confirmed config is present, the gate fails with `TOOLCHAIN_SELECTION_REQUIRED=1` and prints the available choices.
@@ -112,7 +112,7 @@ The remote script uses `python -X utf8` to avoid Windows console decoding failur
 Write a confirmed toolchain choice after the user selects a version:
 
 ```powershell
-python .\skills\erie-verilog-generator\scripts\remote_validate_verilog_skill.py --settings .\skills\erie-verilog-generator\config\defaults.json --server server_2 --write-toolchain-selection --simulator-backend xsim --vivado-settings /tools/Xilinx/Vivado/<version>/settings64.sh
+python .\skills\erie-verilog-generator\scripts\remote_validate_verilog_skill.py --settings .\skills\erie-verilog-generator\config\defaults.json --server <selected-server> --write-toolchain-selection --simulator-backend xsim --vivado-settings /tools/Xilinx/Vivado/<version>/settings64.sh
 ```
 
 The user config records selections by server id under `remote_toolchains`, for example `simulator_backend=xsim` and `vivado_settings64=/tools/Xilinx/Vivado/<version>/settings64.sh`. A selected backend can also be `iverilog`; in that case Vivado activation is skipped and validation uses the configured simulator priority override for that run.
@@ -124,11 +124,11 @@ Each remote gate validates the canonical workflow and the fixed RTL fixtures in 
 List retained runs without staging a new run:
 
 ```powershell
-python .\skills\erie-verilog-generator\scripts\remote_validate_verilog_skill.py --settings .\skills\erie-verilog-generator\config\defaults.json --server server_2 --report-runs
+python .\skills\erie-verilog-generator\scripts\remote_validate_verilog_skill.py --settings .\skills\erie-verilog-generator\config\defaults.json --server <selected-server> --report-runs
 ```
 
 The gate must use the highest simulator backend actually available on the selected server: Vivado xsim, then VCS+Verdi, then iverilog/vvp. If higher-priority simulators are later provided, the same gate must require the highest available backend instead of preserving an older fallback expectation. If `yosys` is not detected, implement readiness must block with `toolchain_issue`; if `yosys` is later provided, implement readiness must pass instead of preserving an older blocked expectation.
 
 ## Sensitive Data
 
-Do not store real hostnames, usernames, key names, private-key paths, or ports in this skill. Keep those fields in the server-list JSON consumed by `erie-remote-ssh`.
+Do not store real hostnames, usernames, key names, private-key paths, ports, packaged default server ids, or packaged server display names in this skill. Keep those fields in the server-list JSON consumed by `erie-remote-ssh`, and persist only user-confirmed selections in user-local state.

@@ -130,16 +130,21 @@ def _run_repo_governance_version_gate() -> None:
     if not (REPO_ROOT / "docs").exists():
         return
     root_agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
-    assert "agents_version=v0.4.9; generator_version=v0.4.9" in root_agents, root_agents
-    assert "- Version: v0.4.9." in root_agents, root_agents
+    metadata_match = re.search(r"agents_version=(v[0-9.]+); generator_version=(v[0-9.]+)", root_agents)
+    assert metadata_match, root_agents
+    agents_version, generator_version = metadata_match.groups()
+    assert agents_version == generator_version, root_agents
+    assert "Root AGENTS.md: present and version-aligned with the current local agents-md-generator." in root_agents, root_agents
 
     development_doc = (REPO_ROOT / "docs" / "development" / "DEVELOPMENT.md").read_text(encoding="utf-8")
-    assert "v0.4.9-agents-bootstrap" in development_doc, development_doc
-    assert "v0.4.6" not in development_doc and "v0.4.7" not in development_doc and "v0.4.8" not in development_doc, development_doc
+    assert agents_version in development_doc, development_doc
+    assert "根 AGENTS 元数据已升级到与当前 installed agents-md-generator" in development_doc, development_doc
+    assert "本地 Codex skill 替换安装待执行" not in development_doc, development_doc
 
     handoff_doc = (REPO_ROOT / "docs" / "handoff" / "HANDOFF.md").read_text(encoding="utf-8")
-    assert "rebuild_required=false" not in handoff_doc, handoff_doc
-    assert "v0.4.6" not in handoff_doc and "v0.4.7" not in handoff_doc and "v0.4.8" not in handoff_doc, handoff_doc
+    assert "远程" in handoff_doc, handoff_doc
+    assert "server_list.local.json" in handoff_doc, handoff_doc
+    assert "本地 Codex skill 替换安装并记录安装结果" not in handoff_doc, handoff_doc
 
 
 def _run_mock_workflow(base: Path, example_spec: Path) -> None:
@@ -595,6 +600,8 @@ def _run_dependency_config_gate(settings: dict) -> None:
     assert routing_settings["vendors"]["amd_xilinx"]["skills"] == ["vivado-developer", "vitis-developer"], routing_settings
     assert routing_settings["vendors"]["pangomicro"]["skills"] == ["pds-developer"], routing_settings
     assert str(settings["remote"]["server_list"]).endswith(".codex/erie-verilog-generator/server_list.local.json") or str(settings["remote"]["server_list"]).endswith(".codex\\erie-verilog-generator\\server_list.local.json"), settings["remote"]
+    assert "server" not in settings["remote"], settings["remote"]
+    assert "server_name" not in settings["remote"], settings["remote"]
     assert "SKILL.md" not in settings["validation"]["legacy_term_allowlist"], settings["validation"]["legacy_term_allowlist"]
     assert "config/defaults.json" not in settings["validation"]["legacy_term_allowlist"], settings["validation"]["legacy_term_allowlist"]
     required = dependency_settings["required"]
@@ -934,7 +941,8 @@ def _run_remote_selection_preflight_gate(base: Path) -> None:
     assert cli.returncode == 0, cli.stderr
     report = json.loads(cli.stdout)
     assert report["remote_selection_required"] is True, report
-    assert report["remote"]["recommended_server"] == "server_2", report
+    assert report["remote"]["recommended_server"] is None, report
+    assert report["remote"]["recommended_server_name"] is None, report
     assert report["remote"]["server_confirmed"] is False, report
     assert "erie-remote-ssh discover and choices" in report["required_action"], report
 
@@ -1003,8 +1011,8 @@ def _run_remote_toolchain_selection_gate(base: Path) -> None:
         "confirmed_by_user": True,
         "updated_at": "2026-05-08T00:00:00Z",
     }
-    module.write_toolchain_selection(config_path, "server_2", selection)
-    loaded = module.load_toolchain_selection(config_path, "server_2")
+    module.write_toolchain_selection(config_path, "selected-server", selection)
+    loaded = module.load_toolchain_selection(config_path, "selected-server")
     assert loaded["simulator_backend"] == "xsim", loaded
     assert loaded["vivado_settings64"] == "/tools/Xilinx/Vivado/2023.2/settings64.sh", loaded
 
@@ -1145,7 +1153,7 @@ def _run_remote_report_gate(base: Path) -> None:
 
     module.run_helper = fake_run_helper
     try:
-        report = module.report_remote_runs(Path("helper.py"), Path("settings.json"), Path("servers.json"), "server_2", ".erie-verilog-generator-validation", 1)
+        report = module.report_remote_runs(Path("helper.py"), Path("settings.json"), Path("servers.json"), "selected-server", ".erie-verilog-generator-validation", 1)
     finally:
         module.run_helper = old_run_helper
     assert report["status"] == "ok", report

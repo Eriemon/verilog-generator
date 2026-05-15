@@ -16,6 +16,7 @@ if str(SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(SKILL_ROOT))
 
 from runtime.verilog_generator.config import fpga_developer_routing_settings, load_settings, path_setting, skill_dependency_settings  # noqa: E402
+from runtime.verilog_generator import __version__  # noqa: E402
 
 LEGACY_TERMS = (
     "H" + "LS",
@@ -43,6 +44,7 @@ ABSOLUTE_PATH_PATTERN = re.compile(
     + "Work"
     + "Space"
 )
+REF_DEPENDENCY_PATTERN = re.compile(r"(?<![A-Za-z0-9_])ref[\\/]")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -64,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     run_cli_gate(settings, smoke_dir)
     verify_legacy_terms(settings)
     verify_hardcoded_paths()
+    verify_no_ref_dependencies()
     cleanup_residuals(settings)
     verify_no_residuals(settings)
 
@@ -204,6 +207,39 @@ def verify_hardcoded_paths() -> None:
         raise AssertionError("Hardcoded absolute paths found outside config/docs: " + ", ".join(sorted(violations)))
 
 
+def verify_no_ref_dependencies() -> None:
+    violations: list[str] = []
+    candidate_release = PROJECT_ROOT / "dist" / f"erie-verilog-generator-v{__version__}"
+    active_paths = [
+        PROJECT_ROOT / "AGENTS.md",
+        PROJECT_ROOT / "docs" / "development" / "DEVELOPMENT.md",
+        PROJECT_ROOT / "docs" / "handoff" / "HANDOFF.md",
+        PROJECT_ROOT / "docs" / "git_manager" / "CHANGELOG.md",
+        PROJECT_ROOT / "docs" / "dir_manager" / "planned_structure.json",
+        SKILL_ROOT / "SKILL.md",
+        SKILL_ROOT / "smoke" / "run_smoke.py",
+    ]
+    active_paths.extend(sorted((SKILL_ROOT / "references").glob("*")))
+    active_paths.extend(sorted((SKILL_ROOT / "scripts").glob("*")))
+    for path in active_paths:
+        if not path.exists() or not path.is_file():
+            continue
+        if REF_DEPENDENCY_PATTERN.search(path.read_text(encoding="utf-8", errors="ignore")):
+            violations.append(_project_relative(path))
+
+    if candidate_release.exists():
+        for path in candidate_release.rglob("*"):
+            if not path.is_file():
+                continue
+            if "__pycache__" in path.parts or path.suffix.lower() in {".pyc", ".pyo"}:
+                continue
+            if REF_DEPENDENCY_PATTERN.search(path.read_text(encoding="utf-8", errors="ignore")):
+                violations.append(_project_relative(path))
+
+    if violations:
+        raise AssertionError("External temporary reference directory dependencies remain in active skill or candidate release files: " + ", ".join(sorted(violations)))
+
+
 def verify_no_residuals(settings: dict) -> None:
     residuals: list[str] = []
     names = set(settings.get("validation", {}).get("forbidden_residuals", []))
@@ -251,6 +287,13 @@ def iter_skill_files() -> list[Path]:
             continue
         files.append(path)
     return files
+
+
+def _project_relative(path: Path) -> str:
+    try:
+        return path.relative_to(PROJECT_ROOT).as_posix()
+    except ValueError:
+        return str(path)
 
 
 def run(command: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
