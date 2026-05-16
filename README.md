@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-1f6feb"></a>
   <a href="pyproject.toml"><img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2f81f7"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-v0.1.7-7c3aed">
+  <img alt="Version" src="https://img.shields.io/badge/version-v0.1.8-7c3aed">
   <a href="SKILL.md"><img alt="Agent Skill" src="https://img.shields.io/badge/agent-skill-16a34a"></a>
   <a href="ENGINEERING_DESIGN_GOALS.md"><img alt="Target" src="https://img.shields.io/badge/target-Verilog--2001-f59e0b"></a>
 </p>
@@ -60,6 +60,7 @@ Use it when an agent needs to work on:
 | `integration/verilog_adapter.py` | Stable host-facing facade for workflow, prompt, and validation calls. |
 | `assets/interface_templates/` | Reusable AXI-Stream, AXI4-Lite, AXI4, AHB, and APB interface patterns. |
 | `assets/examples/` | Example specs and fixed RTL fixtures for validation and regression checks. |
+| `RELEASE_RECEIPT.json` | Provenance record for the imported `v0.1.8` release package. |
 
 ## Quick Start
 
@@ -78,6 +79,8 @@ python -m runtime.verilog_generator validate --spec .\reports\verilog\spec.json 
 ```
 
 External validation requires real HDL tools. This project does not claim Vivado/xsim, VCS, iverilog, or yosys acceptance unless those tools actually run.
+
+The `v0.1.8` update also expands remote-validation ergonomics: toolchain selection is carried through `config/defaults.json`, the remote validation helper and dependency manager are refreshed, and smoke coverage now checks the selected Xilinx toolchain command flow more explicitly.
 
 ## Integration API
 
@@ -122,8 +125,8 @@ If this skill helps your research, teaching, or engineering workflow, please cit
   author       = {Jiyuan Liu and He Li},
   title        = {{Verilog Generator}: An Agent Skill for Verilog-2001 RTL Workflows},
   year         = {2026},
-  version      = {0.1.7},
-  date         = {2026-05-10},
+  version      = {0.1.8},
+  date         = {2026-05-16},
   url          = {https://github.com/Eriemon/verilog-generator},
   license      = {Apache-2.0},
   note         = {Agent skill package for disciplined Verilog-2001 RTL workflows}

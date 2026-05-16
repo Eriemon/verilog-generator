@@ -25,7 +25,11 @@ def main(argv: list[str] | None = None) -> int:
     settings = load_settings(args.settings)
     skills_root = args.skills_root or default_skills_root()
     plugin_cache = args.plugin_cache or default_plugin_cache()
-    state_path = args.state_path or skill_dependency_settings(settings)["state_path"]
+    try:
+        state_path = args.state_path or skill_dependency_settings(settings)["state_path"]
+    except ValueError as exc:
+        parser.error(str(exc))
+        raise AssertionError("unreachable") from exc
 
     if args.command == "check":
         print_json(check_dependencies(settings, skills_root=skills_root, plugin_cache=plugin_cache, state_path=state_path))
@@ -177,7 +181,7 @@ def prompt_for_missing(report: dict) -> str:
     developer_skills = report.get("developer_skills", {})
     selection_required = bool(developer_skills.get("selection_required"))
     if not missing_required and not missing_recommended and not selection_required:
-        return "All erie-verilog-generator skill dependencies are installed. Run adapt after a fresh install to refresh user-level helper paths."
+        return "All erie-verilog-generator skill dependencies are installed. Run adapt after a fresh install to refresh project-local helper paths."
     lines = [
         "erie-verilog-generator dependency check found missing skills.",
         "",

@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 import importlib.util
@@ -29,6 +30,7 @@ from runtime.verilog_generator.interface_templates import list_interface_templat
 from runtime.verilog_generator.model_provider import _mock_erie_rtl_source_text, _mock_erie_rtl_testbench_text, _mock_vectors  # noqa: E402
 from runtime.verilog_generator.requirements import apply_requirement_defaults, build_codegen_plan, validate_requirement_confirmation  # noqa: E402
 from runtime.verilog_generator.vectors import vector_contract_from_payload  # noqa: E402
+from runtime.verilog_generator import workspace as workspace_runtime  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -58,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         _run_verilog_lint_script_gate(base)
         _run_tb_generator_script_gate(base)
         _run_dependency_config_gate(settings)
+        _run_project_local_state_gate(base)
         _run_dependency_manager_gate(base, settings)
         _run_remote_selection_preflight_gate(base)
         _run_remote_vivado_activation_gate()
@@ -599,7 +602,7 @@ def _run_dependency_config_gate(settings: dict) -> None:
     assert routing_settings["fpga_agent_required_when_developer_present"] is False, routing_settings
     assert routing_settings["vendors"]["amd_xilinx"]["skills"] == ["vivado-developer", "vitis-developer"], routing_settings
     assert routing_settings["vendors"]["pangomicro"]["skills"] == ["pds-developer"], routing_settings
-    assert str(settings["remote"]["server_list"]).endswith(".codex/erie-verilog-generator/server_list.local.json") or str(settings["remote"]["server_list"]).endswith(".codex\\erie-verilog-generator\\server_list.local.json"), settings["remote"]
+    assert Path(remote_setting(settings, "server_list")) == REPO_ROOT.resolve() / ".erie-verilog-generator-state" / "server_list.local.json", settings["remote"]
     assert "server" not in settings["remote"], settings["remote"]
     assert "server_name" not in settings["remote"], settings["remote"]
     assert "SKILL.md" not in settings["validation"]["legacy_term_allowlist"], settings["validation"]["legacy_term_allowlist"]
@@ -628,6 +631,94 @@ def _run_dependency_config_gate(settings: dict) -> None:
         "vitis-hls-synthesis",
     ], fpga
     assert fpga["install_specs"][-1] == {"skill": "vitis-hls-synthesis", "source_path": "vitis-hls-synthesis"}, fpga
+
+
+def _run_project_local_state_gate(base: Path) -> None:
+    state_dir_name = ".erie-verilog-generator-state"
+    repo_root = base / "workspace-root"
+    nested_root = repo_root / "child" / "grandchild"
+    nested_root.mkdir(parents=True)
+    (repo_root / ".git").mkdir()
+
+    agents_root = base / "agents-root"
+    nested_agents = agents_root / "nested"
+    nested_agents.mkdir(parents=True)
+    (agents_root / "AGENTS.md").write_text("# root\n", encoding="utf-8")
+
+    outer_root = base / "outer-root"
+    inner_root = outer_root / "inner-root"
+    deep_inner = inner_root / "deeper"
+    deep_inner.mkdir(parents=True)
+    (outer_root / ".git").mkdir()
+    (inner_root / "AGENTS.md").write_text("# inner\n", encoding="utf-8")
+
+    assert workspace_runtime.find_workspace_root(nested_root) == repo_root.resolve()
+    assert workspace_runtime.find_workspace_root(nested_agents) == agents_root.resolve()
+    assert workspace_runtime.find_workspace_root(deep_inner) == inner_root.resolve()
+
+    state_settings_path = repo_root / "settings.json"
+    state_settings_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "paths": {"quick_validate": str(ROOT / "scripts" / "tb_generator.py")},
+                "workflow": {},
+                "skill_dependencies": {
+                    "state_path": f"{state_dir_name}/dependency-state.json",
+                    "install_policy": "ask_each_missing",
+                    "adaptation_policy": "required",
+                    "required": [{"id": "x", "url": "https://github.com/example/x.git", "skills": ["x"], "install_specs": [{"skill": "x", "source_path": "x"}]}],
+                    "recommended": [{"id": "y", "url": "https://github.com/example/y.git", "skills": ["y"], "install_specs": [{"skill": "y", "source_path": "y"}]}],
+                },
+                "fpga_developer_routing": {
+                    "state_path": f"{state_dir_name}/dependency-state.json",
+                    "selection_policy": "ask_on_first_fpga_workflow",
+                    "persist_selection": True,
+                    "fpga_agent_required_when_developer_present": False,
+                    "vendors": {"amd_xilinx": {"label": "AMD-Xilinx", "skills": ["vivado-developer"]}},
+                },
+                "remote": {
+                    "helper": "helper.py",
+                    "settings": "settings.json",
+                    "server_list": f"{state_dir_name}/server_list.local.json",
+                    "server_confirmed": False,
+                    "python": "python3",
+                    "remote_root": ".erie-verilog-generator-validation",
+                    "toolchain_config": f"{state_dir_name}/remote_toolchain_selection.json",
+                    "timeout_s": 120,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with _temporary_cwd(nested_root):
+        loaded = load_settings(state_settings_path)
+        dependency_settings = skill_dependency_settings(loaded)
+        routing_settings = fpga_developer_routing_settings(loaded)
+        assert dependency_settings["state_path"] == repo_root.resolve() / state_dir_name / "dependency-state.json", dependency_settings
+        assert routing_settings["state_path"] == repo_root.resolve() / state_dir_name / "dependency-state.json", routing_settings
+        assert Path(remote_setting(loaded, "server_list")) == repo_root.resolve() / state_dir_name / "server_list.local.json", loaded["remote"]
+        assert Path(remote_setting(loaded, "toolchain_config")) == repo_root.resolve() / state_dir_name / "remote_toolchain_selection.json", loaded["remote"]
+
+    with _temporary_cwd(ROOT):
+        loaded_defaults = load_settings(ROOT / "config" / "defaults.json")
+        dependency_defaults = skill_dependency_settings(loaded_defaults)
+        assert dependency_defaults["state_path"] == REPO_ROOT.resolve() / state_dir_name / "dependency-state.json", dependency_defaults
+        assert Path(remote_setting(loaded_defaults, "server_list")) == REPO_ROOT.resolve() / state_dir_name / "server_list.local.json", loaded_defaults["remote"]
+        assert Path(remote_setting(loaded_defaults, "toolchain_config")) == REPO_ROOT.resolve() / state_dir_name / "remote_toolchain_selection.json", loaded_defaults["remote"]
+
+    with tempfile.TemporaryDirectory(prefix="erie-verilog-generator-no-root-") as orphan_dir:
+        orphan_root = Path(orphan_dir) / "deep"
+        orphan_root.mkdir(parents=True)
+        with _temporary_cwd(orphan_root):
+            loaded = load_settings(state_settings_path)
+            try:
+                workspace_runtime.require_workspace_root()
+            except Exception as exc:  # noqa: BLE001
+                assert "project root" in str(exc) or "workspace root" in str(exc), exc
+            else:
+                raise AssertionError("Expected missing workspace root to fail.")
 
 
 def _run_dependency_manager_gate(base: Path, settings: dict) -> None:
@@ -881,6 +972,26 @@ def _run_dependency_manager_gate(base: Path, settings: dict) -> None:
     state = json.loads(full_state.read_text(encoding="utf-8"))
     assert state["adaptations"]["remote"]["helper"] == str(remote_helper.resolve()), state
     assert state["adaptations"]["remote"]["settings"] == str(remote_settings.resolve()), state
+    project_local_root = base / "project-local-root"
+    nested_project_local = project_local_root / "nested" / "cwd"
+    nested_project_local.mkdir(parents=True)
+    (project_local_root / ".git").mkdir()
+    project_local_settings = json.loads(json.dumps(settings))
+    project_local_settings["skill_dependencies"]["state_path"] = ".erie-verilog-generator-state/dependency-state.json"
+    project_local_settings["fpga_developer_routing"]["state_path"] = ".erie-verilog-generator-state/dependency-state.json"
+    with _temporary_cwd(nested_project_local):
+        module.record_skip(project_local_settings, "superpowers")
+        local_state = project_local_root / ".erie-verilog-generator-state" / "dependency-state.json"
+        assert local_state.exists(), local_state
+        assert not (nested_project_local / ".erie-verilog-generator-state" / "dependency-state.json").exists()
+        module.select_fpga_vendor(
+            project_local_settings,
+            "amd_xilinx",
+            skills_root=developer_root,
+            plugin_cache=base / "plugins" / "cache",
+        )
+        vendor_state = json.loads(local_state.read_text(encoding="utf-8"))
+        assert vendor_state["fpga_developer_selection"]["vendor"] == "amd_xilinx", vendor_state
     stale_state = base / "stale-state.json"
     stale_state.write_text(
         json.dumps({"version": 1, "adaptations": {"remote": {"helper": str(base / "missing-helper.py"), "settings": str(base / "missing-settings.json")}}}),
@@ -1023,10 +1134,25 @@ def _run_remote_toolchain_selection_gate(base: Path) -> None:
         toolchain_config_path=config_path,
     )
     assert "selected_vivado_settings='/tools/Xilinx/Vivado/2023.2/settings64.sh'" in command, command
-    assert "Multiple Vivado installations were detected" in command, command
+    assert "Multiple Xilinx toolchain settings64.sh candidates were detected" in command, command
     assert str(config_path) in command, command
     assert "configured_simulator_backend='xsim'" in command, command
     assert 'export VERILOG_GENERATOR_SIMULATOR_PRIORITY="$configured_simulator_backend"' in command, command
+
+    vitis_command = module.remote_validation_command(
+        ".remote/run/erie-verilog-generator",
+        "python3",
+        toolchain_selection={
+            "simulator_backend": "xsim",
+            "vivado_settings64": "/tools/Xilinx/Vitis/2022.2/settings64.sh",
+            "confirmed_by_user": True,
+        },
+        toolchain_config_path=config_path,
+    )
+    assert "/tools/Xilinx/Vitis/*/settings64.sh" in vitis_command, vitis_command
+    assert "Configured Xilinx settings64.sh was not found on the remote server" in vitis_command, vitis_command
+    assert "Multiple Xilinx toolchain settings64.sh candidates were detected" in vitis_command, vitis_command
+    assert "selected_vivado_settings='/tools/Xilinx/Vitis/2022.2/settings64.sh'" in vitis_command, vitis_command
 
     iverilog_command = module.remote_validation_command(
         ".remote/run/erie-verilog-generator",
@@ -1043,6 +1169,35 @@ def _run_remote_toolchain_selection_gate(base: Path) -> None:
         pass
     else:
         raise AssertionError("Expected unsafe remote Vivado path to fail.")
+
+    project_local_root = base / "project-local-remote-root"
+    nested_project_local = project_local_root / "nested" / "cwd"
+    nested_project_local.mkdir(parents=True)
+    (project_local_root / "AGENTS.md").write_text("# root\n", encoding="utf-8")
+    project_local_settings = {
+        "remote": {
+            "helper": "helper.py",
+            "settings": "settings.json",
+            "server_list": ".erie-verilog-generator-state/server_list.local.json",
+            "server_confirmed": False,
+            "python": "python3",
+            "remote_root": ".erie-verilog-generator-validation",
+            "toolchain_config": ".erie-verilog-generator-state/remote_toolchain_selection.json",
+        },
+        "skill_dependencies": {
+            "state_path": ".erie-verilog-generator-state/dependency-state.json",
+            "install_policy": "ask_each_missing",
+            "adaptation_policy": "required",
+            "required": [{"id": "x", "url": "https://github.com/example/x.git", "skills": ["x"], "install_specs": [{"skill": "x", "source_path": "x"}]}],
+            "recommended": [{"id": "y", "url": "https://github.com/example/y.git", "skills": ["y"], "install_specs": [{"skill": "y", "source_path": "y"}]}],
+        },
+    }
+    with _temporary_cwd(nested_project_local):
+        resolved_config = module.resolve_toolchain_config(project_local_settings, None)
+        assert resolved_config == project_local_root.resolve() / ".erie-verilog-generator-state" / "remote_toolchain_selection.json", resolved_config
+        module.write_toolchain_selection(resolved_config, "selected-server", selection)
+        assert resolved_config.exists(), resolved_config
+        assert not (nested_project_local / ".erie-verilog-generator-state" / "remote_toolchain_selection.json").exists()
 
 
 def _run_remote_fixture_gate(base: Path) -> None:
@@ -1179,6 +1334,16 @@ def _load_dependency_manager_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@contextmanager
+def _temporary_cwd(path: Path):
+    previous = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
 
 
 def _run_simulator_priority_gate(base: Path) -> None:

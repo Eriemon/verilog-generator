@@ -34,21 +34,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cleanup-remote", action="store_true", help="Delete the remote validation directory after the gate finishes.")
     parser.add_argument("--report-runs", action="store_true", help="List retained remote validation runs without staging a new run.")
     parser.add_argument("--max-runs", type=int, default=5, help="Maximum retained runs to include with --report-runs.")
-    parser.add_argument("--toolchain-config", type=Path, help="User-level remote toolchain selection JSON.")
-    parser.add_argument("--write-toolchain-selection", action="store_true", help="Write a confirmed remote toolchain choice to the user config and exit.")
+    parser.add_argument("--toolchain-config", type=Path, help="Project-local or explicitly overridden remote toolchain selection JSON.")
+    parser.add_argument("--write-toolchain-selection", action="store_true", help="Write a confirmed remote toolchain choice to the project-local config and exit.")
     parser.add_argument("--simulator-backend", choices=SIMULATOR_BACKENDS, help="Confirmed simulator backend for --write-toolchain-selection.")
     parser.add_argument("--vivado-settings", help="Confirmed remote Vivado settings64.sh path for xsim.")
     args = parser.parse_args(argv)
 
     settings = load_settings(args.settings)
-    helper = Path(remote_setting(settings, "helper"))
-    remote_settings = Path(remote_setting(settings, "settings"))
-    server_list = Path(remote_setting(settings, "server_list"))
+    try:
+        helper = Path(remote_setting(settings, "helper"))
+        remote_settings = Path(remote_setting(settings, "settings"))
+        server_list = Path(remote_setting(settings, "server_list"))
+        toolchain_config = resolve_toolchain_config(settings, args.toolchain_config)
+    except ValueError as exc:
+        parser.error(str(exc))
+        raise AssertionError("unreachable") from exc
     server = resolve_server(settings, args.server, parser)
     timeout = int(settings.get("remote", {}).get("timeout_s", 120))
     remote_python = remote_setting(settings, "python")
     remote_root = require_remote_relative_path(remote_setting(settings, "remote_root"), "settings.remote.remote_root")
-    toolchain_config = resolve_toolchain_config(settings, args.toolchain_config)
 
     if args.write_toolchain_selection:
         selection = selection_from_args(args, parser)
@@ -93,7 +97,9 @@ def main(argv: list[str] | None = None) -> int:
                     remote_skill,
                     "--reason",
                     "upload Verilog skill validation package",
+                    "--confirm-sensitive-local-upload",
                 ],
+                run_request_args=["--confirm-sensitive-local-upload"],
             )
         )
         command = remote_validation_command(
@@ -156,10 +162,7 @@ def resolve_server(settings: dict, arg_server: str | None, parser: argparse.Argu
 def resolve_toolchain_config(settings: dict, arg_path: Path | None) -> Path:
     if arg_path:
         return arg_path.expanduser().resolve()
-    try:
-        configured = remote_setting(settings, "toolchain_config")
-    except KeyError:
-        configured = str(Path.home() / ".codex" / "erie-verilog-generator" / "remote_toolchain_selection.json")
+    configured = remote_setting(settings, "toolchain_config")
     return Path(configured).expanduser().resolve()
 
 
@@ -270,11 +273,13 @@ def request_and_run(
     timeout: int,
     operation: str,
     operation_args: list[str],
+    run_request_args: list[str] | None = None,
 ) -> Path:
     base = helper_base(helper, settings, server_list)
     create = run_helper(helper, [operation, *base, "--server", server, *operation_args])
     request_path = parse_request_path(create.stdout)
-    run_helper(helper, ["run-request", *base, "--request", str(request_path), "--execute", "--timeout", str(timeout)])
+    extra_run_args = run_request_args or []
+    run_helper(helper, ["run-request", *base, "--request", str(request_path), "--execute", "--timeout", str(timeout), *extra_run_args])
     return request_path
 
 
@@ -630,7 +635,7 @@ def simulator_priority_export_snippet(selected_backend: str) -> str:
 
 
 def vivado_activation_snippet(selected_vivado: str = "", selected_backend: str = "", toolchain_config_path: Path | None = None) -> str:
-    config_hint = str(toolchain_config_path or Path.home() / ".codex" / "erie-verilog-generator" / "remote_toolchain_selection.json")
+    config_hint = str(toolchain_config_path or Path(".erie-verilog-generator-state") / "remote_toolchain_selection.json")
     if selected_backend and selected_backend != "xsim":
         return "echo 'vivado_settings=not_required_for_selected_backend'"
     return f"""
@@ -641,6 +646,7 @@ for candidate in \
   "${{XILINX_VIVADO:-}}/settings64.sh" \
   "${{XILINX_VIVADO:-}}/../settings64.sh" \
   /tools/Xilinx/Vivado/*/settings64.sh \
+  /tools/Xilinx/Vitis/*/settings64.sh \
   /opt/Xilinx/Vivado/*/settings64.sh; do
   if [ -f "$candidate" ]; then
     readlink -f "$candidate"
@@ -649,8 +655,8 @@ done | sort -u > "$vivado_candidates_file"
 vivado_candidate_count="$(wc -l < "$vivado_candidates_file" | tr -d ' ')"
 if [ -n "$selected_vivado_settings" ]; then
   if ! grep -Fx "$selected_vivado_settings" "$vivado_candidates_file" >/dev/null 2>&1; then
-    echo "Configured Vivado settings64.sh was not found on the remote server: $selected_vivado_settings" >&2
-    echo "Available Vivado choices:" >&2
+    echo "Configured Xilinx settings64.sh was not found on the remote server: $selected_vivado_settings" >&2
+    echo "Available Xilinx toolchain choices:" >&2
     cat "$vivado_candidates_file" >&2
     rm -f "$vivado_candidates_file"
     exit 2
@@ -660,8 +666,8 @@ if [ -n "$selected_vivado_settings" ]; then
   . "$selected_vivado_settings"
 elif [ "$vivado_candidate_count" -gt 1 ]; then
   echo "TOOLCHAIN_SELECTION_REQUIRED=1" >&2
-  echo "Multiple Vivado installations were detected. Ask the user to choose one and persist it in: $toolchain_config_hint" >&2
-  echo "Available Vivado choices:" >&2
+  echo "Multiple Xilinx toolchain settings64.sh candidates were detected. Ask the user to choose one and persist it in: $toolchain_config_hint" >&2
+  echo "Available Xilinx toolchain choices:" >&2
   cat "$vivado_candidates_file" >&2
   rm -f "$vivado_candidates_file"
   exit 2

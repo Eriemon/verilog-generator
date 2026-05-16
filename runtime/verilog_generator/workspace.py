@@ -14,6 +14,7 @@ from .spec import SpecError
 DEFAULT_STATE_PATH = Path("workflow-state.json")
 PROTECTED_WRITE_DIRS = {"Spec2RTL-Agent"}
 _WORKSPACE_ROOT_OVERRIDE: ContextVar[Path | None] = ContextVar("verilog_generator_workspace_root", default=None)
+WORKSPACE_ROOT_MARKERS = (".git", "AGENTS.md")
 
 
 def workspace_root() -> Path:
@@ -21,6 +22,25 @@ def workspace_root() -> Path:
     if override is not None:
         return override.resolve()
     return Path.cwd().resolve()
+
+
+def find_workspace_root(start: Path | None = None) -> Path | None:
+    base = Path(start or Path.cwd()).resolve()
+    search = base if base.is_dir() else base.parent
+    for candidate in (search, *search.parents):
+        if any((candidate / marker).exists() for marker in WORKSPACE_ROOT_MARKERS):
+            return candidate.resolve()
+    return None
+
+
+def require_workspace_root(*, purpose: str = "project-local state", start: Path | None = None) -> Path:
+    root = find_workspace_root(start)
+    if root is None:
+        raise SpecError(
+            f"Could not locate a workspace root for {purpose}. "
+            "Run this command from a project root containing .git or AGENTS.md, or pass an explicit path override."
+        )
+    return root
 
 
 @contextmanager

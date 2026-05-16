@@ -152,13 +152,15 @@ def _allowed_dependency_term_line(rel: str, line: str) -> bool:
     if rel == "SKILL.md":
         return "dependency" in line.lower() or "route to the installed FPGA" in line or "developer routing" in line.lower()
     if rel == "references/configuration.md":
-        return any(marker in line for marker in ("dependency", "provides", "recommended groups", "required groups", "Vivado/Vitis", "vitis-hls-synthesis", "vitis-developer", "developer routing"))
+        return any(marker in line for marker in ("dependency", "provides", "recommended groups", "required groups", "Vivado/Vitis", "Vitis/*/settings64.sh", "vitis-hls-synthesis", "vitis-developer", "developer routing"))
     if rel == "scripts/validate_verilog_skill.py":
-        return "FPGA-Agent-skills dependency" in line or "vitis-hls-synthesis" in line or "vitis-developer" in line
+        return any(marker in line for marker in ("FPGA-Agent-skills dependency", "vitis-hls-synthesis", "vitis-developer", "VCS+Verdi", "/tools/Xilinx/Vitis/*/settings64.sh", "simulator_backend"))
     if rel == "scripts/manage_skill_dependencies.py":
         return any(marker in line for marker in ("FPGA-Agent", "Vivado/Vitis", "vitis-developer", "vitis-hls-synthesis", '"vivado-'))
+    if rel == "scripts/remote_validate_verilog_skill.py":
+        return any(marker in line for marker in ("/tools/Xilinx/Vitis/*/settings64.sh", "selected_backend", "simulator_backend"))
     if rel == "smoke/run_smoke.py":
-        return "vitis-hls-synthesis" in line or "vitis-developer" in line or "Vivado/Vitis" in line
+        return any(marker in line for marker in ("vitis-hls-synthesis", "vitis-developer", "vitis_command", "/tools/Xilinx/Vitis/2022.2/settings64.sh", "/tools/Xilinx/Vitis/*/settings64.sh", "Configured Xilinx settings64.sh", "Multiple Xilinx toolchain settings64.sh candidates"))
     return False
 
 

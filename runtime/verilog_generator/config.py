@@ -9,6 +9,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from .workspace import require_workspace_root
+
 CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
 DEFAULT_SETTINGS_PATH = CONFIG_DIR / "defaults.json"
 _TOKEN_RE = re.compile(r"\$\{([^}]+)\}")
@@ -74,7 +76,10 @@ def remote_setting(settings: dict[str, Any], key: str) -> str:
         return str(adapted_remote[key])
     if not isinstance(remote, dict) or key not in remote:
         raise KeyError(f"Missing settings.remote.{key}")
-    return str(remote[key])
+    value = remote[key]
+    if key in {"server_list", "toolchain_config"}:
+        return str(_resolve_project_local_path(value, purpose=f"settings.remote.{key}"))
+    return str(value)
 
 
 def skill_dependency_settings(settings: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -86,9 +91,9 @@ def skill_dependency_settings(settings: dict[str, Any] | None = None) -> dict[st
         raise ValueError("settings.skill_dependencies must be an object.")
     result = deepcopy(dependencies)
     state_path = result.get("state_path")
-    if not isinstance(state_path, str) or not state_path:
+    if not isinstance(state_path, (str, Path)) or not str(state_path):
         raise ValueError("settings.skill_dependencies.state_path must be a non-empty path.")
-    result["state_path"] = Path(state_path).expanduser()
+    result["state_path"] = _resolve_project_local_path(state_path, purpose="settings.skill_dependencies.state_path")
     for list_name in ("required", "recommended"):
         items = result.get(list_name)
         if not isinstance(items, list) or not items:
@@ -111,9 +116,9 @@ def fpga_developer_routing_settings(settings: dict[str, Any] | None = None) -> d
         raise ValueError("settings.fpga_developer_routing must be an object.")
     result = deepcopy(routing)
     state_path = result.get("state_path")
-    if not isinstance(state_path, str) or not state_path:
+    if not isinstance(state_path, (str, Path)) or not str(state_path):
         raise ValueError("settings.fpga_developer_routing.state_path must be a non-empty path.")
-    result["state_path"] = Path(state_path).expanduser()
+    result["state_path"] = _resolve_project_local_path(state_path, purpose="settings.fpga_developer_routing.state_path")
     if result.get("selection_policy") != "ask_on_first_fpga_workflow":
         raise ValueError("settings.fpga_developer_routing.selection_policy must be ask_on_first_fpga_workflow.")
     if result.get("persist_selection") is not True:
@@ -195,6 +200,13 @@ def _adapted_remote_settings(settings: dict[str, Any]) -> dict[str, Any]:
         for key, value in remote.items()
         if isinstance(value, str) and _adapted_remote_path_valid(key, value)
     }
+
+
+def _resolve_project_local_path(value: str | Path, *, purpose: str) -> Path:
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    return (require_workspace_root(purpose=purpose) / path).resolve()
 
 
 def _adapted_remote_path_valid(key: str, value: str) -> bool:
