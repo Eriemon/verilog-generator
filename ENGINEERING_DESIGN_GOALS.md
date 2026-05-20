@@ -8,8 +8,9 @@ The design goal is not to be a general hardware generator. It is to help Codex r
 
 ## How The Skill Should Work
 
-The skill combines four standard skill design patterns:
+The skill combines five standard skill design patterns:
 
+- Tool Wrapper: wrap the bundled runtime, helper scripts, references, and templates behind one stable Verilog-only skill entry point.
 - Inversion: confirm requirements before code generation.
 - Pipeline: run fixed stages in order: requirements, codegen plan, Python reference model, Verilog RTL.
 - Generator: use structured specs and manifest-based fenced outputs so files are stable and extractable.

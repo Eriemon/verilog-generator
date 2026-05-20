@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "template_id": "spi_adc",
+  "display_name": "SPI ADC acquisition chain",
+  "applicable_scenarios": [
+    "Triggered SPI SAR ADC capture",
+    "Multi-channel SPI precision ADC capture",
+    "Board-level ADC top and block-design scaffolding"
+  ],
+  "source_projects": [
+    "ref/projects/ad40xx_fmc",
+    "ref/projects/ad469x_fmc",
+    "ref/projects/ad7134_fmc"
+  ],
+  "parameterization_points": [
+    "adc_resolution",
+    "adc_num_channels",
+    "adc_sampling_rate",
+    "spi_data_width",
+    "trigger_policy",
+    "board_family"
+  ],
+  "artifacts": [
+    {
+      "kind": "verilog_system_top",
+      "path": "verilog/system_top.v",
+      "status": "reference_template",
+      "summary": "Representative SPI ADC top-level wiring for SPI, BUSY, CNV, reset, and sample-valid plumbing."
+    },
+    {
+      "kind": "system_bd_tcl",
+      "path": "tcl/system_bd.tcl",
+      "status": "reference_template",
+      "summary": "Board-specific block-design entry that sets ADC parameters and sources the common SPI ADC BD fragment."
+    },
+    {
+      "kind": "common_bd_tcl",
+      "path": "tcl/common_bd.tcl",
+      "status": "reference_template",
+      "summary": "Reusable SPI ADC BD fragment with trigger generation, edge capture, SPI Engine hookup, and DMA routing."
+    },
+    {
+      "kind": "system_project_tcl",
+      "path": "tcl/system_project.tcl",
+      "status": "reference_template",
+      "summary": "Minimal project wrapper that adds top, constraints, and shared support files."
+    },
+    {
+      "kind": "system_constr_xdc",
+      "path": "constraints/system_constr.xdc",
+      "status": "reference_template",
+      "summary": "Representative SPI ADC pinout and IOSTANDARD constraints."
+    }
+  ]
+}

@@ -335,7 +335,7 @@ def _mock_erie_rtl_source_text(spec: dict[str, Any]) -> str:
     data_sample = str(data_input["name"]) if data_input else "i_data"
     valid_sample = str(valid_input["name"]) if valid_input else "i_valid"
     data_width = int((data_output or data_input or {"width": 8}).get("width", 8))
-    return f"""`timescale 1ns / 1ps
+    return _add_mock_line_comments(f"""`timescale 1ns / 1ps
 
 ////////////////////////////////////English///////////////////////////////////////
 // Company:\t\t\tErie
@@ -346,6 +346,9 @@ def _mock_erie_rtl_source_text(spec: dict[str, Any]) -> str:
 // Module Name:\t{top}
 // Description:\tDescription/{top}_Design.pdf
 // 
+// History:
+// 2026/05/03\t\tV1.0\t\tErie\t\tCreate file.
+//
 // Version:\t\t\tV1.0
 // Revision Date:\t2026/05/03 12:00:00
 ///////////////////////////////////Chinese////////////////////////////////////////
@@ -355,6 +358,7 @@ def _mock_erie_rtl_source_text(spec: dict[str, Any]) -> str:
 // 创建日期:\t\t2026年05月03日
 // 设计名称:\t\t{top}
 // 模块名称:\t\t{top}
+// 修订历史:\t\t2026年05月03日 V1.0 Erie 创建文件
 // 当前版本:\t\tV1.0
 // 修订日期:\t\t2026年05月03日
 
@@ -447,7 +451,7 @@ module {top}
 \t//此模板未使用模块实例化
 
 endmodule
-"""
+""")
 
 
 def _mock_erie_rtl_testbench_text(spec: dict[str, Any], vectors: list[dict[str, Any]], vector_hash: str) -> str:
@@ -462,7 +466,18 @@ def _mock_erie_rtl_testbench_text(spec: dict[str, Any], vectors: list[dict[str, 
     lines.append('\t\t$display("FAIL if any check fails");')
     lines.append("\tend")
     lines.append("endmodule")
-    return "\n".join(lines) + "\n"
+    return _add_mock_line_comments("\n".join(lines) + "\n")
+
+
+def _add_mock_line_comments(text: str) -> str:
+    rendered_lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("//") and "//" not in line:
+            rendered_lines.append(f"{line}\t//逐行中文注释")
+        else:
+            rendered_lines.append(line)
+    return "\n".join(rendered_lines) + "\n"
 
 
 def _internal_output_name(port_name: str) -> str:

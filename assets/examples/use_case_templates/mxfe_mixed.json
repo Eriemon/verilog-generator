@@ -1,0 +1,104 @@
+{
+  "name": "mxfe_mixed_bridge",
+  "target": "rtl",
+  "rtl_dialect": "verilog",
+  "rtl_style_profile": "erie_strict",
+  "design_requirements": {
+    "target": "rtl",
+    "pipeline_required": true,
+    "streamability": "streamable",
+    "interface_family": "native",
+    "interface_profile": {},
+    "confirmed_by_user": true,
+    "confirmation_notes": "Use the mixed MxFE family template for a coordinated RX, TX, and TDD sideband bridge."
+  },
+  "streamability": "streamable",
+  "interface_family": "native",
+  "interface_profile": {},
+  "pipeline_required": true,
+  "codegen_plan_required": true,
+  "description": "Coordinate RX, TX, PMOD control, and TDD sideband signals for a mixed RF ADC and RF DAC top-level bridge.",
+  "interfaces": {
+    "ports": [
+      {
+        "name": "i_clk",
+        "direction": "input",
+        "width": 1,
+        "role": "clock"
+      },
+      {
+        "name": "i_rstn",
+        "direction": "input",
+        "width": 1,
+        "role": "reset"
+      },
+      {
+        "name": "i_tdd_sync",
+        "direction": "input",
+        "width": 1
+      },
+      {
+        "name": "i_rx_ready",
+        "direction": "input",
+        "width": 1
+      },
+      {
+        "name": "i_tx_ready",
+        "direction": "input",
+        "width": 1
+      },
+      {
+        "name": "o_tdd_enabled",
+        "direction": "output",
+        "width": 1
+      },
+      {
+        "name": "o_rx_enable",
+        "direction": "output",
+        "width": 1
+      },
+      {
+        "name": "o_tx_enable",
+        "direction": "output",
+        "width": 1
+      }
+    ]
+  },
+  "behavior": [
+    "Drive a coordinated TDD enabled signal from i_tdd_sync.",
+    "Expose independent RX and TX enable outputs derived from ready inputs.",
+    "Keep mixed-signal sideband control synchronous to the main clock."
+  ],
+  "clock": {
+    "name": "i_clk",
+    "edge": "posedge",
+    "frequency_mhz": 100
+  },
+  "reset": {
+    "name": "i_rstn",
+    "active": "low",
+    "synchronous": false
+  },
+  "constraints": [
+    "Use synthesizable Verilog-2001.",
+    "Keep TDD and mixed-sideband control explicit and timing reviewable."
+  ],
+  "outputs": [
+    {
+      "path": "rtl/mxfe_mixed_bridge.v",
+      "kind": "source",
+      "language": "verilog"
+    },
+    {
+      "path": "tb/mxfe_mixed_bridge_tb.v",
+      "kind": "testbench",
+      "language": "verilog"
+    }
+  ],
+  "notes": [],
+  "subfunctions": [],
+  "workflow": {
+    "use_case_template_id": "mxfe_mixed"
+  },
+  "performance": {}
+}

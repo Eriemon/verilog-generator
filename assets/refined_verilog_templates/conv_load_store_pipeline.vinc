@@ -1,0 +1,9 @@
+// Convolution load/store pipeline extracted from the local Conv1D and convolution references.
+// Keep IFM load, weight staging, window shift, MAC pipeline, and OFM store
+// as visibly separate stages with explicit FIFO or line-buffer handoff.
+// Suggested stage split:
+// 1. IFM fetch / line-buffer fill
+// 2. Weight fetch / kernel latch
+// 3. Window advance and valid generation
+// 4. MAC accumulation pipeline
+// 5. OFM write-back or stream-out

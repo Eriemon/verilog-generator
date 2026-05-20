@@ -32,6 +32,10 @@ When the task is streamable, explicitly choose `native`, `axi_stream`, `axi4`, `
 
 `interface_profile.template_id` is optional. If omitted, the runtime selects a local template from `assets/interface_templates/catalog.json` for standard bus families and records it as `selected_interface_template_id` in the requirements payload and codegen plan. Supported template IDs are `axi_stream_duplex`, `axi4_lite_config`, `axi4_full_master`, `axi4_full_slave`, `ahb_lite_config`, and `apb_config`. Treat these snippets as strict-preferred port contracts, not standalone synthesizable modules.
 
+`workflow.use_case_template_id` is optional. When provided, it must be one of `spi_adc`, `spi_dac`, `jesd_adc`, `jesd_dac`, or `mxfe_mixed`. The runtime resolves the matching bundle from `assets/use_case_templates/`, records it as `selected_use_case_template_id` plus `use_case_template` in the requirements payload and codegen plan, and injects the selected Verilog or Tcl or XDC guidance into prompts as board-level context.
+
+When `rtl_style_profile=erie_strict`, the runtime also layers in ref-derived Erie style constraints from `references/erie-ref-style.md` and `assets/style_templates/`. Hosts should expect stronger prompt guidance around bilingual headers, FSM naming, instance naming, generate labels, and grouped standard-bus port declarations.
+
 ## Run Directories
 
 When dict inputs are passed to the workflow runner, the facade materializes stable inputs under `<out_dir>/_adapter_inputs/`:

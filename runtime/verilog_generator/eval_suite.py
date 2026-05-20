@@ -22,9 +22,14 @@ def run_eval_suite(out_path: Path) -> dict[str, Any]:
         "description": "Verilog-only scenarios cover dependency recovery, interface drift, tool blockers, and human feedback.",
         "scenarios": scenarios,
     }
+    passed_statuses = {"passed", "blocked_toolchain", "blocked_human"}
     payload["summary"] = {
         "scenario_count": len(scenarios),
-        "passed": sum(1 for item in scenarios if item["metrics"].get("final_status") in {"passed", "blocked_toolchain", "blocked_human"}),
+        "passed": sum(1 for item in scenarios if item["metrics"].get("final_status") in passed_statuses),
+        "status_counts": {
+            status: sum(1 for item in scenarios if item["metrics"].get("final_status") == status)
+            for status in sorted(passed_statuses | {"failed", "invalid_response", "blocked_human"})
+        },
     }
     write_json(out_path, payload)
     return payload

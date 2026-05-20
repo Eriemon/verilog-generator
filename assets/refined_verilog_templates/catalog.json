@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "template_id": "axi4_lite_csr_shell",
+      "title": "AXI4-Lite CSR shell",
+      "path": "axi4_lite_csr_shell.vinc",
+      "selection_reason": "selected for AXI4-Lite control or CSR style designs"
+    },
+    {
+      "template_id": "axis_ready_valid_slice",
+      "title": "AXIS ready/valid slice",
+      "path": "axis_ready_valid_slice.vinc",
+      "selection_reason": "selected for ready/valid or AXI-Stream pipeline slices"
+    },
+    {
+      "template_id": "axi_interconnect_port_groups",
+      "title": "AXI interconnect port groups",
+      "path": "axi_interconnect_port_groups.vinc",
+      "selection_reason": "selected for AXI4 DMA, burst, or interconnect style fabrics"
+    },
+    {
+      "template_id": "conv_load_store_pipeline",
+      "title": "Convolution load/store pipeline",
+      "path": "conv_load_store_pipeline.vinc",
+      "selection_reason": "selected for convolution-style load/store and buffered datapaths"
+    }
+  ]
+}

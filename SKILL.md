@@ -1,7 +1,7 @@
 ---
 name: erie-verilog-generator
 description: >-
-  Use when Codex needs Chinese-language Verilog development requests, Verilog design, Verilog modification, Verilog debug, RTL development, RTL design, RTL modification, RTL debug, RTL troubleshooting, independent static lint, testbench scaffold generation, or ASIC quality review for a Verilog-target design, including synthesizable Verilog-2001 RTL modules, self-checking Verilog testbenches, compile/simulation/validation with local or remote Vivado/xsim, artifact extraction, or workflow trace diagnosis.
+  Use when Codex needs Chinese-language Verilog or RTL design, modification, debugging, troubleshooting, independent static lint, self-checking testbench scaffolds, or ASIC-quality review for a Verilog-target design, including synthesizable Verilog-2001 RTL, local or remote Vivado/xsim validation, artifact extraction, and workflow trace diagnosis.
 ---
 
 # Erie Verilog Generator
@@ -52,12 +52,13 @@ Developer routing preference is: `vivado-developer`, then `vitis-developer`, for
 
 1. Confirm the design intent before generation: module name, ports, clock/reset, behavior, pipeline expectation, interface family, and verification cases.
 2. Use the staged pipeline: `requirements -> codegen_plan -> python -> rtl`.
-3. Generate a Python reference model before RTL when running the workflow; use it as the semantic contract for the Verilog testbench.
-4. Run the mandatory quality gate before claiming usable output. `validate_verilog_artifacts(...)` and `scripts/validate_verilog_skill.py` are required quality-control steps; skipping optional helpers does not bypass this gate.
-5. Use optional helper tools only when they add value to the request:
+3. When the request clearly matches one of the local ADC/DAC board families, set `workflow.use_case_template_id` to one of `spi_adc`, `spi_dac`, `jesd_adc`, `jesd_dac`, or `mxfe_mixed` so the runtime can inject the matching board-level template bundle from `assets/use_case_templates/`.
+4. Generate a Python reference model before RTL when running the workflow; use it as the semantic contract for the Verilog testbench.
+5. Run the mandatory quality gate before claiming usable output. `validate_verilog_artifacts(...)` and `scripts/validate_verilog_skill.py` are required quality-control steps; skipping optional helpers does not bypass this gate.
+6. Use optional helper tools only when they add value to the request:
    - Run `scripts/verilog_lint.py` when the user asks for independent static lint, standalone review findings, or a quick local lint pass on existing RTL or testbench files.
    - Run `scripts/tb_generator.py` when the user asks for a fast Verilog-2001 self-checking testbench scaffold or when a repair starts from module ports rather than the full staged workflow.
-6. If the request includes compile, execute, or implement readiness, continue into the local or remote backend validation path. Prefer Vivado xsim first, then VCS+Verdi, then iverilog/vvp. Use `yosys` only for implement readiness.
+7. If the request includes compile, execute, or implement readiness, continue into the local or remote backend validation path. Prefer Vivado xsim first, then VCS+Verdi, then iverilog/vvp. Use `yosys` only for implement readiness.
 
 ## Strict Quality Policy
 
@@ -66,9 +67,12 @@ Strict quality control is mandatory. The required quality chain is:
 1. Generate only synthesizable Verilog-2001 RTL and self-checking Verilog testbenches.
 2. Prefer standardized interfaces: AXI-Stream for streaming data, AXI4-Lite for control/status registers, AXI4 for memory-mapped bulk transfers, and AHB/APB when a platform requires them. If a custom shape still needs bus unification, extend AXI-Stream with explicit sideband metadata in `interface_profile`.
 3. Use the local standard bus templates in `assets/interface_templates` whenever `interface_family` is `axi_stream`, `axi4_lite`, `axi4`, `ahb`, or `apb`. Treat their port names, parameter names, and Chinese comments as strict-preferred defaults; only adapt them when the confirmed spec explicitly conflicts, and record the adaptation reason in the generated checks.
-4. Avoid Verilog `function` and `task` blocks in generated Verilog, especially synthesizable RTL; prefer explicit always/assign logic and inline testbench checks for easier waveform debugging.
-5. Apply ASIC quality review rules for generated RTL: complete combinational assignments, case defaults, no raw gated clocks, documented CDC/reset assumptions, and timing-reviewable datapath/control structure. Load `references/asic-verilog-quality.md` for detailed review guidance.
-6. Validate with static checks by default; when external simulation is requested, select the highest available backend in this order: Vivado xsim, VCS+Verdi, then iverilog/vvp. Use `yosys` only for implement readiness.
+4. When `workflow.use_case_template_id` is set, preserve the selected family bundle from `assets/use_case_templates/` as board-level guidance and keep any adaptation visible in the generated checks and codegen plan.
+5. When `rtl_style_profile=erie_strict`, also follow the ref-derived Erie naming, header, FSM, instance, and bus-grouping conventions captured in `references/erie-ref-style.md` and `assets/style_templates/`.
+6. Treat per-line comments as a hard validation gate: every non-empty generated Verilog code line in RTL and testbench `.v` files must have a same-line or immediately adjacent explanatory comment in the requested language. Blank lines and pure comment lines are exempt; missing Chinese comments under `comment_language=zh` are blocking errors.
+7. Avoid Verilog `function` and `task` blocks in generated Verilog, especially synthesizable RTL; prefer explicit always/assign logic and inline testbench checks for easier waveform debugging.
+8. Apply ASIC quality review rules for generated RTL: complete combinational assignments, case defaults, no raw gated clocks, documented CDC/reset assumptions, and timing-reviewable datapath/control structure. Load `references/asic-verilog-quality.md` for detailed review guidance.
+9. Validate with static checks by default; when external simulation is requested, select the highest available backend in this order: Vivado xsim, VCS+Verdi, then iverilog/vvp. Use `yosys` only for implement readiness.
 
 Optional helper tools are inside the workflow, but strict quality control is the only mandatory gate.
 
@@ -82,6 +86,7 @@ python <erie-remote-ssh>\scripts\remote_ssh.py choices --settings <remote-settin
 ```
 
 Ask the user to select a remote server unless they already named one in the current request. A configured default server is only a recommendation; it is not user confirmation. After selection, use `erie-remote-ssh` for `check`, `scan-software`, `workspace-check`, request creation, and `run-request --execute`. If remote discovery sees multiple Vivado `settings64.sh` candidates, stop and ask the user which version to use; persist that confirmed choice in the project-local toolchain config before development or validation continues. Remote validation directories are retained by default under `.erie-verilog-generator-validation/run-YYYYMMDDTHHMMSS/erie-verilog-generator`, including `_smoke_runs` outputs; use `--cleanup-remote` only when the user wants the validation directory deleted. The remote gate must execute the canonical workflow plus the fixed RTL fixtures in `assets/examples/remote_fixtures` and retain each fixture `validation.json`. Use `--report-runs` for a read-only summary of retained remote runs. Do not add direct `ssh` or `scp` commands to this skill.
+If `<workspace-root>/.erie-verilog-generator-state/server_list.local.json` is absent, the remote gate may reuse the installed `erie-remote-ssh/config/server_list.local.json` as a read-only fallback so local skill packaging does not depend on committed machine-specific state.
 
 For Vivado/Vitis project creation, Tcl execution, synthesis/implementation strategy, timing analysis, constraints, debug, simulation, or Vitis HLS work, follow FPGA developer routing first. Use `vivado-developer` or `vitis-developer` for AMD-Xilinx and use `pds-developer` for PangoMicro. Do not install or route to FPGA-Agent-Skills Vivado/Vitis child skills unless the user explicitly requests that manual fallback.
 
@@ -139,14 +144,22 @@ python -m runtime.verilog_generator validate --spec .\reports\verilog\spec.json 
 ## Reference Loading
 
 - Load `ENGINEERING_DESIGN_GOALS.md` when changing this skill's architecture or scope.
+- Load `references/skill-standards.md` when changing SKILL frontmatter, trigger wording, progressive disclosure, supporting-resource layout, or skill-level evaluation gates.
 - Load `references/configuration.md` when changing paths, validation gates, remote SSH settings, or temporary run locations.
+- Load `references/erie-ref-style.md` when changing Erie strict naming rules, bilingual headers, FSM conventions, instance naming, or grouped bus-port style.
 - Load `references/integration.md` when wiring the facade into another host.
+- Load `assets/use_case_templates/catalog.json` and the selected bundle under `assets/use_case_templates/<family>/` when adding or reviewing ADC/DAC board-level family guidance.
 - Load `references/workflow-contracts.md` when handling run directories, statuses, resume behavior, or traces.
 - Load `references/asic-verilog-quality.md` when reviewing RTL for ASIC quality, static lint findings, reset/CDC assumptions, raw gated clocks, latch risk, or timing-reviewable structure.
 - Load `references/lint-checklist.md` when running independent static lint, preparing review findings, or deciding whether a warning should become a blocking issue.
 - Load `references/testbench-patterns.md` when generating or repairing a Verilog-2001 self-checking testbench scaffold.
 - Use `assets/examples/rtl_erie_verilog_spec.json` as the canonical Verilog-only fixture.
+- Use `assets/examples/use_case_templates/*.json` when verifying ADC/DAC family-template selection and prompt injection.
+- Use `evals/evals.json` when measuring pass-rate delta for the canonical Verilog flow and the ADC/DAC family-template flows.
+- Load `references/verilog-template-patterns.md` when refining compact reusable Verilog design patterns distilled from the local repository reference RTL instead of copying large reference modules.
 - Use `assets/interface_templates/catalog.json` and the referenced `.vinc` snippets when verifying or updating standard AXI-Stream, AXI4-Lite, AXI4, AHB, or APB interface guidance.
+- Use `assets/refined_verilog_templates/catalog.json` and the referenced `.vinc` snippets when the task benefits from compact AXI4-Lite CSR, AXIS ready/valid, AXI interconnect grouping, or convolution load/store pattern hints.
+- Use `assets/style_templates/` when refining Erie strict header, region-order, FSM, instance, or bus-grouping style guidance.
 - Use `assets/examples/remote_fixtures` when verifying real-style remote xsim coverage across combinational logic, sequential pipeline logic, and ready/valid handshakes.
 
 ## Boundaries

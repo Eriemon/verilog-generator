@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "template_id": "jesd_adc",
+  "display_name": "JESD ADC receive chain",
+  "applicable_scenarios": [
+    "JESD204B or JESD204C ADC receive path",
+    "RX transceiver, transport, cpack, and DMA integration",
+    "Board-level JESD ADC top and block-design scaffolding"
+  ],
+  "source_projects": [
+    "ref/projects/ad6676evb"
+  ],
+  "parameterization_points": [
+    "rx_jesd_l",
+    "rx_num_converters",
+    "rx_sample_width",
+    "rx_samples_per_frame",
+    "board_family"
+  ],
+  "artifacts": [
+    {
+      "kind": "verilog_system_top",
+      "path": "verilog/system_top.v",
+      "status": "reference_template",
+      "summary": "Representative JESD ADC top-level wiring for RX reference clock, sample-valid, and sample-data exposure."
+    },
+    {
+      "kind": "system_bd_tcl",
+      "path": "tcl/system_bd.tcl",
+      "status": "reference_template",
+      "summary": "Board-specific block-design entry that sets JESD RX parameters and sources the common receive fragment."
+    },
+    {
+      "kind": "common_bd_tcl",
+      "path": "tcl/common_bd.tcl",
+      "status": "reference_template",
+      "summary": "Reusable JESD ADC receive BD fragment with RX transceiver, transport, cpack, and DMA capture."
+    },
+    {
+      "kind": "system_project_tcl",
+      "path": "tcl/system_project.tcl",
+      "status": "reference_template",
+      "summary": "Minimal project wrapper that adds top, constraints, and shared support files."
+    },
+    {
+      "kind": "system_constr_xdc",
+      "path": "constraints/system_constr.xdc",
+      "status": "reference_template",
+      "summary": "Representative JESD ADC reference-clock and lane constraints."
+    }
+  ]
+}

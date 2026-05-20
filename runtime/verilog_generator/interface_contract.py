@@ -90,6 +90,7 @@ def _read_files(root: Path, suffix_globs: tuple[str, ...]) -> dict[str, str]:
 
 def _extract_rtl_modules(text: str, rel_path: str) -> list[dict[str, Any]]:
     modules: list[dict[str, Any]] = []
+    text = _strip_verilog_comments(text)
     pattern = re.compile(r"\bmodule\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:#\s*\([^;]*?\)\s*)?\((.*?)\)\s*;", re.DOTALL)
     for match in pattern.finditer(text):
         name = match.group(1)
@@ -106,6 +107,10 @@ def _extract_rtl_modules(text: str, rel_path: str) -> list[dict[str, Any]]:
             }
         )
     return modules
+
+
+def _strip_verilog_comments(text: str) -> str:
+    return re.sub(r"/\*.*?\*/|//[^\n\r]*", "", text, flags=re.DOTALL)
 
 
 def _extract_ports(header: str, body: str) -> list[dict[str, Any]]:

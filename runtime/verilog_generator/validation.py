@@ -154,6 +154,9 @@ def validate_generated(
     issues.extend(_validate_rtl(normalized, root))
     issues.extend(_static_lint_issues(normalized, root))
     issues.extend(_contract_gate_issues(plan_contract_interface_issues(normalized, audit_interface("rtl", root))))
+    line_comment_issues, line_comment_metrics = _validate_line_comment_gate(root, comment_language)
+    issues.extend(line_comment_issues)
+    metrics["line_comment_gate"] = line_comment_metrics
     issues.extend(_validate_rtl_reviewability(root, comment_language))
     issues.extend(_validate_rtl_style_profile(normalized, root))
     issues.extend(_validate_rtl_testbench(normalized, root, reference_cases))
@@ -378,6 +381,113 @@ def _validate_rtl_reviewability(root: Path, comment_language: str) -> list[Valid
     return issues
 
 
+def _validate_line_comment_gate(root: Path, comment_language: str) -> tuple[list[ValidationIssue], dict[str, int]]:
+    issues: list[ValidationIssue] = []
+    metrics = {
+        "scanned_files": 0,
+        "code_lines": 0,
+        "commented_code_lines": 0,
+        "violations": 0,
+    }
+    for path in _rtl_files(root):
+        rel = path.relative_to(root).as_posix()
+        line_infos = _verilog_line_comment_infos(path.read_text(encoding="utf-8", errors="ignore").splitlines())
+        metrics["scanned_files"] += 1
+        for index, info in enumerate(line_infos):
+            if not info["has_code"]:
+                continue
+            metrics["code_lines"] += 1
+            associated_comment = _associated_verilog_comment(line_infos, index)
+            if _comment_satisfies_language(associated_comment, comment_language):
+                metrics["commented_code_lines"] += 1
+                continue
+            metrics["violations"] += 1
+            if comment_language == "zh":
+                message = "Every generated Verilog code line must have a Chinese explanatory comment."
+            else:
+                message = "Every generated Verilog code line must have an explanatory comment."
+            issues.append(
+                ValidationIssue(
+                    "error",
+                    message,
+                    f"{rel}:{info['line_no']}",
+                    "static",
+                    "current_module_issue",
+                    detail="Add a same-line or immediately adjacent explanatory comment for this generated Verilog code line.",
+                )
+            )
+    return issues, metrics
+
+
+def _associated_verilog_comment(line_infos: list[dict[str, Any]], index: int) -> str:
+    same_line_comment = str(line_infos[index]["comment"])
+    if same_line_comment:
+        return same_line_comment
+    for neighbor in (index - 1, index + 1):
+        if 0 <= neighbor < len(line_infos) and line_infos[neighbor]["pure_comment"]:
+            neighbor_comment = str(line_infos[neighbor]["comment"])
+            if neighbor_comment:
+                return neighbor_comment
+    return ""
+
+
+def _comment_satisfies_language(comment: str, comment_language: str) -> bool:
+    normalized = comment.strip()
+    if not normalized:
+        return False
+    if comment_language == "zh":
+        return _contains_cjk(normalized)
+    return True
+
+
+def _verilog_line_comment_infos(lines: list[str]) -> list[dict[str, Any]]:
+    infos: list[dict[str, Any]] = []
+    in_block_comment = False
+    for line_no, line in enumerate(lines, start=1):
+        code, comment, in_block_comment = _split_verilog_code_and_comment(line, in_block_comment)
+        has_code = bool(code.strip())
+        has_comment = bool(comment.strip())
+        infos.append(
+            {
+                "line_no": line_no,
+                "has_code": has_code,
+                "comment": comment.strip(),
+                "pure_comment": has_comment and not has_code,
+            }
+        )
+    return infos
+
+
+def _split_verilog_code_and_comment(line: str, in_block_comment: bool) -> tuple[str, str, bool]:
+    code_parts: list[str] = []
+    comment_parts: list[str] = []
+    index = 0
+    while index < len(line):
+        if in_block_comment:
+            end_index = line.find("*/", index)
+            if end_index == -1:
+                comment_parts.append(line[index:])
+                return "".join(code_parts), " ".join(comment_parts), True
+            comment_parts.append(line[index:end_index])
+            index = end_index + 2
+            in_block_comment = False
+            continue
+        if line.startswith("//", index):
+            comment_parts.append(line[index + 2 :])
+            break
+        if line.startswith("/*", index):
+            end_index = line.find("*/", index + 2)
+            if end_index == -1:
+                comment_parts.append(line[index + 2 :])
+                return "".join(code_parts), " ".join(comment_parts), True
+            comment_parts.append(line[index + 2 : end_index])
+            index = end_index + 2
+            continue
+        code_parts.append(line[index])
+        index += 1
+    return "".join(code_parts), " ".join(comment_parts), False
+
+
 def _validate_rtl_style_profile(spec: dict[str, Any], root: Path) -> list[ValidationIssue]:
     if str(spec.get("rtl_style_profile") or "").lower() != "erie_strict":
         return []
@@ -396,12 +506,67 @@ def _validate_rtl_style_profile(spec: dict[str, Any], root: Path) -> list[Valida
         text = path.read_text(encoding="utf-8", errors="ignore")
         if "English" not in text or "Chinese" not in text:
             issues.append(ValidationIssue("warning", "Erie strict source should preserve the bilingual header.", rel))
+        if not all(marker in text for marker in ("Version:", "Revision Date:", "History:")):
+            issues.append(ValidationIssue("warning", "Erie strict source should preserve version/revision/history fields in the bilingual header.", rel))
         for region in required_regions:
             if region not in text:
                 issues.append(ValidationIssue("warning", f"Erie strict region {region!r} is missing.", rel))
+        if "case(" in text or "case (" in text:
+            if "state_current" not in text or "state_next" not in text:
+                issues.append(ValidationIssue("warning", "Erie strict FSMs should use `state_current` and `state_next` naming.", rel))
+            if not re.search(r"\bST_[A-Za-z0-9_]+\b", text):
+                issues.append(ValidationIssue("warning", "Erie strict FSMs should use `ST_*` localparam state names.", rel))
+        if re.search(r"generate\b", text) and "gen_" not in text:
+            issues.append(ValidationIssue("warning", "Erie strict generate branches should use labels beginning with `gen_`.", rel))
+        instance_names = _erie_instance_names(text)
+        if instance_names and not any(name.endswith("_Inst") for name in instance_names):
+                issues.append(ValidationIssue("warning", "Erie strict module instance names should end with `_Inst`.", rel))
+        if not _erie_has_dense_chinese_comments(text):
+            issues.append(ValidationIssue("warning", "Erie strict source should keep Chinese explanatory comments near key structure.", rel))
+        family = str(spec.get("interface_family") or "")
+        if family in {"axi_stream", "axi4", "axi4_lite", "ahb", "apb"} and not _bus_grouping_looks_erie(text, family):
+            issues.append(ValidationIssue("warning", f"Erie strict {family} interfaces should keep channel/role port grouping and family-style naming.", rel))
         if re.search(r"\bwire\s+[A-Za-z_][A-Za-z0-9_]*\s*=", text):
             issues.append(ValidationIssue("error", "Declare wires separately from assign statements.", rel))
     return issues
+
+
+def _erie_has_dense_chinese_comments(text: str) -> bool:
+    comment_lines = [line for line in text.splitlines() if "//" in line]
+    if not comment_lines:
+        return False
+    cjk_count = sum(1 for line in comment_lines if _contains_cjk(_comment_texts(line)))
+    return cjk_count >= min(6, len(comment_lines))
+
+
+def _bus_grouping_looks_erie(text: str, family: str) -> bool:
+    lower = text.lower()
+    if family == "axi_stream":
+        return any(token in lower for token in ("//读通道", "//控制通道", "i_m_axis_", "o_m_axis_"))
+    if family in {"axi4", "axi4_lite"}:
+        return any(token in lower for token in ("//写通道", "//读通道", "i_axi_aw", "i_axi_ar", "o_axi_r", "o_m_axi_", "i_s_axi_"))
+    if family == "ahb":
+        return any(token in lower for token in ("i_ahb_hclk", "i_ahb_hrstn", "i_ahb_htrans", "//控制通道"))
+    if family == "apb":
+        return any(token in lower for token in ("i_apb_pclk", "i_apb_prstn", "i_apb_psel", "//控制通道"))
+    return True
+
+
+def _erie_instance_names(text: str) -> list[str]:
+    names: list[str] = []
+    skip_heads = {"module", "if", "for", "case", "assign", "always", "else", "generate", "endgenerate"}
+    patterns = (
+        re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", flags=re.MULTILINE),
+        re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*#\s*\([^;]*?\)\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(", flags=re.MULTILINE | re.DOTALL),
+    )
+    for pattern in patterns:
+        for match in pattern.finditer(text):
+            head = match.group(1)
+            instance = match.group(2)
+            if head in skip_heads:
+                continue
+            names.append(instance)
+    return names
 
 
 def _run_rtl_readiness(

@@ -77,7 +77,7 @@ def remote_setting(settings: dict[str, Any], key: str) -> str:
     if not isinstance(remote, dict) or key not in remote:
         raise KeyError(f"Missing settings.remote.{key}")
     value = remote[key]
-    if key in {"server_list", "toolchain_config"}:
+    if key in {"server_list", "toolchain_config", "server_selection_path"}:
         return str(_resolve_project_local_path(value, purpose=f"settings.remote.{key}"))
     return str(value)
 

@@ -6,6 +6,7 @@ Use this reference for independent static lint, code review, and repair work on 
 
 | Code | Check | Fix |
 |------|-------|-----|
+| `A0` | Generated `.v` code line lacks a same-line or immediately adjacent explanatory comment in the requested language | Add a Chinese explanatory comment when `comment_language=zh`; blank lines and pure comment lines are exempt |
 | `A1` | Legacy combinational block does not use `always @(*)` | Use `always @(*)` or convert the logic shape |
 | `A2` | Blocking and nonblocking assignments are mixed in one always block | Split combinational and sequential intent |
 | `A3` | `case` statement has no explicit `default` | Add a safe `default` branch |

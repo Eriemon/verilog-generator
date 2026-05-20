@@ -9,8 +9,10 @@ from typing import Any
 from .intervention import decision_applies
 from .interface_templates import InterfaceTemplateError, select_interface_template
 from .planning import decompose_spec
+from .refined_templates import summarize_refined_templates
 from .reference_contract import REFERENCE_RESULT_TAG
 from .spec import normalize_spec
+from .use_case_templates import UseCaseTemplateError, select_use_case_template, summarize_use_case_template
 from .vectors import VECTOR_HASH_TAG
 
 PROMPT_STAGES = (
@@ -120,6 +122,8 @@ def _render_rtl_prompt(spec: dict[str, Any], comment_language: str, *, decision:
             ],
             manifest=manifest,
             interface_template=_interface_template_context(spec),
+            use_case_template=_use_case_template_context(spec),
+            refined_templates=_refined_template_context(spec),
         ),
         decision=decision,
     )
@@ -133,11 +137,15 @@ def _base_prompt(
     rules: list[str],
     manifest: dict[str, Any],
     interface_template: dict[str, Any] | None = None,
+    use_case_template: dict[str, Any] | None = None,
+    refined_templates: list[dict[str, Any]] | None = None,
 ) -> str:
     spec_json = json.dumps(spec, indent=2, ensure_ascii=False)
     manifest_json = json.dumps(manifest, indent=2, ensure_ascii=False)
     rules_text = "\n".join(f"- {rule}" for rule in rules)
     interface_template_text = _format_interface_template_section(interface_template)
+    use_case_template_text = _format_use_case_template_section(use_case_template)
+    refined_template_text = _format_refined_template_section(refined_templates)
     return f"""# {title}
 
 You are an expert hardware design generator. {target_line}
@@ -154,6 +162,10 @@ Think through the design internally before writing files, but do not output that
 {rules_text}
 
 {interface_template_text}
+
+{use_case_template_text}
+
+{refined_template_text}
 
 ## Output contract
 
@@ -209,6 +221,8 @@ def _render_staged_prompt(
     codegen_plan_json = json.dumps(codegen_plan or {}, indent=2, ensure_ascii=False)
     decision_json = json.dumps(decision_context, indent=2, ensure_ascii=False)
     interface_template_text = _format_interface_template_section(_interface_template_context(scoped_plan))
+    use_case_template_text = _format_use_case_template_section(_use_case_template_context(scoped_plan))
+    refined_template_text = _format_refined_template_section(_refined_template_context(scoped_plan))
     rules_text = "\n".join(f"- {rule}" for rule in stage_rules)
     return f"""# {stage_title}
 
@@ -252,6 +266,10 @@ Prompt budget: {budget}. Target subfunction: {subfunction or "all"}.
 ```
 
 {interface_template_text}
+
+{use_case_template_text}
+
+{refined_template_text}
 
 ## Code generation plan
 
@@ -449,7 +467,7 @@ def _comment_rules_for(target: str, comment_language: str) -> list[str]:
         rtl_labels = "`State register`, `Next-state logic`, and `Output logic`"
     return [
         language_rule,
-        "Make the RTL reviewable: every port signal definition, parameter/localparam definition, wire/reg signal definition, always block, assign statement, state machine definition, and module instantiation must have an adjacent explanatory comment.",
+        "Hard gate: every non-empty generated Verilog code line in RTL and testbench `.v` files must have a same-line or immediately adjacent explanatory comment in the requested comment language; blank lines and pure comment lines are the only exemptions.",
         f"If the RTL uses an FSM, it must use a three-block FSM style with fixed comment labels {rtl_labels}.",
         "Use the manifest `checks.reviewability_assessment` field to summarize comment coverage, FSM structure, and any reviewability limitation.",
     ]
@@ -470,16 +488,22 @@ def _rtl_style_rules(spec: dict[str, Any], comment_language: str) -> list[str]:
         "Use `i_` for input ports, `o_` for output ports, `io_` for bidirectional ports, and group port declarations into annotated interface regions.",
         "Use `C_` uppercase names for module parameters, `ST_` uppercase names for state parameters, and uppercase names for other localparams.",
         "Use the required signal prefixes: `reg_`, `cnt_`, `state_`, `flag_`, `enc_`, `dec_`, and the `_o` suffix for internal output logic signals. Do not duplicate prefixes.",
+        "When an FSM is present, prefer explicit `state_current` and `state_next` registers and use `ST_*` localparams for every encoded state.",
         "Split sequential logic so that each `always` block assigns exactly one reg signal.",
         "Do not use `wire xxx = ...;`; declare the wire first and use a separate `assign` statement.",
         "Follow the exact 18-region source order: parameters, state parameters, instantiation signals, counters, state signals, regs, flags, encoders, decoders, other signals, output signals, other assigns, output assigns, output processing, FSM, state transition processing, main datapath processing, module instantiation.",
         "Place all module instantiations in the final source region, after every assign and always block.",
+        "Prefer module instance names ending with `_Inst` and named `generate` labels beginning with `gen_`.",
+        "Preserve a header that includes version, revision date, and revision history fields in both the English and Chinese sections; keep the version/revision/history blocks explicit.",
+        "For AXI/AXIS/APB/AHB interfaces, group ports by channel and role with nearby explanatory comments instead of flattening the interface declaration.",
         "If an FSM is present, implement a three-block state machine that matches the template structure and comment labels exactly.",
     ]
 
 
 def _design_requirements_context(spec: dict[str, Any]) -> dict[str, Any]:
     interface_template = _interface_template_context(spec)
+    use_case_template = summarize_use_case_template(_use_case_template_context(spec))
+    refined_templates = _refined_template_context(spec)
     return {
         "design_requirements": spec.get("design_requirements", {}),
         "pipeline_required": spec.get("pipeline_required"),
@@ -487,6 +511,10 @@ def _design_requirements_context(spec: dict[str, Any]) -> dict[str, Any]:
         "interface_family": spec.get("interface_family"),
         "interface_profile": spec.get("interface_profile", {}),
         "selected_interface_template_id": interface_template.get("template_id") if interface_template else None,
+        "selected_use_case_template_id": use_case_template.get("id"),
+        "use_case_template": use_case_template,
+        "selected_refined_template_ids": [item["template_id"] for item in refined_templates],
+        "refined_templates": refined_templates,
         "rtl_dialect": "verilog",
         "rtl_style_profile": spec.get("rtl_style_profile"),
     }
@@ -502,6 +530,21 @@ def _interface_template_context(spec: dict[str, Any]) -> dict[str, Any] | None:
             "selection_error": str(exc),
             "content": "",
         }
+
+
+def _use_case_template_context(spec: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        return select_use_case_template(spec)
+    except UseCaseTemplateError as exc:
+        return {
+            "template_id": None,
+            "selection_error": str(exc),
+            "artifacts": [],
+        }
+
+
+def _refined_template_context(spec: dict[str, Any]) -> list[dict[str, Any]]:
+    return summarize_refined_templates(spec)
 
 
 def _format_interface_template_section(interface_template: dict[str, Any] | None) -> str:
@@ -527,6 +570,11 @@ def _format_interface_template_section(interface_template: dict[str, Any] | None
         "clock": interface_template.get("clock"),
         "reset": interface_template.get("reset"),
         "parameters": interface_template.get("parameters", []),
+        "style_contract": {
+            "port_grouping": "group ports by channel and role",
+            "clock_reset_naming": "follow Erie family-specific clock/reset naming",
+            "inline_comment_language": "prefer Chinese explanatory comments",
+        },
     }
     metadata_json = json.dumps(metadata, indent=2, ensure_ascii=False)
     return f"""## Interface template
@@ -541,6 +589,69 @@ Use this local standard interface template as the preferred port contract for th
 {content}
 ```
 """
+
+
+def _format_use_case_template_section(use_case_template: dict[str, Any] | None) -> str:
+    if not use_case_template:
+        return ""
+    if use_case_template.get("selection_error"):
+        return (
+            "## Use-case template\n\n"
+            f"Local use-case template selection failed: {use_case_template['selection_error']}\n"
+            "Do not generate RTL until workflow.use_case_template_id is corrected.\n"
+        )
+    metadata = summarize_use_case_template(use_case_template)
+    metadata_json = json.dumps(metadata, indent=2, ensure_ascii=False)
+    artifact_sections: list[str] = []
+    for artifact in use_case_template.get("artifacts", []):
+        content = str(artifact.get("content") or "").rstrip()
+        if not content:
+            continue
+        artifact_sections.append(
+            "### "
+            + str(artifact.get("kind"))
+            + "\n\n```"
+            + _language_from_path(str(artifact.get("relative_path") or artifact.get("path") or ""))
+            + "\n"
+            + content
+            + "\n```\n"
+        )
+    artifacts_text = "\n".join(artifact_sections)
+    return f"""## Use-case template
+
+Use this local ADC/DAC family template as board-level guidance when the design intent matches the selected use case. Preserve its family-specific structure, provenance, parameterization points, and sideband expectations unless the confirmed spec explicitly overrides them. Record any adaptation in the manifest checks and codegen plan.
+
+```json
+{metadata_json}
+```
+
+{artifacts_text}
+"""
+
+
+def _format_refined_template_section(refined_templates: list[dict[str, Any]] | None) -> str:
+    if not refined_templates:
+        return ""
+    metadata_json = json.dumps(refined_templates, indent=2, ensure_ascii=False)
+    template_sections: list[str] = []
+    for template in refined_templates:
+        content = Path(str(template["path"])).read_text(encoding="utf-8").rstrip()
+        template_sections.append(
+            "### "
+            + str(template["template_id"])
+            + "\n\n```verilog\n"
+            + content
+            + "\n```\n"
+        )
+    return (
+        "## Refined Verilog design patterns\n\n"
+        "Use these compact local patterns as design hints distilled from the repository reference RTL. "
+        "Adapt them to the confirmed task instead of copying large reference modules verbatim.\n\n"
+        "```json\n"
+        + metadata_json
+        + "\n```\n\n"
+        + "\n".join(template_sections)
+    )
 
 
 def _vector_contract_rules(vector_contract: dict[str, Any] | None) -> list[str]:
@@ -567,6 +678,10 @@ def _language_from_path(path: str) -> str:
     suffix = Path(path).suffix.lower()
     if suffix == ".v":
         return "verilog"
+    if suffix == ".tcl":
+        return "tcl"
+    if suffix == ".xdc":
+        return "xdc"
     if suffix == ".py":
         return "python"
     if suffix == ".json":

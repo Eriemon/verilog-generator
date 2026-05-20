@@ -1,0 +1,58 @@
+{
+  "name": "axis_ready_valid_pipe",
+  "target": "rtl",
+  "rtl_style_profile": "erie_strict",
+  "description": "AXIS ready valid pipeline slice for one beat buffering.",
+  "pipeline_required": true,
+  "codegen_plan_required": true,
+  "streamability": "streamable",
+  "interface_family": "axi_stream",
+  "interface_profile": {
+    "keep_ready": true,
+    "keep_last": true,
+    "data_width": 32,
+    "clock_reset_domain": {
+      "clock": "i_axis_aclk",
+      "reset": "i_axis_arstn"
+    }
+  },
+  "design_requirements": {
+    "target": "rtl",
+    "pipeline_required": true,
+    "streamability": "streamable",
+    "interface_family": "axi_stream",
+    "interface_profile": {
+      "keep_ready": true,
+      "keep_last": true,
+      "data_width": 32,
+      "clock_reset_domain": {
+        "clock": "i_axis_aclk",
+        "reset": "i_axis_arstn"
+      }
+    },
+    "confirmed_by_user": true,
+    "confirmation_notes": "Preserve ready valid backpressure semantics."
+  },
+  "interfaces": {
+    "ports": [
+      {"name": "i_axis_aclk", "direction": "input", "width": 1, "role": "clock"},
+      {"name": "i_axis_arstn", "direction": "input", "width": 1, "role": "reset"},
+      {"name": "i_s_axis_tvalid", "direction": "input", "width": 1},
+      {"name": "o_s_axis_tready", "direction": "output", "width": 1},
+      {"name": "i_s_axis_tdata", "direction": "input", "width": 32},
+      {"name": "o_m_axis_tvalid", "direction": "output", "width": 1},
+      {"name": "i_m_axis_tready", "direction": "input", "width": 1},
+      {"name": "o_m_axis_tdata", "direction": "output", "width": 32}
+    ]
+  },
+  "behavior": [
+    "Provide a one stage ready valid slice that keeps upstream and downstream handshake visible."
+  ],
+  "clock": {"name": "i_axis_aclk", "edge": "posedge", "frequency_mhz": 100},
+  "reset": {"name": "i_axis_arstn", "active": "low", "synchronous": false},
+  "constraints": ["Use synthesizable Verilog-2001."],
+  "outputs": [
+    {"path": "rtl/axis_ready_valid_pipe.v", "kind": "source", "language": "verilog"},
+    {"path": "tb/axis_ready_valid_pipe_tb.v", "kind": "testbench", "language": "verilog"}
+  ]
+}

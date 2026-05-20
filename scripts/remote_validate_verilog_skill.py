@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,7 @@ if str(SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(SKILL_ROOT))
 
 from runtime.verilog_generator.config import load_settings, remote_setting  # noqa: E402
+from runtime.verilog_generator.remote_selection import resolve_confirmed_remote_server  # noqa: E402
 
 REMOTE_FIXTURES = (
     "comb_parity_mux",
@@ -24,6 +26,7 @@ REMOTE_FIXTURES = (
     "ready_valid_slice",
 )
 SIMULATOR_BACKENDS = ("xsim", "vcs_verdi", "iverilog")
+_TOKEN_RE = re.compile(r"\$\{([^}]+)\}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -44,7 +47,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         helper = Path(remote_setting(settings, "helper"))
         remote_settings = Path(remote_setting(settings, "settings"))
-        server_list = Path(remote_setting(settings, "server_list"))
+        server_list = resolve_server_list_path(
+            Path(remote_setting(settings, "server_list")),
+            remote_settings,
+        )
         toolchain_config = resolve_toolchain_config(settings, args.toolchain_config)
     except ValueError as exc:
         parser.error(str(exc))
@@ -152,11 +158,15 @@ def remote_location_lines(remote_parent: str, remote_skill: str, cleanup_remote:
 def resolve_server(settings: dict, arg_server: str | None, parser: argparse.ArgumentParser) -> str:
     if arg_server:
         return arg_server
-    remote = settings.get("remote", {})
-    if isinstance(remote, dict) and remote.get("server_confirmed") is True:
-        return remote_setting(settings, "server")
+    selection = resolve_server_from_selection(settings)
+    if selection:
+        return str(selection["server_id"])
     parser.error("Remote server is not confirmed. Pass --server after the user selects a target from erie-remote-ssh choices.")
     raise AssertionError("unreachable")
+
+
+def resolve_server_from_selection(settings: dict) -> dict | None:
+    return resolve_confirmed_remote_server(settings)
 
 
 def resolve_toolchain_config(settings: dict, arg_path: Path | None) -> Path:
@@ -164,6 +174,47 @@ def resolve_toolchain_config(settings: dict, arg_path: Path | None) -> Path:
         return arg_path.expanduser().resolve()
     configured = remote_setting(settings, "toolchain_config")
     return Path(configured).expanduser().resolve()
+
+
+def resolve_server_list_path(configured_path: Path, remote_settings: Path) -> Path:
+    configured = configured_path.expanduser().resolve()
+    if configured.exists():
+        return configured
+    fallback = _remote_ssh_default_server_list(remote_settings)
+    if fallback is not None and fallback.exists():
+        print(f"server_list_fallback: {fallback}")
+        return fallback.resolve()
+    return configured
+
+
+def _remote_ssh_default_server_list(remote_settings: Path) -> Path | None:
+    if not remote_settings.exists():
+        return None
+    data = json.loads(remote_settings.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return None
+    raw_path = data.get("paths", {}).get("default_server_list")
+    if not isinstance(raw_path, str) or not raw_path:
+        return None
+    skill_dir = remote_settings.parent.parent
+    context = {
+        "skill_dir": skill_dir,
+        "settings_dir": remote_settings.parent,
+        "home": Path.home(),
+    }
+    expanded = _expand_remote_path(raw_path, context)
+    return Path(expanded).expanduser().resolve()
+
+
+def _expand_remote_path(value: str, context: dict[str, Path]) -> str:
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(1)
+        if token.startswith("env:"):
+            return os.environ.get(token[4:], "")
+        resolved = context.get(token)
+        return str(resolved) if resolved is not None else match.group(0)
+
+    return _TOKEN_RE.sub(replace, value)
 
 
 def selection_from_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> dict:
@@ -253,6 +304,23 @@ def stage_package(helper: Path, run_id: str) -> Path:
     target = package_root / "erie-verilog-generator"
     ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "_smoke_runs", "reports", "workflow-state.json")
     shutil.copytree(SKILL_ROOT, target, ignore=ignore)
+    # The remote confidence gate runs the copied skill from inside a temporary
+    # package root that stands in for the original repository root. Add
+    # lightweight workspace-root markers so project-local state resolution keeps
+    # working even though the copied package does not include the source repo.
+    (package_root / "AGENTS.md").write_text(
+        "# Remote Validation Workspace\n\n"
+        "This marker file is created only for remote confidence-gate staging so\n"
+        "workspace-root discovery can resolve project-local state paths.\n",
+        encoding="utf-8",
+    )
+    (target / "AGENTS.md").write_text(
+        "# Remote Validation Skill Workspace\n\n"
+        "This marker file is created only for remote confidence-gate staging so\n"
+        "workspace-root discovery can resolve project-local state paths when the\n"
+        "skill is executed directly from the copied skill directory.\n",
+        encoding="utf-8",
+    )
     return package_root
 
 

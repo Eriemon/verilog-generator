@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "description": "Skill effectiveness regression cases for Erie Verilog Generator, including canonical RTL flow and ADC/DAC family-template selection.",
+  "cases": [
+    {
+      "id": "canonical_rtl",
+      "kind": "prompt_regression",
+      "spec": "assets/examples/rtl_erie_verilog_spec.json",
+      "expectations": {
+        "rtl_style_profile": "erie_strict",
+        "selected_use_case_template_id": null,
+        "requires_use_case_section": false
+      }
+    },
+    {
+      "id": "spi_adc",
+      "kind": "use_case_template_regression",
+      "spec": "assets/examples/use_case_templates/spi_adc.json",
+      "expectations": {
+        "selected_use_case_template_id": "spi_adc",
+        "requires_use_case_section": true
+      }
+    },
+    {
+      "id": "spi_dac",
+      "kind": "use_case_template_regression",
+      "spec": "assets/examples/use_case_templates/spi_dac.json",
+      "expectations": {
+        "selected_use_case_template_id": "spi_dac",
+        "requires_use_case_section": true
+      }
+    },
+    {
+      "id": "jesd_adc",
+      "kind": "use_case_template_regression",
+      "spec": "assets/examples/use_case_templates/jesd_adc.json",
+      "expectations": {
+        "selected_use_case_template_id": "jesd_adc",
+        "requires_use_case_section": true
+      }
+    },
+    {
+      "id": "jesd_dac",
+      "kind": "use_case_template_regression",
+      "spec": "assets/examples/use_case_templates/jesd_dac.json",
+      "expectations": {
+        "selected_use_case_template_id": "jesd_dac",
+        "requires_use_case_section": true
+      }
+    },
+    {
+      "id": "mxfe_mixed",
+      "kind": "use_case_template_regression",
+      "spec": "assets/examples/use_case_templates/mxfe_mixed.json",
+      "expectations": {
+        "selected_use_case_template_id": "mxfe_mixed",
+        "requires_use_case_section": true
+      }
+    },
+    {
+      "id": "axi4_lite_csr",
+      "kind": "refined_template_regression",
+      "spec": "assets/examples/refined_verilog_templates/axi4_lite_csr.json",
+      "expectations": {
+        "rtl_style_profile": "erie_strict",
+        "selected_refined_template_ids": ["axi4_lite_csr_shell"],
+        "requires_refined_template_section": true,
+        "ready_for_generation": true
+      }
+    },
+    {
+      "id": "axis_ready_valid",
+      "kind": "refined_template_regression",
+      "spec": "assets/examples/refined_verilog_templates/axis_ready_valid.json",
+      "expectations": {
+        "rtl_style_profile": "erie_strict",
+        "selected_refined_template_ids": ["axis_ready_valid_slice"],
+        "requires_refined_template_section": true,
+        "ready_for_generation": true
+      }
+    },
+    {
+      "id": "axi_interconnect_dma",
+      "kind": "refined_template_regression",
+      "spec": "assets/examples/refined_verilog_templates/axi_interconnect_dma.json",
+      "expectations": {
+        "rtl_style_profile": "erie_strict",
+        "selected_refined_template_ids": ["axi_interconnect_port_groups"],
+        "requires_refined_template_section": true,
+        "ready_for_generation": true
+      }
+    },
+    {
+      "id": "conv_load_store",
+      "kind": "refined_template_regression",
+      "spec": "assets/examples/refined_verilog_templates/conv_load_store.json",
+      "expectations": {
+        "rtl_style_profile": "erie_strict",
+        "selected_refined_template_ids": ["conv_load_store_pipeline"],
+        "requires_refined_template_section": true,
+        "ready_for_generation": true
+      }
+    }
+  ]
+}

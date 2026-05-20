@@ -303,6 +303,7 @@ def _validate_shape(spec: dict[str, Any]) -> None:
             raise SpecError(f"Spec {key} must be a list.")
     if not isinstance(spec.get("workflow"), dict):
         raise SpecError("Spec workflow must be an object.")
+    _validate_workflow(spec.get("workflow", {}))
     if not isinstance(spec.get("performance"), dict):
         raise SpecError("Spec performance must be an object.")
 
@@ -342,3 +343,17 @@ def _as_list(value: Any) -> list[Any]:
     if isinstance(value, list):
         return value
     return [value]
+
+
+def _validate_workflow(workflow: dict[str, Any]) -> None:
+    use_case_template_id = workflow.get("use_case_template_id")
+    if use_case_template_id in (None, ""):
+        return
+    if not isinstance(use_case_template_id, str):
+        raise SpecError("workflow.use_case_template_id must be a string when provided.")
+    from .use_case_templates import UseCaseTemplateError, validate_use_case_template_id
+
+    try:
+        validate_use_case_template_id(use_case_template_id)
+    except UseCaseTemplateError as exc:
+        raise SpecError(str(exc)) from exc

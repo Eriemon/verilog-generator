@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "template_id": "spi_adc",
+      "display_name": "SPI ADC acquisition chain",
+      "directory": "spi_adc",
+      "summary": "Triggered SPI ADC capture path with CNV or ODR generation, BUSY edge handling, and DMA-backed sample collection.",
+      "source_projects": [
+        "ref/projects/ad40xx_fmc",
+        "ref/projects/ad469x_fmc",
+        "ref/projects/ad7134_fmc"
+      ],
+      "parameterization_points": [
+        "adc_resolution",
+        "adc_num_channels",
+        "adc_sampling_rate",
+        "spi_data_width",
+        "trigger_policy",
+        "board_family"
+      ]
+    },
+    {
+      "template_id": "spi_dac",
+      "display_name": "SPI DAC playback chain",
+      "directory": "spi_dac",
+      "summary": "SPI DAC control and cyclic DMA playback path with GPIO sideband control such as fault, reset, and LDAC.",
+      "source_projects": [
+        "ref/projects/ad5758_sdz",
+        "ref/projects/ad5766_sdz"
+      ],
+      "parameterization_points": [
+        "dac_data_width",
+        "num_channels",
+        "dma_cyclic",
+        "gpio_sideband_signals",
+        "board_family"
+      ]
+    },
+    {
+      "template_id": "jesd_adc",
+      "display_name": "JESD ADC receive chain",
+      "directory": "jesd_adc",
+      "summary": "JESD204 ADC receive path with RX transceiver, transport unpacking, channel packing, and DMA capture.",
+      "source_projects": [
+        "ref/projects/ad6676evb"
+      ],
+      "parameterization_points": [
+        "rx_jesd_l",
+        "rx_num_converters",
+        "rx_sample_width",
+        "rx_samples_per_frame",
+        "board_family"
+      ]
+    },
+    {
+      "template_id": "jesd_dac",
+      "display_name": "JESD DAC transmit chain",
+      "directory": "jesd_dac",
+      "summary": "JESD204 DAC transmit path with TX transceiver, upack, FIFO, DMA feed, and lane-rate-specific clocking hooks.",
+      "source_projects": [
+        "ref/projects/dac_fmc_ebz",
+        "ref/projects/daq3"
+      ],
+      "parameterization_points": [
+        "tx_jesd_l",
+        "tx_num_converters",
+        "tx_sample_width",
+        "tx_samples_per_frame",
+        "fifo_depth",
+        "board_family"
+      ]
+    },
+    {
+      "template_id": "mxfe_mixed",
+      "display_name": "Mixed RF ADC/DAC MxFE chain",
+      "directory": "mxfe_mixed",
+      "summary": "Full-duplex MxFE board-level chain with coordinated RF ADC and RF DAC JESD paths, PMOD/FMC control buses, and TDD sideband wiring.",
+      "source_projects": [
+        "ref/projects/ad9081_fmca_ebz_x_band",
+        "ref/projects/daq3"
+      ],
+      "parameterization_points": [
+        "rx_lane_rate",
+        "tx_lane_rate",
+        "num_links",
+        "rx_ks_per_channel",
+        "tx_ks_per_channel",
+        "tdd_enable",
+        "board_family"
+      ]
+    }
+  ]
+}

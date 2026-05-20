@@ -5,6 +5,8 @@
     "smoke_dir": "${skill_dir}/_smoke_runs",
     "reports_dir": "${skill_dir}/reports",
     "example_spec": "${skill_dir}/assets/examples/rtl_erie_verilog_spec.json",
+    "use_case_examples_dir": "${skill_dir}/assets/examples/use_case_templates",
+    "use_case_template_catalog": "${skill_dir}/assets/use_case_templates/catalog.json",
     "quick_validate": "${home}/.codex/skills/.system/skill-creator/scripts/quick_validate.py"
   },
   "skill_dependencies": {
@@ -286,6 +288,7 @@
     "helper": "${home}/.codex/skills/erie-remote-ssh/scripts/remote_ssh.py",
     "settings": "${home}/.codex/skills/erie-remote-ssh/config/defaults.json",
     "server_list": ".erie-verilog-generator-state/server_list.local.json",
+    "server_selection_path": ".erie-verilog-generator-state/remote_server_selection.json",
     "server_confirmed": false,
     "python": "python3",
     "remote_root": ".erie-verilog-generator-validation",

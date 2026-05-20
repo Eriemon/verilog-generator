@@ -34,6 +34,7 @@ def evaluate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
     localization_attempts = 0
     auto_debug_before_human = 0
     human_escalations = 0
+    workflow_statuses: list[str] = []
 
     for event in events:
         for source in event.get("error_sources", []) or []:
@@ -48,6 +49,8 @@ def evaluate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
                 auto_debug_before_human += 1
         if event.get("event") == "resolve_intervention" or event.get("status") == "resolved":
             resolved_interventions += 1
+        if event.get("event") == "workflow_attempt" and isinstance(event.get("status"), str):
+            workflow_statuses.append(str(event["status"]))
         if event.get("event") == "verify_stage":
             verify_stage_events += 1
             if event.get("ready") is True:
@@ -127,6 +130,7 @@ def evaluate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
         for event in noise_events
         if event.get("event") == "validate" and event.get("ok") is True
     ]
+    final_status = workflow_statuses[-1] if workflow_statuses else None
     return {
         "events": len(events),
         "attempts": attempts,
@@ -137,6 +141,7 @@ def evaluate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
         "readiness_pass_rate": (passed_validations / total_validations) if total_validations else None,
         "correctness": any(event.get("ok") and event.get("readiness") in {"execute", "implement"} for event in validate_events),
         "correct": any(event.get("ok") and event.get("readiness") in {"execute", "implement"} for event in validate_events),
+        "final_status": final_status,
         "error_source_distribution": error_sources,
         "human_intervention_count": human_interventions,
         "interventions": human_interventions,

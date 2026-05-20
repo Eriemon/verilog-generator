@@ -1,0 +1,89 @@
+{
+  "name": "jesd_adc_capture_bridge",
+  "target": "rtl",
+  "rtl_dialect": "verilog",
+  "rtl_style_profile": "erie_strict",
+  "design_requirements": {
+    "target": "rtl",
+    "pipeline_required": true,
+    "streamability": "streamable",
+    "interface_family": "native",
+    "interface_profile": {},
+    "confirmed_by_user": true,
+    "confirmation_notes": "Use the JESD ADC family template for an RX sample capture bridge."
+  },
+  "streamability": "streamable",
+  "interface_family": "native",
+  "interface_profile": {},
+  "pipeline_required": true,
+  "codegen_plan_required": true,
+  "description": "Bridge a JESD ADC receive lane set into a packed sample-valid output with explicit RX core clock handling.",
+  "interfaces": {
+    "ports": [
+      {
+        "name": "i_rx_clk",
+        "direction": "input",
+        "width": 1,
+        "role": "clock"
+      },
+      {
+        "name": "i_rstn",
+        "direction": "input",
+        "width": 1,
+        "role": "reset"
+      },
+      {
+        "name": "i_lane_data",
+        "direction": "input",
+        "width": 2
+      },
+      {
+        "name": "o_sample_valid",
+        "direction": "output",
+        "width": 1
+      },
+      {
+        "name": "o_sample_data",
+        "direction": "output",
+        "width": 32
+      }
+    ]
+  },
+  "behavior": [
+    "Capture lane data on the RX core clock.",
+    "Pack received lane bits into a 32-bit sample output.",
+    "Assert o_sample_valid whenever a new packed sample is presented."
+  ],
+  "clock": {
+    "name": "i_rx_clk",
+    "edge": "posedge",
+    "frequency_mhz": 250
+  },
+  "reset": {
+    "name": "i_rstn",
+    "active": "low",
+    "synchronous": false
+  },
+  "constraints": [
+    "Use synthesizable Verilog-2001.",
+    "Keep the RX core clock domain explicit in the interface."
+  ],
+  "outputs": [
+    {
+      "path": "rtl/jesd_adc_capture_bridge.v",
+      "kind": "source",
+      "language": "verilog"
+    },
+    {
+      "path": "tb/jesd_adc_capture_bridge_tb.v",
+      "kind": "testbench",
+      "language": "verilog"
+    }
+  ],
+  "notes": [],
+  "subfunctions": [],
+  "workflow": {
+    "use_case_template_id": "jesd_adc"
+  },
+  "performance": {}
+}

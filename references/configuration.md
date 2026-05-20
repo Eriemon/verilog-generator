@@ -1,5 +1,15 @@
 # Configuration
 
+## Table of Contents
+
+- [Path Resolution](#path-resolution)
+- [Skill Dependencies](#skill-dependencies)
+- [Local Validation](#local-validation)
+- [Simulator Selection](#simulator-selection)
+- [Interface Defaults](#interface-defaults)
+- [Remote Validation](#remote-validation)
+- [Sensitive Data](#sensitive-data)
+
 Use `config/defaults.json` as the single source for local and remote validation defaults.
 
 ## Path Resolution
@@ -13,6 +23,14 @@ Settings support these placeholders:
 - `${env:NAME}`: an environment variable value.
 
 Keep local generated smoke runs, request files, downloads, and reports inside configured temporary directories and clean them after validation. Remote validation run directories are retained by default so the user can inspect generated Verilog projects.
+
+The default path set also includes:
+
+- `paths.example_spec`: the canonical Verilog-only example spec.
+- `paths.use_case_examples_dir`: the directory that stores the five ADC or DAC family example specs.
+- `paths.use_case_template_catalog`: the board-level ADC or DAC family catalog under `assets/use_case_templates/catalog.json`.
+
+Skill-effectiveness eval assets live under `evals/evals.json`. The file records the canonical Verilog case, the five ADC/DAC family-template cases, and the refined local Verilog template cases so a deterministic with-vs-without skill harness can measure pass-rate delta without reconstructing the scenario list by hand.
 
 ## Skill Dependencies
 
@@ -63,6 +81,12 @@ python .\scripts\validate_verilog_skill.py --settings .\config\defaults.json
 
 The script runs standard skill validation, compile checks, smoke tests, CLI checks, legacy-term scanning, hardcoded-path scanning, and residual-artifact cleanup.
 
+Run the deterministic skill-effectiveness gate from the skill root:
+
+```powershell
+python -m runtime.verilog_generator eval-skill --evals .\evals\evals.json --out .\reports\verilog\skill_effectiveness.json
+```
+
 Run the local toolchain preflight from the skill root when a caller asks for compile, execute, or implement readiness:
 
 ```powershell
@@ -89,6 +113,10 @@ Supported interface families are `axi_stream`, `axi4`, `axi4_lite`, `ahb`, `apb`
 
 Local standard interface templates live under `assets/interface_templates`. The catalog maps `interface_family`, `role`, and `read_write_mode` to a single `.vinc` snippet for AXI-Stream duplex, AXI4-Lite config, AXI4-Full master, AXI4-Full slave, AHB-Lite config, and APB config interfaces. Callers may set `interface_profile.template_id` to request a specific template; otherwise the requirements layer records the default selected template in `selected_interface_template_id` and the codegen plan's `interface_decision`. Template port names, parameter names, and Chinese comments are strict-preferred defaults. Generated RTL may adapt them only when the confirmed spec explicitly conflicts, and that adaptation must be recorded in the generated reviewability checks.
 
+Board-level ADC or DAC family templates live under `assets/use_case_templates`. The catalog is keyed by `workflow.use_case_template_id` and currently supports `spi_adc`, `spi_dac`, `jesd_adc`, `jesd_dac`, and `mxfe_mixed`. Each bundle contains `manifest.json`, a representative `verilog/system_top.v`, Tcl block-design fragments, a project Tcl wrapper, and one representative XDC. The runtime does not auto-detect these families from part names; callers must set `workflow.use_case_template_id` explicitly when they want board-level family guidance.
+
+`rtl_style_profile=erie_strict` now also inherits ref-derived Erie style guidance from `references/erie-ref-style.md` and `assets/style_templates/`. This strengthens bilingual headers, FSM naming (`state_current` / `state_next` / `ST_*`), `_Inst` instance naming, `gen_*` generate labels, and AXI/AXIS/APB/AHB port grouping as prompt-level requirements. Validation reports these newer ref-derived checks as warnings first, not hard errors.
+
 ## Remote Validation
 
 All remote work must go through the `erie-remote-ssh` helper and JSON configuration. Do not add direct `ssh` or `scp` commands to this skill.
@@ -97,7 +125,8 @@ The default remote settings point to:
 
 - helper: `${home}/.codex/skills/erie-remote-ssh/scripts/remote_ssh.py`, overridden by dependency adaptation state after `adapt`
 - remote settings: `${home}/.codex/skills/erie-remote-ssh/config/defaults.json`, overridden by dependency adaptation state after `adapt`
-- server list: `<workspace-root>/.erie-verilog-generator-state/server_list.local.json`; create this project-local file with the `erie-remote-ssh` server-list JSON before remote validation
+- server list: `<workspace-root>/.erie-verilog-generator-state/server_list.local.json`; create this project-local file with the `erie-remote-ssh` server-list JSON before remote validation. If this project-local file is absent, `remote_validate_verilog_skill.py` falls back to the installed `erie-remote-ssh/config/server_list.local.json` so a clean local skill install can still reuse the user's existing remote registry without reintroducing committed local state
+- confirmed server selection: `<workspace-root>/.erie-verilog-generator-state/remote_server_selection.json`; store only a user-confirmed server id here, not hostnames, usernames, or ports
 - no packaged default server selector; the user must choose a server from `erie-remote-ssh choices` or persist one in project-local state after confirmation
 - toolchain selection config: `<workspace-root>/.erie-verilog-generator-state/remote_toolchain_selection.json`
 

@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from .evaluation import write_eval_metrics
+from .skill_effectiveness import evaluate_skill_effectiveness
 from .evidence import ingest_sources
 from .extractor import ExtractionError, extract_response, parse_manifest
 from .interface_contract import INTERFACE_TARGETS, audit_interface
@@ -30,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="verilog-gen",
         description="Prompt engineering CLI for Verilog-2001 RTL generation.",
     )
-    parser.add_argument("--version", action="version", version="erie-verilog-gen 0.1.8")
+    parser.add_argument("--version", action="version", version="erie-verilog-gen 0.2.0")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     scaffold = subparsers.add_parser("scaffold", help="Create a Verilog JSON generation spec template.")
@@ -161,6 +162,13 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--out", required=True, type=Path)
     _add_state_args(evaluate)
     evaluate.set_defaults(func=_cmd_eval)
+
+    evaluate_skill = subparsers.add_parser("eval-skill", help="Run deterministic skill-effectiveness checks from eval cases.")
+    evaluate_skill.add_argument("--evals", required=True, type=Path)
+    evaluate_skill.add_argument("--out", required=True, type=Path)
+    evaluate_skill.add_argument("--remote-runs-json", type=Path, help="Optional retained remote run summary JSON.")
+    _add_state_args(evaluate_skill)
+    evaluate_skill.set_defaults(func=_cmd_eval_skill)
     return parser
 
 
@@ -395,6 +403,16 @@ def _cmd_eval(args: argparse.Namespace) -> int:
     write_eval_metrics(trace_path, out)
     _record_state(args, "eval", {"trace": trace_path, "output": out})
     return 0
+
+
+def _cmd_eval_skill(args: argparse.Namespace) -> int:
+    evals_path = require_workspace_path(args.evals, purpose="skill eval cases", must_exist=True)
+    out = require_write_path(args.out, purpose="skill effectiveness output")
+    remote_runs = _read_json(args.remote_runs_json) if args.remote_runs_json else None
+    report = evaluate_skill_effectiveness(evals_path, out, remote_runs_report=remote_runs)
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+    _record_state(args, "eval_suite", {"evals": evals_path, "output": out, "ok": report["summary"]["ok"]})
+    return 0 if report["summary"]["ok"] else 1
 
 
 def _add_trace_args(parser: argparse.ArgumentParser) -> None:

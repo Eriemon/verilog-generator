@@ -21,7 +21,7 @@ keywords:
   - hardware generation
 repository-code: "https://github.com/Eriemon/verilog-generator"
 url: "https://github.com/Eriemon/verilog-generator"
-version: "0.1.8"
-date-released: "2026-05-16"
+version: "0.2.0"
+date-released: "2026-05-20"
 year: 2026
 license: "Apache-2.0"

@@ -7,6 +7,7 @@ from typing import Any
 
 from .artifact_graph import suspect_artifacts_from_graph
 from .planning import decompose_spec
+from .use_case_templates import select_use_case_template, summarize_use_case_template
 
 ERROR_SOURCES = (
     "spec_issue",
@@ -102,6 +103,7 @@ def generate_repair_prompt(
     validation_json_text = json.dumps(validation_json or {}, indent=2, ensure_ascii=False)
     graph_json_text = json.dumps(_graph_summary(artifact_graph), indent=2, ensure_ascii=False)
     gate_json_text = json.dumps(stage_verification or {}, indent=2, ensure_ascii=False)
+    use_case_template_json = json.dumps(_use_case_template_context(normalized_plan), indent=2, ensure_ascii=False)
     return f"""# Repair prompt
 
 You are repairing a staged Verilog generation result. Use the implementation plan, validation report, and error-source classification below.
@@ -148,6 +150,12 @@ You are repairing a staged Verilog generation result. Use the implementation pla
 {gate_json_text}
 ```
 
+## Use-case template context
+
+```json
+{use_case_template_json}
+```
+
 ## Validation report
 
 ```text
@@ -162,11 +170,16 @@ You are repairing a staged Verilog generation result. Use the implementation pla
 - If the source is `current_module_issue`, regenerate only the failing module or testbench when possible.
 - If the source is `toolchain_issue`, fix tool availability/configuration first; do not rewrite code unless the tool output points to code errors.
 - If a Verifier gate result is present, prioritize its `recommended_action`, interface-drift issues, vector-hash issues, and dependency mismatches over textual guesses.
+- If a use-case template is selected, preserve its family-specific board-level guidance, parameterization points, and provenance unless the repair explicitly proves they caused the failure.
 - If semantic drift is visible but localization is weak, strengthen cases or checkpoints before escalating to a human.
 - If the source is `needs_human_intervention`, summarize the unresolved ambiguity and ask a precise hardware-design question.
 - Preserve the original output contract: manifest JSON first, then exact `path=<relative/path>` code fences.
 - Keep the repaired output verifiable, executable, and implementable.
 """
+
+
+def _use_case_template_context(plan: dict[str, Any]) -> dict[str, Any]:
+    return summarize_use_case_template(select_use_case_template(plan))
 
 
 def resolution_action(sources: list[str]) -> str:
@@ -315,14 +328,19 @@ def _trajectory_summary(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _sources_from_validation_json(validation_json: dict[str, Any] | None) -> list[str]:
     if not validation_json:
         return []
-    sources: list[str] = []
+    error_sources: list[str] = []
+    other_sources: list[str] = []
     for issue in validation_json.get("issues", []) or []:
         if not isinstance(issue, dict):
             continue
         source = issue.get("source")
-        if source in ERROR_SOURCES and source not in sources:
-            sources.append(source)
-    return sources
+        if source not in ERROR_SOURCES:
+            continue
+        severity = str(issue.get("severity", "")).lower()
+        bucket = error_sources if severity == "error" else other_sources
+        if source not in bucket:
+            bucket.append(source)
+    return error_sources + [source for source in other_sources if source not in error_sources]
 
 
 def _sources_from_stage_verification(stage_verification: dict[str, Any] | None) -> list[str]:
@@ -332,13 +350,20 @@ def _sources_from_stage_verification(stage_verification: dict[str, Any] | None) 
     for source in stage_verification.get("error_sources", []) or []:
         if source in ERROR_SOURCES and source not in sources:
             sources.append(source)
+    warning_sources: list[str] = []
     for issue in stage_verification.get("issues", []) or []:
         if not isinstance(issue, dict):
             continue
         source = issue.get("source")
-        if source in ERROR_SOURCES and source not in sources:
-            sources.append(source)
-    return sources
+        if source not in ERROR_SOURCES:
+            continue
+        severity = str(issue.get("severity", "")).lower()
+        if severity == "error":
+            if source not in sources:
+                sources.append(source)
+        elif source not in sources and source not in warning_sources:
+            warning_sources.append(source)
+    return sources + warning_sources
 
 
 def _suspect_artifacts(

@@ -8,6 +8,8 @@ import re
 from typing import Any
 
 from .interface_templates import InterfaceTemplateError, resolve_interface_template, select_interface_template
+from .refined_templates import summarize_refined_templates
+from .use_case_templates import select_use_case_template, summarize_use_case_template
 
 STREAMABILITY_VALUES = ("streamable", "non_streamable", "unknown")
 INTERFACE_FAMILIES = ("native", "axi_stream", "axi4", "axi4_lite", "ahb", "apb", "custom")
@@ -272,6 +274,7 @@ def build_requirements_payload(spec: dict[str, Any]) -> dict[str, Any]:
 
     requirements = copy.deepcopy(spec.get("design_requirements", {})) if isinstance(spec.get("design_requirements"), dict) else {}
     template = _interface_template_summary(spec)
+    use_case_template = _use_case_template_summary(spec)
     return {
         "version": 1,
         "name": spec.get("name"),
@@ -285,6 +288,10 @@ def build_requirements_payload(spec: dict[str, Any]) -> dict[str, Any]:
         "confirmed_by_user": requirements.get("confirmed_by_user") is True,
         "selected_interface_template_id": template["selected_template_id"],
         "interface_template": template,
+        "selected_use_case_template_id": use_case_template["id"],
+        "use_case_template": use_case_template,
+        "selected_refined_template_ids": [item["template_id"] for item in summarize_refined_templates(spec)],
+        "refined_templates": summarize_refined_templates(spec),
     }
 
 
@@ -295,11 +302,17 @@ def build_codegen_plan(spec: dict[str, Any]) -> dict[str, Any]:
     open_questions = _codegen_open_questions(spec)
     ready = not open_questions
     template = requirements["interface_template"]
+    use_case_template = requirements["use_case_template"]
+    refined_templates = requirements["refined_templates"]
     plan = {
         "version": 1,
         "name": spec.get("name"),
         "target": spec.get("target"),
         "requirements_summary": requirements["requirements_summary"],
+        "selected_use_case_template_id": use_case_template["id"],
+        "use_case_template": use_case_template,
+        "selected_refined_template_ids": [item["template_id"] for item in refined_templates],
+        "refined_templates": refined_templates,
         "interface_decision": {
             "family": spec.get("interface_family"),
             "profile": copy.deepcopy(spec.get("interface_profile", {})) if isinstance(spec.get("interface_profile"), dict) else {},
@@ -348,6 +361,7 @@ def build_codegen_plan(spec: dict[str, Any]) -> dict[str, Any]:
 
 def _requirements_summary(spec: dict[str, Any]) -> dict[str, Any]:
     template = _interface_template_summary(spec)
+    use_case_template = _use_case_template_summary(spec)
     return {
         "target": spec.get("target"),
         "rtl_dialect": spec.get("rtl_dialect"),
@@ -355,6 +369,8 @@ def _requirements_summary(spec: dict[str, Any]) -> dict[str, Any]:
         "streamability": spec.get("streamability"),
         "interface_family": spec.get("interface_family"),
         "selected_interface_template_id": template["selected_template_id"],
+        "selected_use_case_template_id": use_case_template["id"],
+        "selected_refined_template_ids": [item["template_id"] for item in summarize_refined_templates(spec)],
         "confirmation_notes": (spec.get("design_requirements") or {}).get("confirmation_notes", ""),
     }
 
@@ -382,6 +398,10 @@ def _interface_template_summary(spec: dict[str, Any]) -> dict[str, Any]:
         "path": str(selected["path"]),
         "port_naming_policy": selected["strict_naming_policy"],
     }
+
+
+def _use_case_template_summary(spec: dict[str, Any]) -> dict[str, Any]:
+    return summarize_use_case_template(select_use_case_template(spec))
 
 
 def _apply_interface_defaults(interface_family: str, profile: dict[str, Any]) -> dict[str, Any]:
@@ -650,17 +670,40 @@ def _syntax_risk_checks(spec: dict[str, Any]) -> list[str]:
         "Prevent placeholder text, undefined symbols, and missing output artifacts before code generation.",
         "Keep the implementation aligned with the executable Python reference model and the staged verification flow.",
     ]
+    use_case_template = select_use_case_template(spec)
     if spec.get("pipeline_required", True):
         checks.append("Reject non-pipelined implementations unless the user explicitly disables the pipeline requirement.")
     if spec.get("interface_family") == "axi_stream":
         checks.append("Do not silently add or remove AXI-Stream ready/last semantics; use the confirmed interface profile.")
     if spec.get("interface_family") == "axi4":
         checks.append("Preserve the confirmed AXI4 variant, role, widths, and burst policy across the generated interface.")
+        checks.append("Preserve Erie-style bus port grouping for AXI4 channels instead of flattening the interface declaration.")
     if spec.get("interface_family") == "axi4_lite":
         checks.append("Preserve the confirmed AXI4-Lite role, read/write mode, and register-map widths across the generated interface.")
+        checks.append("Preserve Erie-style bus port grouping for AXI4-Lite channels instead of flattening the interface declaration.")
     if spec.get("interface_family") in {"ahb", "apb"}:
         checks.append(f"Preserve the confirmed {str(spec.get('interface_family')).upper()} role, widths, and clock/reset domain across the generated interface.")
+        checks.append(f"Preserve Erie-style bus port grouping for {str(spec.get('interface_family')).upper()} channels instead of flattening the interface declaration.")
+    if spec.get("interface_family") == "axi_stream":
+        checks.append("Preserve Erie-style bus port grouping for AXI-Stream channels instead of flattening the interface declaration.")
+    if use_case_template:
+        checks.append(
+            "Preserve the selected ADC/DAC use-case template family `"
+            + str(use_case_template.get("template_id"))
+            + "` and keep its provenance, parameterization points, and board-level sideband intent visible in generated artifacts."
+        )
+    refined_templates = summarize_refined_templates(spec)
+    if refined_templates:
+        checks.append(
+            "Preserve the selected refined Verilog pattern hints: "
+            + ", ".join(item["template_id"] for item in refined_templates)
+            + "."
+        )
     if str(spec.get("rtl_style_profile") or "").lower() == "erie_strict":
         checks.append("Preserve Erie strict RTL style rules, including single-reg always blocks, strict naming, and region order.")
+        checks.append("Preserve the Erie bilingual header with version, revision date, and revision history blocks.")
+        checks.append("When an FSM is present, use `state_current`, `state_next`, and `ST_*` naming consistently.")
+        checks.append("Preserve Erie module instance naming with `_Inst` suffixes and `gen_*` generate labels.")
+        checks.append("Keep AXI/AXIS/APB/AHB ports grouped by channel and role instead of flattening the bus declaration list.")
     return checks
 
