@@ -212,4 +212,4 @@ def _strip_line_comments(line: str) -> str:
 
 def _is_testbench(path: Path) -> bool:
     stem = path.stem.lower()
-    return stem.endswith("_tb") or "testbench" in stem
+    return stem.endswith("_tb") or stem.startswith("tb_") or "testbench" in stem

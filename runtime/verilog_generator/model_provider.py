@@ -474,10 +474,54 @@ def _add_mock_line_comments(text: str) -> str:
     for line in text.splitlines():
         stripped = line.strip()
         if stripped and not stripped.startswith("//") and "//" not in line:
-            rendered_lines.append(f"{line}\t//逐行中文注释")
+            rendered_lines.append(f"{line}\t//{_mock_semantic_comment(stripped)}")
         else:
             rendered_lines.append(line)
     return "\n".join(rendered_lines) + "\n"
+
+
+def _mock_semantic_comment(stripped: str) -> str:
+    if stripped.startswith("module "):
+        return "模块: mock生成模块 - 承载Verilog工作流样例"
+    if stripped.startswith("endmodule"):
+        return "结束模块: mock生成模块"
+    if stripped.startswith("input"):
+        return "输入端口: mock输入 - 驱动样例逻辑"
+    if stripped.startswith("output"):
+        return "输出端口: mock输出 - 返回样例结果"
+    if stripped.startswith("parameter"):
+        return "参数: mock配置 - 设置样例数据宽度"
+    if stripped.startswith("localparam"):
+        return "状态参数: mock状态 - 定义样例FSM编码"
+    if stripped.startswith("reg "):
+        return "寄存器: mock寄存器 - 保存样例状态或数据"
+    if stripped.startswith("wire "):
+        return "连线: mock连线 - 连接样例组合视图"
+    if stripped.startswith("assign "):
+        return "组合连线: mock输出 - 连接内部信号到端口"
+    if stripped.startswith("always@(*)") or stripped.startswith("always @(*)"):
+        return "组合逻辑: mock次态 - 计算样例下一状态"
+    if stripped.startswith("always"):
+        return "时序逻辑: mock流水 - 更新样例寄存器"
+    if stripped.startswith("case"):
+        return "状态选择: mock状态 - 根据当前状态选择分支"
+    if stripped.startswith("endcase"):
+        return "结束状态选择: mock状态"
+    if stripped.startswith("if"):
+        return "条件分支: mock条件 - 选择复位或运行路径"
+    if stripped.startswith("else"):
+        return "运行分支: mock流程 - 处理非复位路径"
+    if stripped.startswith("end"):
+        return "结束代码块: mock流程"
+    if stripped.startswith("$display"):
+        return "结果输出: mock测试 - 打印PASS或FAIL"
+    if stripped.startswith("."):
+        return "端口映射: mock实例 - 连接测试平台信号"
+    if stripped.endswith("(") and "_Inst" in stripped:
+        return "模块实例: mock实例 - 例化待测模块"
+    if stripped.startswith("#"):
+        return "延时控制: mock测试 - 等待信号稳定"
+    return "语义说明: mock代码 - 保持样例可审查"
 
 
 def _internal_output_name(port_name: str) -> str:

@@ -68,7 +68,7 @@ def _derive_constraints(events: list[dict[str, Any]]) -> list[str]:
     if "spec_issue" in joined or "expected output file is missing" in joined:
         add("Audit the plan outputs and evidence before code regeneration; missing requested files indicate a plan or manifest coverage issue.")
     if "reviewability" in joined or "comment" in joined:
-        add("Preserve the requested comment language and add adjacent explanatory comments for ports, signals, always blocks, assigns, and testbench checks.")
+        add("Preserve the requested comment language and add same-line semantic comments for ports, signals, always blocks, assigns, testbench checks, and construct end lines.")
     if "fsm" in joined or "state register" in joined or "next-state" in joined:
         add("For RTL regeneration, use a three-block FSM with explicit state register, next-state logic, and output logic sections.")
     if "reference model" in joined or "run_tests" in joined:
@@ -136,7 +136,7 @@ def _event_signatures(event: dict[str, Any], joined: str) -> list[tuple[str, str
         signatures.append(
             (
                 "comment_reviewability_gap",
-                "Use the requested comment language and add adjacent comments for every required RTL declaration, block, assign, and testbench case check.",
+                "Use the requested comment language and add same-line semantic comments for every RTL declaration, block, assign, construct end, and testbench case check.",
             )
         )
     if "fsm" in joined or "state register" in joined or "next-state" in joined:

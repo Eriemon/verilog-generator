@@ -509,11 +509,7 @@ def cleanup_residuals(settings: dict, smoke_dir: Path) -> None:
     if smoke_root.exists() and smoke_root.is_dir():
         remove_inside_skill(smoke_root)
     remove_inside_skill(SKILL_ROOT / "workflow-state.json")
-    try:
-        cache_paths = sorted(SKILL_ROOT.rglob("__pycache__"), reverse=True)
-    except FileNotFoundError:
-        cache_paths = []
-    for path in cache_paths:
+    for path in sorted(SKILL_ROOT.rglob("__pycache__"), reverse=True):
         remove_inside_skill(path)
 
 

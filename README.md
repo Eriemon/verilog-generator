@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-1f6feb"></a>
   <a href="pyproject.toml"><img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2f81f7"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-v0.2.0-7c3aed">
+  <img alt="Version" src="https://img.shields.io/badge/version-v0.2.1-7c3aed">
   <a href="SKILL.md"><img alt="Agent Skill" src="https://img.shields.io/badge/agent-skill-16a34a"></a>
   <a href="ENGINEERING_DESIGN_GOALS.md"><img alt="Target" src="https://img.shields.io/badge/target-Verilog--2001-f59e0b"></a>
 </p>
@@ -63,9 +63,11 @@ Use it when an agent needs to work on:
 | `assets/use_case_templates/` | Packaged JESD, SPI, and mixed-signal reference templates with RTL, Tcl, and constraint skeletons. |
 | `assets/examples/` | Example specs, remote fixtures, and refined template inputs for validation and regression checks. |
 | `evals/` | Repo-local skill-effectiveness cases for workflow and remote-validation regressions. |
-| `RELEASE_RECEIPT.json` | Provenance record for the imported `v0.2.0` release package. |
+| `RELEASE_RECEIPT.json` | Provenance record for the imported `v0.2.1` release package. |
 
 ## Quick Start
+
+Tell your AI assistant: install https://github.com/Eriemon/verilog-generator
 
 Place this repository in a Codex skill search path to use it as an agent skill. For runtime development and local checks:
 
@@ -83,7 +85,7 @@ python -m runtime.verilog_generator validate --spec .\reports\verilog\spec.json 
 
 External validation requires real HDL tools. This project does not claim Vivado/xsim, VCS, iverilog, or yosys acceptance unless those tools actually run.
 
-The `v0.2.0` update expands the packaged workflow surface: refined RTL templates, reusable use-case bundles, repo-local eval cases, remote toolchain-selection helpers, and split smoke gates for dependency, toolchain, and effectiveness coverage are now part of the imported skill package.
+The `v0.2.1` update adds a Verilog comment-placement contract and validator, then wires comment checks into validation, static lint, prompt rendering, CLI behavior, semantic testbench comments, and smoke coverage.
 
 ## Integration API
 
@@ -128,8 +130,8 @@ If this skill helps your research, teaching, or engineering workflow, please cit
   author       = {Jiyuan Liu and He Li},
   title        = {{Verilog Generator}: An Agent Skill for Verilog-2001 RTL Workflows},
   year         = {2026},
-  version      = {0.2.0},
-  date         = {2026-05-20},
+  version      = {0.2.1},
+  date         = {2026-05-21},
   url          = {https://github.com/Eriemon/verilog-generator},
   license      = {Apache-2.0},
   note         = {Agent skill package for disciplined Verilog-2001 RTL workflows}

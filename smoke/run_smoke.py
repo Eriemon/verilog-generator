@@ -84,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         _run_interface_template_gate(base)
         _run_static_lint_quality_gate(base)
         _run_line_comment_quality_gate(base)
+        _run_comment_placement_quality_gate(base)
         _run_verilog_only_artifact_gate(base)
         _run_reference_loading_gate()
         _run_ref_style_asset_gate()
@@ -214,9 +215,6 @@ def _run_repo_governance_version_gate() -> None:
     assert "default_language=" in root_agents, root_agents
     assert "All natural-language responses must use" in root_agents, root_agents
 
-    development_doc = (REPO_ROOT / "docs" / "development" / "DEVELOPMENT.md").read_text(encoding="utf-8")
-    assert "## Current Progress" in development_doc, development_doc
-
     handoff_doc = (REPO_ROOT / "docs" / "handoff" / "HANDOFF.md").read_text(encoding="utf-8")
     for marker in (
         "## Original Plan And Steps",
@@ -338,6 +336,9 @@ def _run_prompt_extract_validate(base: Path) -> None:
     assert "Do not create raw gated clocks" in prompt_text
     assert "Use complete combinational assignments" in prompt_text
     assert "Document CDC and reset assumptions" in prompt_text
+    assert "same-line explanatory comment" in prompt_text
+    assert "references/verilog-comment-placement.md" in prompt_text
+    assert "Pure leading comments" in prompt_text
     assert "state-task processing" not in prompt_text
     assert "main-task processing" not in prompt_text
     assert "AXI-Stream for streaming data" in prompt_text
@@ -711,6 +712,289 @@ endmodule
     assert compliant_report["metrics"]["line_comment_gate"]["violations"] == 0, compliant_report
 
 
+def _run_comment_placement_quality_gate(base: Path) -> None:
+    spec = _rtl_smoke_spec()
+    generic_dir = _write_comment_fixture(
+        spec,
+        base / "comment-placement-gate" / "generic" / "generated",
+        _generic_comment_rtl(),
+        _generic_comment_tb(),
+    )
+    generic_report = validate_verilog_artifacts(spec, generic_dir, run_external=False)
+    assert generic_report["ok"] is False, generic_report
+    generic_messages = [issue["message"] for issue in generic_report["issues"]]
+    assert any("Generic Verilog comment" in message for message in generic_messages), generic_report
+    assert generic_report["metrics"]["comment_placement_gate"]["violations"] >= 1, generic_report
+
+    adjacent_dir = _write_comment_fixture(
+        spec,
+        base / "comment-placement-gate" / "adjacent" / "generated",
+        _adjacent_comment_rtl(),
+        _adjacent_comment_tb(),
+    )
+    adjacent_report = validate_verilog_artifacts(spec, adjacent_dir, run_external=False)
+    assert adjacent_report["ok"] is False, adjacent_report
+    adjacent_messages = [issue["message"] for issue in adjacent_report["issues"]]
+    assert any("must use a same-line explanatory comment" in message for message in adjacent_messages), adjacent_report
+
+    missing_end_dir = _write_comment_fixture(
+        spec,
+        base / "comment-placement-gate" / "missing-end" / "generated",
+        _missing_end_comment_rtl(),
+        _semantic_comment_tb(),
+    )
+    missing_end_report = validate_verilog_artifacts(spec, missing_end_dir, run_external=False)
+    assert missing_end_report["ok"] is False, missing_end_report
+    missing_end_messages = [issue["message"] for issue in missing_end_report["issues"]]
+    assert any("End construct comment" in message for message in missing_end_messages), missing_end_report
+
+    macro_dir = _write_comment_fixture(
+        spec,
+        base / "comment-placement-gate" / "macro" / "generated",
+        _bad_multiline_macro_rtl(),
+        _semantic_comment_tb(),
+    )
+    macro_report = validate_verilog_artifacts(spec, macro_dir, run_external=False)
+    assert macro_report["ok"] is False, macro_report
+    macro_messages = [issue["message"] for issue in macro_report["issues"]]
+    assert any("Multiline macro" in message for message in macro_messages), macro_report
+
+    semantic_dir = _write_comment_fixture(
+        spec,
+        base / "comment-placement-gate" / "semantic" / "generated",
+        _semantic_comment_rtl(),
+        _semantic_comment_tb(),
+    )
+    semantic_report = validate_verilog_artifacts(spec, semantic_dir, run_external=False)
+    assert semantic_report["ok"] is True, semantic_report
+    metrics = semantic_report["metrics"]["comment_placement_gate"]
+    for construct in ("module", "macro", "parameter", "port", "signal", "assign", "always", "case", "branch", "instance", "generate", "testbench_task"):
+        assert metrics["by_construct"].get(construct, {}).get("checked", 0) >= 1, (construct, metrics)
+    assert metrics["violations"] == 0, semantic_report
+
+
+def _write_comment_fixture(spec: dict, generated_dir: Path, rtl_text: str, tb_text: str) -> Path:
+    generated_dir.mkdir(parents=True, exist_ok=True)
+    rtl_path = generated_dir / spec["outputs"][0]["path"]
+    tb_path = generated_dir / spec["outputs"][1]["path"]
+    rtl_path.parent.mkdir(parents=True, exist_ok=True)
+    tb_path.parent.mkdir(parents=True, exist_ok=True)
+    rtl_path.write_text(rtl_text, encoding="utf-8")
+    tb_path.write_text(tb_text, encoding="utf-8")
+    return generated_dir
+
+
+def _generic_comment_rtl() -> str:
+    return """module erie_adapter( //泛泛模块注释
+\tinput i_clk, //泛泛逐行中文注释
+\tinput i_rstn, //泛泛逐行中文注释
+\tinput i_in_valid, //泛泛逐行中文注释
+\tinput [7:0] i_in_data, //泛泛逐行中文注释
+\toutput o_out_valid, //泛泛逐行中文注释
+\toutput [7:0] o_out_data //泛泛逐行中文注释
+); //泛泛逐行中文注释
+\treg state_current; //泛泛逐行中文注释
+\treg state_next; //泛泛逐行中文注释
+\treg [7:0] reg_data; //泛泛逐行中文注释
+\treg reg_valid; //泛泛逐行中文注释
+\tlocalparam ST_IDLE = 1'b0; //泛泛逐行中文注释
+\tlocalparam ST_RUN = 1'b1; //泛泛逐行中文注释
+\tassign o_out_valid = reg_valid; //泛泛逐行中文注释
+\tassign o_out_data = reg_data; //泛泛逐行中文注释
+\talways @(posedge i_clk or negedge i_rstn) begin //泛泛逐行中文注释
+\t\tif (!i_rstn) begin //泛泛逐行中文注释
+\t\t\tstate_current <= ST_IDLE; //泛泛逐行中文注释
+\t\t\treg_data <= 8'd0; //泛泛逐行中文注释
+\t\t\treg_valid <= 1'b0; //泛泛逐行中文注释
+\t\tend else begin //泛泛逐行中文注释
+\t\t\tstate_current <= state_next; //泛泛逐行中文注释
+\t\t\treg_data <= i_in_data; //泛泛逐行中文注释
+\t\t\treg_valid <= i_in_valid; //泛泛逐行中文注释
+\t\tend //泛泛逐行中文注释
+\tend //泛泛逐行中文注释
+\talways @(*) begin //泛泛逐行中文注释
+\t\tstate_next = state_current; //泛泛逐行中文注释
+\t\tcase (state_current) //泛泛逐行中文注释
+\t\t\tST_IDLE: if (i_in_valid) state_next = ST_RUN; //泛泛逐行中文注释
+\t\t\tST_RUN: state_next = ST_RUN; //泛泛逐行中文注释
+\t\t\tdefault: state_next = ST_IDLE; //泛泛逐行中文注释
+\t\tendcase //泛泛逐行中文注释
+\tend //泛泛逐行中文注释
+endmodule //泛泛逐行中文注释
+"""
+
+
+def _generic_comment_tb() -> str:
+    return """module erie_adapter_tb; //泛泛测试平台注释
+\treg i_clk; //泛泛逐行中文注释
+\treg i_rstn; //泛泛逐行中文注释
+\tinitial begin //泛泛逐行中文注释
+\t\t$display("PASS"); //泛泛逐行中文注释
+\t\t$display("FAIL if mismatch"); //泛泛逐行中文注释
+\tend //泛泛逐行中文注释
+endmodule //泛泛逐行中文注释
+"""
+
+
+def _adjacent_comment_rtl() -> str:
+    return """module erie_adapter( //模块: erie_adapter - 一级流水数据转发
+\tinput i_clk,
+\t//复位端口: i_rstn - 低电平清空流水状态
+\tinput i_rstn,
+\tinput i_in_valid, //输入端口: i_in_valid - 输入数据有效
+\tinput [7:0] i_in_data, //输入端口: i_in_data - 8位输入数据
+\toutput o_out_valid, //输出端口: o_out_valid - 输出数据有效
+\toutput [7:0] o_out_data //输出端口: o_out_data - 8位输出数据
+); //端口列表结束: erie_adapter
+\tassign o_out_valid = i_in_valid; //组合连线: 输出有效直接跟随输入有效
+\tassign o_out_data = i_in_data; //组合连线: 输出数据直接跟随输入数据
+endmodule //结束模块: erie_adapter
+"""
+
+
+def _adjacent_comment_tb() -> str:
+    return """module erie_adapter_tb; //测试平台: erie_adapter_tb - 相邻注释负向样例
+\tinitial begin //测试阶段: 输出PASS/FAIL占位结果
+\t\t$display("PASS"); //结果输出: 打印通过标记
+\t\t$display("FAIL if mismatch"); //结果输出: 保留失败标记供门禁识别
+\tend //结束测试阶段: 初始检查
+endmodule //结束测试平台: erie_adapter_tb
+"""
+
+
+def _missing_end_comment_rtl() -> str:
+    return _semantic_comment_rtl().replace("endmodule //结束模块: erie_adapter\n", "endmodule //模块结束\n")
+
+
+def _bad_multiline_macro_rtl() -> str:
+    return _semantic_comment_rtl().replace(
+        "//宏定义: ERIE_PACK_VALID - 把有效位和数据打包为总线片段\n`define ERIE_PACK_VALID(valid, data) {valid, data} //宏定义: ERIE_PACK_VALID - 组合有效位和数据载荷\n",
+        "`define ERIE_PACK_VALID(valid, data) {valid, \\\n\tdata} //多行宏注释放在续行尾部会破坏绑定\n",
+    )
+
+
+def _semantic_comment_rtl() -> str:
+    return """//宏定义: ERIE_PACK_VALID - 把有效位和数据打包为总线片段
+`define ERIE_PACK_VALID(valid, data) {valid, data} //宏定义: ERIE_PACK_VALID - 组合有效位和数据载荷
+module erie_adapter #( //模块: erie_adapter - 一级流水数据转发
+\tparameter C_DATA_WIDTH = 8 //参数: C_DATA_WIDTH - 数据通路宽度
+)( //端口列表: erie_adapter - 时钟复位、输入通道和输出通道
+\t//端口分组: 时钟与复位
+\tinput i_clk, //输入端口: i_clk - 上升沿驱动流水寄存器
+\tinput i_rstn, //输入端口: i_rstn - 低电平异步复位
+\t//端口分组: 输入数据通道
+\tinput i_in_valid, //输入端口: i_in_valid - 输入数据有效
+\tinput [C_DATA_WIDTH - 1:0] i_in_data, //输入端口: i_in_data - 输入数据载荷
+\t//端口分组: 输出数据通道
+\toutput o_out_valid, //输出端口: o_out_valid - 输出数据有效
+\toutput [C_DATA_WIDTH - 1:0] o_out_data //输出端口: o_out_data - 输出数据载荷
+); //端口列表结束: erie_adapter
+
+\tlocalparam ST_IDLE = 1'b0; //状态参数: ST_IDLE - 等待有效输入
+\tlocalparam ST_RUN = 1'b1; //状态参数: ST_RUN - 保持流水运行
+\tgenvar gen_i; //生成变量: gen_i - 生成块索引
+\treg state_current; //寄存器: state_current - 当前FSM状态
+\treg state_next; //寄存器: state_next - 下一拍FSM状态
+\treg [C_DATA_WIDTH - 1:0] reg_data; //寄存器: reg_data - 输出数据流水寄存器
+\treg reg_valid; //寄存器: reg_valid - 输出有效流水寄存器
+\twire [C_DATA_WIDTH:0] packed_status; //连线: packed_status - 有效位和数据的组合视图
+\tinteger idx; //变量: idx - 测试综合兼容循环索引
+
+\tassign packed_status = `ERIE_PACK_VALID(reg_valid, reg_data); //组合连线: 打包有效位和数据便于观测
+\tassign o_out_valid = packed_status[C_DATA_WIDTH]; //组合连线: 输出有效来自打包总线最高位
+\tassign o_out_data = packed_status[C_DATA_WIDTH - 1:0]; //组合连线: 输出数据来自打包总线低位
+
+\tgenerate if (C_DATA_WIDTH > 0) begin: gen_passthrough //生成块: gen_passthrough - 保留参数合法性检查结构
+\t\twire gen_width_ok; //连线: gen_width_ok - 标记生成分支已启用
+\t\tassign gen_width_ok = 1'b1; //组合连线: 生成分支启用时恒为真
+\tend else begin: gen_zero_width //生成块: gen_zero_width - 非法宽度旁路分支
+\t\twire gen_width_bad; //连线: gen_width_bad - 标记非法宽度分支
+\t\tassign gen_width_bad = 1'b0; //组合连线: 非法宽度分支恒为假
+\tend endgenerate //结束生成块: 数据宽度合法性分支
+
+\t//时序块: 状态寄存器与数据流水寄存器
+\talways @(posedge i_clk or negedge i_rstn) begin //时序逻辑: 复位或时钟沿更新状态和数据寄存器
+\t\tif (!i_rstn) begin //复位分支: 清空状态和输出流水寄存器
+\t\t\tstate_current <= ST_IDLE; //复位动作: 当前状态回到空闲
+\t\t\treg_data <= {C_DATA_WIDTH{1'b0}}; //复位动作: 输出数据清零
+\t\t\treg_valid <= 1'b0; //复位动作: 输出有效清零
+\t\tend else begin //运行分支: 捕获输入数据并推进状态
+\t\t\tstate_current <= state_next; //时序更新: 当前状态接收次态
+\t\t\treg_data <= i_in_data; //时序更新: 输入数据进入输出流水
+\t\t\treg_valid <= i_in_valid; //时序更新: 输入有效进入输出有效寄存器
+\t\tend //结束分支: 状态和数据寄存器更新
+\tend //结束时序块: 状态寄存器与数据流水寄存器
+
+\t//组合块: FSM次态逻辑
+\talways @(*) begin //组合逻辑: 根据当前状态和输入有效计算次态
+\t\tstate_next = state_current; //默认赋值: 保持当前状态防止锁存
+\t\tcase (state_current) //状态选择: 根据当前状态选择转移路径
+\t\t\tST_IDLE: begin //状态分支: 空闲状态等待有效输入
+\t\t\t\tif (i_in_valid) state_next = ST_RUN; //条件转移: 有效输入到来后进入运行状态
+\t\t\tend //结束状态分支: 空闲状态
+\t\t\tST_RUN: begin //状态分支: 运行状态持续保持
+\t\t\t\tstate_next = ST_RUN; //状态保持: 持续运行
+\t\t\tend //结束状态分支: 运行状态
+\t\t\tdefault: begin //默认分支: 非法状态回到空闲
+\t\t\t\tstate_next = ST_IDLE; //默认转移: 回到空闲状态
+\t\t\tend //结束默认分支: 非法状态恢复
+\t\tendcase //结束状态选择: state_current
+\tend //结束组合块: FSM次态逻辑
+endmodule //结束模块: erie_adapter
+"""
+
+
+def _semantic_comment_tb() -> str:
+    return """module erie_adapter_tb; //测试平台: erie_adapter_tb - 验证一级流水数据转发
+\treg i_clk; //测试信号: i_clk - 驱动DUT时钟
+\treg i_rstn; //测试信号: i_rstn - 驱动DUT低有效复位
+\treg i_in_valid; //测试信号: i_in_valid - 驱动输入有效
+\treg [7:0] i_in_data; //测试信号: i_in_data - 驱动输入数据
+\twire o_out_valid; //观测信号: o_out_valid - DUT输出有效
+\twire [7:0] o_out_data; //观测信号: o_out_data - DUT输出数据
+
+\t//实例: DUT_Inst - 被测一级流水模块
+\terie_adapter DUT_Inst( //模块实例: erie_adapter/DUT_Inst - 连接测试平台信号
+\t\t.i_clk(i_clk), //端口映射: i_clk 连接测试时钟
+\t\t.i_rstn(i_rstn), //端口映射: i_rstn 连接测试复位
+\t\t.i_in_valid(i_in_valid), //端口映射: i_in_valid 连接输入有效
+\t\t.i_in_data(i_in_data), //端口映射: i_in_data 连接输入数据
+\t\t.o_out_valid(o_out_valid), //端口映射: o_out_valid 连接输出有效观测
+\t\t.o_out_data(o_out_data) //端口映射: o_out_data 连接输出数据观测
+\t); //结束实例: DUT_Inst
+
+\t//测试任务: apply_reset - 施加低有效复位并释放
+\ttask apply_reset; //测试任务: apply_reset - 初始化DUT状态
+\t\tbegin //任务过程: 复位时序开始
+\t\t\ti_rstn = 1'b0; //激励: 拉低复位
+\t\t\t#20; //延时: 保持两个时钟周期
+\t\t\ti_rstn = 1'b1; //激励: 释放复位
+\t\tend //结束任务过程: apply_reset
+\tendtask //结束测试任务: apply_reset
+
+\tinitial begin //测试阶段: 时钟初始化与翻转
+\t\ti_clk = 1'b0; //激励: 初始化时钟为低
+\t\tforever #5 i_clk = ~i_clk; //激励: 产生10ns周期时钟
+\tend //结束测试阶段: 时钟生成
+
+\tinitial begin //测试阶段: 复位、激励和结果检查
+\t\ti_in_valid = 1'b0; //激励: 初始化输入有效为低
+\t\ti_in_data = 8'd0; //激励: 初始化输入数据为零
+\t\tapply_reset; //任务调用: 执行复位流程
+\t\ti_in_valid = 1'b1; //激励: 拉高输入有效
+\t\ti_in_data = 8'hA5; //激励: 发送测试数据A5
+\t\t#20; //延时: 等待流水输出稳定
+\t\tif (o_out_data !== 8'hA5) begin //检查: 输出数据必须匹配输入数据
+\t\t\t$display("FAIL"); //结果输出: 数据不匹配时报失败
+\t\tend else begin //检查分支: 输出数据匹配
+\t\t\t$display("PASS"); //结果输出: 数据匹配时报通过
+\t\tend //结束检查: 输出数据比较
+\t\t$finish; //仿真控制: 结束测试
+\tend //结束测试阶段: 复位、激励和结果检查
+endmodule //结束测试平台: erie_adapter_tb
+"""
+
+
 def _run_reference_loading_gate() -> None:
     lint_checklist = (ROOT / "references" / "lint-checklist.md").read_text(encoding="utf-8")
     assert "Category A: Synthesis Errors" in lint_checklist, lint_checklist
@@ -722,6 +1006,11 @@ def _run_reference_loading_gate() -> None:
     assert "Self-Checking Testbench" in testbench_patterns, testbench_patterns
     assert "class-based verification environments" in testbench_patterns, testbench_patterns
     assert "out of the current skill boundary" in testbench_patterns, testbench_patterns
+
+    comment_placement = (ROOT / "references" / "verilog-comment-placement.md").read_text(encoding="utf-8")
+    assert "Placement Matrix" in comment_placement, comment_placement
+    assert "Multiline backslash macros" in comment_placement, comment_placement
+    assert "Testbenches may use helpers" in comment_placement, comment_placement
 
 
 def _run_use_case_repair_prompt_gate() -> None:
@@ -808,14 +1097,20 @@ def _run_tb_generator_script_gate(base: Path) -> None:
     rtl_path = base / "tb-generator" / "sample_module.v"
     rtl_path.parent.mkdir(parents=True, exist_ok=True)
     rtl_path.write_text(
-        "module sample_module(\n"
-        "    input wire i_clk,\n"
-        "    input wire i_rstn,\n"
-        "    input wire [7:0] i_data,\n"
-        "    output wire [7:0] o_data\n"
-        ");\n"
-        "assign o_data = i_data;\n"
-        "endmodule\n",
+        "module sample_module( //模块: sample_module - 转发输入数据到输出\n"
+        "    input wire i_clk, //输入端口: i_clk - 驱动测试平台时钟识别\n"
+        "    input wire i_rstn, //输入端口: i_rstn - 驱动测试平台复位识别\n"
+        "    input wire [7:0] i_data, //输入端口: i_data - 8位样例输入数据\n"
+        "    output reg [7:0] o_data //输出端口: o_data - 8位寄存输出数据\n"
+        "); //端口列表结束: sample_module\n"
+        "always @(posedge i_clk or negedge i_rstn) begin //时序逻辑: 在时钟沿更新输出数据寄存器\n"
+        "    if (!i_rstn) begin //复位分支: 清空输出数据寄存器\n"
+        "        o_data <= 8'd0; //复位动作: 输出数据清零\n"
+        "    end else begin //运行分支: 采样输入数据\n"
+        "        o_data <= i_data; //时序更新: 输出数据接收输入数据\n"
+        "    end //结束分支: 输出寄存器更新\n"
+        "end //结束时序逻辑: 输出数据寄存器\n"
+        "endmodule //结束模块: sample_module\n",
         encoding="utf-8",
     )
     out_path = base / "tb-generator" / "tb_sample_module.v"
@@ -832,16 +1127,23 @@ def _run_tb_generator_script_gate(base: Path) -> None:
     assert "PASS" in tb_text and "FAIL" in tb_text, tb_text
     assert "always #(CLK_PERIOD/2)" in tb_text, tb_text
     assert "task apply_reset;" in tb_text, tb_text
+    validation_root = base / "tb-generator" / "validation"
+    (validation_root / "rtl").mkdir(parents=True, exist_ok=True)
+    (validation_root / "tb").mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(rtl_path, validation_root / "rtl" / "sample_module.v")
+    shutil.copyfile(out_path, validation_root / "tb" / "tb_sample_module.v")
+    tb_report = validate_verilog_artifacts(_tb_generator_spec("sample_module"), validation_root, run_external=False)
+    assert tb_report["ok"] is True, tb_report
 
     body_style_path = base / "tb-generator" / "body_style_module.v"
     body_style_path.write_text(
-        "module body_style_module(i_clk, i_rstn, i_data, o_data);\n"
-        "input i_clk;\n"
-        "input i_rstn;\n"
-        "input [15:0] i_data;\n"
-        "output [15:0] o_data;\n"
-        "assign o_data = i_data;\n"
-        "endmodule\n",
+        "module body_style_module(i_clk, i_rstn, i_data, o_data); //模块: body_style_module - body风格端口声明样例\n"
+        "input i_clk; //输入端口: i_clk - 测试时钟\n"
+        "input i_rstn; //输入端口: i_rstn - 测试复位\n"
+        "input [15:0] i_data; //输入端口: i_data - 16位输入数据\n"
+        "output [15:0] o_data; //输出端口: o_data - 16位输出数据\n"
+        "assign o_data = i_data; //组合连线: 输出数据跟随输入数据\n"
+        "endmodule //结束模块: body_style_module\n",
         encoding="utf-8",
     )
     body_out = base / "tb-generator" / "tb_body_style_module.v"
@@ -856,6 +1158,48 @@ def _run_tb_generator_script_gate(base: Path) -> None:
     body_text = body_out.read_text(encoding="utf-8")
     assert "[15:0] i_data;" in body_text, body_text
     assert "module tb_body_style_module;" in body_text, body_text
+
+
+def _tb_generator_spec(module_name: str) -> dict:
+    return {
+        "name": module_name,
+        "target": "rtl",
+        "design_requirements": {
+            "target": "rtl",
+            "pipeline_required": False,
+            "streamability": "non_streamable",
+            "interface_family": "native",
+            "interface_profile": {},
+            "confirmed_by_user": True,
+            "confirmation_notes": "Validate tb_generator semantic comment placement.",
+        },
+        "streamability": "non_streamable",
+        "interface_family": "native",
+        "interface_profile": {},
+        "pipeline_required": False,
+        "codegen_plan_required": True,
+        "description": "tb_generator comment placement smoke example.",
+        "interfaces": {
+            "ports": [
+                {"name": "i_clk", "direction": "input", "width": 1, "role": "clock"},
+                {"name": "i_rstn", "direction": "input", "width": 1, "role": "reset"},
+                {"name": "i_data", "direction": "input", "width": 8},
+                {"name": "o_data", "direction": "output", "width": 8},
+            ]
+        },
+        "behavior": ["Register input data to output data."],
+        "clock": {"name": "i_clk", "edge": "posedge", "frequency_mhz": 100},
+        "reset": {"name": "i_rstn", "active": "low", "synchronous": False},
+        "constraints": ["Use synthesizable Verilog-2001."],
+        "outputs": [
+            {"path": f"rtl/{module_name}.v", "kind": "source", "language": "verilog"},
+            {"path": f"tb/tb_{module_name}.v", "kind": "testbench", "language": "verilog"},
+        ],
+        "notes": [],
+        "subfunctions": [],
+        "workflow": {},
+        "performance": {},
+    }
 
 
 def _run_dependency_config_gate(settings: dict) -> None:

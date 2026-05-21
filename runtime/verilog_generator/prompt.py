@@ -467,7 +467,10 @@ def _comment_rules_for(target: str, comment_language: str) -> list[str]:
         rtl_labels = "`State register`, `Next-state logic`, and `Output logic`"
     return [
         language_rule,
-        "Hard gate: every non-empty generated Verilog code line in RTL and testbench `.v` files must have a same-line or immediately adjacent explanatory comment in the requested comment language; blank lines and pure comment lines are the only exemptions.",
+        "Hard gate: every non-empty generated Verilog code line in RTL and testbench `.v` files must have a same-line explanatory comment in the requested comment language; blank lines and pure comment lines are the only exemptions.",
+        "Comment placement is semantic, not decorative: module, macro, parameter, port, signal, assign, always, case/FSM branch, instance, generate, task/function, and testbench constructs must use the exact placement rules from `references/verilog-comment-placement.md`.",
+        "Pure leading comments may introduce blocks such as always, instances, generate branches, multiline macros, and testbench task/function helpers, but they never replace the required same-line comment on ordinary code statements.",
+        "Do not use generic filler comments such as `逐行中文注释`, `泛泛注释`, `这里处理逻辑`, `reset`, `state task`, `bypass path`, or placeholder wording; every comment must name the target construct, signal, condition, or verification purpose.",
         f"If the RTL uses an FSM, it must use a three-block FSM style with fixed comment labels {rtl_labels}.",
         "Use the manifest `checks.reviewability_assessment` field to summarize comment coverage, FSM structure, and any reviewability limitation.",
     ]

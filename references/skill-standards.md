@@ -33,7 +33,7 @@ This skill should explicitly preserve the following design-pattern mix:
 
 - Verification claims must be backed by fresh command output.
 - Skill-level checks must cover metadata, resource integrity, workflow behavior, and confidence gates.
-- Generated Verilog validation must include a hard per-line explanatory comment gate for every non-empty RTL and testbench `.v` code line.
+- Generated Verilog validation must include a hard same-line semantic comment-placement gate for every non-empty RTL and testbench `.v` code line, with construct-level coverage metrics and negative fixtures for generic or shared-adjacent comments.
 - Effectiveness evidence should compare behavior with and without the skill when a realistic evaluation harness exists.
 - Pass-rate delta and failure-mode coverage are preferred over anecdotal success claims.
 

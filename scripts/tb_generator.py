@@ -174,6 +174,7 @@ def generate_testbench(module_name: str, ports: list[dict[str, str | bool | None
         reset_name = str(reset_ports[0]["name"])
         active_value = "1'b0" if "_n" in reset_name.lower() else "1'b1"
         inactive_value = "1'b1" if active_value == "1'b0" else "1'b0"
+        lines.append("    //测试任务: apply_reset - 施加并释放复位")
         lines.append("    task apply_reset;")
         lines.append("        begin")
         lines.append(f"            {reset_name} = {active_value};")
@@ -230,9 +231,71 @@ def generate_testbench(module_name: str, ports: list[dict[str, str | bool | None
     lines.append("        $finish;")
     lines.append("    end")
     lines.append("")
-    lines.append(f"endmodule // {tb_name}")
+    lines.append(f"endmodule //结束测试平台: {tb_name}")
     lines.append("")
-    return "\n".join(lines)
+    return "\n".join(add_semantic_comments(lines, tb_name, module_name))
+
+
+def add_semantic_comments(lines: list[str], tb_name: str, module_name: str) -> list[str]:
+    rendered: list[str] = []
+    for line in lines:
+        for physical_line in line.splitlines() or [line]:
+            stripped = physical_line.strip()
+            if not stripped or stripped.startswith("//") or "//" in physical_line:
+                rendered.append(physical_line)
+                continue
+            rendered.append(f"{physical_line} //{semantic_comment_for_line(stripped, tb_name, module_name)}")
+    return rendered
+
+
+def semantic_comment_for_line(stripped: str, tb_name: str, module_name: str) -> str:
+    if stripped.startswith("`timescale"):
+        return "时间单位: 测试平台使用1ns/1ps仿真精度"
+    if stripped.startswith("module "):
+        return f"测试平台: {tb_name} - 验证{module_name}接口行为"
+    if stripped.startswith("localparam"):
+        return "参数: CLK_PERIOD - 定义测试平台时钟周期"
+    if stripped.startswith("reg "):
+        return "测试信号: 驱动DUT输入或时钟复位"
+    if stripped.startswith("wire "):
+        return "观测信号: 连接DUT输出用于自检"
+    if stripped.startswith("always "):
+        return "时钟过程: 按半周期翻转测试时钟"
+    if stripped.startswith("task "):
+        return "测试任务: apply_reset - 初始化并释放DUT复位"
+    if stripped.startswith("endtask"):
+        return "结束测试任务: apply_reset"
+    if stripped == "begin":
+        return "任务过程: 开始执行复位步骤"
+    if stripped.startswith("initial "):
+        return "测试阶段: 执行初始化、激励和自检"
+    if stripped.startswith("$dumpfile"):
+        return "波形输出: 设置VCD文件名"
+    if stripped.startswith("$dumpvars"):
+        return "波形输出: 记录测试平台层级信号"
+    if stripped.startswith("$display"):
+        return "结果输出: 打印PASS或FAIL自检结果"
+    if stripped.startswith("$finish"):
+        return "仿真控制: 结束测试平台运行"
+    if stripped.startswith("if "):
+        return "检查条件: 判断自检结果是否失败"
+    if stripped.startswith("end else"):
+        return "检查分支: 自检未失败时报告通过"
+    if stripped.startswith("else"):
+        return "检查分支: 自检未失败时报告通过"
+    if stripped.startswith("end"):
+        return "结束代码块: 当前测试过程"
+    if stripped.startswith("#") or stripped.startswith("@") or stripped.startswith("repeat"):
+        return "时序控制: 等待测试平台信号稳定"
+    if stripped.startswith("."):
+        return "端口映射: 连接DUT端口与测试平台信号"
+    if stripped.startswith(f"{module_name} "):
+        return f"模块实例: {module_name}/u_dut - 例化待测模块"
+    if stripped in {");", ");"}:
+        return "结构结束: 结束端口列表或实例连接"
+    if "=" in stripped:
+        return "激励赋值: 设置测试平台驱动信号"
+    return "测试语句: 保持自检流程可审查"
 
 
 def render_width(port: dict[str, str | bool | None]) -> str:

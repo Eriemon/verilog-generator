@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .comment_placement import validate_comment_placement
 from .config import load_settings
 from .interface_contract import audit_interface
 from .prompt import require_comment_language
@@ -157,6 +158,9 @@ def validate_generated(
     line_comment_issues, line_comment_metrics = _validate_line_comment_gate(root, comment_language)
     issues.extend(line_comment_issues)
     metrics["line_comment_gate"] = line_comment_metrics
+    comment_placement_issues, comment_placement_metrics = _validate_comment_placement_gate(root, comment_language)
+    issues.extend(comment_placement_issues)
+    metrics["comment_placement_gate"] = comment_placement_metrics
     issues.extend(_validate_rtl_reviewability(root, comment_language))
     issues.extend(_validate_rtl_style_profile(normalized, root))
     issues.extend(_validate_rtl_testbench(normalized, root, reference_cases))
@@ -179,6 +183,22 @@ def _contract_gate_issues(raw_issues: list[dict[str, Any]]) -> list[ValidationIs
         )
         for item in raw_issues
     ]
+
+
+def _validate_comment_placement_gate(root: Path, comment_language: str) -> tuple[list[ValidationIssue], dict[str, Any]]:
+    raw_issues, metrics = validate_comment_placement(root, comment_language)
+    issues = [
+        ValidationIssue(
+            str(item.get("severity", "error")),
+            str(item.get("message", "Comment placement issue.")),
+            item.get("path"),
+            str(item.get("stage", "static")),
+            str(item.get("source", "current_module_issue")),
+            detail=item.get("detail"),
+        )
+        for item in raw_issues
+    ]
+    return issues, metrics
 
 
 def _static_lint_issues(spec: dict[str, Any], root: Path) -> list[ValidationIssue]:
@@ -413,7 +433,7 @@ def _validate_line_comment_gate(root: Path, comment_language: str) -> tuple[list
                     f"{rel}:{info['line_no']}",
                     "static",
                     "current_module_issue",
-                    detail="Add a same-line or immediately adjacent explanatory comment for this generated Verilog code line.",
+                    detail="Add a same-line explanatory comment for this generated Verilog code line.",
                 )
             )
     return issues, metrics
@@ -810,7 +830,7 @@ def _run_tool(command: list[str], root: Path, label: str, stage: str) -> list[Va
 
 def _is_testbench(path: Path) -> bool:
     stem = path.stem.lower()
-    return stem.endswith("_tb") or "testbench" in stem
+    return stem.endswith("_tb") or stem.startswith("tb_") or "testbench" in stem
 
 
 def _comment_texts(line: str) -> str:

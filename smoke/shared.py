@@ -280,7 +280,51 @@ def _add_verilog_line_comments(text: str) -> str:
     for line in text.splitlines():
         stripped = line.strip()
         if stripped and not stripped.startswith("//") and "//" not in line:
-            rendered_lines.append(f"{line} //逐行中文注释")
+            rendered_lines.append(f"{line} //{_semantic_comment_for_line(stripped)}")
         else:
             rendered_lines.append(line)
     return "\n".join(rendered_lines) + "\n"
+
+
+def _semantic_comment_for_line(stripped: str) -> str:
+    if stripped.startswith("module "):
+        return "模块: mock模块 - 验证一级流水转发结构"
+    if stripped.startswith("endmodule"):
+        return "结束模块: mock模块"
+    if stripped.startswith("input"):
+        return "输入端口: mock输入 - 驱动待测流水逻辑"
+    if stripped.startswith("output"):
+        return "输出端口: mock输出 - 返回流水处理结果"
+    if stripped.startswith("reg "):
+        return "寄存器: mock寄存器 - 保存流水状态或数据"
+    if stripped.startswith("wire "):
+        return "连线: mock连线 - 连接待测模块观测点"
+    if stripped.startswith("localparam"):
+        return "状态参数: mock状态 - 定义FSM编码"
+    if stripped.startswith("assign "):
+        return "组合连线: mock输出 - 连接内部寄存器到端口"
+    if stripped.startswith("always @(*)"):
+        return "组合逻辑: mock次态 - 计算FSM下一状态"
+    if stripped.startswith("always "):
+        return "时序逻辑: mock流水 - 更新状态和数据寄存器"
+    if stripped.startswith("case "):
+        return "状态选择: mock状态机 - 根据当前状态选择转移"
+    if stripped.startswith("endcase"):
+        return "结束状态选择: mock状态机"
+    if stripped.startswith("if "):
+        return "条件分支: mock条件 - 选择复位或运行路径"
+    if stripped.startswith("else"):
+        return "运行分支: mock流程 - 处理非复位路径"
+    if stripped.startswith("end"):
+        return "结束代码块: mock流程"
+    if stripped.startswith("$display"):
+        return "结果输出: mock测试 - 打印PASS或FAIL"
+    if stripped.startswith("$finish"):
+        return "仿真控制: mock测试 - 结束仿真"
+    if stripped.endswith("(") and "_Inst" in stripped:
+        return "模块实例: mock实例 - 连接待测模块"
+    if stripped.startswith("."):
+        return "端口映射: mock实例 - 连接测试平台信号"
+    if stripped.startswith("#"):
+        return "延时控制: mock测试 - 等待信号稳定"
+    return "语义说明: mock代码 - 保持生成样例可审查"
