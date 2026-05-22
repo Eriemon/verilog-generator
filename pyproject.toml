@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "verilog-generator-skill"
 version = "0.2.1"
-description = "Agent-usable Codex skill for Verilog-2001 RTL generation workflows."
+description = "Agent-usable Codex skill for Verilog-2001 RTL generation and FPGA design workflows."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"

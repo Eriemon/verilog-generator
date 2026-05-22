@@ -19,10 +19,10 @@
 <h1 align="center">Verilog Generator</h1>
 
 <p align="center">
-  A Codex-ready agent skill for disciplined Verilog-2001 RTL workflows.
+  A Codex-ready agent skill for disciplined Verilog-2001 RTL and FPGA design workflows.
 </p>
 
-Verilog Generator turns an AI coding agent into a more reliable RTL engineering assistant. It provides trigger metadata, workflow instructions, interface templates, deterministic runtime helpers, examples, and validation gates for moving from confirmed hardware intent to synthesizable Verilog and self-checking testbenches.
+Verilog Generator turns an AI coding agent into a more reliable RTL and FPGA engineering assistant. It provides trigger metadata, workflow instructions, interface templates, deterministic runtime helpers, examples, and validation gates for moving from confirmed hardware intent to synthesizable Verilog, FPGA-oriented module design, and self-checking testbenches.
 
 This repository is primarily an **agent skill package**. The Python CLI is included as the deterministic execution layer, but the main interface is the skill surface an agent can load and follow.
 

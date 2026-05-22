@@ -10,7 +10,7 @@ authors:
   - family-names: "Li"
     given-names: "He"
     affiliation: "Southeast University"
-abstract: "Verilog Generator is a Codex-ready agent skill package for disciplined Verilog-2001 RTL workflows, including confirmed hardware specifications, deterministic runtime helpers, synthesizable RTL generation, self-checking testbenches, and validation evidence."
+abstract: "Verilog Generator is a Codex-ready agent skill package for disciplined Verilog-2001 RTL and FPGA design workflows, including confirmed hardware specifications, deterministic runtime helpers, synthesizable RTL generation, FPGA-oriented module design, self-checking testbenches, and validation evidence."
 keywords:
   - agent skill
   - Codex
