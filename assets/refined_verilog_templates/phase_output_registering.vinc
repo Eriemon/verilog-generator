@@ -1,0 +1,11 @@
+// Phase output registering pattern
+// Keep user-visible phase outputs in a dedicated sequential block to preserve observability.
+always @(posedge i_clk or negedge i_rstn) begin
+    if (!i_rstn) begin
+        o_phase_valid <= 1'b0;
+        o_phase_data <= {C_DATA_WIDTH{1'b0}};
+    end else begin
+        o_phase_valid <= phase_valid_next;
+        o_phase_data <= phase_data_next;
+    end
+end

@@ -8,8 +8,8 @@
     "TDD-aware board-level mixed-signal block-design scaffolding"
   ],
   "source_projects": [
-    "ref/projects/ad9081_fmca_ebz_x_band",
-    "ref/projects/daq3"
+    "adi_ad9081_fmca_ebz_x_band",
+    "adi_daq3"
   ],
   "parameterization_points": [
     "rx_lane_rate",

@@ -8,8 +8,8 @@
     "Board-level JESD DAC top and block-design scaffolding"
   ],
   "source_projects": [
-    "ref/projects/dac_fmc_ebz",
-    "ref/projects/daq3"
+    "adi_dac_fmc_ebz",
+    "adi_daq3"
   ],
   "parameterization_points": [
     "tx_jesd_l",

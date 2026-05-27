@@ -17,6 +17,7 @@ from .comment_placement import validate_comment_placement
 from .config import load_settings
 from .interface_contract import audit_interface
 from .prompt import require_comment_language
+from .reference_contract import REFERENCE_RESULT_TAG, compare_reference_to_transcript, parse_semantic_transcript
 from .spec import normalize_spec
 from .static_lint import lint_generated_rtl
 from .vectors import VECTOR_HASH_TAG, extract_vector_hashes, find_vector_contracts
@@ -164,6 +165,10 @@ def validate_generated(
     issues.extend(_validate_rtl_reviewability(root, comment_language))
     issues.extend(_validate_rtl_style_profile(normalized, root))
     issues.extend(_validate_rtl_testbench(normalized, root, reference_cases))
+    semantic_issues, semantic_metrics = _validate_semantic_execution(root, reference_contract)
+    issues.extend(semantic_issues)
+    if semantic_metrics:
+        metrics["semantic_execution"] = semantic_metrics
     issues.extend(_validate_placeholders(root, _rtl_files(root)))
     readiness_issues, readiness_metrics = _run_rtl_readiness(normalized, root, readiness, run_external, simulator_config)
     issues.extend(readiness_issues)
@@ -355,6 +360,75 @@ def _validate_rtl_testbench(spec: dict[str, Any], root: Path, reference_cases: l
             if case_id and case_id not in text:
                 issues.append(ValidationIssue("warning", f"Reference case {case_id!r} is not mentioned in the testbench.", rel, source="testbench_issue", case_id=case_id))
     return issues
+
+
+def _validate_semantic_execution(root: Path, reference_contract: dict[str, Any] | None) -> tuple[list[ValidationIssue], dict[str, Any]]:
+    if not reference_contract:
+        return [], {}
+    testbenches = [path for path in _rtl_files(root) if _is_testbench(path)]
+    if not testbenches:
+        return [], {}
+    combined_text = "\n".join(path.read_text(encoding="utf-8", errors="ignore") for path in testbenches)
+    required_case_ids = [str(item) for item in reference_contract.get("case_ids", []) or []]
+    checkpoint_keys = [str(item) for item in reference_contract.get("checkpoint_keys", []) or []]
+    missing_cases = [case_id for case_id in required_case_ids if case_id not in combined_text]
+    missing_checkpoints = [key for key in checkpoint_keys if key not in combined_text]
+    transcript = _parse_transcript_from_generated(root)
+    metrics: dict[str, Any] = {
+        "required_case_ids": required_case_ids,
+        "required_checkpoint_keys": checkpoint_keys,
+        "semantic_ready": not missing_cases and not missing_checkpoints,
+        "mismatched_cases": [],
+        "checkpoint_drift": [],
+        "failed_cases": [],
+        "localization_confidence": 1.0,
+    }
+    issues: list[ValidationIssue] = []
+    for case_id in missing_cases:
+        issues.append(
+            ValidationIssue(
+                "warning",
+                f"Reference case {case_id!r} is not covered by the generated testbench transcript scaffolding.",
+                stage="static",
+                source="testbench_issue",
+                case_id=case_id,
+            )
+        )
+        metrics["mismatched_cases"].append({"case_id": case_id, "drift_keys": ["case_id"]})
+    for key in missing_checkpoints:
+        issues.append(
+            ValidationIssue(
+                "warning",
+                f"Reference checkpoint {key!r} is not preserved in the generated testbench or transcript hints.",
+                stage="static",
+                source="testbench_issue",
+                detail=f"checkpoint={key}",
+            )
+        )
+        metrics["checkpoint_drift"].append({"case_id": "static_check", "drift_keys": [key]})
+    if transcript is not None:
+        comparison = compare_reference_to_transcript(reference_contract, transcript)
+        metrics.update(comparison)
+        if comparison.get("checkpoint_drift"):
+            metrics["localization_confidence"] = comparison.get("localization_confidence", 0.85)
+    elif missing_checkpoints:
+        metrics["localization_confidence"] = 0.85
+    elif missing_cases:
+        metrics["localization_confidence"] = 0.5
+    return issues, metrics
+
+
+def _parse_transcript_from_generated(root: Path) -> dict[str, Any] | None:
+    candidates = sorted(root.glob("**/*.log")) + sorted(root.glob("**/*.txt"))
+    for path in candidates:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if REFERENCE_RESULT_TAG not in text:
+            continue
+        try:
+            return parse_semantic_transcript(text)
+        except ValueError:
+            continue
+    return None
 
 
 def _validate_vector_contracts(root: Path) -> list[ValidationIssue]:
@@ -637,7 +711,7 @@ def _simulator_config(simulator_config: dict[str, Any] | None = None) -> dict[st
         try:
             settings = load_settings()
             raw = settings.get("validation", {}).get("simulators", {})
-        except Exception:  # noqa: BLE001
+        except Exception:
             raw = {}
     priority = raw.get("priority") if isinstance(raw, dict) else None
     if not isinstance(priority, list) or not priority:

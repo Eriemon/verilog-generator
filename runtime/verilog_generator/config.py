@@ -9,10 +9,19 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from .workspace import require_workspace_root
+from .workspace import find_workspace_root, require_workspace_root
 
 CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
 DEFAULT_SETTINGS_PATH = CONFIG_DIR / "defaults.json"
+PROJECT_SETTINGS_DIR = ".settings"
+LOCAL_VERILOG_SETTINGS_REL = ".settings/verilog.local.json"
+LOCAL_REMOTE_SELECTION_REL = ".settings/remote-selection.local.json"
+LOCAL_SERVER_LIST_REL = ".settings/server_list.local.json"
+REMOTE_RUNTIME_SETTINGS_REL = ".settings/verilog.remote.json"
+LEGACY_REMOTE_STATE_DIR = ".erie-verilog-generator-state"
+LEGACY_REMOTE_SELECTION_REL = ".erie-verilog-generator-state/remote_server_selection.json"
+LEGACY_REMOTE_TOOLCHAIN_REL = ".erie-verilog-generator-state/remote_toolchain_selection.json"
+LEGACY_REMOTE_SERVER_LIST_REL = ".erie-verilog-generator-state/server_list.local.json"
 _TOKEN_RE = re.compile(r"\$\{([^}]+)\}")
 
 
@@ -28,24 +37,69 @@ def project_root() -> Path:
     return skill_root().parent
 
 
-def load_settings(path: str | Path | None = None) -> dict[str, Any]:
-    """Load a settings JSON file and expand supported path placeholders."""
+def local_verilog_settings_path(*, start: Path | None = None) -> Path:
+    """Return the project-local Verilog settings path."""
 
-    settings_path = Path(path) if path is not None else DEFAULT_SETTINGS_PATH
-    settings_path = settings_path.expanduser()
-    if not settings_path.is_absolute():
-        settings_path = (Path.cwd() / settings_path).resolve()
-    raw = json.loads(settings_path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict):
-        raise ValueError(f"Settings must be a JSON object: {settings_path}")
-    raw.setdefault("version", 1)
-    context = {
-        "skill_dir": skill_root(),
-        "project_root": project_root(),
-        "settings_dir": settings_path.parent,
-        "home": Path.home(),
+    return require_workspace_root(purpose="local Verilog settings", start=start) / LOCAL_VERILOG_SETTINGS_REL
+
+
+def local_remote_selection_path(*, start: Path | None = None) -> Path:
+    """Return the project-local remote selection path."""
+
+    return require_workspace_root(purpose="remote selection", start=start) / LOCAL_REMOTE_SELECTION_REL
+
+
+def local_server_list_path(*, start: Path | None = None) -> Path:
+    """Return the project-local remote server list path."""
+
+    return require_workspace_root(purpose="remote server list", start=start) / LOCAL_SERVER_LIST_REL
+
+
+def remote_runtime_settings_relpath() -> str:
+    """Return the fixed remote runtime config path relative to the remote workdir."""
+
+    return REMOTE_RUNTIME_SETTINGS_REL
+
+
+def legacy_remote_state_paths(*, start: Path | None = None) -> list[Path]:
+    """Return legacy project-local remote state paths under the workspace root."""
+
+    root = require_workspace_root(purpose="legacy remote state", start=start)
+    return [
+        root / LEGACY_REMOTE_SELECTION_REL,
+        root / LEGACY_REMOTE_TOOLCHAIN_REL,
+        root / LEGACY_REMOTE_SERVER_LIST_REL,
+    ]
+
+
+def load_settings(path: str | Path | None = None) -> dict[str, Any]:
+    """Load the static defaults and merge project-local Verilog settings when present."""
+
+    settings_path = _resolve_settings_path(path)
+    payload = _load_one_settings(settings_path)
+    workspace_root = find_workspace_root(settings_path.parent) or find_workspace_root(Path.cwd())
+    local_settings = None
+    if workspace_root is not None:
+        candidate = workspace_root / LOCAL_VERILOG_SETTINGS_REL
+        if candidate.exists() and candidate.resolve() != settings_path.resolve():
+            local_settings = _load_one_settings(candidate)
+            payload = _deep_merge(payload, local_settings)
+    payload.setdefault("version", 1)
+    payload["__verilog_settings_meta__"] = {
+        "settings_path": str(settings_path),
+        "workspace_root": str(workspace_root) if workspace_root is not None else None,
+        "local_settings_path": str((workspace_root / LOCAL_VERILOG_SETTINGS_REL).resolve()) if workspace_root is not None else None,
+        "local_selection_path": str((workspace_root / LOCAL_REMOTE_SELECTION_REL).resolve()) if workspace_root is not None else None,
+        "server_list_path": str((workspace_root / LOCAL_SERVER_LIST_REL).resolve()) if workspace_root is not None else None,
+        "remote_runtime_config": REMOTE_RUNTIME_SETTINGS_REL,
+        "legacy_remote_state": [
+            str(path.resolve())
+            for path in _legacy_paths_for_root(workspace_root)
+            if path.exists()
+        ],
+        "local_settings_loaded": local_settings is not None,
     }
-    return _expand_value(raw, context)
+    return payload
 
 
 def workflow_defaults(settings: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -67,17 +121,43 @@ def path_setting(settings: dict[str, Any], key: str) -> Path:
     return Path(str(paths[key]))
 
 
+def policy_setting(settings: dict[str, Any], key: str, default: Any = None) -> Any:
+    """Return one configured policy value."""
+
+    policy = settings.get("policy", {})
+    if not isinstance(policy, dict):
+        return default
+    return policy.get(key, default)
+
+
 def remote_setting(settings: dict[str, Any], key: str) -> str:
     """Return one configured remote setting."""
 
-    remote = settings.get("remote", {})
     adapted_remote = _adapted_remote_settings(settings)
     if key in adapted_remote:
         return str(adapted_remote[key])
-    if not isinstance(remote, dict) or key not in remote:
+
+    remote = settings.get("remote", {})
+    if not isinstance(remote, dict):
         raise KeyError(f"Missing settings.remote.{key}")
-    value = remote[key]
-    if key in {"server_list", "toolchain_config", "server_selection_path"}:
+    integration = remote.get("integration", {})
+    if not isinstance(integration, dict):
+        integration = {}
+
+    mapping: dict[str, Any] = {
+        "helper": integration.get("remote_ssh_helper", remote.get("helper")),
+        "settings": integration.get("remote_ssh_settings", remote.get("settings")),
+        "selection_path": integration.get("selection_file", remote.get("selection_path", LOCAL_REMOTE_SELECTION_REL)),
+        "server_list": integration.get("server_list", remote.get("server_list", LOCAL_SERVER_LIST_REL)),
+        "remote_runtime_config": integration.get("remote_runtime_config", remote.get("remote_runtime_config", REMOTE_RUNTIME_SETTINGS_REL)),
+        "python": remote.get("python"),
+        "remote_root": remote.get("remote_root"),
+        "timeout_s": remote.get("timeout_s"),
+    }
+    if key not in mapping or mapping[key] in (None, ""):
+        raise KeyError(f"Missing settings.remote.{key}")
+    value = mapping[key]
+    if key in {"helper", "settings", "selection_path", "server_list"}:
         return str(_resolve_project_local_path(value, purpose=f"settings.remote.{key}"))
     return str(value)
 
@@ -195,11 +275,14 @@ def _adapted_remote_settings(settings: dict[str, Any]) -> dict[str, Any]:
     remote = adaptations.get("remote", {}) if isinstance(adaptations, dict) else {}
     if not isinstance(remote, dict):
         return {}
-    return {
-        key: value
-        for key, value in remote.items()
-        if isinstance(value, str) and _adapted_remote_path_valid(key, value)
-    }
+    normalized: dict[str, Any] = {}
+    helper = remote.get("helper")
+    settings_path = remote.get("settings")
+    if isinstance(helper, str) and _adapted_remote_path_valid("helper", helper):
+        normalized["helper"] = helper
+    if isinstance(settings_path, str) and _adapted_remote_path_valid("settings", settings_path):
+        normalized["settings"] = settings_path
+    return normalized
 
 
 def _resolve_project_local_path(value: str | Path, *, purpose: str) -> Path:
@@ -215,6 +298,48 @@ def _adapted_remote_path_valid(key: str, value: str) -> bool:
     if key == "server_list":
         return Path(value).expanduser().exists()
     return True
+
+
+def _resolve_settings_path(path: str | Path | None) -> Path:
+    settings_path = Path(path) if path is not None else DEFAULT_SETTINGS_PATH
+    settings_path = settings_path.expanduser()
+    if not settings_path.is_absolute():
+        settings_path = (Path.cwd() / settings_path).resolve()
+    return settings_path
+
+
+def _load_one_settings(settings_path: Path) -> dict[str, Any]:
+    raw = json.loads(settings_path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"Settings must be a JSON object: {settings_path}")
+    raw.setdefault("version", 1)
+    context = {
+        "skill_dir": skill_root(),
+        "project_root": project_root(),
+        "settings_dir": settings_path.parent,
+        "home": Path.home(),
+    }
+    return _expand_value(raw, context)
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = deepcopy(base)
+    for key, value in override.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = deepcopy(value)
+    return merged
+
+
+def _legacy_paths_for_root(root: Path | None) -> list[Path]:
+    if root is None:
+        return []
+    return [
+        root / LEGACY_REMOTE_SELECTION_REL,
+        root / LEGACY_REMOTE_TOOLCHAIN_REL,
+        root / LEGACY_REMOTE_SERVER_LIST_REL,
+    ]
 
 
 def _expand_value(value: Any, context: dict[str, Path]) -> Any:

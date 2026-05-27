@@ -205,6 +205,10 @@ def _index_payload(state: dict[str, Any], event: str, record: dict[str, Any]) ->
         "run_workflow": "plans",
         "resume_workflow": "plans",
         "workflow_attempt": "validation_reports",
+        "analyze_existing": "plans",
+        "refine_existing": "plans",
+        "compare_semantics": "validation_reports",
+        "verify_existing": "validation_reports",
     }
     bucket = mapping.get(event)
     if bucket:

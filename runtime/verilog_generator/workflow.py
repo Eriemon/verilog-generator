@@ -1008,6 +1008,7 @@ def _workflow_config(
     }
     return {
         "version": 1,
+        "mode": str((plan.get("workflow") or {}).get("mode") or "generate"),
         "name": plan["name"],
         "target": plan["target"],
         "rtl_dialect": plan.get("rtl_dialect"),

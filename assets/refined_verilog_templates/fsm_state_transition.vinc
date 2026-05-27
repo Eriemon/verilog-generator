@@ -1,0 +1,19 @@
+// FSM state transition pattern
+// Use explicit state_current/state_next registers and ST_* localparams.
+always @(*) begin
+    state_next = state_current;
+    case (state_current)
+        ST_IDLE: begin
+            if (start_i) state_next = ST_ACTIVE;
+        end
+        ST_ACTIVE: begin
+            if (done_i) state_next = ST_DONE;
+        end
+        ST_DONE: begin
+            state_next = ST_IDLE;
+        end
+        default: begin
+            state_next = ST_IDLE;
+        end
+    endcase
+end

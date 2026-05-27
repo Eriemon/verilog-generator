@@ -24,6 +24,36 @@
       "title": "Convolution load/store pipeline",
       "path": "conv_load_store_pipeline.vinc",
       "selection_reason": "selected for convolution-style load/store and buffered datapaths"
+    },
+    {
+      "template_id": "fsm_state_transition",
+      "title": "FSM state transition core",
+      "path": "fsm_state_transition.vinc",
+      "selection_reason": "selected for explicit FSM state transition and phase sequencing logic"
+    },
+    {
+      "template_id": "counter_state_bridge",
+      "title": "Counter/state bridge",
+      "path": "counter_state_bridge.vinc",
+      "selection_reason": "selected for counters or timers that gate state transitions"
+    },
+    {
+      "template_id": "wrapper_top_stitching",
+      "title": "Wrapper top stitching",
+      "path": "wrapper_top_stitching.vinc",
+      "selection_reason": "selected for wrapper, partition, merge, or top-level stitching tasks"
+    },
+    {
+      "template_id": "phase_output_registering",
+      "title": "Phase output registering",
+      "path": "phase_output_registering.vinc",
+      "selection_reason": "selected for phase/state output register blocks that should stay reviewable"
+    },
+    {
+      "template_id": "equivalence_wrapper_probe",
+      "title": "Equivalence wrapper probe",
+      "path": "equivalence_wrapper_probe.vinc",
+      "selection_reason": "selected for compare/equivalence assist flows that need internal checkpoint probes"
     }
   ]
 }

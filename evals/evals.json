@@ -100,6 +100,133 @@
         "requires_refined_template_section": true,
         "ready_for_generation": true
       }
+    },
+    {
+      "id": "analysis_traffic_light",
+      "kind": "analysis_regression",
+      "source": "assets/examples/existing_rtl/traffic_light.v",
+      "spec_source": "assets/examples/existing_rtl/traffic_light_spec.md",
+      "expectations": {
+        "decomposition_candidates_min": 3,
+        "mapped_features": ["Reset behavior", "Pass request behavior"],
+        "state_elements": ["state", "cnt"]
+      }
+    },
+    {
+      "id": "transform_validation_traffic_light",
+      "kind": "transform_validation_regression",
+      "source": "assets/examples/existing_rtl/traffic_light.v",
+      "expectations": {
+        "tb_scaffold": true,
+        "partition_wrapper": true,
+        "compare_same_passes": true,
+        "drift_detected": true
+      }
+    },
+    {
+      "id": "style_refine_regression",
+      "kind": "style_refine_regression",
+      "source": "assets/examples/existing_rtl/traffic_light.v",
+      "expectations": {
+        "style_report_present": true,
+        "preserve_section_present": true,
+        "suggested_refinements_present": true,
+        "ready_state_recorded": true
+      }
+    },
+    {
+      "id": "checkpoint_closure_regression",
+      "kind": "checkpoint_closure_regression",
+      "spec": "assets/examples/rtl_erie_verilog_spec.json",
+      "expectations": {
+        "has_structured_checkpoints": true,
+        "has_structured_dependency_graph": true,
+        "python_prompt_mentions_checkpoints": true
+      }
+    },
+    {
+      "id": "merge_assist_regression",
+      "kind": "merge_assist_regression",
+      "source": "assets/examples/existing_rtl/traffic_light.v",
+      "expectations": {
+        "merge_plan_present": true,
+        "merge_wrapper_present": true,
+        "merge_validation_present": true,
+        "merge_equivalence_planned": true
+      }
+    },
+    {
+      "id": "optimize_assist_regression",
+      "kind": "optimize_assist_regression",
+      "source": "assets/examples/existing_rtl/traffic_light.v",
+      "expectations": {
+        "plan_only_without_candidate": true,
+        "qor_summary_present": true,
+        "candidate_compare_outputs_present": true
+      }
+    },
+    {
+      "id": "verify_existing_diagnostics_regression",
+      "kind": "verify_existing_diagnostics_regression",
+      "source": "assets/examples/existing_rtl/ready_valid_slice.v",
+      "spec_source": "assets/examples/existing_rtl/ready_valid_slice_spec.md",
+      "expectations": {
+        "simulation_slice_present": true,
+        "timing_diagnostic_present": true,
+        "expected_trace_present": true,
+        "waveform_diff_present": true,
+        "testcase_matrix_present": true,
+        "run_summary_present": true,
+        "synth_readiness_present": true,
+        "terminal_status_present": true
+      }
+    },
+    {
+      "id": "verify_existing_augment_regression",
+      "kind": "verify_existing_augment_regression",
+      "source": "assets/examples/existing_rtl/ready_valid_slice.v",
+      "spec_source": "assets/examples/existing_rtl/ready_valid_slice_spec.md",
+      "testbench_source": "assets/examples/existing_rtl/ready_valid_slice_tb.v",
+      "expectations": {
+        "explicit_tb_source_supported": true,
+        "augment_plan_present": true,
+        "diff_present": true,
+        "tb_hooks_injected": true,
+        "auto_apply_backup_created": true,
+        "systemverilog_upgrade_recorded": true
+      }
+    },
+    {
+      "id": "verify_existing_rtl_repair_regression",
+      "kind": "verify_existing_rtl_repair_regression",
+      "source": "assets/examples/existing_rtl/reset_gap_counter.v",
+      "spec_source": "assets/examples/existing_rtl/reset_gap_counter_spec.md",
+      "blocked_sources": [
+        "assets/examples/existing_rtl/leaf_counter.v",
+        "assets/examples/existing_rtl/top_counter.v"
+      ],
+      "expectations": {
+        "conservative_resume_apply": true,
+        "auto_apply_low_risk": true,
+        "backup_created": true,
+        "post_apply_validation_present": true,
+        "blocked_multi_file_intervention": true
+      }
+    },
+    {
+      "id": "verify_existing_rtl_patch_library_regression",
+      "kind": "verify_existing_rtl_patch_library_regression",
+      "control_source": "assets/examples/existing_rtl/fsm_without_default.v",
+      "control_spec_source": "assets/examples/existing_rtl/fsm_without_default_spec.md",
+      "timing_source": "assets/examples/existing_rtl/missing_output_register.v",
+      "timing_spec_source": "assets/examples/existing_rtl/missing_output_register_spec.md",
+      "expectations": {
+        "control_patch_category_detected": true,
+        "timing_patch_category_detected": true,
+        "auto_apply_downgraded_to_confirmation": true,
+        "intervention_present_before_apply": true,
+        "decision_resume_applies_and_regresses": true
+      }
     }
   ]
 }

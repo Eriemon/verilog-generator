@@ -50,6 +50,14 @@ def build_artifact_graph(trace_path: Path, plan: dict[str, Any]) -> dict[str, An
             source_id = f"error_source:{source}"
             nodes.setdefault(source_id, {"id": source_id, "type": "error_source", "name": source})
             edges.append({"from": event_id, "to": source_id, "kind": "has_error_source"})
+        semantic = (event.get("metrics") or {}).get("semantic_execution", {}) if isinstance(event.get("metrics"), dict) else {}
+        for item in semantic.get("checkpoint_drift", []) or []:
+            if not isinstance(item, dict):
+                continue
+            for drift_key in item.get("drift_keys", []) or []:
+                checkpoint_id = f"checkpoint:{drift_key}"
+                nodes.setdefault(checkpoint_id, {"id": checkpoint_id, "type": "checkpoint", "name": str(drift_key)})
+                edges.append({"from": event_id, "to": checkpoint_id, "kind": "checkpoint_drift"})
 
     for subfunction in plan.get("subfunctions", []) or []:
         if not isinstance(subfunction, dict):

@@ -16,7 +16,7 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 if str(SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(SKILL_ROOT))
 
-from runtime.verilog_generator.config import fpga_developer_routing_settings, load_settings, skill_dependency_settings  # noqa: E402
+from runtime.verilog_generator.config import fpga_developer_routing_settings, load_settings, skill_dependency_settings
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -252,8 +252,12 @@ def adapt_dependencies(
     if remote_status and remote_status.get("present"):
         skill_path = Path(remote_status["skill_paths"]["erie-remote-ssh"])
         helper = skill_path / "scripts" / "remote_ssh.py"
-        remote_settings = skill_path / "config" / "defaults.json"
-        if helper.is_file() and remote_settings.is_file():
+        remote_settings_candidates = [
+            skill_path / "config" / "defaults.json",
+            skill_path / "assets" / "defaults.json",
+        ]
+        remote_settings = next((candidate for candidate in remote_settings_candidates if candidate.is_file()), None)
+        if helper.is_file() and remote_settings is not None:
             adaptations["remote"] = {
                 "helper": str(helper.resolve()),
                 "settings": str(remote_settings.resolve()),
@@ -263,7 +267,7 @@ def adapt_dependencies(
             return {
                 "adapted": [],
                 "blocked": ["erie-remote-ssh"],
-                "reason": "Installed erie-remote-ssh is missing scripts/remote_ssh.py or config/defaults.json.",
+                "reason": "Installed erie-remote-ssh is missing scripts/remote_ssh.py or a supported defaults.json under config/ or assets/.",
                 "state_path": str(state_path),
             }
     state.setdefault("version", 1)

@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from runtime.verilog_generator.config import load_settings, workflow_defaults
+from runtime.verilog_generator.existing_rtl import analyze_existing_rtl, load_spec_text
+from runtime.verilog_generator.existing_rtl_refinement import compare_semantics, refine_existing_rtl as refine_existing_rtl_runtime
 from runtime.verilog_generator.prompt import render_prompt
 from runtime.verilog_generator.requirements import (
     apply_requirement_defaults,
@@ -16,7 +18,8 @@ from runtime.verilog_generator.requirements import (
     validate_requirement_confirmation,
 )
 from runtime.verilog_generator.spec import normalize_spec, read_spec, write_spec
-from runtime.verilog_generator.validation import validate_generated
+from runtime.verilog_generator.validation import readiness_at_least, validate_generated
+from runtime.verilog_generator.verify_repair import verify_existing as verify_existing_runtime
 from runtime.verilog_generator.workflow import run_workflow
 from runtime.verilog_generator.workspace import use_workspace_root
 
@@ -24,6 +27,10 @@ __all__ = [
     "run_verilog_workflow",
     "render_verilog_prompt",
     "validate_verilog_artifacts",
+    "analyze_existing_verilog",
+    "refine_existing_verilog",
+    "compare_verilog_semantics",
+    "verify_existing_verilog",
     "load_default_workflow_config",
     "load_workflow_result",
 ]
@@ -40,6 +47,126 @@ def load_workflow_result(run_dir: str | Path) -> dict[str, Any]:
 
     result_path = Path(run_dir) / "workflow_result.json"
     return json.loads(result_path.read_text(encoding="utf-8"))
+
+
+def analyze_existing_verilog(
+    source: str | Path | list[str | Path],
+    *,
+    out_dir: str | Path,
+    spec_source: str | Path | dict[str, Any] | None = None,
+    module_name: str | None = None,
+) -> dict[str, Any]:
+    """Analyze existing Verilog RTL into a stable JSON contract."""
+
+    run_dir = Path(out_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    sources = _resolve_sources(source)
+    with use_workspace_root(run_dir):
+        result = analyze_existing_rtl(
+            sources,
+            spec_text=load_spec_text(spec_source),
+            module_name=module_name,
+            out_dir=run_dir,
+        )
+    return {
+        "status": "analyzed",
+        "run_dir": str(run_dir),
+        "analysis_path": str(result["analysis_path"]),
+        "project_analysis_path": str(result["project_analysis_path"]),
+        "design_explanation_path": str(result["design_explanation_path"]),
+        "analysis": result["analysis"],
+        "project_analysis": result["project_analysis"],
+    }
+
+
+def refine_existing_verilog(
+    source: str | Path,
+    *,
+    out_dir: str | Path,
+    refine_goal: str,
+    analysis_source: str | Path | None = None,
+    spec_source: str | Path | dict[str, Any] | None = None,
+    candidate_artifacts_dir: str | Path | None = None,
+    reference_artifacts_dir: str | Path | None = None,
+    readiness: str = "static",
+    tb_language: str = "verilog",
+) -> dict[str, Any]:
+    """Plan a controlled refinement flow for existing RTL."""
+
+    run_dir = Path(out_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    analysis_path = Path(analysis_source) if analysis_source is not None else None
+    with use_workspace_root(run_dir):
+        return refine_existing_rtl_runtime(
+            Path(source),
+            out_dir=run_dir,
+            refine_goal=refine_goal,
+            analysis_source=analysis_path,
+            spec_source=spec_source,
+            candidate_artifacts_dir=Path(candidate_artifacts_dir) if candidate_artifacts_dir is not None else None,
+            reference_artifacts_dir=Path(reference_artifacts_dir) if reference_artifacts_dir is not None else None,
+            readiness=readiness,
+            tb_language=tb_language,
+        )
+
+
+def compare_verilog_semantics(
+    reference: str | Path,
+    candidate: str | Path,
+    *,
+    out_dir: str | Path,
+    run_external: bool = True,
+    readiness: str = "static",
+    external_target: str = "remote",
+) -> dict[str, Any]:
+    """Compare two RTL implementations for interface and checkpoint drift."""
+
+    run_dir = Path(out_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    with use_workspace_root(run_dir):
+        return compare_semantics(
+            Path(reference),
+            Path(candidate),
+            out_dir=run_dir,
+            run_external=_resolve_external_run(run_external, readiness=readiness, external_target=external_target, allow_static_external=True),
+            readiness=readiness,
+        )
+
+
+def verify_existing_verilog(
+    source: str | Path | list[str | Path],
+    *,
+    out_dir: str | Path,
+    spec_source: str | Path | dict[str, Any] | None = None,
+    module_name: str | None = None,
+    testbench_source: str | Path | None = None,
+    decision_source: str | Path | None = None,
+    tb_mode: str = "generate",
+    tb_language: str = "verilog",
+    automation_mode: str,
+    readiness: str = "static",
+    run_external: bool = True,
+    external_target: str = "remote",
+) -> dict[str, Any]:
+    """Run the existing RTL verify-repair workflow and emit stable artifacts."""
+
+    run_dir = Path(out_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    sources = _resolve_sources(source)
+    with use_workspace_root(run_dir):
+        return verify_existing_runtime(
+            sources,
+            out_dir=run_dir,
+            spec_source=spec_source,
+            module_name=module_name,
+            testbench_source=Path(testbench_source) if testbench_source is not None else None,
+            decision_source=Path(decision_source) if decision_source is not None else None,
+            tb_mode=tb_mode,
+            tb_language=tb_language,
+            automation_mode=automation_mode,
+            readiness=readiness,
+            run_external=_resolve_external_run(run_external, readiness=readiness, external_target=external_target, allow_static_external=True),
+        )
 
 
 def run_verilog_workflow(
@@ -62,6 +189,7 @@ def run_verilog_workflow(
     max_attempts: int | None = None,
     stop_on_human: bool | None = None,
     run_external: bool | None = None,
+    external_target: str = "remote",
     comment_language: str | None = None,
     model_timeout_s: int | None = None,
 ) -> dict[str, Any]:
@@ -74,7 +202,8 @@ def run_verilog_workflow(
     resolved_readiness = readiness or merged.get("readiness", "static")
     resolved_attempts = int(max_attempts or merged.get("max_attempts", 3))
     resolved_stop_on_human = bool(stop_on_human) if stop_on_human is not None else bool(merged.get("stop_on_human", True))
-    resolved_run_external = bool(run_external) if run_external is not None else bool(merged.get("run_external", True))
+    requested_run_external = bool(run_external) if run_external is not None else bool(merged.get("run_external", True))
+    resolved_run_external = _resolve_external_run(requested_run_external, readiness=resolved_readiness, external_target=external_target)
     resolved_comment_language = comment_language or str(merged.get("comment_language", "zh"))
     resolved_provider_name = provider_name or str(merged.get("model_provider", "command"))
     resolved_timeout = int(model_timeout_s or merged.get("model_timeout_s", 120))
@@ -213,6 +342,7 @@ def validate_verilog_artifacts(
     interface_family: str | None = None,
     interface_profile: str | Path | dict[str, Any] | None = None,
     run_external: bool = True,
+    external_target: str = "remote",
     readiness: str = "static",
     comment_language: str = "zh",
     reference_contract: str | Path | dict[str, Any] | None = None,
@@ -233,7 +363,7 @@ def validate_verilog_artifacts(
         resolved_spec,
         Path(artifacts_path),
         target="rtl",
-        run_external=run_external,
+        run_external=_resolve_external_run(run_external, readiness=readiness, external_target=external_target),
         readiness=readiness,
         comment_language=comment_language,
         reference_contract=_load_optional_json(reference_contract),
@@ -340,3 +470,21 @@ def _load_raw_spec(spec: str | Path | dict[str, Any]) -> dict[str, Any]:
         return deepcopy(spec)
     path = Path(spec)
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _resolve_sources(source: str | Path | list[str | Path]) -> list[Path]:
+    if isinstance(source, list):
+        return [Path(item) for item in source]
+    return [Path(source)]
+
+
+def _resolve_external_run(run_external: bool, *, readiness: str, external_target: str, allow_static_external: bool = False) -> bool:
+    if not run_external:
+        return False
+    if not allow_static_external and not readiness_at_least(readiness, "compile"):
+        return False
+    if external_target != "local":
+        raise ValueError(
+            "External validation is remote-first. Use the remote validation flow, or pass external_target='local' only after the user explicitly approves local external validation."
+        )
+    return True

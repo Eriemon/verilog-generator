@@ -332,6 +332,7 @@ def build_codegen_plan(spec: dict[str, Any]) -> dict[str, Any]:
             "subfunctions": [item.get("name") for item in spec.get("subfunctions", []) if isinstance(item, dict)] or [spec.get("name")],
             "decomposition_strategy": "follow the normalized subfunction plan and keep interface boundaries explicit",
         },
+        "subfunction_dependency_graph": _subfunction_dependency_graph(spec),
         "signal_width_strategy": {
             "policy": "infer from the reference model range and preserve parameterized widths where practical",
             "rtl_style_profile": spec.get("rtl_style_profile"),
@@ -344,7 +345,10 @@ def build_codegen_plan(spec: dict[str, Any]) -> dict[str, Any]:
             "python_reference_required": True,
             "self_checking_testbench_required": True,
             "readiness_target": "static",
+            "checkpoint_driven_validation": True,
         },
+        "critical_behavior_checkpoints": _critical_behavior_checkpoints(spec),
+        "semantic_checkpoints": _semantic_checkpoints(spec),
         "syntax_risk_checks": _syntax_risk_checks(spec),
         "open_questions": open_questions,
         "ready_for_generation": ready,
@@ -706,4 +710,102 @@ def _syntax_risk_checks(spec: dict[str, Any]) -> list[str]:
         checks.append("Preserve Erie module instance naming with `_Inst` suffixes and `gen_*` generate labels.")
         checks.append("Keep AXI/AXIS/APB/AHB ports grouped by channel and role instead of flattening the bus declaration list.")
     return checks
+
+
+def _critical_behavior_checkpoints(spec: dict[str, Any]) -> list[dict[str, Any]]:
+    explicit = spec.get("semantic_checkpoints", []) if isinstance(spec.get("semantic_checkpoints"), list) else []
+    if explicit:
+        return _semantic_checkpoints(spec)
+    checkpoints: list[dict[str, Any]] = [
+        {
+            "id": "reset_known_state",
+            "category": "reset",
+            "signals": [str((spec.get("reset") or {}).get("name") or "rst_n")],
+            "verification_hint": "Check reset-driven initialization before nominal traffic.",
+            "text": "Reset and initial conditions must drive outputs to a known state.",
+        }
+    ]
+    for index, item in enumerate(spec.get("behavior", []) or [], start=1):
+        text = item.get("text") if isinstance(item, dict) else str(item)
+        checkpoints.append(
+            {
+                "id": f"behavior_{index}",
+                "category": "behavior",
+                "signals": [
+                    item["name"]
+                    for item in spec.get("interfaces", {}).get("ports", [])
+                    if isinstance(item, dict) and item.get("direction") == "output"
+                ][:2],
+                "verification_hint": "Capture this behavior in the Python checkpoint payload and the RTL transcript.",
+                "text": text,
+            }
+        )
+    return checkpoints
+
+
+def _semantic_checkpoints(spec: dict[str, Any]) -> list[dict[str, Any]]:
+    explicit = spec.get("semantic_checkpoints", []) if isinstance(spec.get("semantic_checkpoints"), list) else []
+    if explicit:
+        checkpoints = []
+        for index, item in enumerate(explicit, start=1):
+            if not isinstance(item, dict):
+                checkpoints.append(
+                    {
+                        "id": f"checkpoint_{index}",
+                        "category": "behavior",
+                        "signals": [],
+                        "verification_hint": "",
+                        "text": str(item),
+                    }
+                )
+                continue
+            payload = copy.deepcopy(item)
+            payload.setdefault("id", f"checkpoint_{index}")
+            payload.setdefault("category", "behavior")
+            payload.setdefault("signals", [])
+            payload.setdefault("verification_hint", "")
+            payload.setdefault("text", str(payload.get("text") or payload.get("description") or payload["id"]))
+            checkpoints.append(payload)
+    else:
+        checkpoints = _critical_behavior_checkpoints(spec)
+    for port in spec.get("interfaces", {}).get("ports", []) or []:
+        if not isinstance(port, dict) or port.get("direction") != "output":
+            continue
+        if any(item.get("id") == f"observe_{port['name']}" for item in checkpoints if isinstance(item, dict)):
+            continue
+        checkpoints.append(
+            {
+                "id": f"observe_{port['name']}",
+                "category": "observable_output",
+                "signals": [port["name"]],
+                "verification_hint": f"Keep `{port['name']}` visible in transcript outputs and checkpoint payloads.",
+                "text": f"Observe output `{port['name']}` when validating behavior and regression drift.",
+            }
+        )
+    return checkpoints
+
+
+def _subfunction_dependency_graph(spec: dict[str, Any]) -> dict[str, Any]:
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    subfunctions = spec.get("subfunctions", []) or []
+    if not subfunctions:
+        return {
+            "nodes": [{"id": str(spec.get("name")), "name": str(spec.get("name")), "test_intent": []}],
+            "edges": [],
+        }
+    for subfunction in subfunctions:
+        if not isinstance(subfunction, dict) or not subfunction.get("name"):
+            continue
+        nodes.append(
+            {
+                "id": str(subfunction["name"]),
+                "name": str(subfunction["name"]),
+                "test_intent": [item.get("text") if isinstance(item, dict) else str(item) for item in subfunction.get("test_intent", []) or []],
+                "semantic_checkpoints": [item.get("id") for item in subfunction.get("semantic_checkpoints", []) if isinstance(item, dict)],
+            }
+        )
+        for dependency in subfunction.get("dependencies", []) or []:
+            edges.append({"from": str(dependency), "to": str(subfunction["name"]), "kind": "subfunction_dependency"})
+    return {"nodes": nodes, "edges": edges}
 

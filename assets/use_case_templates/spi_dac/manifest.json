@@ -8,8 +8,8 @@
     "Board-level DAC top and block-design scaffolding"
   ],
   "source_projects": [
-    "ref/projects/ad5758_sdz",
-    "ref/projects/ad5766_sdz"
+    "adi_ad5758_sdz",
+    "adi_ad5766_sdz"
   ],
   "parameterization_points": [
     "dac_data_width",

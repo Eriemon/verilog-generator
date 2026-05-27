@@ -503,6 +503,26 @@ def _suspect_subfunctions(
             name = str(subfunction["name"])
             if name in message and name not in suspects:
                 suspects.append(name)
+    drift_keys = [
+        str(key)
+        for item in semantic.get("checkpoint_drift", []) or []
+        if isinstance(item, dict)
+        for key in item.get("drift_keys", []) or []
+    ]
+    if drift_keys:
+        for subfunction in plan.get("subfunctions", []) or []:
+            if not isinstance(subfunction, dict) or not subfunction.get("name"):
+                continue
+            name = str(subfunction["name"])
+            checkpoint_signals = {
+                signal
+                for checkpoint in subfunction.get("semantic_checkpoints", []) or []
+                if isinstance(checkpoint, dict)
+                for signal in checkpoint.get("signals", []) or []
+            }
+            if any(name in drift_key or any(signal and signal in drift_key for signal in checkpoint_signals) for drift_key in drift_keys):
+                if name not in suspects:
+                    suspects.append(name)
     if suspects:
         return suspects
     if semantic.get("checkpoint_drift"):

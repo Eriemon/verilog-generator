@@ -5,20 +5,21 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = SKILL_ROOT.parent
+PROJECT_ROOT = SKILL_ROOT.parents[1]
 if str(SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(SKILL_ROOT))
 
-from runtime.verilog_generator.config import load_settings, remote_setting  # noqa: E402
-from runtime.verilog_generator.remote_selection import resolve_confirmed_remote_server  # noqa: E402
+from runtime.verilog_generator.config import load_settings, remote_runtime_settings_relpath, remote_setting
+from runtime.verilog_generator.remote_selection import load_remote_runtime_config, resolve_confirmed_remote_server
+from runtime.verilog_generator.workspace import require_workspace_root
 
 REMOTE_FIXTURES = (
     "comb_parity_mux",
@@ -26,7 +27,6 @@ REMOTE_FIXTURES = (
     "ready_valid_slice",
 )
 SIMULATOR_BACKENDS = ("xsim", "vcs_verdi", "iverilog")
-_TOKEN_RE = re.compile(r"\$\{([^}]+)\}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,7 +37,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cleanup-remote", action="store_true", help="Delete the remote validation directory after the gate finishes.")
     parser.add_argument("--report-runs", action="store_true", help="List retained remote validation runs without staging a new run.")
     parser.add_argument("--max-runs", type=int, default=5, help="Maximum retained runs to include with --report-runs.")
-    parser.add_argument("--toolchain-config", type=Path, help="Project-local or explicitly overridden remote toolchain selection JSON.")
+    parser.add_argument("--toolchain-config", type=Path, help="Compatibility option for the local copy of .settings/verilog.remote.json.")
     parser.add_argument("--write-toolchain-selection", action="store_true", help="Write a confirmed remote toolchain choice to the project-local config and exit.")
     parser.add_argument("--simulator-backend", choices=SIMULATOR_BACKENDS, help="Confirmed simulator backend for --write-toolchain-selection.")
     parser.add_argument("--vivado-settings", help="Confirmed remote Vivado settings64.sh path for xsim.")
@@ -47,11 +47,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         helper = Path(remote_setting(settings, "helper"))
         remote_settings = Path(remote_setting(settings, "settings"))
-        server_list = resolve_server_list_path(
-            Path(remote_setting(settings, "server_list")),
-            remote_settings,
-        )
-        toolchain_config = resolve_toolchain_config(settings, args.toolchain_config)
+        server_list = resolve_server_list_path(Path(remote_setting(settings, "server_list")))
+        local_remote_runtime_config = resolve_local_remote_runtime_config(settings, args.toolchain_config)
     except ValueError as exc:
         parser.error(str(exc))
         raise AssertionError("unreachable") from exc
@@ -59,14 +56,18 @@ def main(argv: list[str] | None = None) -> int:
     timeout = int(settings.get("remote", {}).get("timeout_s", 120))
     remote_python = remote_setting(settings, "python")
     remote_root = require_remote_relative_path(remote_setting(settings, "remote_root"), "settings.remote.remote_root")
+    remote_runtime_config = require_remote_relative_path(remote_setting(settings, "remote_runtime_config"), "settings.remote.remote_runtime_config")
 
     if args.write_toolchain_selection:
         selection = selection_from_args(args, parser)
-        write_toolchain_selection(toolchain_config, server, selection)
-        print(f"toolchain_selection_written: {toolchain_config}")
-        print(json.dumps({"server": server, **selection}, indent=2, ensure_ascii=False))
+        payload = build_remote_runtime_config_payload(selection)
+        write_remote_runtime_config(local_remote_runtime_config, payload)
+        ensure_local_prerequisites(helper, remote_settings, server_list)
+        ensure_remote_prerequisites(helper, remote_settings, server_list, server)
+        upload_remote_runtime_config(helper, remote_settings, server_list, server, payload, remote_runtime_config, timeout)
+        print(f"remote_runtime_config_written: {remote_runtime_config}")
+        print(json.dumps({"server": server, **payload["remote"]["toolchain"]}, indent=2, ensure_ascii=False))
         return 0
-    toolchain_selection = load_toolchain_selection(toolchain_config, server)
 
     if args.report_runs:
         ensure_local_prerequisites(helper, remote_settings, server_list)
@@ -84,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
 
     ensure_local_prerequisites(helper, remote_settings, server_list)
     ensure_remote_prerequisites(helper, remote_settings, server_list, server)
+    remote_runtime = download_remote_runtime_config(helper, remote_settings, server_list, server, remote_runtime_config)
     package_root = stage_package(helper, run_id)
     request_paths: list[Path] = []
     try:
@@ -112,8 +114,8 @@ def main(argv: list[str] | None = None) -> int:
             remote_skill,
             remote_python,
             cleanup_outputs=cleanup_remote,
-            toolchain_selection=toolchain_selection,
-            toolchain_config_path=toolchain_config,
+            toolchain_selection=remote_runtime["toolchain"],
+            remote_runtime_config_path=remote_runtime_config,
         )
         request_paths.append(
             request_and_run(
@@ -130,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
         if cleanup_remote:
             try:
                 request_paths.append(request_and_run(helper, remote_settings, server_list, server, timeout, "request-delete", ["--path", remote_parent, "--recursive", "--reason", "cleanup Verilog skill validation directory"]))
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 print(f"[remote-cleanup-warning] {exc}", file=sys.stderr)
         else:
             print(f"remote_retained: {remote_parent}")
@@ -169,52 +171,19 @@ def resolve_server_from_selection(settings: dict) -> dict | None:
     return resolve_confirmed_remote_server(settings)
 
 
-def resolve_toolchain_config(settings: dict, arg_path: Path | None) -> Path:
+def resolve_local_remote_runtime_config(settings: dict, arg_path: Path | None = None) -> Path:
     if arg_path:
         return arg_path.expanduser().resolve()
-    configured = remote_setting(settings, "toolchain_config")
-    return Path(configured).expanduser().resolve()
+    meta = settings.get("__verilog_settings_meta__", {})
+    workspace_root = Path(str(meta.get("workspace_root"))) if isinstance(meta, dict) and meta.get("workspace_root") else None
+    if workspace_root is None:
+        workspace_root = require_workspace_root(purpose="local remote runtime config")
+    return (workspace_root / remote_runtime_settings_relpath()).resolve()
 
 
-def resolve_server_list_path(configured_path: Path, remote_settings: Path) -> Path:
+def resolve_server_list_path(configured_path: Path) -> Path:
     configured = configured_path.expanduser().resolve()
-    if configured.exists():
-        return configured
-    fallback = _remote_ssh_default_server_list(remote_settings)
-    if fallback is not None and fallback.exists():
-        print(f"server_list_fallback: {fallback}")
-        return fallback.resolve()
     return configured
-
-
-def _remote_ssh_default_server_list(remote_settings: Path) -> Path | None:
-    if not remote_settings.exists():
-        return None
-    data = json.loads(remote_settings.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        return None
-    raw_path = data.get("paths", {}).get("default_server_list")
-    if not isinstance(raw_path, str) or not raw_path:
-        return None
-    skill_dir = remote_settings.parent.parent
-    context = {
-        "skill_dir": skill_dir,
-        "settings_dir": remote_settings.parent,
-        "home": Path.home(),
-    }
-    expanded = _expand_remote_path(raw_path, context)
-    return Path(expanded).expanduser().resolve()
-
-
-def _expand_remote_path(value: str, context: dict[str, Path]) -> str:
-    def replace(match: re.Match[str]) -> str:
-        token = match.group(1)
-        if token.startswith("env:"):
-            return os.environ.get(token[4:], "")
-        resolved = context.get(token)
-        return str(resolved) if resolved is not None else match.group(0)
-
-    return _TOKEN_RE.sub(replace, value)
 
 
 def selection_from_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> dict:
@@ -235,41 +204,26 @@ def selection_from_args(args: argparse.Namespace, parser: argparse.ArgumentParse
     return selection
 
 
-def load_toolchain_selection(path: Path, server: str) -> dict | None:
-    if not path.exists():
-        return None
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError(f"Toolchain selection config must be a JSON object: {path}")
-    selection = data.get("remote_toolchains", {}).get(server)
-    if selection is None:
-        return None
-    if not isinstance(selection, dict):
-        raise ValueError(f"Toolchain selection for {server!r} must be an object.")
-    backend = selection.get("simulator_backend")
-    if backend and backend not in SIMULATOR_BACKENDS:
-        raise ValueError(f"Unsupported simulator backend in {path}: {backend!r}")
-    if selection.get("vivado_settings64"):
-        selection["vivado_settings64"] = require_remote_absolute_file_path(str(selection["vivado_settings64"]), "toolchain vivado_settings64")
-    if selection.get("confirmed_by_user") is not True:
-        raise ValueError(f"Toolchain selection for {server!r} must have confirmed_by_user=true.")
-    return selection
+def build_remote_runtime_config_payload(selection: dict[str, str]) -> dict[str, Any]:
+    payload = {
+        "version": 1,
+        "remote": {
+            "toolchain": {
+                "simulator_backend": selection["simulator_backend"],
+            },
+            "env": {},
+            "tools": {},
+        },
+    }
+    vivado_settings = selection.get("vivado_settings64")
+    if isinstance(vivado_settings, str) and vivado_settings.strip():
+        payload["remote"]["toolchain"]["vivado_settings64"] = vivado_settings.strip()
+    return payload
 
 
-def write_toolchain_selection(path: Path, server: str, selection: dict) -> None:
-    if path.exists():
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            raise ValueError(f"Toolchain selection config must be a JSON object: {path}")
-    else:
-        data = {"version": 1, "remote_toolchains": {}}
-    data.setdefault("version", 1)
-    remote_toolchains = data.setdefault("remote_toolchains", {})
-    if not isinstance(remote_toolchains, dict):
-        raise ValueError(f"remote_toolchains must be an object: {path}")
-    remote_toolchains[server] = selection
+def write_remote_runtime_config(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def ensure_local_prerequisites(helper: Path, settings: Path, server_list: Path) -> None:
@@ -297,13 +251,98 @@ def ensure_remote_read_prerequisites(helper: Path, settings: Path, server_list: 
     run_helper(helper, ["workspace-check", *base, "--server", server])
 
 
+def upload_remote_runtime_config(
+    helper: Path,
+    settings: Path,
+    server_list: Path,
+    server: str,
+    payload: dict[str, Any],
+    remote_runtime_config: str,
+    timeout: int,
+) -> None:
+    temp_dir = helper.resolve().parents[1] / "reports" / "tmp" / "verilog-generator-runtime-upload"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    local_copy = temp_dir / "verilog.remote.json"
+    write_remote_runtime_config(local_copy, payload)
+    request_paths: list[Path] = []
+    try:
+        request_paths.append(
+            request_and_run(
+                helper,
+                settings,
+                server_list,
+                server,
+                timeout,
+                "request-mkdir",
+                ["--path", str(PurePosixPath(remote_runtime_config).parent), "--reason", "prepare remote Verilog runtime settings directory"],
+            )
+        )
+        request_paths.append(
+            request_and_run(
+                helper,
+                settings,
+                server_list,
+                server,
+                timeout,
+                "request-upload",
+                [
+                    "--local",
+                    str(local_copy),
+                    "--remote",
+                    remote_runtime_config,
+                    "--reason",
+                    "write remote Verilog runtime settings",
+                    "--confirm-sensitive-local-upload",
+                ],
+                run_request_args=["--confirm-sensitive-local-upload"],
+            )
+        )
+    finally:
+        cleanup_requests(request_paths)
+        if local_copy.exists():
+            local_copy.unlink()
+
+
+def download_remote_runtime_config(
+    helper: Path,
+    settings: Path,
+    server_list: Path,
+    server: str,
+    remote_runtime_config: str,
+) -> dict[str, Any]:
+    local_copy = helper.resolve().parents[1] / "reports" / "downloads" / "verilog.remote.download.json"
+    local_copy.parent.mkdir(parents=True, exist_ok=True)
+    base = helper_base(helper, settings, server_list)
+    result = run_helper(
+        helper,
+        [
+            "file-download",
+            *base,
+            "--server",
+            server,
+            "--remote",
+            remote_runtime_config,
+            "--local",
+            str(local_copy),
+        ],
+        allow_failure=True,
+        quiet_on_failure=True,
+    )
+    if result.returncode != 0 or not local_copy.exists():
+        raise FileNotFoundError(
+            f"Remote validation requires {remote_runtime_config} in the selected remote workdir before external validation can continue."
+        )
+    return load_remote_runtime_config(local_copy)
+
+
 def stage_package(helper: Path, run_id: str) -> Path:
-    remote_project = helper.resolve().parents[2]
-    package_root = remote_project / "tmp" / f"erie-verilog-generator-{run_id}"
+    remote_project = helper.resolve().parents[1]
+    package_root = remote_project / "reports" / "tmp" / f"erie-verilog-generator-{run_id}"
     cleanup_package(package_root)
     target = package_root / "erie-verilog-generator"
+    staged_skill = target / "skills" / "erie-verilog-generator"
     ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "_smoke_runs", "reports", "workflow-state.json")
-    shutil.copytree(SKILL_ROOT, target, ignore=ignore)
+    shutil.copytree(SKILL_ROOT, staged_skill, ignore=ignore)
     # The remote confidence gate runs the copied skill from inside a temporary
     # package root that stands in for the original repository root. Add
     # lightweight workspace-root markers so project-local state resolution keeps
@@ -315,10 +354,10 @@ def stage_package(helper: Path, run_id: str) -> Path:
         encoding="utf-8",
     )
     (target / "AGENTS.md").write_text(
-        "# Remote Validation Skill Workspace\n\n"
+        "# Remote Validation Packaged Workspace\n\n"
         "This marker file is created only for remote confidence-gate staging so\n"
-        "workspace-root discovery can resolve project-local state paths when the\n"
-        "skill is executed directly from the copied skill directory.\n",
+        "workspace-root discovery can resolve project-local state paths from the\n"
+        "uploaded package root.\n",
         encoding="utf-8",
     )
     return package_root
@@ -549,7 +588,7 @@ def remote_validation_command(
     *,
     cleanup_outputs: bool = False,
     toolchain_selection: dict | None = None,
-    toolchain_config_path: Path | None = None,
+    remote_runtime_config_path: str | None = None,
 ) -> str:
     py = sh_quote(remote_python)
     cleanup_snippet = remote_output_cleanup_snippet(cleanup_outputs)
@@ -563,8 +602,9 @@ def remote_validation_command(
     return f"""
 set -eu
 cd {sh_quote(remote_skill)}
+export PYTHONPATH="skills/erie-verilog-generator${{PYTHONPATH:+:$PYTHONPATH}}"
 {py} --version
-{vivado_activation_snippet(selected_vivado, selected_backend, toolchain_config_path)}
+{vivado_activation_snippet(selected_vivado, selected_backend, remote_runtime_config_path)}
 {simulator_priority_snippet}
 for tool in xvlog xelab xsim vcs verdi iverilog vvp yosys; do
   if command -v "$tool" >/dev/null 2>&1; then
@@ -588,14 +628,13 @@ if command -v yosys >/dev/null 2>&1; then
 else
   yosys_available=0
 fi
-{py} -m compileall -q runtime integration smoke scripts
-{py} smoke/run_smoke.py --settings config/defaults.json
+{py} -m compileall -q skills/erie-verilog-generator/runtime skills/erie-verilog-generator/integration skills/erie-verilog-generator/scripts
 if [ -n "$configured_simulator_backend" ]; then
   export VERILOG_GENERATOR_SIMULATOR_PRIORITY="$configured_simulator_backend"
   expected_sim_backend="$configured_simulator_backend"
 fi
-{py} -m runtime.verilog_generator run-workflow --spec assets/examples/rtl_erie_verilog_spec.json --out-dir _smoke_runs/remote_execute --model-provider mock --readiness execute
-{py} -m runtime.verilog_generator validate --spec assets/examples/rtl_erie_verilog_spec.json --path _smoke_runs/remote_execute/attempt-001/rtl/generated --readiness execute
+{py} -m runtime.verilog_generator run-workflow --spec skills/erie-verilog-generator/assets/examples/rtl_erie_verilog_spec.json --out-dir _smoke_runs/remote_execute --model-provider mock --readiness execute --external-target local
+{py} -m runtime.verilog_generator validate --spec skills/erie-verilog-generator/assets/examples/rtl_erie_verilog_spec.json --path _smoke_runs/remote_execute/attempt-001/rtl/generated --readiness execute --external-target local
 EXPECTED_SIM_BACKEND="$expected_sim_backend" {py} - <<'PY'
 import json
 import os
@@ -621,8 +660,8 @@ fixtures = os.environ["REMOTE_FIXTURES"].split()
 expected = os.environ["EXPECTED_SIM_BACKEND"]
 summary = {{"fixtures": []}}
 for name in fixtures:
-    spec = Path("assets/examples/remote_fixtures") / name / "spec.json"
-    generated = Path("assets/examples/remote_fixtures") / name / "generated"
+    spec = Path("skills/erie-verilog-generator/assets/examples/remote_fixtures") / name / "spec.json"
+    generated = Path("skills/erie-verilog-generator/assets/examples/remote_fixtures") / name / "generated"
     report_json = Path("_smoke_runs/remote_fixtures") / name / "validation.json"
     report_json.parent.mkdir(parents=True, exist_ok=True)
     command = [
@@ -636,6 +675,8 @@ for name in fixtures:
         str(generated),
         "--readiness",
         "execute",
+        "--external-target",
+        "local",
         "--report-json",
         str(report_json),
     ]
@@ -660,7 +701,7 @@ for name in fixtures:
 Path("_smoke_runs/remote_fixtures/summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
 PY
 if [ "$yosys_available" -eq 1 ]; then
-  {py} -m runtime.verilog_generator run-workflow --spec assets/examples/rtl_erie_verilog_spec.json --out-dir _smoke_runs/remote_implement --model-provider mock --readiness implement
+  {py} -m runtime.verilog_generator run-workflow --spec skills/erie-verilog-generator/assets/examples/rtl_erie_verilog_spec.json --out-dir _smoke_runs/remote_implement --model-provider mock --readiness implement --external-target local
   {py} - <<'PY'
 import json
 from pathlib import Path
@@ -669,7 +710,7 @@ assert result["status"] == "passed", result
 PY
 else
   set +e
-  {py} -m runtime.verilog_generator run-workflow --spec assets/examples/rtl_erie_verilog_spec.json --out-dir _smoke_runs/remote_implement --model-provider mock --readiness implement
+  {py} -m runtime.verilog_generator run-workflow --spec skills/erie-verilog-generator/assets/examples/rtl_erie_verilog_spec.json --out-dir _smoke_runs/remote_implement --model-provider mock --readiness implement --external-target local
   impl_status=$?
   set -e
   if [ "$impl_status" -eq 0 ]; then
@@ -702,8 +743,8 @@ def simulator_priority_export_snippet(selected_backend: str) -> str:
     return f"configured_simulator_backend={sh_quote(selected_backend)}\necho 'simulator_backend_selection={selected_backend}'"
 
 
-def vivado_activation_snippet(selected_vivado: str = "", selected_backend: str = "", toolchain_config_path: Path | None = None) -> str:
-    config_hint = str(toolchain_config_path or Path(".erie-verilog-generator-state") / "remote_toolchain_selection.json")
+def vivado_activation_snippet(selected_vivado: str = "", selected_backend: str = "", remote_runtime_config_path: str | None = None) -> str:
+    config_hint = str(remote_runtime_config_path or remote_runtime_settings_relpath())
     if selected_backend and selected_backend != "xsim":
         return "echo 'vivado_settings=not_required_for_selected_backend'"
     return f"""

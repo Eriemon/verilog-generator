@@ -30,6 +30,7 @@ SPEC_FIELDS = (
     "constraints",
     "outputs",
     "notes",
+    "semantic_checkpoints",
     "subfunctions",
     "workflow",
     "performance",
@@ -43,6 +44,7 @@ SUBFUNCTION_FIELDS = (
     "dependencies",
     "source_references",
     "test_intent",
+    "semantic_checkpoints",
 )
 INFO_DICTIONARY_FIELDS = ("behavior", "constraints", "test_intent")
 
@@ -100,6 +102,7 @@ def _rtl_defaults(name: str) -> dict[str, Any]:
             {"path": f"tb/{name}_tb.v", "kind": "testbench", "language": "verilog"},
         ],
         "notes": [],
+        "semantic_checkpoints": [],
         "subfunctions": [],
         "workflow": {},
         "performance": {},
@@ -144,6 +147,7 @@ def normalize_spec(raw: dict[str, Any], target: str | None = None) -> dict[str, 
     spec["pipeline_required"] = _normalize_pipeline_required(spec.get("pipeline_required"))
     spec["codegen_plan_required"] = _normalize_codegen_plan_required(spec.get("codegen_plan_required"))
     spec["codegen_plan_path"] = _normalize_codegen_plan_path(spec.get("codegen_plan_path"))
+    spec["semantic_checkpoints"] = normalize_checkpoint_items(spec.get("semantic_checkpoints"))
     spec["subfunctions"] = [
         normalize_subfunction(item, index)
         for index, item in enumerate(spec.get("subfunctions", []))
@@ -165,8 +169,33 @@ def normalize_subfunction(subfunction: dict[str, Any], index: int = 0) -> dict[s
         "dependencies": [sanitize_name(str(item)) for item in _as_list(subfunction.get("dependencies"))],
         "source_references": _as_list(subfunction.get("source_references")),
         "test_intent": normalize_info_items(subfunction.get("test_intent"), "test_intent"),
+        "semantic_checkpoints": normalize_checkpoint_items(subfunction.get("semantic_checkpoints")),
     }
     return normalized
+
+
+def normalize_checkpoint_items(value: Any) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for index, item in enumerate(_as_list(value), start=1):
+        if isinstance(item, dict):
+            payload = copy.deepcopy(item)
+            payload.setdefault("id", f"checkpoint_{index}")
+            payload.setdefault("category", "behavior")
+            payload.setdefault("signals", [])
+            payload.setdefault("verification_hint", "")
+            payload.setdefault("text", str(payload.get("text") or payload.get("description") or payload["id"]))
+            items.append(payload)
+        else:
+            items.append(
+                {
+                    "id": f"checkpoint_{index}",
+                    "category": "behavior",
+                    "signals": [],
+                    "verification_hint": "",
+                    "text": str(item),
+                }
+            )
+    return items
 
 
 def normalize_info_items(value: Any, field: str) -> list[dict[str, Any]]:

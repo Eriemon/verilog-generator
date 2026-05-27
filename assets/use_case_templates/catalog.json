@@ -7,9 +7,9 @@
       "directory": "spi_adc",
       "summary": "Triggered SPI ADC capture path with CNV or ODR generation, BUSY edge handling, and DMA-backed sample collection.",
       "source_projects": [
-        "ref/projects/ad40xx_fmc",
-        "ref/projects/ad469x_fmc",
-        "ref/projects/ad7134_fmc"
+        "adi_ad40xx_fmc",
+        "adi_ad469x_fmc",
+        "adi_ad7134_fmc"
       ],
       "parameterization_points": [
         "adc_resolution",
@@ -26,8 +26,8 @@
       "directory": "spi_dac",
       "summary": "SPI DAC control and cyclic DMA playback path with GPIO sideband control such as fault, reset, and LDAC.",
       "source_projects": [
-        "ref/projects/ad5758_sdz",
-        "ref/projects/ad5766_sdz"
+        "adi_ad5758_sdz",
+        "adi_ad5766_sdz"
       ],
       "parameterization_points": [
         "dac_data_width",
@@ -43,7 +43,7 @@
       "directory": "jesd_adc",
       "summary": "JESD204 ADC receive path with RX transceiver, transport unpacking, channel packing, and DMA capture.",
       "source_projects": [
-        "ref/projects/ad6676evb"
+        "adi_ad6676evb"
       ],
       "parameterization_points": [
         "rx_jesd_l",
@@ -59,8 +59,8 @@
       "directory": "jesd_dac",
       "summary": "JESD204 DAC transmit path with TX transceiver, upack, FIFO, DMA feed, and lane-rate-specific clocking hooks.",
       "source_projects": [
-        "ref/projects/dac_fmc_ebz",
-        "ref/projects/daq3"
+        "adi_dac_fmc_ebz",
+        "adi_daq3"
       ],
       "parameterization_points": [
         "tx_jesd_l",
@@ -77,8 +77,8 @@
       "directory": "mxfe_mixed",
       "summary": "Full-duplex MxFE board-level chain with coordinated RF ADC and RF DAC JESD paths, PMOD/FMC control buses, and TDD sideband wiring.",
       "source_projects": [
-        "ref/projects/ad9081_fmca_ebz_x_band",
-        "ref/projects/daq3"
+        "adi_ad9081_fmca_ebz_x_band",
+        "adi_daq3"
       ],
       "parameterization_points": [
         "rx_lane_rate",

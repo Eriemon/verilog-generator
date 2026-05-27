@@ -8,9 +8,9 @@
     "Board-level ADC top and block-design scaffolding"
   ],
   "source_projects": [
-    "ref/projects/ad40xx_fmc",
-    "ref/projects/ad469x_fmc",
-    "ref/projects/ad7134_fmc"
+    "adi_ad40xx_fmc",
+    "adi_ad469x_fmc",
+    "adi_ad7134_fmc"
   ],
   "parameterization_points": [
     "adc_resolution",

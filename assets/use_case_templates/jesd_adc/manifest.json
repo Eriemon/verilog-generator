@@ -8,7 +8,7 @@
     "Board-level JESD ADC top and block-design scaffolding"
   ],
   "source_projects": [
-    "ref/projects/ad6676evb"
+    "adi_ad6676evb"
   ],
   "parameterization_points": [
     "rx_jesd_l",

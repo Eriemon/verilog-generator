@@ -56,6 +56,8 @@ def summarize_refined_templates(spec: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _match_template_ids(spec: dict[str, Any]) -> list[str]:
+    if "module_info" in spec and "ports" in spec:
+        return _match_from_analysis(spec)
     interface_family = str(
         spec.get("interface_family")
         or (spec.get("design_requirements") or {}).get("interface_family")
@@ -72,6 +74,39 @@ def _match_template_ids(spec: dict[str, Any]) -> list[str]:
         selected.append("axi_interconnect_port_groups")
     if any(token in text for token in ("conv1d", "convolution", "ifm", "ofm", "line buffer", "sliding window", "weight buffer")):
         selected.append("conv_load_store_pipeline")
+    if any(token in text for token in ("fsm", "state machine", "traffic light", "phase transition", "state_current", "state_next")):
+        selected.append("fsm_state_transition")
+    if any(token in text for token in ("counter", "timer", "cnt", "reload", "phase duration")) and any(token in text for token in ("state", "phase", "fsm")):
+        selected.append("counter_state_bridge")
+    if any(token in text for token in ("wrapper", "top-level stitching", "top level stitching", "partition", "merge", "recompose")):
+        selected.append("wrapper_top_stitching")
+    if any(token in text for token in ("phase output", "output register", "registered output", "phase register", "phase transition", "traffic light")):
+        selected.append("phase_output_registering")
+    if any(token in text for token in ("equivalence", "semantic compare", "probe", "checkpoint probe")):
+        selected.append("equivalence_wrapper_probe")
+    return selected
+
+
+def _match_from_analysis(analysis: dict[str, Any]) -> list[str]:
+    ports = analysis.get("ports", []) or []
+    state_elements = analysis.get("state_elements", []) or []
+    decomposition = analysis.get("decomposition_candidates", []) or []
+    text_parts = [str((analysis.get("module_info") or {}).get("name") or "")]
+    text_parts.extend(str(item.get("name") or "") for item in ports if isinstance(item, dict))
+    text_parts.extend(str(item.get("role") or "") for item in state_elements if isinstance(item, dict))
+    text_parts.extend(str(item.get("role") or "") for item in decomposition if isinstance(item, dict))
+    text = " ".join(text_parts).lower()
+    selected: list[str] = []
+    if any("ready" in str(item.get("name", "")).lower() or "valid" in str(item.get("name", "")).lower() for item in ports if isinstance(item, dict)):
+        selected.append("axis_ready_valid_slice")
+    if any(item.get("role") == "fsm_state" for item in state_elements if isinstance(item, dict)):
+        selected.append("fsm_state_transition")
+    if any(item.get("role") == "counter" for item in state_elements if isinstance(item, dict)) and any(token in text for token in ("state", "fsm", "phase")):
+        selected.append("counter_state_bridge")
+    if decomposition:
+        selected.append("wrapper_top_stitching")
+    if any("output" in str(item.get("role", "")).lower() for item in state_elements if isinstance(item, dict)):
+        selected.append("phase_output_registering")
     return selected
 
 

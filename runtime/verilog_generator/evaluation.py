@@ -35,6 +35,8 @@ def evaluate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
     auto_debug_before_human = 0
     human_escalations = 0
     workflow_statuses: list[str] = []
+    checkpoint_drift_events = 0
+    toolchain_fallback_count = 0
 
     for event in events:
         for source in event.get("error_sources", []) or []:
@@ -89,6 +91,10 @@ def evaluate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
         semantic_ready = event.get("semantic_ready")
         metrics = event.get("metrics") or {}
         semantic_metrics = metrics.get("semantic_execution") if isinstance(metrics, dict) and isinstance(metrics.get("semantic_execution"), dict) else {}
+        if semantic_metrics.get("checkpoint_drift"):
+            checkpoint_drift_events += 1
+        if isinstance(metrics, dict) and metrics.get("missing_preferred_backends"):
+            toolchain_fallback_count += len(metrics.get("missing_preferred_backends") or [])
         if event.get("event") == "validate" and semantic_ready is not None:
             semantic_events += 1
             if semantic_ready:
@@ -164,6 +170,8 @@ def evaluate_events(events: list[dict[str, Any]]) -> dict[str, Any]:
         "auto_debug_before_human_rate": (auto_debug_before_human / human_escalations) if human_escalations else None,
         "performance_pass_rate": (performance_passes / performance_events) if performance_events else None,
         "qor_violation_count": qor_violation_count,
+        "checkpoint_drift_events": checkpoint_drift_events,
+        "toolchain_fallback_count": toolchain_fallback_count,
         "subfunction_failure_hotspots": subfunction_failures,
         "average_attempts_per_subfunction": attempts / max(1, len({event.get("subfunction") for event in events if event.get("subfunction")})),
         "noise_recovery": {

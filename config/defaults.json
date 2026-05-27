@@ -7,7 +7,8 @@
     "example_spec": "${skill_dir}/assets/examples/rtl_erie_verilog_spec.json",
     "use_case_examples_dir": "${skill_dir}/assets/examples/use_case_templates",
     "use_case_template_catalog": "${skill_dir}/assets/use_case_templates/catalog.json",
-    "quick_validate": "${home}/.codex/skills/.system/skill-creator/scripts/quick_validate.py"
+    "quick_validate": "${home}/.codex/skills/.system/skill-creator/scripts/quick_validate.py",
+    "audit_skill": "${home}/.codex/skills/agents-md-generator/scripts/audit_skill.py"
   },
   "skill_dependencies": {
     "state_path": ".erie-verilog-generator-state/dependency-state.json",
@@ -223,6 +224,7 @@
     }
   },
   "workflow": {
+    "mode": "generate",
     "target": "rtl",
     "readiness": "static",
     "max_attempts": 3,
@@ -231,6 +233,12 @@
     "stop_on_human": true,
     "run_external": true,
     "model_timeout_s": 120
+  },
+  "policy": {
+    "local_static_allowed": true,
+    "allow_implicit_local_external_validation": false,
+    "prefer_remote_for_external_validation": true,
+    "block_when_remote_unconfigured": true
   },
   "validation": {
     "local_readiness": "static",
@@ -285,14 +293,15 @@
     ]
   },
   "remote": {
-    "helper": "${home}/.codex/skills/erie-remote-ssh/scripts/remote_ssh.py",
-    "settings": "${home}/.codex/skills/erie-remote-ssh/config/defaults.json",
-    "server_list": ".erie-verilog-generator-state/server_list.local.json",
-    "server_selection_path": ".erie-verilog-generator-state/remote_server_selection.json",
-    "server_confirmed": false,
+    "integration": {
+      "remote_ssh_helper": "${home}/.codex/skills/erie-remote-ssh/scripts/remote_ssh.py",
+      "remote_ssh_settings": "${home}/.codex/skills/erie-remote-ssh/assets/defaults.json",
+      "selection_file": ".settings/remote-selection.local.json",
+      "server_list": ".settings/server_list.local.json",
+      "remote_runtime_config": ".settings/verilog.remote.json"
+    },
     "python": "python3",
     "remote_root": ".erie-verilog-generator-validation",
-    "toolchain_config": ".erie-verilog-generator-state/remote_toolchain_selection.json",
     "timeout_s": 120
   }
 }

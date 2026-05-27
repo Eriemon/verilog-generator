@@ -1,5 +1,15 @@
 # Workflow Contracts
 
+## Table of Contents
+
+- [Run Directory](#run-directory)
+- [Fixed Generation Pipeline](#fixed-generation-pipeline)
+- [Existing RTL Assist Flows](#existing-rtl-assist-flows)
+- [Terminal Statuses](#terminal-statuses)
+- [Resume Behavior](#resume-behavior)
+- [Optional Tools](#optional-tools)
+- [Trace Semantics](#trace-semantics)
+
 ## Run Directory
 
 Every `run_verilog_workflow(...)` execution writes a self-contained run directory with:
@@ -20,9 +30,9 @@ The adapter also materializes preflight inputs under `_adapter_inputs/`:
 
 Each attempt lives under `attempt-001/`, `attempt-002/`, and so on. Stage outputs are separated by stage, for example `python/generated/...`, `rtl/generated/...`, `validation.json`, `repair_plan.json`, and `intervention.json`.
 
-## Fixed Pipeline
+## Fixed Generation Pipeline
 
-The Verilog-only workflow uses:
+The staged generation workflow uses:
 
 1. `requirements`
 2. `codegen_plan`
@@ -30,6 +40,40 @@ The Verilog-only workflow uses:
 4. `rtl`
 
 The workflow does not enter prompt-driven code generation until the confirmed requirement contract is complete. If planning finds unresolved requirements, it stops with `blocked_human`.
+
+## Existing RTL Assist Flows
+
+Existing-RTL helper flows do not use the staged generation pipeline. They are separate stable subflows exposed through the facade and CLI:
+
+- `analyze_existing_verilog(...)` writes `rtl_analysis.json` and `project_analysis.json`
+- `analyze_existing_verilog(...)` also writes `design_explanation.md`
+- `refine_existing_verilog(..., refine_goal="tb_scaffold"|"style_refine"|"partition_assist"|"merge_assist"|"optimize_assist")` writes `rtl_transform_plan.json`, `transform_validation.json`, and goal-specific helper artifacts
+- `compare_verilog_semantics(...)` writes `equivalence.json`, `qor_report.json`, and `transform_validation.json`
+- `verify_existing_verilog(...)` writes `verification_plan.json`, `tb_contract.json`, `log_diagnosis.json`, `patch_candidate.json`, `verification_result.json`, and `loop_state.json`
+  The same run also writes `simulation_slice.json`, `timing_diagnostic.json`, `expected_trace.md`, `waveform_diff.json`, `testcase_matrix.json`, `run_summary.json`, `synth_readiness.json`, and `terminal_status.json`.
+
+`optimize_assist` is assist-only by default. Without a candidate RTL, it produces optimization plans, wrapper/probe artifacts, partition maps, and advisory QoR summaries. With a candidate RTL, it additionally emits semantic-compare evidence. It does not implicitly rewrite or accept RTL.
+
+`merge_assist` is assist-only by default. It produces a merge plan, wrapper skeleton, validation summary, and equivalence-review contract so repartition or recompose work remains explicit and reviewable.
+
+`verify_existing_verilog(...)` is a verification loop entrypoint rather than a fresh RTL generator. It stages source RTL into a project-local verification workspace, emits a log-driven scaffold testbench or augments an existing one, normalizes diagnosis results, and records the selected automation boundary. The caller must provide the automation mode explicitly.
+
+For `tb_mode="augment"`, the run directory also writes:
+
+- `tb_augment_plan.json`
+- `tb_augment_diff.txt`
+
+`tb_contract.json` records `original_testbench_path`, `backup_testbench_path`, `active_testbench_path`, `language_before`, `language_after`, and `augmentation_actions`.
+
+When an RTL patch candidate is available, the same run directory also writes:
+
+- `rtl_patch_plan.json`
+- `rtl_patch_diff.txt`
+- `rtl_intervention.json` when confirmation is required
+- `post_apply_validation.json` after an approved or automatic apply
+- `post_apply_equivalence.json` after an approved or automatic apply
+
+`patch_candidate.json` records candidate/backup/active RTL paths, compare evidence, equivalence readiness, apply blockers, patch category, line hints, and root-cause evidence. `rtl_patch_plan.json` records the selected patch category plus `risk_level`, `target_line_hints`, `root_cause_evidence`, and `apply_gate` details so the caller can distinguish true `auto_apply` cases from categories that must be resumed through `decision.json`. `decision.json` may be supplied on a later `verify-existing` run to resume a confirmation-gated RTL apply.
 
 ## Terminal Statuses
 

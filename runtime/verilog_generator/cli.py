@@ -9,6 +9,8 @@ from pathlib import Path
 
 from .evaluation import write_eval_metrics
 from .skill_effectiveness import evaluate_skill_effectiveness
+from .existing_rtl import analyze_existing_rtl, load_spec_text
+from .existing_rtl_refinement import compare_semantics, require_refine_goal, refine_existing_rtl
 from .evidence import ingest_sources
 from .extractor import ExtractionError, extract_response, parse_manifest
 from .interface_contract import INTERFACE_TARGETS, audit_interface
@@ -20,8 +22,9 @@ from .reference_contract import audit_reference
 from .reflection import build_diagnosis, build_intervention, build_repair_plan, generate_repair_prompt
 from .spec import SpecError, read_spec, scaffold_spec, write_spec
 from .trace import append_trace_event, read_trace, safe_path, spec_summary
-from .validation import READINESS_LEVELS, validate_generated
+from .validation import READINESS_LEVELS, readiness_at_least, validate_generated
 from .vectors import audit_vectors
+from .verify_repair import AUTOMATION_MODES, TB_LANGUAGES, TB_MODES, verify_existing
 from .workflow import run_workflow
 from .workspace import require_workspace_path, require_write_path, update_workflow_state, write_json, write_text
 
@@ -31,7 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="verilog-gen",
         description="Prompt engineering CLI for Verilog-2001 RTL generation.",
     )
-    parser.add_argument("--version", action="version", version="erie-verilog-gen 0.2.1")
+    parser.add_argument("--version", action="version", version="erie-verilog-gen 0.2.2")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     scaffold = subparsers.add_parser("scaffold", help="Create a Verilog JSON generation spec template.")
@@ -69,6 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--spec", required=True, type=Path)
     validate.add_argument("--path", required=True, type=Path)
     validate.add_argument("--no-external", action="store_true", help="Skip optional external tools even if installed.")
+    validate.add_argument("--external-target", choices=("remote", "local"), default="remote", help="Explicit target for external tools when readiness requires compile/execute/implement.")
     validate.add_argument("--readiness", choices=READINESS_LEVELS, default="static")
     validate.add_argument("--comment-language", choices=COMMENT_LANGUAGES, default="zh")
     validate.add_argument("--report-json", type=Path, help="Optional structured validation report JSON output.")
@@ -88,6 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_workflow_parser.add_argument("--readiness", choices=READINESS_LEVELS, default="static")
     run_workflow_parser.add_argument("--max-attempts", type=int, default=3)
     run_workflow_parser.add_argument("--no-external", action="store_true", help="Skip external tool execution during workflow validation.")
+    run_workflow_parser.add_argument("--external-target", choices=("remote", "local"), default="remote", help="Explicit target for external tools when readiness requires compile/execute/implement.")
     run_workflow_parser.add_argument("--comment-language", choices=COMMENT_LANGUAGES, default="zh")
     run_workflow_parser.add_argument("--model-timeout", type=int, default=120)
     run_workflow_parser.add_argument("--stop-on-human", action=argparse.BooleanOptionalAction, default=True)
@@ -167,8 +172,56 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate_skill.add_argument("--evals", required=True, type=Path)
     evaluate_skill.add_argument("--out", required=True, type=Path)
     evaluate_skill.add_argument("--remote-runs-json", type=Path, help="Optional retained remote run summary JSON.")
+    evaluate_skill.add_argument("--require-remote", action="store_true", help="Fail unless retained remote validation evidence is provided and healthy.")
     _add_state_args(evaluate_skill)
     evaluate_skill.set_defaults(func=_cmd_eval_skill)
+
+    analyze_existing = subparsers.add_parser("analyze-existing", help="Analyze existing Verilog modules into rtl_analysis.json.")
+    analyze_existing.add_argument("--source", required=True, action="append", type=Path)
+    analyze_existing.add_argument("--out-dir", required=True, type=Path)
+    analyze_existing.add_argument("--spec-source", type=Path)
+    analyze_existing.add_argument("--module-name")
+    _add_state_args(analyze_existing)
+    analyze_existing.set_defaults(func=_cmd_analyze_existing)
+
+    refine_existing = subparsers.add_parser("refine-existing", help="Create a controlled refinement plan for existing RTL.")
+    refine_existing.add_argument("--source", required=True, type=Path)
+    refine_existing.add_argument("--out-dir", required=True, type=Path)
+    refine_existing.add_argument("--goal", required=True, choices=("tb_scaffold", "style_refine", "partition_assist", "optimize_assist", "merge_assist"))
+    refine_existing.add_argument("--analysis", type=Path)
+    refine_existing.add_argument("--spec-source", type=Path)
+    refine_existing.add_argument("--candidate-artifacts-dir", type=Path)
+    refine_existing.add_argument("--reference-artifacts-dir", type=Path)
+    refine_existing.add_argument("--readiness", choices=READINESS_LEVELS, default="static")
+    refine_existing.add_argument("--tb-language", choices=TB_LANGUAGES, default="verilog")
+    _add_state_args(refine_existing)
+    refine_existing.set_defaults(func=_cmd_refine_existing)
+
+    compare_existing = subparsers.add_parser("compare-semantics", help="Compare two RTL implementations for interface and checkpoint drift.")
+    compare_existing.add_argument("--reference", required=True, type=Path)
+    compare_existing.add_argument("--candidate", required=True, type=Path)
+    compare_existing.add_argument("--out-dir", required=True, type=Path)
+    compare_existing.add_argument("--no-external", action="store_true")
+    compare_existing.add_argument("--external-target", choices=("remote", "local"), default="remote")
+    compare_existing.add_argument("--readiness", choices=READINESS_LEVELS, default="static")
+    _add_state_args(compare_existing)
+    compare_existing.set_defaults(func=_cmd_compare_semantics)
+
+    verify_existing_parser = subparsers.add_parser("verify-existing", help="Run the existing RTL verify-repair workflow.")
+    verify_existing_parser.add_argument("--source", required=True, action="append", type=Path)
+    verify_existing_parser.add_argument("--out-dir", required=True, type=Path)
+    verify_existing_parser.add_argument("--spec-source", type=Path)
+    verify_existing_parser.add_argument("--module-name")
+    verify_existing_parser.add_argument("--testbench-source", type=Path)
+    verify_existing_parser.add_argument("--decision-source", type=Path)
+    verify_existing_parser.add_argument("--tb-mode", choices=TB_MODES, default="generate")
+    verify_existing_parser.add_argument("--tb-language", choices=TB_LANGUAGES, default="verilog")
+    verify_existing_parser.add_argument("--automation-mode", choices=AUTOMATION_MODES, required=True)
+    verify_existing_parser.add_argument("--readiness", choices=READINESS_LEVELS, default="static")
+    verify_existing_parser.add_argument("--no-external", action="store_true")
+    verify_existing_parser.add_argument("--external-target", choices=("remote", "local"), default="remote")
+    _add_state_args(verify_existing_parser)
+    verify_existing_parser.set_defaults(func=_cmd_verify_existing)
     return parser
 
 
@@ -251,7 +304,7 @@ def _cmd_validate(args: argparse.Namespace) -> int:
         read_spec(spec_path, target="rtl"),
         artifact_path,
         target="rtl",
-        run_external=not args.no_external,
+        run_external=_cli_run_external(args.no_external, args.external_target, args.readiness),
         readiness=args.readiness,
         comment_language=args.comment_language,
         reference_contract=reference_contract,
@@ -259,6 +312,10 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     print(report.format())
     if args.report_json:
         write_json(require_write_path(args.report_json, purpose="validation report"), report.to_dict())
+        write_json(
+            require_write_path(args.report_json.parent / "synth_readiness.json", purpose="synth readiness output"),
+            _synth_readiness_payload(report.to_dict(), readiness=args.readiness),
+        )
     _record_state(args, "validate", {"target": "rtl", "path": artifact_path, "ok": report.ok(), "report_json": args.report_json})
     if args.trace:
         append_trace_event(args.trace, {"event": "validate", "target": "rtl", "path": artifact_path, "ok": report.ok(), "issues": [issue.to_dict() for issue in report.issues]})
@@ -266,12 +323,13 @@ def _cmd_validate(args: argparse.Namespace) -> int:
 
 
 def _cmd_run_workflow(args: argparse.Namespace) -> int:
+    resolved_run_external = _cli_run_external(args.no_external, args.external_target, args.readiness)
     if args.resume:
         result = run_workflow(
             resume_dir=args.resume,
             decision_path=args.decision,
             stop_on_human=args.stop_on_human,
-            run_external=not args.no_external,
+            run_external=resolved_run_external,
             comment_language=args.comment_language,
             model_timeout_s=args.model_timeout,
         )
@@ -289,7 +347,7 @@ def _cmd_run_workflow(args: argparse.Namespace) -> int:
             readiness=args.readiness,
             max_attempts=args.max_attempts,
             stop_on_human=args.stop_on_human,
-            run_external=not args.no_external,
+            run_external=resolved_run_external,
             comment_language=args.comment_language,
             model_timeout_s=args.model_timeout,
         )
@@ -409,10 +467,101 @@ def _cmd_eval_skill(args: argparse.Namespace) -> int:
     evals_path = require_workspace_path(args.evals, purpose="skill eval cases", must_exist=True)
     out = require_write_path(args.out, purpose="skill effectiveness output")
     remote_runs = _read_json(args.remote_runs_json) if args.remote_runs_json else None
-    report = evaluate_skill_effectiveness(evals_path, out, remote_runs_report=remote_runs)
+    report = evaluate_skill_effectiveness(
+        evals_path,
+        out,
+        remote_runs_report=remote_runs,
+        require_remote=bool(args.require_remote),
+    )
     print(json.dumps(report, indent=2, ensure_ascii=False))
     _record_state(args, "eval_suite", {"evals": evals_path, "output": out, "ok": report["summary"]["ok"]})
     return 0 if report["summary"]["ok"] else 1
+
+
+def _cmd_analyze_existing(args: argparse.Namespace) -> int:
+    source_paths = [require_workspace_path(path, purpose="Verilog source path", must_exist=True) for path in args.source]
+    out_dir = require_write_path(args.out_dir, purpose="analysis output directory")
+    spec_text = load_spec_text(args.spec_source) if args.spec_source else None
+    result = analyze_existing_rtl(source_paths, spec_text=spec_text, module_name=args.module_name, out_dir=out_dir)
+    payload = {
+        "status": "analyzed",
+        "analysis_path": str(result["analysis_path"]),
+        "project_analysis_path": str(result["project_analysis_path"]),
+        "design_explanation_path": str(result["design_explanation_path"]),
+    }
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    _record_state(args, "analyze_existing", {"source": source_paths, "output": result["analysis_path"]})
+    return 0
+
+
+def _cmd_refine_existing(args: argparse.Namespace) -> int:
+    source_path = require_workspace_path(args.source, purpose="Verilog source path", must_exist=True)
+    out_dir = require_write_path(args.out_dir, purpose="refinement output directory")
+    analysis_path = require_workspace_path(args.analysis, purpose="analysis path", must_exist=True) if args.analysis else None
+    spec_source = require_workspace_path(args.spec_source, purpose="spec source", must_exist=True) if args.spec_source else None
+    result = refine_existing_rtl(
+        source_path,
+        out_dir=out_dir,
+        refine_goal=require_refine_goal(args.goal),
+        analysis_source=analysis_path,
+        spec_source=spec_source,
+        candidate_artifacts_dir=args.candidate_artifacts_dir,
+        reference_artifacts_dir=args.reference_artifacts_dir,
+        readiness=args.readiness,
+        tb_language=getattr(args, "tb_language", "verilog"),
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    _record_state(args, "refine_existing", {"source": source_path, "goal": args.goal, "output": out_dir})
+    return 0
+
+
+def _cmd_compare_semantics(args: argparse.Namespace) -> int:
+    reference_path = require_workspace_path(args.reference, purpose="reference RTL path", must_exist=True)
+    candidate_path = require_workspace_path(args.candidate, purpose="candidate RTL path", must_exist=True)
+    out_dir = require_write_path(args.out_dir, purpose="compare output directory")
+    result = compare_semantics(
+        reference_path,
+        candidate_path,
+        out_dir=out_dir,
+        run_external=_cli_run_external(args.no_external, args.external_target, args.readiness),
+        readiness=args.readiness,
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    _record_state(args, "compare_semantics", {"reference": reference_path, "candidate": candidate_path, "output": out_dir})
+    return 0 if result["status"] == "passed" else 1
+
+
+def _cmd_verify_existing(args: argparse.Namespace) -> int:
+    source_paths = [require_workspace_path(path, purpose="Verilog source path", must_exist=True) for path in args.source]
+    out_dir = require_write_path(args.out_dir, purpose="verify-existing output directory")
+    spec_source = require_workspace_path(args.spec_source, purpose="spec source", must_exist=True) if args.spec_source else None
+    testbench_source = require_workspace_path(args.testbench_source, purpose="testbench source", must_exist=True) if args.testbench_source else None
+    decision_source = require_workspace_path(args.decision_source, purpose="decision source", must_exist=True) if args.decision_source else None
+    result = verify_existing(
+        source_paths,
+        out_dir=out_dir,
+        spec_source=spec_source,
+        module_name=args.module_name,
+        testbench_source=testbench_source,
+        decision_source=decision_source,
+        tb_mode=args.tb_mode,
+        tb_language=args.tb_language,
+        automation_mode=args.automation_mode,
+        readiness=args.readiness,
+        run_external=_cli_run_external(args.no_external, args.external_target, args.readiness),
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    _record_state(
+        args,
+        "verify_existing",
+        {
+            "sources": source_paths,
+            "out_dir": out_dir,
+            "automation_mode": args.automation_mode,
+            "status": result["status"],
+        },
+    )
+    return 0
 
 
 def _add_trace_args(parser: argparse.ArgumentParser) -> None:
@@ -482,6 +631,31 @@ def _prompt_stats(
         "subfunction": subfunction,
         "stage": stage,
     }
+
+
+def _synth_readiness_payload(report: dict[str, Any], *, readiness: str) -> dict[str, Any]:
+    metrics = report.get("metrics", {}) if isinstance(report, dict) else {}
+    return {
+        "version": 1,
+        "requested_readiness": readiness,
+        "selected_simulator_backend": metrics.get("selected_simulator_backend"),
+        "executed_tools": metrics.get("executed_tools", []),
+        "missing_preferred_backends": metrics.get("missing_preferred_backends", []),
+        "selection_policy": metrics.get("selection_policy"),
+        "validation_ok": bool(report.get("ok")),
+    }
+
+
+def _cli_run_external(no_external: bool, external_target: str, readiness: str) -> bool:
+    if no_external:
+        return False
+    if not readiness_at_least(readiness, "compile"):
+        return False
+    if external_target != "local":
+        raise ValueError(
+            "External validation is remote-first. Use scripts/remote_validate_verilog_skill.py, or pass --external-target local only after the user explicitly approves local external validation."
+        )
+    return True
 
 
 if __name__ == "__main__":

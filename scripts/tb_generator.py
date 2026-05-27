@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -23,6 +24,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("file", type=Path, help="Input Verilog module file.")
     parser.add_argument("--clk_period_ns", type=int, default=10)
     parser.add_argument("--output", "-o", type=Path)
+    parser.add_argument("--analysis", action="store_true", help="Treat input as rtl_analysis.json instead of a Verilog source file.")
+    parser.add_argument("--tb-language", choices=("verilog", "systemverilog"), default="verilog")
     return parser
 
 
@@ -38,18 +41,47 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR failed to read {source} with UTF-8: {exc}", file=sys.stderr)
         return 2
 
-    module_match = MODULE_RE.search(strip_comments(content))
-    if not module_match:
-        print(f"ERROR no module declaration found in {source}", file=sys.stderr)
+    try:
+        module_name, ports = load_module_and_ports(content, source, treat_as_analysis=args.analysis or source.suffix.lower() == ".json")
+    except ValueError as exc:
+        print(f"ERROR {exc}", file=sys.stderr)
         return 2
-
-    module_name = module_match.group(1)
-    ports = extract_ports(content)
-    tb_text = generate_testbench(module_name, ports, args.clk_period_ns)
+    tb_text = generate_testbench(module_name, ports, args.clk_period_ns, args.tb_language)
     output = args.output or source.with_name(f"tb_{module_name}.v")
+    output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(tb_text, encoding="utf-8")
     print(f"Generated {output}")
     return 0
+
+
+def load_module_and_ports(content: str, source: Path, *, treat_as_analysis: bool) -> tuple[str, list[dict[str, str | bool | None]]]:
+    if treat_as_analysis:
+        payload = json.loads(content)
+        module_name = str(((payload.get("module_info") or {}).get("name")) or "")
+        ports = payload.get("ports")
+        if not module_name or not isinstance(ports, list):
+            raise ValueError(f"analysis JSON at {source} is missing module_info.name or ports.")
+        normalized_ports: list[dict[str, str | bool | None]] = []
+        for port in ports:
+            if not isinstance(port, dict) or not port.get("name") or not port.get("direction"):
+                continue
+            width = port.get("width") if isinstance(port.get("width"), int) else 1
+            normalized_ports.append(
+                {
+                    "direction": str(port["direction"]),
+                    "width_msb": str(width - 1) if width and int(width) > 1 else None,
+                    "width_lsb": "0" if width and int(width) > 1 else None,
+                    "name": str(port["name"]),
+                    "is_clock": bool(port.get("role") == "clock" or CLK_NAME_RE.search(str(port["name"]))),
+                    "is_reset": bool(port.get("role") == "reset" or RST_NAME_RE.search(str(port["name"]))),
+                }
+            )
+        return module_name, normalized_ports
+
+    module_match = MODULE_RE.search(strip_comments(content))
+    if not module_match:
+        raise ValueError(f"no module declaration found in {source}")
+    return module_match.group(1), extract_ports(content)
 
 
 def strip_comments(text: str) -> str:
@@ -142,7 +174,7 @@ def _parse_port_piece(piece: str, state: dict[str, str | None]):
     }
 
 
-def generate_testbench(module_name: str, ports: list[dict[str, str | bool | None]], clk_period_ns: int) -> str:
+def generate_testbench(module_name: str, ports: list[dict[str, str | bool | None]], clk_period_ns: int, tb_language: str) -> str:
     tb_name = f"tb_{module_name}"
     lines: list[str] = []
     lines.append(f"// Auto-generated Erie testbench scaffold for {module_name}")
@@ -168,6 +200,10 @@ def generate_testbench(module_name: str, ports: list[dict[str, str | bool | None
     for port in [item for item in ports if item["is_clock"]]:
         lines.append(f"    always #(CLK_PERIOD/2) {port['name']} = ~{port['name']};")
     lines.append("")
+    lines.append("    initial begin")
+    lines.append("        $display(\"[TB_MONITOR] Time: %0t | Starting tb_generator scaffold.\", $time);")
+    lines.append("    end")
+    lines.append("")
 
     reset_ports = [item for item in ports if item["is_reset"]]
     if reset_ports:
@@ -189,6 +225,18 @@ def generate_testbench(module_name: str, ports: list[dict[str, str | bool | None
     lines.append(",\n".join(f"        .{port['name']}({port['name']})" for port in ports))
     lines.append("    );")
     lines.append("")
+    if tb_language == "systemverilog":
+        clock_name = next((str(item["name"]) for item in ports if item["is_clock"]), "clk")
+        reset_name = next((str(item["name"]) for item in reset_ports), "rst_n")
+        observation_signal = next((str(item["name"]) for item in ports if item["direction"] == "output"), "")
+        if observation_signal:
+            lines.append(f"    property p_{observation_signal}_known;")
+            lines.append(f"        @(posedge {clock_name}) disable iff (!{reset_name}) !$isunknown({observation_signal});")
+            lines.append("    endproperty")
+            lines.append(
+                f"    assert property (p_{observation_signal}_known) else $error(\"[TB_ERROR] Time: %0t | Unknown output detected on {observation_signal}.\", $time);"
+            )
+            lines.append("")
     lines.append("    initial begin")
     lines.append(f"        $dumpfile(\"{tb_name}_waves.vcd\");")
     lines.append(f"        $dumpvars(0, {tb_name});")
@@ -205,11 +253,16 @@ def generate_testbench(module_name: str, ports: list[dict[str, str | bool | None
     for port in [item for item in ports if item["direction"] in ("input", "inout") and not item["is_clock"] and not item["is_reset"]]:
         lines.append(f"        {port['name']} = {example_value(port)};")
     lines.append("        #(CLK_PERIOD * 2);")
+    observed_output = next((str(item["name"]) for item in ports if item["direction"] == "output"), "")
+    if observed_output:
+        lines.append(f"        $display(\"[TB_DATA] Time: %0t | Observed {observed_output}=%0h\", $time, {observed_output});")
     lines.append("        if (^1'b0 === 1'b1) begin")
+    lines.append("            $error(\"[TB_ERROR] Time: %0t | Replace scaffold checks with module-specific expectations.\", $time);")
     lines.append("            $display(\"FAIL: replace scaffold checks with module-specific expectations\");")
     lines.append("        end else begin")
     lines.append("            $display(\"PASS: nominal scaffold case executed\");")
     lines.append("        end")
+    lines.append("        $display(\"VERILOG-GEN-RESULT {\\\"case_id\\\":\\\"nominal\\\",\\\"status\\\":\\\"PASS\\\",\\\"outputs\\\":{}}\");")
     lines.append("")
     lines.append("        // Case 2: boundary smoke input pattern")
     for port in [item for item in ports if item["direction"] in ("input", "inout") and not item["is_clock"] and not item["is_reset"]]:
@@ -222,6 +275,7 @@ def generate_testbench(module_name: str, ports: list[dict[str, str | bool | None
     lines.append("        end")
     lines.append("")
     lines.append("        #(CLK_PERIOD * 4);")
+    lines.append("        $display(\"[TB_INFO] Simulation Finished!\");")
     lines.append("        $finish;")
     lines.append("    end")
     lines.append("")
