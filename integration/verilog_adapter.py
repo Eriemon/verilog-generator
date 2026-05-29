@@ -25,6 +25,7 @@ from runtime.verilog_generator.workspace import use_workspace_root
 
 __all__ = [
     "run_verilog_workflow",
+    "run_verilog_batch",
     "render_verilog_prompt",
     "validate_verilog_artifacts",
     "analyze_existing_verilog",
@@ -179,6 +180,8 @@ def run_verilog_workflow(
     decision: str | Path | dict[str, Any] | None = None,
     provider_name: str | None = None,
     provider_command: str | None = None,
+    generation_mode: str | None = None,
+    stream: bool | None = None,
     target: str | None = None,
     design_requirements: str | Path | dict[str, Any] | None = None,
     pipeline_required: bool | None = None,
@@ -207,6 +210,8 @@ def run_verilog_workflow(
     resolved_comment_language = comment_language or str(merged.get("comment_language", "zh"))
     resolved_provider_name = provider_name or str(merged.get("model_provider", "command"))
     resolved_timeout = int(model_timeout_s or merged.get("model_timeout_s", 120))
+    resolved_generation_mode = str(generation_mode or merged.get("generation_mode", "regular"))
+    resolved_stream = bool(stream) if stream is not None else bool(merged.get("stream", False))
 
     if resume_dir is not None:
         run_dir = Path(resume_dir)
@@ -215,6 +220,8 @@ def run_verilog_workflow(
             result = run_workflow(
                 resume_dir=run_dir,
                 decision_path=decision_path,
+                generation_mode=generation_mode,
+                stream=stream,
                 stop_on_human=resolved_stop_on_human,
                 run_external=resolved_run_external,
                 comment_language=resolved_comment_language,
@@ -260,6 +267,8 @@ def run_verilog_workflow(
             evidence_path=evidence_path,
             provider_name=resolved_provider_name,
             provider_command=provider_command,
+            generation_mode=resolved_generation_mode,
+            stream=resolved_stream,
             readiness=resolved_readiness,
             max_attempts=resolved_attempts,
             stop_on_human=resolved_stop_on_human,
@@ -274,6 +283,85 @@ def run_verilog_workflow(
         "requirements_path": str(requirements_path),
         "codegen_plan_path": str(codegen_plan_path),
         "workflow_result": result,
+    }
+
+
+def run_verilog_batch(
+    specs: list[str | Path | dict[str, Any]],
+    *,
+    out_dir: str | Path,
+    workflow_config: str | Path | dict[str, Any] | None = None,
+    evidence: str | Path | dict[str, Any] | None = None,
+    provider_name: str | None = None,
+    provider_command: str | None = None,
+    generation_mode: str | None = None,
+    stream: bool | None = None,
+    target: str | None = None,
+    design_requirements: str | Path | dict[str, Any] | None = None,
+    pipeline_required: bool | None = None,
+    streamability: str | None = None,
+    interface_family: str | None = None,
+    interface_profile: str | Path | dict[str, Any] | None = None,
+    readiness: str | None = None,
+    max_attempts: int | None = None,
+    stop_on_human: bool | None = None,
+    run_external: bool | None = None,
+    external_target: str = "remote",
+    comment_language: str | None = None,
+    model_timeout_s: int | None = None,
+) -> dict[str, Any]:
+    """Run multiple spec-to-RTL workflow cases and summarize their outcomes."""
+
+    if not specs:
+        raise ValueError("run_verilog_batch requires at least one spec.")
+
+    batch_root = Path(out_dir)
+    batch_root.mkdir(parents=True, exist_ok=True)
+    case_results: list[dict[str, Any]] = []
+    passed_cases = 0
+
+    for index, spec in enumerate(specs, start=1):
+        case_id = _batch_case_id(spec, index)
+        case_run_dir = batch_root / f"{index:03d}-{case_id}"
+        result = run_verilog_workflow(
+            spec,
+            out_dir=case_run_dir,
+            workflow_config=workflow_config,
+            evidence=evidence,
+            provider_name=provider_name,
+            provider_command=provider_command,
+            generation_mode=generation_mode,
+            stream=stream,
+            target=target,
+            design_requirements=design_requirements,
+            pipeline_required=pipeline_required,
+            streamability=streamability,
+            interface_family=interface_family,
+            interface_profile=interface_profile,
+            readiness=readiness,
+            max_attempts=max_attempts,
+            stop_on_human=stop_on_human,
+            run_external=run_external,
+            external_target=external_target,
+            comment_language=comment_language,
+            model_timeout_s=model_timeout_s,
+        )
+        case_summary = _batch_case_summary(case_id, case_run_dir, result)
+        case_results.append(case_summary)
+        if case_summary["status"] == "passed":
+            passed_cases += 1
+
+    status = "passed" if passed_cases == len(case_results) else "failed"
+    return {
+        "status": status,
+        "run_dir": str(batch_root),
+        "summary": {
+            "case_count": len(case_results),
+            "passed_cases": passed_cases,
+            "failed_cases": len(case_results) - passed_cases,
+            "generation_mode": generation_mode or "regular",
+        },
+        "cases": case_results,
     }
 
 
@@ -476,6 +564,56 @@ def _resolve_sources(source: str | Path | list[str | Path]) -> list[Path]:
     if isinstance(source, list):
         return [Path(item) for item in source]
     return [Path(source)]
+
+
+def _batch_case_id(spec: str | Path | dict[str, Any], index: int) -> str:
+    if isinstance(spec, dict):
+        return str(spec.get("name") or f"case_{index}")
+    return Path(spec).stem or f"case_{index}"
+
+
+def _batch_case_summary(case_id: str, case_run_dir: Path, result: dict[str, Any]) -> dict[str, Any]:
+    workflow_result = result.get("workflow_result", {}) if isinstance(result, dict) else {}
+    attempts = workflow_result.get("attempts", []) if isinstance(workflow_result, dict) else []
+    latest_attempt = attempts[-1] if attempts else {}
+    artifact_dir = latest_attempt.get("artifact_dir")
+    validation_ok = False
+    semantic_gate_ready = None
+
+    validation_path = _resolve_result_path(case_run_dir, latest_attempt.get("validation_json"))
+    if validation_path is not None and validation_path.exists():
+        validation_payload = json.loads(validation_path.read_text(encoding="utf-8"))
+        validation_ok = bool(validation_payload.get("ok"))
+
+    stage_verification_path = _resolve_result_path(
+        case_run_dir,
+        (latest_attempt.get("contract_paths") or {}).get("stage_verification") if isinstance(latest_attempt, dict) else None,
+    )
+    if stage_verification_path is not None and stage_verification_path.exists():
+        semantic_gate_ready = json.loads(stage_verification_path.read_text(encoding="utf-8")).get("ready")
+
+    return {
+        "case_id": case_id,
+        "status": str(result.get("status") or "failed"),
+        "run_dir": str(case_run_dir),
+        "artifact_dir": _resolve_result_path(case_run_dir, artifact_dir).as_posix() if _resolve_result_path(case_run_dir, artifact_dir) is not None else None,
+        "validation_ok": validation_ok,
+        "semantic_gate_ready": semantic_gate_ready,
+        "result_path": str(case_run_dir / "workflow_result.json"),
+    }
+
+
+def _resolve_result_path(run_dir: Path, value: Any) -> Path | None:
+    if not value or not isinstance(value, str):
+        return None
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    if value.startswith("<external>/"):
+        return None
+    if path.exists():
+        return path.resolve()
+    return run_dir / path
 
 
 def _resolve_external_run(run_external: bool, *, readiness: str, external_target: str, allow_static_external: bool = False) -> bool:

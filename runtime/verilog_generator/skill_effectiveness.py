@@ -15,6 +15,7 @@ from integration.verilog_adapter import (
     compare_verilog_semantics,
     refine_existing_verilog,
     render_verilog_prompt,
+    run_verilog_batch,
     run_verilog_workflow,
     validate_verilog_artifacts,
     verify_existing_verilog,
@@ -22,7 +23,7 @@ from integration.verilog_adapter import (
 
 from .config import skill_root
 from .refined_templates import summarize_refined_templates
-from .workspace import write_json
+from .workspace import workspace_root, write_json
 
 SKILL_ROOT = skill_root()
 
@@ -39,7 +40,7 @@ def evaluate_skill_effectiveness(
     if not isinstance(cases, list) or not cases:
         raise ValueError(f"Skill eval cases must be a non-empty list: {evals_path}")
 
-    temp_root = SKILL_ROOT / "_smoke_runs" / f"skill-effectiveness-{os.getpid()}-{int(time.time())}"
+    temp_root = workspace_root() / "_smoke_runs" / f"skill-effectiveness-{os.getpid()}-{int(time.time())}"
     temp_root.mkdir(parents=True, exist_ok=True)
     try:
         with _pushd(SKILL_ROOT):
@@ -72,6 +73,11 @@ def evaluate_skill_effectiveness(
     finally:
         if temp_root.exists():
             shutil.rmtree(temp_root, ignore_errors=True)
+        smoke_root = temp_root.parent
+        if smoke_root.exists():
+            with contextlib.suppress(OSError):
+                if not any(smoke_root.iterdir()):
+                    smoke_root.rmdir()
 
 
 def _evaluate_case(case: dict[str, Any], temp_root: Path) -> dict[str, Any]:
@@ -86,6 +92,12 @@ def _evaluate_case(case: dict[str, Any], temp_root: Path) -> dict[str, Any]:
         return _evaluate_style_refine_case(case, case_id, temp_root)
     if case.get("kind") == "checkpoint_closure_regression":
         return _evaluate_checkpoint_case(case, case_id, temp_root)
+    if case.get("kind") == "generation_mode_regression":
+        return _evaluate_generation_mode_case(case, case_id, temp_root)
+    if case.get("kind") == "streaming_regression":
+        return _evaluate_streaming_case(case, case_id, temp_root)
+    if case.get("kind") == "batch_regression":
+        return _evaluate_batch_case(case, case_id, temp_root)
     if case.get("kind") == "merge_assist_regression":
         return _evaluate_merge_assist_case(case, case_id, temp_root)
     if case.get("kind") == "optimize_assist_regression":
@@ -112,9 +124,7 @@ def _evaluate_case(case: dict[str, Any], temp_root: Path) -> dict[str, Any]:
         run_external=False,
     )
     attempt = workflow["workflow_result"]["attempts"][-1]
-    generated_dir = Path(attempt["artifact_dir"])
-    if not generated_dir.is_absolute():
-        generated_dir = SKILL_ROOT / generated_dir
+    generated_dir = case_root / "workflow" / attempt["attempt_id"] / "rtl" / "generated"
     validation = validate_verilog_artifacts(spec, generated_dir, run_external=False, readiness="static")
     requirements = json.loads(Path(workflow["requirements_path"]).read_text(encoding="utf-8"))
     codegen_plan = json.loads(Path(workflow["codegen_plan_path"]).read_text(encoding="utf-8"))
@@ -327,6 +337,114 @@ def _evaluate_checkpoint_case(case: dict[str, Any], case_id: str, temp_root: Pat
         "spec": str(case["spec"]),
         "passed": all(checks.values()),
         "with_skill": {"stable": True, "expectation_checks": checks},
+        "without_skill": {"expectation_checks": {key: False for key in checks}},
+        "comparison": comparison,
+        "refined_templates": [],
+    }
+
+
+def _evaluate_generation_mode_case(case: dict[str, Any], case_id: str, temp_root: Path) -> dict[str, Any]:
+    spec_path = SKILL_ROOT / str(case["spec"])
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    case_root = temp_root / case_id
+    case_root.mkdir(parents=True, exist_ok=True)
+    result = run_verilog_workflow(
+        spec,
+        out_dir=case_root / "deep-review",
+        provider_name="mock",
+        generation_mode="deep_review",
+        run_external=False,
+    )
+    workflow_result = result["workflow_result"]
+    attempt = workflow_result["attempts"][-1]
+    expectations = case.get("expectations", {}) if isinstance(case.get("expectations"), dict) else {}
+    checks = {
+        "review_stage_present": "review" in attempt.get("stage_outputs", {}),
+        "workflow_passes": result["status"] == "passed",
+    }
+    checks = {key: value if expectations.get(key, True) else True for key, value in checks.items()}
+    comparison = {"with_skill_pass_count": _pass_count(checks), "without_skill_pass_count": 0, "improved": _pass_count(checks) > 0}
+    return {
+        "id": case_id,
+        "kind": case.get("kind"),
+        "spec": str(case["spec"]),
+        "passed": all(checks.values()),
+        "with_skill": {"stable": all(checks.values()), "expectation_checks": checks},
+        "without_skill": {"expectation_checks": {key: False for key in checks}},
+        "comparison": comparison,
+        "refined_templates": [],
+    }
+
+
+def _evaluate_streaming_case(case: dict[str, Any], case_id: str, temp_root: Path) -> dict[str, Any]:
+    spec_path = SKILL_ROOT / str(case["spec"])
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    case_root = temp_root / case_id
+    case_root.mkdir(parents=True, exist_ok=True)
+    result = run_verilog_workflow(
+        spec,
+        out_dir=case_root / "streaming",
+        provider_name="mock",
+        generation_mode="regular",
+        stream=True,
+        run_external=False,
+    )
+    attempt = result["workflow_result"]["attempts"][-1]
+    rtl_stage = attempt.get("stage_outputs", {}).get("rtl", {})
+    transcript_path = case_root / "streaming" / attempt["attempt_id"] / "rtl" / "rtl_stream.txt"
+    expectations = case.get("expectations", {}) if isinstance(case.get("expectations"), dict) else {}
+    checks = {
+        "stream_used": rtl_stage.get("stream_used") is True,
+        "stream_transcript_present": transcript_path.is_file(),
+        "workflow_passes": result["status"] == "passed",
+    }
+    checks = {key: value if expectations.get(key, True) else True for key, value in checks.items()}
+    comparison = {"with_skill_pass_count": _pass_count(checks), "without_skill_pass_count": 0, "improved": _pass_count(checks) > 0}
+    return {
+        "id": case_id,
+        "kind": case.get("kind"),
+        "spec": str(case["spec"]),
+        "passed": all(checks.values()),
+        "with_skill": {"stable": all(checks.values()), "expectation_checks": checks},
+        "without_skill": {"expectation_checks": {key: False for key in checks}},
+        "comparison": comparison,
+        "refined_templates": [],
+    }
+
+
+def _evaluate_batch_case(case: dict[str, Any], case_id: str, temp_root: Path) -> dict[str, Any]:
+    specs = []
+    for index, spec_ref in enumerate(case.get("specs", []), start=1):
+        spec = json.loads((SKILL_ROOT / str(spec_ref)).read_text(encoding="utf-8"))
+        if index > 1:
+            spec["name"] = f"{spec['name']}_{index}"
+            spec["outputs"] = [
+                {"path": f"rtl/{spec['name']}.v", "kind": "source", "language": "verilog"},
+                {"path": f"tb/{spec['name']}_tb.v", "kind": "testbench", "language": "verilog"},
+            ]
+        specs.append(spec)
+    case_root = temp_root / case_id
+    case_root.mkdir(parents=True, exist_ok=True)
+    result = run_verilog_batch(
+        specs,
+        out_dir=case_root / "batch",
+        provider_name="mock",
+        generation_mode="regular",
+        run_external=False,
+    )
+    expectations = case.get("expectations", {}) if isinstance(case.get("expectations"), dict) else {}
+    checks = {
+        "case_count_matches": result["summary"]["case_count"] == len(specs),
+        "all_cases_passed": all(item.get("status") == "passed" for item in result.get("cases", [])),
+        "artifact_dirs_present": all(Path(item["artifact_dir"]).exists() for item in result.get("cases", []) if item.get("artifact_dir")),
+    }
+    checks = {key: value if expectations.get(key, True) else True for key, value in checks.items()}
+    comparison = {"with_skill_pass_count": _pass_count(checks), "without_skill_pass_count": 0, "improved": _pass_count(checks) > 0}
+    return {
+        "id": case_id,
+        "kind": case.get("kind"),
+        "passed": all(checks.values()),
+        "with_skill": {"stable": all(checks.values()), "expectation_checks": checks},
         "without_skill": {"expectation_checks": {key: False for key in checks}},
         "comparison": comparison,
         "refined_templates": [],

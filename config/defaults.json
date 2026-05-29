@@ -225,6 +225,7 @@
   },
   "workflow": {
     "mode": "generate",
+    "generation_mode": "regular",
     "target": "rtl",
     "readiness": "static",
     "max_attempts": 3,
@@ -232,6 +233,7 @@
     "model_provider": "command",
     "stop_on_human": true,
     "run_external": true,
+    "stream": false,
     "model_timeout_s": 120
   },
   "policy": {

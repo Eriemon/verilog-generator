@@ -97,12 +97,16 @@ def main(argv: list[str] | None = None) -> int:
             "-m",
             "compileall",
             "-q",
-            "runtime",
-            "integration",
-            "scripts",
+            "skills/erie-verilog-generator/runtime",
+            "skills/erie-verilog-generator/integration",
+            "skills/erie-verilog-generator/scripts",
+            "smoke",
+            "tests",
         ],
-        cwd=SKILL_ROOT,
+        cwd=PROJECT_ROOT,
     )
+    run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"], cwd=PROJECT_ROOT)
+    run([sys.executable, "smoke/run_smoke.py", "--settings", str(settings_path)], cwd=PROJECT_ROOT)
     run_cli_gate(settings, smoke_dir)
     effectiveness_report = smoke_dir / "skill-effectiveness.json"
     eval_skill_command = [
@@ -621,11 +625,11 @@ def run_work_folder_gate() -> None:
             "work-folder-gate",
             ".",
             "--skill-dir",
-            ".",
+            "skills/erie-verilog-generator",
             "--mode",
             "development",
         ],
-        cwd=SKILL_ROOT,
+        cwd=PROJECT_ROOT,
         allow_failure=True,
     )
     if result.returncode == 0:
@@ -932,6 +936,7 @@ def verify_no_ref_dependencies() -> None:
         PROJECT_ROOT / "docs" / "handoff" / "HANDOFF.md",
         PROJECT_ROOT / "docs" / "git_manager" / "CHANGELOG.md",
         SKILL_ROOT / "SKILL.md",
+        PROJECT_ROOT / "smoke" / "run_smoke.py",
     ]
     active_paths.extend(sorted((SKILL_ROOT / "references").glob("*")))
     active_paths.extend(sorted((SKILL_ROOT / "scripts").glob("*")))
@@ -989,6 +994,7 @@ def cleanup_residuals(settings: dict, smoke_dir: Path) -> None:
     remove_inside_skill(SKILL_ROOT / "workflow-state.json")
     for path in sorted(SKILL_ROOT.rglob("__pycache__"), reverse=True):
         remove_inside_skill(path)
+    _prune_empty_smoke_root(settings)
 
 
 def cleanup_audit_runtime_artifacts(settings: dict, smoke_dir: Path) -> None:
@@ -998,6 +1004,17 @@ def cleanup_audit_runtime_artifacts(settings: dict, smoke_dir: Path) -> None:
         return
     for path in sorted(smoke_root.iterdir(), reverse=True):
         remove_inside_skill(path)
+    _prune_empty_smoke_root(settings)
+
+
+def _prune_empty_smoke_root(settings: dict) -> None:
+    smoke_root = path_setting(settings, "smoke_dir").resolve()
+    if not smoke_root.exists():
+        return
+    try:
+        next(smoke_root.iterdir())
+    except StopIteration:
+        smoke_root.rmdir()
 
 
 def remove_inside_skill(path: Path) -> None:

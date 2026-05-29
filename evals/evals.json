@@ -145,6 +145,38 @@
       }
     },
     {
+      "id": "deep_review_regression",
+      "kind": "generation_mode_regression",
+      "spec": "assets/examples/rtl_erie_verilog_spec.json",
+      "expectations": {
+        "review_stage_present": true,
+        "workflow_passes": true
+      }
+    },
+    {
+      "id": "streaming_regression",
+      "kind": "streaming_regression",
+      "spec": "assets/examples/rtl_erie_verilog_spec.json",
+      "expectations": {
+        "stream_used": true,
+        "stream_transcript_present": true,
+        "workflow_passes": true
+      }
+    },
+    {
+      "id": "batch_regression",
+      "kind": "batch_regression",
+      "specs": [
+        "assets/examples/rtl_erie_verilog_spec.json",
+        "assets/examples/use_case_templates/spi_adc.json"
+      ],
+      "expectations": {
+        "case_count_matches": true,
+        "all_cases_passed": true,
+        "artifact_dirs_present": true
+      }
+    },
+    {
       "id": "merge_assist_regression",
       "kind": "merge_assist_regression",
       "source": "assets/examples/existing_rtl/traffic_light.v",

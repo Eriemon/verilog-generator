@@ -41,8 +41,12 @@ WORKFLOW_STATUSES = (
     "max_attempts",
     "invalid_response",
 )
-DEFAULT_STAGES = {
-    "rtl": ["requirements", "codegen_plan", "python", "rtl"],
+GENERATION_MODES = ("regular", "deep_review")
+DEFAULT_STAGE_SETS = {
+    "rtl": {
+        "regular": ["requirements", "codegen_plan", "python", "rtl"],
+        "deep_review": ["requirements", "codegen_plan", "python", "review", "rtl"],
+    },
 }
 FINAL_STAGE = {"rtl": "rtl"}
 
@@ -61,6 +65,8 @@ def run_workflow(
     evidence_path: Path | None = None,
     provider_name: str = "manual",
     provider_command: str | None = None,
+    generation_mode: str | None = None,
+    stream: bool | None = None,
     readiness: str = "static",
     max_attempts: int = 3,
     stop_on_human: bool = True,
@@ -75,6 +81,8 @@ def run_workflow(
         return _resume_workflow(
             resume_dir=resume_dir,
             decision_path=decision_path,
+            generation_mode=generation_mode,
+            stream=stream,
             stop_on_human=stop_on_human,
             run_external=run_external,
             comment_language=comment_language,
@@ -104,6 +112,8 @@ def run_workflow(
         plan,
         provider_name=provider_name,
         provider_command=provider_command,
+        generation_mode=generation_mode,
+        stream=stream,
         readiness=readiness,
         max_attempts=max_attempts,
         stop_on_human=stop_on_human,
@@ -148,6 +158,8 @@ def _resume_workflow(
     *,
     resume_dir: Path,
     decision_path: Path | None,
+    generation_mode: str | None,
+    stream: bool | None,
     stop_on_human: bool,
     run_external: bool,
     comment_language: str,
@@ -169,6 +181,11 @@ def _resume_workflow(
     if result.get("status") == "blocked_human" and decision is None:
         raise WorkflowError("Resuming a blocked_human workflow requires a decision JSON file.")
 
+    if generation_mode is not None:
+        config["generation_mode"] = require_generation_mode(generation_mode)
+        config["stages"] = _default_stages_for(str(config.get("target") or "rtl"), str(config["generation_mode"]))
+    if stream is not None:
+        config["stream"] = bool(stream)
     config["stop_on_human"] = stop_on_human
     config["run_external"] = run_external
     config["comment_language"] = comment_language or config.get("comment_language", "zh")
@@ -211,7 +228,7 @@ def _execute_workflow(
         timeout_s=int(config.get("model_timeout_s", 120)),
         config=config,
     )
-    stages = [str(item) for item in config.get("stages", []) or DEFAULT_STAGES[plan["target"]]]
+    stages = [str(item) for item in config.get("stages", []) or _default_stages_for(plan["target"], str(config.get("generation_mode") or "regular"))]
     max_attempts = int(config.get("max_attempts", 3))
 
     while len(result.get("attempts", [])) < max_attempts:
@@ -247,6 +264,7 @@ def _execute_workflow(
                     memory=memory if stage in {"python", "rtl"} else None,
                     decision=decision,
                     previous_stage=stage_outputs.get(_previous_stage(stage, stages)),
+                    stage_outputs=stage_outputs,
                     active_codegen_plan=active_codegen_plan,
                     trace_path=trace_path,
                     state_path=state_path,
@@ -514,6 +532,7 @@ def _run_generation_stage(
     memory: dict[str, Any] | None,
     decision: dict[str, Any] | None,
     previous_stage: dict[str, Any] | None,
+    stage_outputs: dict[str, dict[str, Any]],
     active_codegen_plan: dict[str, Any] | None,
     trace_path: Path,
     state_path: Path,
@@ -557,6 +576,8 @@ def _run_generation_stage(
     context_manifest = previous_stage.get("manifest") if previous_stage else None
     context_dir = previous_stage.get("artifact_dir") if previous_stage else None
     vector_contract = previous_stage.get("vector_contract") if previous_stage else None
+    if stage == "rtl" and vector_contract is None:
+        vector_contract = stage_outputs.get("python", {}).get("vector_contract")
     prompt_text = render_prompt(
         plan,
         target=plan["target"],
@@ -609,21 +630,25 @@ def _run_generation_stage(
         },
     )
 
-    response_text = provider.generate(
-        prompt_text,
-        GenerationContext(
-            attempt_id=attempt_id,
-            stage=stage,
-            prompt_path=prompt_path,
-            response_path=response_path,
-            run_dir=run_dir,
-            attempt_dir=attempt_dir,
-            spec=plan,
-            manifest=manifest,
-            workflow_config=config,
-            vector_contract=vector_contract,
-            comment_language=str(config.get("comment_language", "zh")),
-        ),
+    generation_context = GenerationContext(
+        attempt_id=attempt_id,
+        stage=stage,
+        prompt_path=prompt_path,
+        response_path=response_path,
+        run_dir=run_dir,
+        attempt_dir=attempt_dir,
+        spec=plan,
+        manifest=manifest,
+        workflow_config=config,
+        vector_contract=vector_contract,
+        comment_language=str(config.get("comment_language", "zh")),
+    )
+    response_text, stream_summary = _generate_model_response(
+        provider=provider,
+        prompt_text=prompt_text,
+        context=generation_context,
+        stage_dir=stage_dir,
+        config=config,
     )
     write_text(response_path, response_text)
     _record_state(
@@ -631,6 +656,16 @@ def _run_generation_stage(
         "model_generate",
         {"output": response_path, "provider": provider.name, "stage": stage},
         enabled=state_updates,
+    )
+    append_trace_event(
+        trace_path,
+        {
+            "event": "model_stream",
+            "attempt_id": attempt_id,
+            "stage": stage,
+            "provider": provider.name,
+            **stream_summary,
+        },
     )
     append_trace_event(
         trace_path,
@@ -674,6 +709,7 @@ def _run_generation_stage(
             "prompt_path": safe_path(prompt_path),
             "response_path": safe_path(response_path),
             "artifact_dir": safe_path(artifact_dir),
+            **stream_summary,
         },
     }
     if stage == "python":
@@ -994,6 +1030,8 @@ def _workflow_config(
     *,
     provider_name: str,
     provider_command: str | None,
+    generation_mode: str | None,
+    stream: bool | None,
     readiness: str,
     max_attempts: int,
     stop_on_human: bool,
@@ -1006,9 +1044,11 @@ def _workflow_config(
         "name": provider_name,
         "command": provider_command,
     }
+    resolved_generation_mode = require_generation_mode(generation_mode or "regular")
     return {
         "version": 1,
         "mode": str((plan.get("workflow") or {}).get("mode") or "generate"),
+        "generation_mode": resolved_generation_mode,
         "name": plan["name"],
         "target": plan["target"],
         "rtl_dialect": plan.get("rtl_dialect"),
@@ -1020,16 +1060,17 @@ def _workflow_config(
         "pipeline_required": bool(plan.get("pipeline_required", True)),
         "codegen_plan_required": bool(plan.get("codegen_plan_required", True)),
         "codegen_plan_path": plan.get("codegen_plan_path"),
-        "stages": list(DEFAULT_STAGES[plan["target"]]),
+        "stages": _default_stages_for(plan["target"], resolved_generation_mode),
         "readiness": readiness,
         "max_attempts": max_attempts,
         "stop_on_human": stop_on_human,
         "run_external": run_external,
         "comment_language": comment_language,
+        "stream": bool(stream),
         "external_codegen_plan": copy.deepcopy(external_codegen_plan) if isinstance(external_codegen_plan, dict) else None,
         "model_timeout_s": model_timeout_s,
         "provider": provider_config,
-        "budgets": {stage: "normal" for stage in DEFAULT_STAGES[plan["target"]]},
+        "budgets": {stage: "normal" for stage in _default_stages_for(plan["target"], resolved_generation_mode)},
         "mock_behavior": (plan.get("workflow") or {}).get("mock_behavior"),
     }
 
@@ -1047,6 +1088,22 @@ def _stage_budget(config: dict[str, Any], stage: str) -> str:
     return "normal"
 
 
+def require_generation_mode(value: str) -> str:
+    normalized = value.lower()
+    if normalized not in GENERATION_MODES:
+        raise WorkflowError(f"generation_mode must be one of {', '.join(GENERATION_MODES)}.")
+    return normalized
+
+
+def _default_stages_for(target: str, generation_mode: str) -> list[str]:
+    normalized_target = str(target).lower()
+    normalized_mode = require_generation_mode(generation_mode)
+    stage_sets = DEFAULT_STAGE_SETS.get(normalized_target)
+    if not stage_sets or normalized_mode not in stage_sets:
+        raise WorkflowError(f"No stage set defined for target={normalized_target!r} generation_mode={normalized_mode!r}.")
+    return list(stage_sets[normalized_mode])
+
+
 def _new_attempt_record(attempt_id: str, stage: str, provider: str) -> dict[str, Any]:
     return {
         "attempt_id": attempt_id,
@@ -1059,6 +1116,51 @@ def _new_attempt_record(attempt_id: str, stage: str, provider: str) -> dict[str,
         "repair_plan": None,
         "status": "failed",
         "provider": provider,
+    }
+
+
+def _generate_model_response(
+    *,
+    provider: Any,
+    prompt_text: str,
+    context: GenerationContext,
+    stage_dir: Path,
+    config: dict[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    stream_requested = bool(config.get("stream", False))
+    stream_supported = bool(getattr(provider, "supports_streaming", False))
+    transcript_path = stage_dir / f"{context.stage}_stream.txt" if stream_requested else None
+    if transcript_path is not None and transcript_path.exists():
+        transcript_path.unlink()
+
+    if stream_requested and stream_supported:
+        chunks: list[str] = []
+        chunk_count = 0
+        with transcript_path.open("a", encoding="utf-8") as handle:  # type: ignore[union-attr]
+            for chunk in provider.generate_stream(prompt_text, context):
+                if not chunk:
+                    continue
+                chunk_count += 1
+                chunks.append(chunk)
+                handle.write(chunk)
+        response_text = "".join(chunks)
+        return response_text, {
+            "stream_requested": True,
+            "stream_supported": True,
+            "stream_used": True,
+            "stream_chunk_count": chunk_count,
+            "stream_transcript_path": safe_path(transcript_path) if transcript_path is not None else None,
+        }
+
+    response_text = provider.generate(prompt_text, context)
+    if transcript_path is not None:
+        write_text(transcript_path, response_text)
+    return response_text, {
+        "stream_requested": stream_requested,
+        "stream_supported": stream_supported,
+        "stream_used": False,
+        "stream_chunk_count": 1 if response_text else 0,
+        "stream_transcript_path": safe_path(transcript_path) if transcript_path is not None else None,
     }
 
 

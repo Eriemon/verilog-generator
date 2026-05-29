@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-1f6feb"></a>
   <a href="pyproject.toml"><img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2f81f7"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-v0.2.4-7c3aed">
+  <img alt="Version" src="https://img.shields.io/badge/version-v0.2.6-7c3aed">
   <a href="SKILL.md"><img alt="Agent Skill" src="https://img.shields.io/badge/agent-skill-16a34a"></a>
   <a href="ENGINEERING_DESIGN_GOALS.md"><img alt="Target" src="https://img.shields.io/badge/target-Verilog--2001-f59e0b"></a>
 </p>
@@ -50,11 +50,11 @@ Use it when an agent needs to work on:
   <img src="docs/assets/workflow.svg" alt="Verilog Generator workflow" width="100%">
 </p>
 
-## What's New In v0.2.4
+## What's New In v0.2.6
 
-- Adds an existing-RTL branch with stable analysis, controlled refinement, semantic comparison, and verify-repair workflows.
-- Moves remote validation toward `.settings/verilog.local.json`, `.settings/server_list.local.json`, `.settings/remote-selection.local.json`, and remote `.settings/verilog.remote.json`, while keeping legacy state only as a migration signal.
-- Removes repository-tracked `smoke/` and test-only assets from the public source tree so the repository keeps only runtime, assets, integration, references, and evals that belong to the public skill surface.
+- Adds explicit generation shells for `regular`, `deep_review`, and `agentic_repair`, plus generation-only batch execution through the public facade.
+- Expands the existing-RTL and verify-repair surface while keeping diagnostics, patch planning, and closure artifacts as first-class outputs.
+- Continues the remote-first validation path and `.settings/*` configuration contract while refining workflow, provider, and validation orchestration for the public skill surface.
 
 ## Repository Map
 
@@ -69,7 +69,7 @@ Use it when an agent needs to work on:
 | `assets/use_case_templates/` | Packaged JESD, SPI, and mixed-signal reference templates with RTL, Tcl, and constraint skeletons. |
 | `assets/examples/` | Example specs, remote fixtures, existing-RTL inputs, and refined template inputs for validation and regression checks. |
 | `evals/` | Repo-local skill-effectiveness cases for workflow and remote-validation regressions. |
-| `RELEASE_RECEIPT.json` | Provenance record for the imported `v0.2.4` release package. |
+| `RELEASE_RECEIPT.json` | Provenance record for the imported `v0.2.6` release package. |
 
 ## Quick Start
 
@@ -91,7 +91,7 @@ python -m runtime.verilog_generator validate --spec .\reports\verilog\spec.json 
 
 External validation requires real HDL tools. This project does not claim Vivado/xsim, VCS, iverilog, or yosys acceptance unless those tools actually run.
 
-The `v0.2.4` update adds existing-RTL analysis/refinement/verify-repair flows, upgrades remote configuration toward `.settings/*`, and removes repository-tracked `smoke/` or test-only source assets from the public tree.
+The `v0.2.6` update adds explicit generation shells, keeps extending the existing-RTL/verify-repair path, and refines the remote-first validation contract around `.settings/*`.
 
 ## Integration API
 
@@ -101,6 +101,7 @@ from integration.verilog_adapter import (
     compare_verilog_semantics,
     refine_existing_verilog,
     render_verilog_prompt,
+    run_verilog_batch,
     run_verilog_workflow,
     validate_verilog_artifacts,
     verify_existing_verilog,
@@ -110,6 +111,7 @@ from integration.verilog_adapter import (
 - `analyze_existing_verilog(...)`: analyze existing RTL into stable JSON contracts and a durable design explanation.
 - `refine_existing_verilog(...)`: plan controlled refinement flows such as testbench scaffold, style refine, partition assist, merge assist, and optimize assist.
 - `compare_verilog_semantics(...)`: compare candidate and reference RTL for interface and checkpoint drift.
+- `run_verilog_batch(...)`: execute generation-only batches across isolated case run directories.
 - `run_verilog_workflow(...)`: run or resume the staged RTL workflow.
 - `render_verilog_prompt(...)`: render prompts when a host owns the model call.
 - `validate_verilog_artifacts(...)`: validate generated RTL before downstream use.
@@ -145,8 +147,8 @@ If this skill helps your research, teaching, or engineering workflow, please cit
   author       = {Jiyuan Liu and He Li},
   title        = {{Verilog Generator}: An Agent Skill for Verilog-2001 RTL Workflows},
   year         = {2026},
-  version      = {0.2.4},
-  date         = {2026-05-27},
+  version      = {0.2.6},
+  date         = {2026-05-29},
   url          = {https://github.com/Eriemon/verilog-generator},
   license      = {Apache-2.0},
   note         = {Agent skill package for disciplined Verilog-2001 RTL workflows}

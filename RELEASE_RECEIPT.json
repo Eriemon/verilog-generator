@@ -1,8 +1,8 @@
 {
   "skill_name": "erie-verilog-generator",
-  "version": "v0.2.4",
+  "version": "v0.2.6",
   "source_path": "skills/erie-verilog-generator",
-  "generated_at": "2026-05-27T13:57:34",
+  "generated_at": "2026-05-27T18:00:19",
   "current_branch": "master",
   "local_branches": [
     "master",
@@ -80,7 +80,7 @@
   "files": [
     {
       "path": "agents/openai.yaml",
-      "sha256": "4e1b8607b032e57932138b783a5e1fe666170b060716bd81aeb7fc66bf50dd32"
+      "sha256": "2db29d7d92bc943d771f94ab21a25d0487b55ce8cdff188c0c0f04c736c2d2f5"
     },
     {
       "path": "assets/examples/existing_rtl/fsm_without_default.v",
@@ -444,15 +444,15 @@
     },
     {
       "path": "config/defaults.json",
-      "sha256": "26409455945e1a1edc2c87406aefccec73128c5fd67bbb6a888d36afdd64f2ad"
+      "sha256": "59c2e6dfb9a7e57e45cfd2fa7416c18a8dd7b4a2f7342b44b7797857cdac92f0"
     },
     {
       "path": "ENGINEERING_DESIGN_GOALS.md",
-      "sha256": "bf062717da90c2581f3e84d0f6f9f02481413021b295ec112a201199b8a5e6b8"
+      "sha256": "eaeb85d518d7189ceb2ea906fd506c4cea2409020fbe8628093e32c07119972f"
     },
     {
       "path": "evals/evals.json",
-      "sha256": "dba74e48b8830dfc6e69d16340b74bc1665cc2311519893a1fb56135945081e4"
+      "sha256": "e23ee0ae469f285b6a036d24bbb7e65d2c683d4b8332edba1aa529e495e01124"
     },
     {
       "path": "integration/__init__.py",
@@ -460,7 +460,7 @@
     },
     {
       "path": "integration/verilog_adapter.py",
-      "sha256": "fcfc3cfdcfd28fbe8095f278881f009436cd0f433e007433ed4ca6abba3bef83"
+      "sha256": "c9192824673316d596a50d0655c59de79519535c5e729ca5ee4fb25eb5e863ed"
     },
     {
       "path": "references/asic-verilog-quality.md",
@@ -480,7 +480,7 @@
     },
     {
       "path": "references/integration.md",
-      "sha256": "1de34574e24844a9b3edfebc1098be80621f19d2f51d646d27337ada22a90a98"
+      "sha256": "4bb6295b1e5b92e27146e9f694bb08f4d401ed01f4001a757ab678be4b96c745"
     },
     {
       "path": "references/lint-checklist.md",
@@ -528,7 +528,7 @@
     },
     {
       "path": "runtime/verilog_generator/cli.py",
-      "sha256": "8288d6ff70bb3217bd358a721dd4aa959b10fb50fe775f7620046eb88cd95f18"
+      "sha256": "0c170f26bdd45a395530725f71d108962c57f189e23ebe3966e020a076d45e03"
     },
     {
       "path": "runtime/verilog_generator/comment_placement.py",
@@ -576,7 +576,7 @@
     },
     {
       "path": "runtime/verilog_generator/model_provider.py",
-      "sha256": "a0582d02cf2f614c6fe449ed186638d88f6998cea07af075f304ce18696da038"
+      "sha256": "569cd7c59597fdafd0807901115c3d78fe00362830f541a344fa9b17ca90c7c1"
     },
     {
       "path": "runtime/verilog_generator/optimizer.py",
@@ -612,7 +612,7 @@
     },
     {
       "path": "runtime/verilog_generator/skill_effectiveness.py",
-      "sha256": "926c7d7e2c24296c49f1e0c7c1bd18f617cb1c770fcfcf03603affea3a7230c7"
+      "sha256": "981e8be96b659d6130f8e07237d0123b3928794906a557d4510cd0348c713be5"
     },
     {
       "path": "runtime/verilog_generator/spec.py",
@@ -652,7 +652,7 @@
     },
     {
       "path": "runtime/verilog_generator/workflow.py",
-      "sha256": "dec3292e55569a904dd2a3db09b51445e47eb0ca2a238616656c08b109aa17e2"
+      "sha256": "4bf8f2101e40fcafa40ef05050dc53df4322fee8d8aa0c455381515d8162eb21"
     },
     {
       "path": "runtime/verilog_generator/workspace.py",
@@ -676,7 +676,7 @@
     },
     {
       "path": "scripts/validate_verilog_skill.py",
-      "sha256": "8090eab3d84bfe80df21f5fed6daa8574a61b308bfd2ab5e1772809a2b16e211"
+      "sha256": "5adb78e399a1b692e74b8ba14d48525a76911bb463605344d186a9c574ac7e43"
     },
     {
       "path": "scripts/verilog_lint.py",
@@ -684,11 +684,11 @@
     },
     {
       "path": "SKILL.md",
-      "sha256": "3023a8e8494632b6ec5352f5c42912c3024dd0e8522ad4237b9b76fd1ff04f18"
+      "sha256": "e445a6c9e965a0ff7948012a88edffa7ca1072c1111345c1cce9db853f5a8c20"
     },
     {
       "path": "VERSION",
-      "sha256": "3db2ab78d48279f3a353299b0ef979cc4fac4e7c28c92e46ecb666001479a3b6"
+      "sha256": "dd36078fdf46ad869dd9e4665e6788d6d9665f255a55647f42f5def950b637e7"
     }
   ],
   "other_version_artifacts": [
@@ -6671,6 +6671,1246 @@
     {
       "path": "dist/erie-verilog-generator-v0.2.3.zip",
       "sha256": "de8821967ef5676914ab7d743ec51dcd3749f8d8a7261321d0ac9503bc916983"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/agents/openai.yaml",
+      "sha256": "4e1b8607b032e57932138b783a5e1fe666170b060716bd81aeb7fc66bf50dd32"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/existing_rtl/fsm_without_default.v",
+      "sha256": "c8b1738c51766ff46cbec1cd35b7c800e074f05cc87eb5fef49f9f9ef0c56fe7"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/existing_rtl/fsm_without_default_spec.md",
+      "sha256": "cb39f443c5563cb14769a83ef9b7c48e80890e1c9eabc16656759541f56aef7f"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/existing_rtl/leaf_counter.v",
+      "sha256": "3243828756e0adc071e348d37274456b6d9a3265cb8a417986e669f3c20dcb30"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/existing_rtl/missing_output_register.v",
+      "sha256": "9653209e64d55fd39fc324d6c3e0fd87dacfa55707b63f7d770b88a600695ced"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/existing_rtl/missing_output_register_spec.md",
+      "sha256": "0978516905dc255fb09a7dd660f1bf0ba5a09d5d5a21b2b0bd87bc537cf7b634"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/existing_rtl/ready_valid_slice.v",
+      "sha256": "750aad9b64ac459cd38c7a6f8d9f59afa114266175df5eff29da84356ffe97dd"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/existing_rtl/ready_valid_slice_spec.md",
+      "sha256": "ae3b122e8e5c08cc3f297a070cf900e4c8962df9de0ef2eacf066a5b9c8efacf"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/existing_rtl/ready_valid_slice_tb.v",
+      "sha256": "e45dae4a9d1fadcee662c6e98177cf16e47ef9b88826c66021eb3d0569449d4a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/existing_rtl/reset_gap_counter.v",
+      "sha256": "6eeb794cc94e109136fb61536f432c586477451ebcc4e4d8b5cddb0b40d850c4"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/existing_rtl/reset_gap_counter_spec.md",
+      "sha256": "6d94683d9fc9be077ceafae11141f2b88be5778306c6b36918f359ce304e790d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/existing_rtl/top_counter.v",
+      "sha256": "207fbce232ac0104bf7e1872317140f28debaad2c077ec77b852dc85a4449c06"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/existing_rtl/traffic_light.v",
+      "sha256": "852d839f90996df3c5da134294c5e9d7e2cdf0d343a36d29784eccc746c0e293"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/existing_rtl/traffic_light_spec.md",
+      "sha256": "967e8ea1f393a6cc0412d3ddff5eb6273aa741035f4313a020aff114edc8b035"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/refined_verilog_templates/axi4_lite_csr.json",
+      "sha256": "78b35bb323e98bc6e8a6842171101c5fd0ad357c89272c354369977c7f3ee01a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/refined_verilog_templates/axi_interconnect_dma.json",
+      "sha256": "2608b550570f8404989f61d075b0eabce47a00af8545ed39609fbb1ecac63f9d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/refined_verilog_templates/axis_ready_valid.json",
+      "sha256": "3bbf8130fab44fbffa0f617c6671742d6ba331538c6a9a6f966d3a10a3309556"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/refined_verilog_templates/conv_load_store.json",
+      "sha256": "c96fed4249a6d99aa1f118bbc6a300bfdd565be24de4a16de2453094551dd1fd"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/remote_fixtures/comb_parity_mux/generated/rtl/comb_parity_mux.v",
+      "sha256": "2652fcae1b9c0db2f55dc8792f745eced6ac9817d3a922e2307bc558fa8adc2e"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/remote_fixtures/comb_parity_mux/generated/tb/comb_parity_mux_tb.v",
+      "sha256": "ee04dab341d3e1d3c8cae63a7d746ba54b7b388552b0fd0fb45bfb304bce136d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/remote_fixtures/comb_parity_mux/spec.json",
+      "sha256": "f2c4ad026e348104e15ff12b267dc51c12b90be90ed446bcf1173b7d5e1614f0"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/remote_fixtures/pipeline_delay/generated/rtl/pipeline_delay.v",
+      "sha256": "1d921eb4a5d1ee27ae369d3d8333136533f6ab929e896cf96797d072652b7f06"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/remote_fixtures/pipeline_delay/generated/tb/pipeline_delay_tb.v",
+      "sha256": "381af1bb15042c8b98e17b220f854c94633ffa07d98f8cfecc8a5077f8a83297"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/remote_fixtures/pipeline_delay/spec.json",
+      "sha256": "5068ef26fb5d7862924a010f84ceecb3284f7158c57c5590ca09581c7f312532"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/remote_fixtures/ready_valid_slice/generated/rtl/ready_valid_slice.v",
+      "sha256": "484a5e55bb7304b348bc996e8b104c7304a2cbd9ad264a065c011b896416d0e8"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/remote_fixtures/ready_valid_slice/generated/tb/ready_valid_slice_tb.v",
+      "sha256": "3141ce46069b8b4453d9326967cecbd09ac685b0fb505d710c70eaf957c9704b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/remote_fixtures/ready_valid_slice/spec.json",
+      "sha256": "b9ff9a40d4a7be80c84395ec5fdf8db8e0f1debecddebc4d50fa034e5bd185c4"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/rtl_erie_verilog_spec.json",
+      "sha256": "4af03d09ac7aa3c107bf7dc65b69be963ba24d82d48a498ad1d2aa9ed7428114"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/use_case_templates/jesd_adc.json",
+      "sha256": "096699b59e97bf31896a701817ff8326f5643d6c9d07f310fd1692b0e6a48906"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/use_case_templates/jesd_dac.json",
+      "sha256": "ac0aa338914b5e5fff3c75056dafd9a28344495e3317ca795ce1e0d9e3434286"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/use_case_templates/mxfe_mixed.json",
+      "sha256": "4b4a422120d8d1985654205315553780e0e4c1b5a31cb02098b1e3caf9e7f7d6"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/use_case_templates/spi_adc.json",
+      "sha256": "b7a3aa514816ff9c989b4b64d0cdfd816e0a3cafafae0c0bf96f7961be9ad450"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/examples/use_case_templates/spi_dac.json",
+      "sha256": "e27ef7850dd1167650afc8b7fb16d01ec683358498b954b5652eeca3de3c5007"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/interface_templates/ahb_lite_config.vinc",
+      "sha256": "c306426e81c3705f097a2a1d4c76edb2e6d5806445b8b99eef304f860e9fe1e3"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/interface_templates/apb_config.vinc",
+      "sha256": "6d04576486c96d068f71fef51b7ebc662d54c30c48d2e6752f67763962cf96b2"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/interface_templates/axi4_full_master.vinc",
+      "sha256": "61dc4834b18bc21a968fa466d1154d5875fbb4b6683f065db994c443c96190be"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/interface_templates/axi4_full_slave.vinc",
+      "sha256": "d076706fc7969b0980fd343ea00512b81e27f08d8b3ee006070b2c22e3328084"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/interface_templates/axi4_lite_config.vinc",
+      "sha256": "4b161b23eccef1375739df98f4aea8d1a69114c0de51df74af5ecdc918271e31"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/interface_templates/axi_stream_duplex.vinc",
+      "sha256": "2bbb0831b60ad2cd5472b0cbb2075e5c2234d57767d16a0e42aa0daa69a49e38"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/interface_templates/catalog.json",
+      "sha256": "1c2ec720dec0a592d357e1f5646191021cb260609e2ba0faab4a8649d55d37c5"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/refined_verilog_templates/axi4_lite_csr_shell.vinc",
+      "sha256": "0e8023094d55a3cd03c255d4f31895fbeb69307fd28ccb275db9feb9fa1a93bb"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/refined_verilog_templates/axi_interconnect_port_groups.vinc",
+      "sha256": "e2e1e9c4937609a4d31e52631aa4fd167bb1133c823cb2a08f9625d0093095ce"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/refined_verilog_templates/axis_ready_valid_slice.vinc",
+      "sha256": "6af91c4f45ce90a37f853bb45d9c2f2801d5961601f9bf7500e81fe438672132"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/refined_verilog_templates/catalog.json",
+      "sha256": "cff3531e51bf34c8a588eeeda8d25c8adb146ca151bf4b6ca8cf278e9ed1cd38"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/refined_verilog_templates/conv_load_store_pipeline.vinc",
+      "sha256": "62927a1abdda4fa2e7adc99483d008ea1aa7db8dee074df5577bb56abee67994"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/refined_verilog_templates/counter_state_bridge.vinc",
+      "sha256": "c69cad835a280d64141f83994b29997932024f1bd912f340877e658330220580"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/refined_verilog_templates/equivalence_wrapper_probe.vinc",
+      "sha256": "80c06ac029ba3734b0fe65b988fdb89b944390468d3f0aa16da5f3a7c2263d3a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/refined_verilog_templates/fsm_state_transition.vinc",
+      "sha256": "29fa86bf575af605297202b14be891d476ff0c7d64211d2c22ddd3858731eb50"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/refined_verilog_templates/phase_output_registering.vinc",
+      "sha256": "97508df397a6a5b6b36a342bfdb0de2d4f13913a56a09d3d54d2dd2f6676365c"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/refined_verilog_templates/wrapper_top_stitching.vinc",
+      "sha256": "80686f19a795ba4e8ad485689328f12f97de92eab66815789348498a51f4c2a6"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/style_templates/rtl_bus_grouping.tpl",
+      "sha256": "19f309cb75afa352aad5a5f2e20a9c39bfd7fff68d71f3f4cd3e08accbf8e6ba"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/style_templates/rtl_fsm.tpl",
+      "sha256": "4f83a07fee7820df286c4c3c6cdc816981442684203e2ec019e4b503051331f1"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/style_templates/rtl_header_bilingual.tpl",
+      "sha256": "27c9c851880cd6904720222b393a0cbcaf259b3eeac96bb05d73a4084793f1b1"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/style_templates/rtl_instantiation.tpl",
+      "sha256": "bf7a8cfd562c302a42356b36fe35a4f5eaf93d02ea0505dfadec1487b019e10d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/style_templates/rtl_region_order.tpl",
+      "sha256": "4decd620b9c0b1e79c27703e2fc3fbe14fcece583b37dcae590c6017eee593cb"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/catalog.json",
+      "sha256": "68662ba307726eb2293f2ca4e0f686f7d5e75e5430362f994edc0a6a00321958"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/jesd_adc/constraints/system_constr.xdc",
+      "sha256": "d9da29d36e3579a6d879dd00332099e7af15c5aa0413bd5462acdf3ad6fba23e"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/jesd_adc/manifest.json",
+      "sha256": "143a510dd248157f6399fabaa6062c8d4f81f9dcee925f5b4958835827346c49"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/jesd_adc/README.md",
+      "sha256": "5d5dba466289aa7d7f66c63c43ce39a2bd0b137e91026dc3275f9b1d118110ba"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/jesd_adc/tcl/common_bd.tcl",
+      "sha256": "075ad191b39b9e4c25d70eb8954108abf411b1f964bcc0860f6d8268dbc2af25"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/jesd_adc/tcl/system_bd.tcl",
+      "sha256": "16ebbf331a15ce919fb34d117daf65efe6027a00ca5e04f4f92b6cf73c70b4fd"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/jesd_adc/tcl/system_project.tcl",
+      "sha256": "c17311aab331cff9e6a71b97dcda97a75ecc45517a4be9c4cbe0f660515fe8e3"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/jesd_adc/verilog/system_top.v",
+      "sha256": "08914fac553a921b2f2ce05b01ef525e2e12621e52116a0882d7e3ef32923e26"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/jesd_dac/constraints/system_constr.xdc",
+      "sha256": "3f9899f14d08a87a320fee6f5985187f4426c21729f38bcdc672e6e367561ec3"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/jesd_dac/manifest.json",
+      "sha256": "d5df6e07164deab93383a6b59a9c39f2d04a294c640e2e735a623a712c6a3f79"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/jesd_dac/README.md",
+      "sha256": "ee5a012c6f1bed70c2c15c050d72914bc69848a1aa544a778980e6c38efda2d6"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/jesd_dac/tcl/common_bd.tcl",
+      "sha256": "0fd1c1ca28d334ab19ce2c436ec8daddf8345908d69626df1150dbff1e5aa117"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/jesd_dac/tcl/system_bd.tcl",
+      "sha256": "9e860637fab18b11047314d07b74beb007f0c10962872f1f377615970f66d7ec"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/jesd_dac/tcl/system_project.tcl",
+      "sha256": "34c40b8477d7219f735059e756d5950e7da6f4c9d9f6122c2ebc5f968857ec38"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/jesd_dac/verilog/system_top.v",
+      "sha256": "b74e49756fdb86adf9dad08563105f0783e47776e07996dd6f12b82e0963742a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/mxfe_mixed/constraints/system_constr.xdc",
+      "sha256": "afaae4480035249ff3425605ec99925e9b14421d46bd8257053f67955be1d2ae"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/mxfe_mixed/manifest.json",
+      "sha256": "bb2a122f77a1c7f911bb7fdfb10c6adbfeffebce4601d51357168098a28fcd2b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/mxfe_mixed/README.md",
+      "sha256": "6425d239008b26aca42e7204c6fdd92f50e0500fc97df800a81ebfc260d26490"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/mxfe_mixed/tcl/common_bd.tcl",
+      "sha256": "82c94fa22f67f47310a7e8f41d8f0966cade5b2eab15956da374112cf1e8a426"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/mxfe_mixed/tcl/system_bd.tcl",
+      "sha256": "176549dcff80d36b392ad34a805a4283c966cc3de425b38bec95fa5c09e33dd3"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/mxfe_mixed/tcl/system_project.tcl",
+      "sha256": "b41d136e6c72051305e4339433bdd23f7ee5fa2fc349f9c265527a19e8c37a8c"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/mxfe_mixed/verilog/system_top.v",
+      "sha256": "a65afe8d34ee50a4b334a093ad74ecaa85dd5c4dcbbdddb4fe37178550cbdad7"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/spi_adc/constraints/system_constr.xdc",
+      "sha256": "3c5bac84d590727e7da2179ff01f8314bb383789657e19327bfead06638801c7"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/spi_adc/manifest.json",
+      "sha256": "a68c6c1db75553280656dfa3287890952ebafbd12ff0dcf127b39cf690ee76e6"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/spi_adc/README.md",
+      "sha256": "60255715c50f986a65ce81a8d560d16b635c1075502d68ee3b8e771350722548"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/spi_adc/tcl/common_bd.tcl",
+      "sha256": "10c84217071d06583798af1d405f0cd9a09dab4b9bd0a0895513dc1cf6a41b33"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/spi_adc/tcl/system_bd.tcl",
+      "sha256": "3743c6246c0dabaeb167744d4ca580cc215b23cd249aed01686a906e21040a15"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/spi_adc/tcl/system_project.tcl",
+      "sha256": "655f81409d059e488c9a7a6952551588f3cc262e4da118d058d4853fbe69472e"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/spi_adc/verilog/system_top.v",
+      "sha256": "027f8914e29d1fd74ceb191d139700d0d8351b8a3cdf74ecc7c1d73f57057d84"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/spi_dac/constraints/system_constr.xdc",
+      "sha256": "07b33ba9ea89c9bfbf608890da953e7e4a01cadce0fbf2655bd065714176bf9a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/spi_dac/manifest.json",
+      "sha256": "c4226925234c2c73405df9dbc2d6230700eced50cbb47a889ded436a1375709a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/spi_dac/README.md",
+      "sha256": "e7b0d8b2b4412f76a005a350a6ecb912f4d20f47a114284786e8e4908c0f2560"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/spi_dac/tcl/common_bd.tcl",
+      "sha256": "807a799d1841e08bad48ced69aff5c7050496b5a3b7f59f117942b128b62b004"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/spi_dac/tcl/system_bd.tcl",
+      "sha256": "c02e0585fee36eec97d94e63302f51ce30b2eac210042dd43c49939272f48f67"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/spi_dac/tcl/system_project.tcl",
+      "sha256": "056a4a2d353ca0caf3c77867733761336cba93ed10db27d1c11a86eb7293241a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/assets/use_case_templates/spi_dac/verilog/system_top.v",
+      "sha256": "871d2b77d87a05d6ab98d0b6663bc78d6afb8bdac7593b18ee052830be619381"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/config/defaults.json",
+      "sha256": "26409455945e1a1edc2c87406aefccec73128c5fd67bbb6a888d36afdd64f2ad"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/ENGINEERING_DESIGN_GOALS.md",
+      "sha256": "bf062717da90c2581f3e84d0f6f9f02481413021b295ec112a201199b8a5e6b8"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/evals/evals.json",
+      "sha256": "dba74e48b8830dfc6e69d16340b74bc1665cc2311519893a1fb56135945081e4"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/integration/__init__.py",
+      "sha256": "5dbcaa94dc20718dc81affc643c4c3618265ef1a98484d4358be8f1c8fd9623a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/integration/verilog_adapter.py",
+      "sha256": "fcfc3cfdcfd28fbe8095f278881f009436cd0f433e007433ed4ca6abba3bef83"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/references/asic-verilog-quality.md",
+      "sha256": "702a5ec18aefadee2a66acb70549987338e0be74083427f72b352517e1612df6"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/references/capability-distillation-checklist.md",
+      "sha256": "9624d45257c62b28eebbf448546489af35cd487187b9b3dd64c67d44f3d5234d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/references/configuration.md",
+      "sha256": "eef87048f222574ad37d236c90c0fbdc62e0b9d44b6e9b613c20da355a72e130"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/references/erie-ref-style.md",
+      "sha256": "a7c2c06977b8faf43695fdb6161031f894533035736544eed0ecd6c9fa4476a2"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/references/integration.md",
+      "sha256": "1de34574e24844a9b3edfebc1098be80621f19d2f51d646d27337ada22a90a98"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/references/lint-checklist.md",
+      "sha256": "c9c15b43e8803566b3c9edf591c8cbb77c4198259f495e202609cefbda03f4e1"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/references/skill-standards.md",
+      "sha256": "d2adcdd990d6232eed9e5cfcc6f3337dc91ed21c67e79376955ad99868757f4a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/references/testbench-patterns.md",
+      "sha256": "321025efacc63c2d6180c0d362a40bc3333faf8e61ecdac16dd2299be0ae3922"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/references/verilog-comment-placement.md",
+      "sha256": "f70905e7718743648f35391cbbb0537458d9e5ba60a9a80e678cbab0ab5e2956"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/references/verilog-template-patterns.md",
+      "sha256": "e9dfc71bfaab54fd9aaca50ae5a70cd3ead67e777462988bd07a960c90c1b07b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/references/workflow-contracts.md",
+      "sha256": "729012e604dd72157e34ffc432f612797f450976ec587269bef8e4cdbe193315"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/RELEASE_RECEIPT.json",
+      "sha256": "37d747473c63a2f4f8b5d4edf5a9f0bb4b9ed50f71d5a6086edb617dfb24291b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/__init__.py",
+      "sha256": "b69f516fba64903cadae08cfae6712d529b1f1dd5016bf5663299d739149985c"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/__init__.py",
+      "sha256": "33deb5488e8ae7606f92e96cb88b90efed37fc603377906f755c4eb8f29945fd"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/__main__.py",
+      "sha256": "fd860037dd55b06637cd907eaf6efa4ba12f072e134d3393d8bde0e390758626"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/artifact_graph.py",
+      "sha256": "98a2e9f1b29791bad6c2395a71f9127d8fcadf1e8cd6fa3dfc978f84c103eae0"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/audit.py",
+      "sha256": "dc132777cfd1f20b2489277c833d50e24c8a581113a3e46ded37b9f028bf3851"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/cli.py",
+      "sha256": "8288d6ff70bb3217bd358a721dd4aa959b10fb50fe775f7620046eb88cd95f18"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/comment_placement.py",
+      "sha256": "f2a3e2cb4faa9b56ca6558216a4c12cbcbc9e936deb1aa27ad562b043131e2fd"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/config.py",
+      "sha256": "e842df10357f6138550b43dd26c44ca1df0f97578b98bad2a41f25ea8e075527"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/eval_suite.py",
+      "sha256": "38db87dff1c5d443e0afd0e9856ecc8926a7015ee84bc61246b86e1f0f83ae48"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/evaluation.py",
+      "sha256": "4c42600e16cefd7bf58b63a05377190debda1bf84c8dd0036d9dbc82b8e9610d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/evidence.py",
+      "sha256": "34fed4111913cffdd069083d3a49aa3c31dd4295b451fb5f98a09875db93178b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/existing_rtl.py",
+      "sha256": "9809915ea7af19a7b2f9ede5647edc02885c4d0a2cae8644effbdcd88f8d8bca"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/existing_rtl_refinement.py",
+      "sha256": "8edbad543112d777abf117fd7a1930320b7951c8377b30b391edaede44284170"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/extractor.py",
+      "sha256": "54948d79298267547efedc798a86b1132f5c98d896fc26f1fe55e075ea9ae17b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/interface_contract.py",
+      "sha256": "c960cb4ca19d19c280fcf2a8edef849fc8456ad4d9fafd8c86b6fc91eb15be2b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/interface_templates.py",
+      "sha256": "d7c98207012e97c4e41bedff017dd24a413f03eb0809bf15c039bed10f49db95"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/intervention.py",
+      "sha256": "ca9c17acc85bfaf1c7d130e5425fecae88b8990663503aacd2f725d3360af9a5"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/model_provider.py",
+      "sha256": "a0582d02cf2f614c6fe449ed186638d88f6998cea07af075f304ce18696da038"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/optimizer.py",
+      "sha256": "b46be071a2b68c7518d5be74af122fabaaa40fc868212622bc325aa8447d5004"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/planning.py",
+      "sha256": "807be8e1c5f8230b69db7d57a4d0728453b1c39f14027f46d95225b477c67b20"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/prompt.py",
+      "sha256": "b9336802e09b06e33414aff8c04c483c508fd7b2de9a1bcd39d87fb3459493c0"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/reference_contract.py",
+      "sha256": "3d9165c4f6b1716dcdc49a86dffddee1147dfd50c020398a1af9668ab64d63d4"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/refined_templates.py",
+      "sha256": "d214797d7bc8fbce090e9ee0ca09300d4900123fbd782d112f4fc7f7a10b487d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/reflection.py",
+      "sha256": "4a685fb8d0d7b97c6dc914b40262bc1fc1a37de183a955908ac9e3be51731f9e"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/remote_selection.py",
+      "sha256": "c8897834eb663ddd57486810946a2ce8e8d3a632a6ebcce85e70586b91b84380"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/requirements.py",
+      "sha256": "5ace1b21dc92ef0af371a7f3174f2e55b9458e69bc3faeda1e858b85869b9f8f"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/skill_effectiveness.py",
+      "sha256": "926c7d7e2c24296c49f1e0c7c1bd18f617cb1c770fcfcf03603affea3a7230c7"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/spec.py",
+      "sha256": "96b714d09992ee7a27f619f1f44443a8c461476c2d5473abf754d4776bfd413e"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/static_lint.py",
+      "sha256": "a54de8a8c2d5e22463170520ece923f15da537bc9d61f3c5a31e8dd8ae0bde45"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/trace.py",
+      "sha256": "8080f1e93c6bbcb3da3f4a37e378f16a9080851945f04c6e99360641258c519c"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/use_case_templates.py",
+      "sha256": "75c9f90a52db0edb8f9d51326dc1ebd0215959a69175c814a3c346241d4b8b21"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/validation.py",
+      "sha256": "75bfe6d27b227ad785315981b4c9997b266e49026b9bb67526c7c0e6a7c93299"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/vectors.py",
+      "sha256": "19b2b7b9f0f66d65be868ef829fd25d0516be20e6a8fb9fa3845cefb4ab814e0"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/verifier.py",
+      "sha256": "a13309306a02abc65b646c9d572b3f28a770b7d8a78cc2d231badbe8fa25970d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/verify_repair.py",
+      "sha256": "fcc6e2f6116d3387b5ead7c0310d60df73c48eb253f8c7fd38190849cc00e1f4"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/verify_reporting.py",
+      "sha256": "33d0d116ba89147a66a808261ce72d6729bdc5a8edd745c9ab5f32136f70cec8"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/workflow.py",
+      "sha256": "dec3292e55569a904dd2a3db09b51445e47eb0ca2a238616656c08b109aa17e2"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/runtime/verilog_generator/workspace.py",
+      "sha256": "8e7cbc8eef66462b2cf9863f437b92109e462ac9a50f95c1d138eafec3d786ef"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/scripts/manage_skill_dependencies.py",
+      "sha256": "40ba63fed0ee9ca4abe00dcfc2b506c0306be43312710aaf61c803c6529d8f3b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/scripts/preflight_verilog_toolchain.py",
+      "sha256": "b7d482b7f4ffe1998a57bd11d3884e49ceb8adb2cae1c01b8db97a076e142f98"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/scripts/remote_validate_verilog_skill.py",
+      "sha256": "b6dec43b70963b5f1f5d02ab126ce26e32b3f6c40947589f7505d28fcaee107f"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/scripts/tb_generator.py",
+      "sha256": "96727bbdddff96a394b03979c7acbef51ae7d7924bc173ba76b7978fbf0e7228"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/scripts/validate_verilog_skill.py",
+      "sha256": "8090eab3d84bfe80df21f5fed6daa8574a61b308bfd2ab5e1772809a2b16e211"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/scripts/verilog_lint.py",
+      "sha256": "70905290d2f935a688616c8ac74f5897f36257590053aebfb9cb7082f4422afc"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/SKILL.md",
+      "sha256": "3023a8e8494632b6ec5352f5c42912c3024dd0e8522ad4237b9b76fd1ff04f18"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4/VERSION",
+      "sha256": "3db2ab78d48279f3a353299b0ef979cc4fac4e7c28c92e46ecb666001479a3b6"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.4.zip",
+      "sha256": "ecd1dbfec48ecc52222c93f0ca10a1a3ba342fa531103d2302a740fcd3abf74f"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/agents/openai.yaml",
+      "sha256": "2db29d7d92bc943d771f94ab21a25d0487b55ce8cdff188c0c0f04c736c2d2f5"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/existing_rtl/fsm_without_default.v",
+      "sha256": "c8b1738c51766ff46cbec1cd35b7c800e074f05cc87eb5fef49f9f9ef0c56fe7"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/existing_rtl/fsm_without_default_spec.md",
+      "sha256": "cb39f443c5563cb14769a83ef9b7c48e80890e1c9eabc16656759541f56aef7f"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/existing_rtl/leaf_counter.v",
+      "sha256": "3243828756e0adc071e348d37274456b6d9a3265cb8a417986e669f3c20dcb30"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/existing_rtl/missing_output_register.v",
+      "sha256": "9653209e64d55fd39fc324d6c3e0fd87dacfa55707b63f7d770b88a600695ced"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/existing_rtl/missing_output_register_spec.md",
+      "sha256": "0978516905dc255fb09a7dd660f1bf0ba5a09d5d5a21b2b0bd87bc537cf7b634"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/existing_rtl/ready_valid_slice.v",
+      "sha256": "750aad9b64ac459cd38c7a6f8d9f59afa114266175df5eff29da84356ffe97dd"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/existing_rtl/ready_valid_slice_spec.md",
+      "sha256": "ae3b122e8e5c08cc3f297a070cf900e4c8962df9de0ef2eacf066a5b9c8efacf"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/existing_rtl/ready_valid_slice_tb.v",
+      "sha256": "e45dae4a9d1fadcee662c6e98177cf16e47ef9b88826c66021eb3d0569449d4a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/existing_rtl/reset_gap_counter.v",
+      "sha256": "6eeb794cc94e109136fb61536f432c586477451ebcc4e4d8b5cddb0b40d850c4"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/existing_rtl/reset_gap_counter_spec.md",
+      "sha256": "6d94683d9fc9be077ceafae11141f2b88be5778306c6b36918f359ce304e790d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/existing_rtl/top_counter.v",
+      "sha256": "207fbce232ac0104bf7e1872317140f28debaad2c077ec77b852dc85a4449c06"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/existing_rtl/traffic_light.v",
+      "sha256": "852d839f90996df3c5da134294c5e9d7e2cdf0d343a36d29784eccc746c0e293"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/existing_rtl/traffic_light_spec.md",
+      "sha256": "967e8ea1f393a6cc0412d3ddff5eb6273aa741035f4313a020aff114edc8b035"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/refined_verilog_templates/axi4_lite_csr.json",
+      "sha256": "78b35bb323e98bc6e8a6842171101c5fd0ad357c89272c354369977c7f3ee01a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/refined_verilog_templates/axi_interconnect_dma.json",
+      "sha256": "2608b550570f8404989f61d075b0eabce47a00af8545ed39609fbb1ecac63f9d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/refined_verilog_templates/axis_ready_valid.json",
+      "sha256": "3bbf8130fab44fbffa0f617c6671742d6ba331538c6a9a6f966d3a10a3309556"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/refined_verilog_templates/conv_load_store.json",
+      "sha256": "c96fed4249a6d99aa1f118bbc6a300bfdd565be24de4a16de2453094551dd1fd"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/remote_fixtures/comb_parity_mux/generated/rtl/comb_parity_mux.v",
+      "sha256": "2652fcae1b9c0db2f55dc8792f745eced6ac9817d3a922e2307bc558fa8adc2e"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/remote_fixtures/comb_parity_mux/generated/tb/comb_parity_mux_tb.v",
+      "sha256": "ee04dab341d3e1d3c8cae63a7d746ba54b7b388552b0fd0fb45bfb304bce136d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/remote_fixtures/comb_parity_mux/spec.json",
+      "sha256": "f2c4ad026e348104e15ff12b267dc51c12b90be90ed446bcf1173b7d5e1614f0"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/remote_fixtures/pipeline_delay/generated/rtl/pipeline_delay.v",
+      "sha256": "1d921eb4a5d1ee27ae369d3d8333136533f6ab929e896cf96797d072652b7f06"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/remote_fixtures/pipeline_delay/generated/tb/pipeline_delay_tb.v",
+      "sha256": "381af1bb15042c8b98e17b220f854c94633ffa07d98f8cfecc8a5077f8a83297"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/remote_fixtures/pipeline_delay/spec.json",
+      "sha256": "5068ef26fb5d7862924a010f84ceecb3284f7158c57c5590ca09581c7f312532"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/remote_fixtures/ready_valid_slice/generated/rtl/ready_valid_slice.v",
+      "sha256": "484a5e55bb7304b348bc996e8b104c7304a2cbd9ad264a065c011b896416d0e8"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/remote_fixtures/ready_valid_slice/generated/tb/ready_valid_slice_tb.v",
+      "sha256": "3141ce46069b8b4453d9326967cecbd09ac685b0fb505d710c70eaf957c9704b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/remote_fixtures/ready_valid_slice/spec.json",
+      "sha256": "b9ff9a40d4a7be80c84395ec5fdf8db8e0f1debecddebc4d50fa034e5bd185c4"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/rtl_erie_verilog_spec.json",
+      "sha256": "4af03d09ac7aa3c107bf7dc65b69be963ba24d82d48a498ad1d2aa9ed7428114"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/use_case_templates/jesd_adc.json",
+      "sha256": "096699b59e97bf31896a701817ff8326f5643d6c9d07f310fd1692b0e6a48906"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/use_case_templates/jesd_dac.json",
+      "sha256": "ac0aa338914b5e5fff3c75056dafd9a28344495e3317ca795ce1e0d9e3434286"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/use_case_templates/mxfe_mixed.json",
+      "sha256": "4b4a422120d8d1985654205315553780e0e4c1b5a31cb02098b1e3caf9e7f7d6"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/use_case_templates/spi_adc.json",
+      "sha256": "b7a3aa514816ff9c989b4b64d0cdfd816e0a3cafafae0c0bf96f7961be9ad450"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/examples/use_case_templates/spi_dac.json",
+      "sha256": "e27ef7850dd1167650afc8b7fb16d01ec683358498b954b5652eeca3de3c5007"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/interface_templates/ahb_lite_config.vinc",
+      "sha256": "c306426e81c3705f097a2a1d4c76edb2e6d5806445b8b99eef304f860e9fe1e3"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/interface_templates/apb_config.vinc",
+      "sha256": "6d04576486c96d068f71fef51b7ebc662d54c30c48d2e6752f67763962cf96b2"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/interface_templates/axi4_full_master.vinc",
+      "sha256": "61dc4834b18bc21a968fa466d1154d5875fbb4b6683f065db994c443c96190be"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/interface_templates/axi4_full_slave.vinc",
+      "sha256": "d076706fc7969b0980fd343ea00512b81e27f08d8b3ee006070b2c22e3328084"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/interface_templates/axi4_lite_config.vinc",
+      "sha256": "4b161b23eccef1375739df98f4aea8d1a69114c0de51df74af5ecdc918271e31"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/interface_templates/axi_stream_duplex.vinc",
+      "sha256": "2bbb0831b60ad2cd5472b0cbb2075e5c2234d57767d16a0e42aa0daa69a49e38"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/interface_templates/catalog.json",
+      "sha256": "1c2ec720dec0a592d357e1f5646191021cb260609e2ba0faab4a8649d55d37c5"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/refined_verilog_templates/axi4_lite_csr_shell.vinc",
+      "sha256": "0e8023094d55a3cd03c255d4f31895fbeb69307fd28ccb275db9feb9fa1a93bb"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/refined_verilog_templates/axi_interconnect_port_groups.vinc",
+      "sha256": "e2e1e9c4937609a4d31e52631aa4fd167bb1133c823cb2a08f9625d0093095ce"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/refined_verilog_templates/axis_ready_valid_slice.vinc",
+      "sha256": "6af91c4f45ce90a37f853bb45d9c2f2801d5961601f9bf7500e81fe438672132"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/refined_verilog_templates/catalog.json",
+      "sha256": "cff3531e51bf34c8a588eeeda8d25c8adb146ca151bf4b6ca8cf278e9ed1cd38"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/refined_verilog_templates/conv_load_store_pipeline.vinc",
+      "sha256": "62927a1abdda4fa2e7adc99483d008ea1aa7db8dee074df5577bb56abee67994"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/refined_verilog_templates/counter_state_bridge.vinc",
+      "sha256": "c69cad835a280d64141f83994b29997932024f1bd912f340877e658330220580"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/refined_verilog_templates/equivalence_wrapper_probe.vinc",
+      "sha256": "80c06ac029ba3734b0fe65b988fdb89b944390468d3f0aa16da5f3a7c2263d3a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/refined_verilog_templates/fsm_state_transition.vinc",
+      "sha256": "29fa86bf575af605297202b14be891d476ff0c7d64211d2c22ddd3858731eb50"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/refined_verilog_templates/phase_output_registering.vinc",
+      "sha256": "97508df397a6a5b6b36a342bfdb0de2d4f13913a56a09d3d54d2dd2f6676365c"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/refined_verilog_templates/wrapper_top_stitching.vinc",
+      "sha256": "80686f19a795ba4e8ad485689328f12f97de92eab66815789348498a51f4c2a6"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/style_templates/rtl_bus_grouping.tpl",
+      "sha256": "19f309cb75afa352aad5a5f2e20a9c39bfd7fff68d71f3f4cd3e08accbf8e6ba"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/style_templates/rtl_fsm.tpl",
+      "sha256": "4f83a07fee7820df286c4c3c6cdc816981442684203e2ec019e4b503051331f1"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/style_templates/rtl_header_bilingual.tpl",
+      "sha256": "27c9c851880cd6904720222b393a0cbcaf259b3eeac96bb05d73a4084793f1b1"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/style_templates/rtl_instantiation.tpl",
+      "sha256": "bf7a8cfd562c302a42356b36fe35a4f5eaf93d02ea0505dfadec1487b019e10d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/style_templates/rtl_region_order.tpl",
+      "sha256": "4decd620b9c0b1e79c27703e2fc3fbe14fcece583b37dcae590c6017eee593cb"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/catalog.json",
+      "sha256": "68662ba307726eb2293f2ca4e0f686f7d5e75e5430362f994edc0a6a00321958"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/jesd_adc/constraints/system_constr.xdc",
+      "sha256": "d9da29d36e3579a6d879dd00332099e7af15c5aa0413bd5462acdf3ad6fba23e"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/jesd_adc/manifest.json",
+      "sha256": "143a510dd248157f6399fabaa6062c8d4f81f9dcee925f5b4958835827346c49"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/jesd_adc/README.md",
+      "sha256": "5d5dba466289aa7d7f66c63c43ce39a2bd0b137e91026dc3275f9b1d118110ba"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/jesd_adc/tcl/common_bd.tcl",
+      "sha256": "075ad191b39b9e4c25d70eb8954108abf411b1f964bcc0860f6d8268dbc2af25"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/jesd_adc/tcl/system_bd.tcl",
+      "sha256": "16ebbf331a15ce919fb34d117daf65efe6027a00ca5e04f4f92b6cf73c70b4fd"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/jesd_adc/tcl/system_project.tcl",
+      "sha256": "c17311aab331cff9e6a71b97dcda97a75ecc45517a4be9c4cbe0f660515fe8e3"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/jesd_adc/verilog/system_top.v",
+      "sha256": "08914fac553a921b2f2ce05b01ef525e2e12621e52116a0882d7e3ef32923e26"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/jesd_dac/constraints/system_constr.xdc",
+      "sha256": "3f9899f14d08a87a320fee6f5985187f4426c21729f38bcdc672e6e367561ec3"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/jesd_dac/manifest.json",
+      "sha256": "d5df6e07164deab93383a6b59a9c39f2d04a294c640e2e735a623a712c6a3f79"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/jesd_dac/README.md",
+      "sha256": "ee5a012c6f1bed70c2c15c050d72914bc69848a1aa544a778980e6c38efda2d6"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/jesd_dac/tcl/common_bd.tcl",
+      "sha256": "0fd1c1ca28d334ab19ce2c436ec8daddf8345908d69626df1150dbff1e5aa117"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/jesd_dac/tcl/system_bd.tcl",
+      "sha256": "9e860637fab18b11047314d07b74beb007f0c10962872f1f377615970f66d7ec"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/jesd_dac/tcl/system_project.tcl",
+      "sha256": "34c40b8477d7219f735059e756d5950e7da6f4c9d9f6122c2ebc5f968857ec38"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/jesd_dac/verilog/system_top.v",
+      "sha256": "b74e49756fdb86adf9dad08563105f0783e47776e07996dd6f12b82e0963742a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/mxfe_mixed/constraints/system_constr.xdc",
+      "sha256": "afaae4480035249ff3425605ec99925e9b14421d46bd8257053f67955be1d2ae"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/mxfe_mixed/manifest.json",
+      "sha256": "bb2a122f77a1c7f911bb7fdfb10c6adbfeffebce4601d51357168098a28fcd2b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/mxfe_mixed/README.md",
+      "sha256": "6425d239008b26aca42e7204c6fdd92f50e0500fc97df800a81ebfc260d26490"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/mxfe_mixed/tcl/common_bd.tcl",
+      "sha256": "82c94fa22f67f47310a7e8f41d8f0966cade5b2eab15956da374112cf1e8a426"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/mxfe_mixed/tcl/system_bd.tcl",
+      "sha256": "176549dcff80d36b392ad34a805a4283c966cc3de425b38bec95fa5c09e33dd3"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/mxfe_mixed/tcl/system_project.tcl",
+      "sha256": "b41d136e6c72051305e4339433bdd23f7ee5fa2fc349f9c265527a19e8c37a8c"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/mxfe_mixed/verilog/system_top.v",
+      "sha256": "a65afe8d34ee50a4b334a093ad74ecaa85dd5c4dcbbdddb4fe37178550cbdad7"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/spi_adc/constraints/system_constr.xdc",
+      "sha256": "3c5bac84d590727e7da2179ff01f8314bb383789657e19327bfead06638801c7"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/spi_adc/manifest.json",
+      "sha256": "a68c6c1db75553280656dfa3287890952ebafbd12ff0dcf127b39cf690ee76e6"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/spi_adc/README.md",
+      "sha256": "60255715c50f986a65ce81a8d560d16b635c1075502d68ee3b8e771350722548"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/spi_adc/tcl/common_bd.tcl",
+      "sha256": "10c84217071d06583798af1d405f0cd9a09dab4b9bd0a0895513dc1cf6a41b33"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/spi_adc/tcl/system_bd.tcl",
+      "sha256": "3743c6246c0dabaeb167744d4ca580cc215b23cd249aed01686a906e21040a15"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/spi_adc/tcl/system_project.tcl",
+      "sha256": "655f81409d059e488c9a7a6952551588f3cc262e4da118d058d4853fbe69472e"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/spi_adc/verilog/system_top.v",
+      "sha256": "027f8914e29d1fd74ceb191d139700d0d8351b8a3cdf74ecc7c1d73f57057d84"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/spi_dac/constraints/system_constr.xdc",
+      "sha256": "07b33ba9ea89c9bfbf608890da953e7e4a01cadce0fbf2655bd065714176bf9a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/spi_dac/manifest.json",
+      "sha256": "c4226925234c2c73405df9dbc2d6230700eced50cbb47a889ded436a1375709a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/spi_dac/README.md",
+      "sha256": "e7b0d8b2b4412f76a005a350a6ecb912f4d20f47a114284786e8e4908c0f2560"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/spi_dac/tcl/common_bd.tcl",
+      "sha256": "807a799d1841e08bad48ced69aff5c7050496b5a3b7f59f117942b128b62b004"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/spi_dac/tcl/system_bd.tcl",
+      "sha256": "c02e0585fee36eec97d94e63302f51ce30b2eac210042dd43c49939272f48f67"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/spi_dac/tcl/system_project.tcl",
+      "sha256": "056a4a2d353ca0caf3c77867733761336cba93ed10db27d1c11a86eb7293241a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/assets/use_case_templates/spi_dac/verilog/system_top.v",
+      "sha256": "871d2b77d87a05d6ab98d0b6663bc78d6afb8bdac7593b18ee052830be619381"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/config/defaults.json",
+      "sha256": "59c2e6dfb9a7e57e45cfd2fa7416c18a8dd7b4a2f7342b44b7797857cdac92f0"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/ENGINEERING_DESIGN_GOALS.md",
+      "sha256": "eaeb85d518d7189ceb2ea906fd506c4cea2409020fbe8628093e32c07119972f"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/evals/evals.json",
+      "sha256": "e23ee0ae469f285b6a036d24bbb7e65d2c683d4b8332edba1aa529e495e01124"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/integration/__init__.py",
+      "sha256": "5dbcaa94dc20718dc81affc643c4c3618265ef1a98484d4358be8f1c8fd9623a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/integration/verilog_adapter.py",
+      "sha256": "c9192824673316d596a50d0655c59de79519535c5e729ca5ee4fb25eb5e863ed"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/references/asic-verilog-quality.md",
+      "sha256": "702a5ec18aefadee2a66acb70549987338e0be74083427f72b352517e1612df6"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/references/capability-distillation-checklist.md",
+      "sha256": "9624d45257c62b28eebbf448546489af35cd487187b9b3dd64c67d44f3d5234d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/references/configuration.md",
+      "sha256": "eef87048f222574ad37d236c90c0fbdc62e0b9d44b6e9b613c20da355a72e130"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/references/erie-ref-style.md",
+      "sha256": "a7c2c06977b8faf43695fdb6161031f894533035736544eed0ecd6c9fa4476a2"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/references/integration.md",
+      "sha256": "4bb6295b1e5b92e27146e9f694bb08f4d401ed01f4001a757ab678be4b96c745"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/references/lint-checklist.md",
+      "sha256": "c9c15b43e8803566b3c9edf591c8cbb77c4198259f495e202609cefbda03f4e1"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/references/skill-standards.md",
+      "sha256": "d2adcdd990d6232eed9e5cfcc6f3337dc91ed21c67e79376955ad99868757f4a"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/references/testbench-patterns.md",
+      "sha256": "321025efacc63c2d6180c0d362a40bc3333faf8e61ecdac16dd2299be0ae3922"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/references/verilog-comment-placement.md",
+      "sha256": "f70905e7718743648f35391cbbb0537458d9e5ba60a9a80e678cbab0ab5e2956"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/references/verilog-template-patterns.md",
+      "sha256": "e9dfc71bfaab54fd9aaca50ae5a70cd3ead67e777462988bd07a960c90c1b07b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/references/workflow-contracts.md",
+      "sha256": "729012e604dd72157e34ffc432f612797f450976ec587269bef8e4cdbe193315"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/RELEASE_RECEIPT.json",
+      "sha256": "b240ec73e49800835a94670eb0788ca1c302b5e7e5b7367a5da21332207194db"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/__init__.py",
+      "sha256": "b69f516fba64903cadae08cfae6712d529b1f1dd5016bf5663299d739149985c"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/__init__.py",
+      "sha256": "33deb5488e8ae7606f92e96cb88b90efed37fc603377906f755c4eb8f29945fd"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/__main__.py",
+      "sha256": "fd860037dd55b06637cd907eaf6efa4ba12f072e134d3393d8bde0e390758626"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/artifact_graph.py",
+      "sha256": "98a2e9f1b29791bad6c2395a71f9127d8fcadf1e8cd6fa3dfc978f84c103eae0"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/audit.py",
+      "sha256": "dc132777cfd1f20b2489277c833d50e24c8a581113a3e46ded37b9f028bf3851"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/cli.py",
+      "sha256": "0c170f26bdd45a395530725f71d108962c57f189e23ebe3966e020a076d45e03"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/comment_placement.py",
+      "sha256": "f2a3e2cb4faa9b56ca6558216a4c12cbcbc9e936deb1aa27ad562b043131e2fd"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/config.py",
+      "sha256": "e842df10357f6138550b43dd26c44ca1df0f97578b98bad2a41f25ea8e075527"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/eval_suite.py",
+      "sha256": "38db87dff1c5d443e0afd0e9856ecc8926a7015ee84bc61246b86e1f0f83ae48"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/evaluation.py",
+      "sha256": "4c42600e16cefd7bf58b63a05377190debda1bf84c8dd0036d9dbc82b8e9610d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/evidence.py",
+      "sha256": "34fed4111913cffdd069083d3a49aa3c31dd4295b451fb5f98a09875db93178b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/existing_rtl.py",
+      "sha256": "9809915ea7af19a7b2f9ede5647edc02885c4d0a2cae8644effbdcd88f8d8bca"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/existing_rtl_refinement.py",
+      "sha256": "8edbad543112d777abf117fd7a1930320b7951c8377b30b391edaede44284170"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/extractor.py",
+      "sha256": "54948d79298267547efedc798a86b1132f5c98d896fc26f1fe55e075ea9ae17b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/interface_contract.py",
+      "sha256": "c960cb4ca19d19c280fcf2a8edef849fc8456ad4d9fafd8c86b6fc91eb15be2b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/interface_templates.py",
+      "sha256": "d7c98207012e97c4e41bedff017dd24a413f03eb0809bf15c039bed10f49db95"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/intervention.py",
+      "sha256": "ca9c17acc85bfaf1c7d130e5425fecae88b8990663503aacd2f725d3360af9a5"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/model_provider.py",
+      "sha256": "569cd7c59597fdafd0807901115c3d78fe00362830f541a344fa9b17ca90c7c1"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/optimizer.py",
+      "sha256": "b46be071a2b68c7518d5be74af122fabaaa40fc868212622bc325aa8447d5004"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/planning.py",
+      "sha256": "807be8e1c5f8230b69db7d57a4d0728453b1c39f14027f46d95225b477c67b20"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/prompt.py",
+      "sha256": "b9336802e09b06e33414aff8c04c483c508fd7b2de9a1bcd39d87fb3459493c0"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/reference_contract.py",
+      "sha256": "3d9165c4f6b1716dcdc49a86dffddee1147dfd50c020398a1af9668ab64d63d4"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/refined_templates.py",
+      "sha256": "d214797d7bc8fbce090e9ee0ca09300d4900123fbd782d112f4fc7f7a10b487d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/reflection.py",
+      "sha256": "4a685fb8d0d7b97c6dc914b40262bc1fc1a37de183a955908ac9e3be51731f9e"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/remote_selection.py",
+      "sha256": "c8897834eb663ddd57486810946a2ce8e8d3a632a6ebcce85e70586b91b84380"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/requirements.py",
+      "sha256": "5ace1b21dc92ef0af371a7f3174f2e55b9458e69bc3faeda1e858b85869b9f8f"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/skill_effectiveness.py",
+      "sha256": "6a0f31595a3357339be10f1248715b70617049fb2a22b1986f53a548a399c3b8"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/spec.py",
+      "sha256": "96b714d09992ee7a27f619f1f44443a8c461476c2d5473abf754d4776bfd413e"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/static_lint.py",
+      "sha256": "a54de8a8c2d5e22463170520ece923f15da537bc9d61f3c5a31e8dd8ae0bde45"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/trace.py",
+      "sha256": "8080f1e93c6bbcb3da3f4a37e378f16a9080851945f04c6e99360641258c519c"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/use_case_templates.py",
+      "sha256": "75c9f90a52db0edb8f9d51326dc1ebd0215959a69175c814a3c346241d4b8b21"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/validation.py",
+      "sha256": "75bfe6d27b227ad785315981b4c9997b266e49026b9bb67526c7c0e6a7c93299"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/vectors.py",
+      "sha256": "19b2b7b9f0f66d65be868ef829fd25d0516be20e6a8fb9fa3845cefb4ab814e0"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/verifier.py",
+      "sha256": "a13309306a02abc65b646c9d572b3f28a770b7d8a78cc2d231badbe8fa25970d"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/verify_repair.py",
+      "sha256": "fcc6e2f6116d3387b5ead7c0310d60df73c48eb253f8c7fd38190849cc00e1f4"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/verify_reporting.py",
+      "sha256": "33d0d116ba89147a66a808261ce72d6729bdc5a8edd745c9ab5f32136f70cec8"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/workflow.py",
+      "sha256": "4bf8f2101e40fcafa40ef05050dc53df4322fee8d8aa0c455381515d8162eb21"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/runtime/verilog_generator/workspace.py",
+      "sha256": "8e7cbc8eef66462b2cf9863f437b92109e462ac9a50f95c1d138eafec3d786ef"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/scripts/manage_skill_dependencies.py",
+      "sha256": "40ba63fed0ee9ca4abe00dcfc2b506c0306be43312710aaf61c803c6529d8f3b"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/scripts/preflight_verilog_toolchain.py",
+      "sha256": "b7d482b7f4ffe1998a57bd11d3884e49ceb8adb2cae1c01b8db97a076e142f98"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/scripts/remote_validate_verilog_skill.py",
+      "sha256": "b6dec43b70963b5f1f5d02ab126ce26e32b3f6c40947589f7505d28fcaee107f"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/scripts/tb_generator.py",
+      "sha256": "96727bbdddff96a394b03979c7acbef51ae7d7924bc173ba76b7978fbf0e7228"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/scripts/validate_verilog_skill.py",
+      "sha256": "8090eab3d84bfe80df21f5fed6daa8574a61b308bfd2ab5e1772809a2b16e211"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/scripts/verilog_lint.py",
+      "sha256": "70905290d2f935a688616c8ac74f5897f36257590053aebfb9cb7082f4422afc"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/SKILL.md",
+      "sha256": "e445a6c9e965a0ff7948012a88edffa7ca1072c1111345c1cce9db853f5a8c20"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5/VERSION",
+      "sha256": "ed5be668eb3cf4f32cea4155e93a9595c3266883182ad7882b1b904b44161ac6"
+    },
+    {
+      "path": "dist/erie-verilog-generator-v0.2.5.zip",
+      "sha256": "be029ec734e6e2d5f61aa8792583dfd9fe4929d7d4cfc80b65832828faebb27f"
     }
   ]
 }

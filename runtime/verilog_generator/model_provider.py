@@ -8,7 +8,7 @@ import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, Sequence
+from typing import Any, Iterator, Protocol, Sequence
 
 from .vectors import VECTOR_HASH_TAG
 
@@ -42,9 +42,13 @@ class ModelProvider(Protocol):
     """Simple response-generation contract used by the workflow runner."""
 
     name: str
+    supports_streaming: bool
 
     def generate(self, prompt: str, context: GenerationContext) -> str:
         """Return a raw fenced-block model response."""
+
+    def generate_stream(self, prompt: str, context: GenerationContext) -> Iterator[str]:
+        """Yield response chunks for streaming-capable providers."""
 
 
 def build_model_provider(
@@ -68,6 +72,7 @@ def build_model_provider(
 
 class ManualModelProvider:
     name = "manual"
+    supports_streaming = False
 
     def generate(self, prompt: str, context: GenerationContext) -> str:
         del prompt
@@ -75,39 +80,21 @@ class ManualModelProvider:
             raise ManualResponseRequired(f"Manual provider expects a prepared response file at {context.response_path}.")
         return context.response_path.read_text(encoding="utf-8")
 
+    def generate_stream(self, prompt: str, context: GenerationContext) -> Iterator[str]:
+        yield self.generate(prompt, context)
+
 
 class CommandModelProvider:
     name = "command"
+    supports_streaming = True
 
     def __init__(self, command: str | Sequence[str], *, timeout_s: int = 120) -> None:
         self._command = _normalize_command(command)
         self._timeout_s = timeout_s
 
     def generate(self, prompt: str, context: GenerationContext) -> str:
-        env = os.environ.copy()
-        env.update(
-            {
-                "VERILOG_GEN_PROMPT_PATH": str(context.prompt_path),
-                "VERILOG_GEN_RESPONSE_PATH": str(context.response_path),
-                "VERILOG_GEN_STAGE": context.stage,
-                "VERILOG_GEN_ATTEMPT_ID": context.attempt_id,
-                "VERILOG_GEN_CONTEXT_JSON": json.dumps(
-                    {
-                        "attempt_id": context.attempt_id,
-                        "stage": context.stage,
-                        "prompt_path": str(context.prompt_path),
-                        "response_path": str(context.response_path),
-                        "run_dir": str(context.run_dir),
-                        "attempt_dir": str(context.attempt_dir),
-                        "target": "rtl",
-                        "name": context.spec.get("name"),
-                        "manifest": context.manifest,
-                    },
-                    ensure_ascii=False,
-                ),
-            }
-        )
-        command = [_expand_part(part, context) for part in self._command]
+        env = _command_env(context)
+        command = _expanded_command(self._command, context)
         try:
             result = subprocess.run(
                 command,
@@ -133,9 +120,64 @@ class CommandModelProvider:
             return context.response_path.read_text(encoding="utf-8")
         raise ModelProviderError("Command provider produced no stdout and did not write the expected response file.")
 
+    def generate_stream(self, prompt: str, context: GenerationContext) -> Iterator[str]:
+        env = _command_env(context)
+        command = _expanded_command(self._command, context)
+        process: subprocess.Popen[str] | None = None
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=context.run_dir,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+            )
+        except OSError as exc:
+            raise ModelProviderError(f"Command provider failed to start: {exc}") from exc
+
+        if process.stdin is not None:
+            process.stdin.write(prompt)
+            process.stdin.close()
+
+        chunk_count = 0
+        try:
+            assert process.stdout is not None
+            while True:
+                chunk = process.stdout.read(4096)
+                if not chunk:
+                    break
+                chunk_count += 1
+                yield chunk
+            return_code = process.wait(timeout=self._timeout_s)
+        except subprocess.TimeoutExpired as exc:
+            process.kill()
+            raise ModelProviderError(f"Command provider timed out after {self._timeout_s}s.") from exc
+        try:
+            stderr_text = ""
+            if process.stderr is not None:
+                stderr_text = process.stderr.read().strip()
+            if return_code != 0:
+                detail = stderr_text.splitlines()[0] if stderr_text else f"exit code {return_code}"
+                raise ModelProviderError(f"Command provider failed: {detail}")
+            if chunk_count == 0 and context.response_path.exists():
+                yield context.response_path.read_text(encoding="utf-8")
+                return
+            if chunk_count == 0:
+                raise ModelProviderError("Command provider produced no stdout and did not write the expected response file.")
+        finally:
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
+            if process.stdin is not None:
+                process.stdin.close()
+
 
 class MockModelProvider:
     name = "mock"
+    supports_streaming = True
 
     def __init__(self, *, config: dict[str, Any] | None = None) -> None:
         self._config = config or {}
@@ -175,6 +217,15 @@ class MockModelProvider:
             blocks.extend([f"```{language} path={rel_path}", file_map[rel_path].rstrip(), "```"])
         return "\n".join(blocks) + "\n"
 
+    def generate_stream(self, prompt: str, context: GenerationContext) -> Iterator[str]:
+        response = self.generate(prompt, context)
+        if len(response) <= 3:
+            yield response
+            return
+        chunk_size = max(1, len(response) // 3)
+        for start in range(0, len(response), chunk_size):
+            yield response[start : start + chunk_size]
+
 
 def _normalize_command(command: str | Sequence[str]) -> list[str]:
     if isinstance(command, str):
@@ -184,6 +235,37 @@ def _normalize_command(command: str | Sequence[str]) -> list[str]:
     if not parts:
         raise ModelProviderError("Model command must not be empty.")
     return parts
+
+
+def _command_env(context: GenerationContext) -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "VERILOG_GEN_PROMPT_PATH": str(context.prompt_path),
+            "VERILOG_GEN_RESPONSE_PATH": str(context.response_path),
+            "VERILOG_GEN_STAGE": context.stage,
+            "VERILOG_GEN_ATTEMPT_ID": context.attempt_id,
+            "VERILOG_GEN_CONTEXT_JSON": json.dumps(
+                {
+                    "attempt_id": context.attempt_id,
+                    "stage": context.stage,
+                    "prompt_path": str(context.prompt_path),
+                    "response_path": str(context.response_path),
+                    "run_dir": str(context.run_dir),
+                    "attempt_dir": str(context.attempt_dir),
+                    "target": "rtl",
+                    "name": context.spec.get("name"),
+                    "manifest": context.manifest,
+                },
+                ensure_ascii=False,
+            ),
+        }
+    )
+    return env
+
+
+def _expanded_command(command: Sequence[str], context: GenerationContext) -> list[str]:
+    return [_expand_part(part, context) for part in command]
 
 
 def _expand_part(part: str, context: GenerationContext) -> str:

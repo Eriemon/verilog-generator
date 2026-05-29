@@ -9,6 +9,7 @@ from integration.verilog_adapter import (
     analyze_existing_verilog,
     compare_verilog_semantics,
     refine_existing_verilog,
+    run_verilog_batch,
     verify_existing_verilog,
     run_verilog_workflow,
     render_verilog_prompt,
@@ -16,13 +17,26 @@ from integration.verilog_adapter import (
 )
 ```
 
-Use `run_verilog_workflow(...)` for full staged execution and resume. Use `render_verilog_prompt(...)` when the host already owns the model call. Use `validate_verilog_artifacts(...)` to gate generated `.v` files before downstream use. Use `analyze_existing_verilog(...)` to build `rtl_analysis.json`, `project_analysis.json`, and `design_explanation.md` from an existing design, `refine_existing_verilog(...)` to create `rtl_transform_plan.json` plus controlled helper artifacts, `compare_verilog_semantics(...)` to emit `equivalence.json`, `qor_report.json`, and `transform_validation.json`, and `verify_existing_verilog(...)` to run the log-driven verify-repair flow with stable run artifacts plus a diagnostics pack.
+Use `run_verilog_workflow(...)` for full staged execution and resume. Use `run_verilog_batch(...)` when the caller has multiple generation specs and wants one aggregate summary while keeping each case in its own run directory. Use `render_verilog_prompt(...)` when the host already owns the model call. Use `validate_verilog_artifacts(...)` to gate generated `.v` files before downstream use. Use `analyze_existing_verilog(...)` to build `rtl_analysis.json`, `project_analysis.json`, and `design_explanation.md` from an existing design, `refine_existing_verilog(...)` to create `rtl_transform_plan.json` plus controlled helper artifacts, `compare_verilog_semantics(...)` to emit `equivalence.json`, `qor_report.json`, and `transform_validation.json`, and `verify_existing_verilog(...)` to run the log-driven verify-repair flow with stable run artifacts plus a diagnostics pack.
+
+## Generation Modes
+
+`run_verilog_workflow(...)` accepts `generation_mode`:
+
+- `regular`: the existing staged generation path
+- `deep_review`: inserts a structured `review` stage between the Python reference model and RTL generation
+
+`verify_existing_verilog(...)` remains the stable repair entrypoint and should be presented by hosts as the `agentic_repair` mode for existing RTL. Do not replace its evidence gates with free-form model self-assessment strings such as `[DESIGN IS CORRECT]`.
+
+The same generation facade also accepts `stream=True` when the selected provider supports streaming. Streaming improves interaction only; validation, extraction, semantic gates, and diagnostics still operate on the finalized response artifact.
 
 ## Required Inputs
 
 Specs keep `target="rtl"` for compatibility. Calls may omit `target`; the facade resolves it to `rtl`. Any other target is rejected before prompt generation or workflow execution.
 
 Existing RTL analysis/refinement flows do not require a generation spec. They operate on existing `.v` files, optionally accept a Markdown/text behavioral note source, and always write stable JSON evidence in the caller-selected output directory.
+
+`run_verilog_batch(...)` is generation-only in v1. It intentionally does not cover existing-RTL mutation or decision-resume flows.
 
 `verify_existing_verilog(...)` requires an explicit `automation_mode`. The host must ask or otherwise surface that choice; the runtime must not silently default the mode. Supported modes are:
 
@@ -68,6 +82,8 @@ When dict inputs are passed to the workflow runner, the facade materializes stab
 - optional `decision.json`
 
 The host can inspect these files even when the workflow later blocks for a human decision.
+
+When `stream=True`, each model-generated stage also writes a streaming transcript file under the stage directory. Hosts should treat the transcript as interaction evidence and the final response file as the extraction source of truth.
 
 ## Host Profile
 

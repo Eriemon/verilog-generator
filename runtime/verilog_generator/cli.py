@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from integration.verilog_adapter import run_verilog_batch
 from .evaluation import write_eval_metrics
 from .skill_effectiveness import evaluate_skill_effectiveness
 from .existing_rtl import analyze_existing_rtl, load_spec_text
@@ -34,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="verilog-gen",
         description="Prompt engineering CLI for Verilog-2001 RTL generation.",
     )
-    parser.add_argument("--version", action="version", version="erie-verilog-gen 0.2.2")
+    parser.add_argument("--version", action="version", version="erie-verilog-gen 0.2.6")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     scaffold = subparsers.add_parser("scaffold", help="Create a Verilog JSON generation spec template.")
@@ -89,6 +90,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_workflow_parser.add_argument("--evidence", type=Path, help="Optional evidence JSON used during initial decomposition.")
     run_workflow_parser.add_argument("--model-provider", choices=("mock", "manual", "command"), default="manual")
     run_workflow_parser.add_argument("--model-command", help="External command used by the command provider.")
+    run_workflow_parser.add_argument("--generation-mode", choices=("regular", "deep_review"), default=None)
+    run_workflow_parser.add_argument("--stream", action=argparse.BooleanOptionalAction, default=None, help="Use provider streaming when supported.")
     run_workflow_parser.add_argument("--readiness", choices=READINESS_LEVELS, default="static")
     run_workflow_parser.add_argument("--max-attempts", type=int, default=3)
     run_workflow_parser.add_argument("--no-external", action="store_true", help="Skip external tool execution during workflow validation.")
@@ -97,6 +100,24 @@ def build_parser() -> argparse.ArgumentParser:
     run_workflow_parser.add_argument("--model-timeout", type=int, default=120)
     run_workflow_parser.add_argument("--stop-on-human", action=argparse.BooleanOptionalAction, default=True)
     run_workflow_parser.set_defaults(func=_cmd_run_workflow)
+
+    run_batch_parser = subparsers.add_parser("run-batch", help="Run multiple spec-to-RTL workflow cases and summarize their results.")
+    run_batch_parser.add_argument("--spec", required=True, action="append", type=Path)
+    run_batch_parser.add_argument("--out-dir", required=True, type=Path)
+    run_batch_parser.add_argument("--workflow-config", type=Path)
+    run_batch_parser.add_argument("--evidence", type=Path)
+    run_batch_parser.add_argument("--model-provider", choices=("mock", "manual", "command"), default="manual")
+    run_batch_parser.add_argument("--model-command", help="External command used by the command provider.")
+    run_batch_parser.add_argument("--generation-mode", choices=("regular", "deep_review"), default=None)
+    run_batch_parser.add_argument("--stream", action=argparse.BooleanOptionalAction, default=None, help="Use provider streaming when supported.")
+    run_batch_parser.add_argument("--readiness", choices=READINESS_LEVELS, default="static")
+    run_batch_parser.add_argument("--max-attempts", type=int, default=3)
+    run_batch_parser.add_argument("--no-external", action="store_true", help="Skip external tool execution during workflow validation.")
+    run_batch_parser.add_argument("--external-target", choices=("remote", "local"), default="remote", help="Explicit target for external tools when readiness requires compile/execute/implement.")
+    run_batch_parser.add_argument("--comment-language", choices=COMMENT_LANGUAGES, default="zh")
+    run_batch_parser.add_argument("--model-timeout", type=int, default=120)
+    run_batch_parser.add_argument("--stop-on-human", action=argparse.BooleanOptionalAction, default=True)
+    run_batch_parser.set_defaults(func=_cmd_run_batch)
 
     audit_vectors_parser = subparsers.add_parser("audit-vectors", help="Create a semantic contract from reference vectors JSON.")
     audit_vectors_parser.add_argument("--vectors", required=True, type=Path)
@@ -328,6 +349,8 @@ def _cmd_run_workflow(args: argparse.Namespace) -> int:
         result = run_workflow(
             resume_dir=args.resume,
             decision_path=args.decision,
+            generation_mode=args.generation_mode,
+            stream=args.stream,
             stop_on_human=args.stop_on_human,
             run_external=resolved_run_external,
             comment_language=args.comment_language,
@@ -344,6 +367,8 @@ def _cmd_run_workflow(args: argparse.Namespace) -> int:
             evidence_path=args.evidence,
             provider_name=args.model_provider,
             provider_command=args.model_command,
+            generation_mode=args.generation_mode,
+            stream=args.stream,
             readiness=args.readiness,
             max_attempts=args.max_attempts,
             stop_on_human=args.stop_on_human,
@@ -351,6 +376,29 @@ def _cmd_run_workflow(args: argparse.Namespace) -> int:
             comment_language=args.comment_language,
             model_timeout_s=args.model_timeout,
         )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0 if result.get("status") == "passed" else 1
+
+
+def _cmd_run_batch(args: argparse.Namespace) -> int:
+    resolved_run_external = _cli_run_external(args.no_external, args.external_target, args.readiness)
+    result = run_verilog_batch(
+        args.spec,
+        out_dir=args.out_dir,
+        workflow_config=args.workflow_config,
+        evidence=args.evidence,
+        provider_name=args.model_provider,
+        provider_command=args.model_command,
+        generation_mode=args.generation_mode,
+        stream=args.stream,
+        readiness=args.readiness,
+        max_attempts=args.max_attempts,
+        stop_on_human=args.stop_on_human,
+        run_external=resolved_run_external,
+        external_target=args.external_target,
+        comment_language=args.comment_language,
+        model_timeout_s=args.model_timeout,
+    )
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0 if result.get("status") == "passed" else 1
 

@@ -341,8 +341,10 @@ def stage_package(helper: Path, run_id: str) -> Path:
     cleanup_package(package_root)
     target = package_root / "erie-verilog-generator"
     staged_skill = target / "skills" / "erie-verilog-generator"
+    staged_smoke = target / "smoke"
     ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "_smoke_runs", "reports", "workflow-state.json")
     shutil.copytree(SKILL_ROOT, staged_skill, ignore=ignore)
+    shutil.copytree(PROJECT_ROOT / "smoke", staged_smoke, ignore=ignore)
     # The remote confidence gate runs the copied skill from inside a temporary
     # package root that stands in for the original repository root. Add
     # lightweight workspace-root markers so project-local state resolution keeps
@@ -628,7 +630,8 @@ if command -v yosys >/dev/null 2>&1; then
 else
   yosys_available=0
 fi
-{py} -m compileall -q skills/erie-verilog-generator/runtime skills/erie-verilog-generator/integration skills/erie-verilog-generator/scripts
+{py} -m compileall -q skills/erie-verilog-generator/runtime skills/erie-verilog-generator/integration skills/erie-verilog-generator/scripts smoke
+{py} smoke/run_smoke.py --settings skills/erie-verilog-generator/config/defaults.json
 if [ -n "$configured_simulator_backend" ]; then
   export VERILOG_GENERATOR_SIMULATOR_PRIORITY="$configured_simulator_backend"
   expected_sim_backend="$configured_simulator_backend"

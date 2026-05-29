@@ -8,6 +8,14 @@ description: >-
 
 Use this skill for Verilog-2001 RTL generation and existing-RTL analysis/refinement/verify-repair backed by the bundled `runtime/verilog_generator` Python workflow. Keep generated design RTL artifacts as Verilog `.v` files and use the stable facade in `integration/verilog_adapter.py`.
 
+For new RTL generation, expose three user-facing workflow shells:
+
+- `regular`: the standard staged generation path
+- `deep_review`: one extra structured review stage before final RTL emission
+- `agentic_repair`: the existing `verify_existing_verilog(...)` evidence-driven repair flow for existing RTL
+
+These are workflow modes, not alternate correctness gates. Do not treat free-form model self-assessment text such as `[DESIGN IS CORRECT]` as authoritative validation evidence.
+
 The same skill also exposes two local helper scripts for independent static lint and testbench scaffold generation without widening the skill beyond Verilog-2001:
 
 - `scripts/verilog_lint.py` for independent static lint
@@ -60,22 +68,30 @@ Developer routing preference is: `vivado-developer`, then `vitis-developer`, for
 ## Workflow
 
 1. Confirm the design intent before generation: module name, ports, clock/reset, behavior, pipeline expectation, interface family, and verification cases.
-2. Use the staged pipeline: `requirements -> codegen_plan -> python -> rtl`.
-3. When the request clearly matches one of the local ADC/DAC board families, set `workflow.use_case_template_id` to one of `spi_adc`, `spi_dac`, `jesd_adc`, `jesd_dac`, or `mxfe_mixed` so the runtime can inject the matching board-level template bundle from `assets/use_case_templates/`.
-4. Generate a Python reference model before RTL when running the workflow; use it as the semantic contract for the Verilog testbench.
-5. Run the mandatory quality gate before claiming usable output. `validate_verilog_artifacts(...)` and `scripts/validate_verilog_skill.py` are required quality-control steps; skipping optional helpers does not bypass this gate.
-6. Use optional helper tools only when they add value to the request:
+2. Choose the generation shell explicitly when it matters:
+   - `regular` for the default staged pipeline
+   - `deep_review` when one extra structured self-review stage would improve prompt completeness or reviewability
+   - `agentic_repair` only when starting from existing RTL and needing the verify-repair loop
+3. Use the staged pipeline:
+   - `regular`: `requirements -> codegen_plan -> python -> rtl`
+   - `deep_review`: `requirements -> codegen_plan -> python -> review -> rtl`
+4. When the request clearly matches one of the local ADC/DAC board families, set `workflow.use_case_template_id` to one of `spi_adc`, `spi_dac`, `jesd_adc`, `jesd_dac`, or `mxfe_mixed` so the runtime can inject the matching board-level template bundle from `assets/use_case_templates/`.
+5. Generate a Python reference model before RTL when running the workflow; use it as the semantic contract for the Verilog testbench.
+6. Streaming is optional and applies only to provider interaction. Use it when the selected provider supports streaming and the host benefits from partial output visibility. The finalized response artifact remains the extraction source of truth.
+7. Batch generation is generation-only in v1. Use `run_verilog_batch(...)` for multiple confirmed specs, keep each case in its own run directory, and do not use batch mode for existing-RTL mutation or decision-resume flows.
+8. Run the mandatory quality gate before claiming usable output. `validate_verilog_artifacts(...)` and `scripts/validate_verilog_skill.py` are required quality-control steps; skipping optional helpers does not bypass this gate.
+9. Use optional helper tools only when they add value to the request:
    - Run `scripts/verilog_lint.py` when the user asks for independent static lint, standalone review findings, or a quick local lint pass on existing RTL or testbench files.
    - Run `scripts/tb_generator.py` when the user asks for a fast self-checking testbench scaffold or when a repair starts from module ports rather than the full staged workflow.
-7. If the request includes compile, execute, or implement readiness, continue into the local or remote backend validation path. Prefer Vivado xsim first, then VCS+Verdi, then iverilog/vvp. Use `yosys` only for implement readiness.
-8. If the request starts from an existing RTL file instead of a fresh spec, choose the existing-RTL branch first:
+10. If the request includes compile, execute, or implement readiness, continue into the local or remote backend validation path. Prefer Vivado xsim first, then VCS+Verdi, then iverilog/vvp. Use `yosys` only for implement readiness.
+11. If the request starts from an existing RTL file instead of a fresh spec, choose the existing-RTL branch first:
    - `analyze_existing_verilog(...)` for structural understanding, feature mapping, and a durable `design_explanation.md`
-   - `verify_existing_verilog(...)` when the task is to build a log-driven verification loop, classify failures, or prepare patch candidates with explicit automation boundaries
+   - `verify_existing_verilog(...)` when the task is to build a log-driven verification loop, classify failures, or prepare patch candidates with explicit automation boundaries; present this path as `agentic_repair`
      Use `testbench_source` when the user already has a legacy testbench that should be augmented in place or through a caller-managed overwrite flow.
    - `refine_existing_verilog(..., refine_goal="tb_scaffold"|"style_refine"|"partition_assist"|"merge_assist"|"optimize_assist")` for controlled assist flows
    - `compare_verilog_semantics(...)` before claiming two RTL variants are equivalent enough for downstream work
-9. For `verify_existing_verilog(...)`, always require an explicit automation-mode choice from the caller or user: `conservative`, `semi_auto`, or `auto_apply`. Do not silently choose one.
-10. When an existing RTL repair needs confirmation, let the caller or user provide a follow-up decision file and resume the same `verify-existing` flow rather than inventing a separate repair command.
+12. For `verify_existing_verilog(...)`, always require an explicit automation-mode choice from the caller or user: `conservative`, `semi_auto`, or `auto_apply`. Do not silently choose one.
+13. When an existing RTL repair needs confirmation, let the caller or user provide a follow-up decision file and resume the same `verify-existing` flow rather than inventing a separate repair command.
 
 ## Strict Quality Policy
 
@@ -119,9 +135,10 @@ For Vivado/Vitis project creation, Tcl execution, synthesis/implementation strat
 Use `integration.verilog_adapter`:
 
 - `run_verilog_workflow(...)` for full staged execution or resume.
+- `run_verilog_batch(...)` for generation-only batch execution across isolated case run directories.
 - `render_verilog_prompt(...)` when the host owns the model call.
 - `validate_verilog_artifacts(...)` before downstream use.
-- `verify_existing_verilog(...)` for the stable existing-RTL verify-repair entrypoint.
+- `verify_existing_verilog(...)` for the stable existing-RTL verify-repair entrypoint and `agentic_repair` mode.
 
 For GUI-hosted Code Design sessions, return artifacts through the host artifact protocol when requested. Do not require local external tools for GUI admission; local tool checks are optional diagnostics.
 
@@ -132,6 +149,9 @@ Run smoke validation from this skill root:
 ```powershell
 python .\scripts\validate_verilog_skill.py --settings .\config\defaults.json
 python .\scripts\validate_verilog_skill.py --settings .\config\defaults.json --no-require-remote
+python -m runtime.verilog_generator run-workflow --spec .\assets\examples\rtl_erie_verilog_spec.json --out-dir .\reports\verilog\regular --model-provider mock --generation-mode regular --no-external
+python -m runtime.verilog_generator run-workflow --spec .\assets\examples\rtl_erie_verilog_spec.json --out-dir .\reports\verilog\deep-review --model-provider mock --generation-mode deep_review --stream --no-external
+python -m runtime.verilog_generator run-batch --spec .\assets\examples\rtl_erie_verilog_spec.json --spec .\assets\examples\use_case_templates\spi_adc.json --out-dir .\reports\verilog\batch --model-provider mock --generation-mode regular --no-external
 ```
 
 Run optional helper tools only when the request benefits from them:
