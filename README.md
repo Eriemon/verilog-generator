@@ -149,7 +149,7 @@ If this skill helps your research, teaching, or engineering workflow, please cit
   title        = {{Verilog Generator}: An Agent Skill for Verilog-2001 RTL Workflows},
   year         = {2026},
   version      = {0.2.8},
-  date         = {2026-05-29},
+  date         = {2026-06-10},
   url          = {https://github.com/Eriemon/verilog-generator},
   license      = {Apache-2.0},
   note         = {Agent skill package for disciplined Verilog-2001 RTL workflows}

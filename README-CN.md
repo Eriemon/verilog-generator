@@ -147,7 +147,7 @@ Jiyuan Liu 和 He Li 隶属于东南大学电子科学与工程学院。
   title        = {{Verilog Generator}: An Agent Skill for Verilog-2001 RTL Workflows},
   year         = {2026},
   version      = {0.2.8},
-  date         = {2026-05-29},
+  date         = {2026-06-10},
   url          = {https://github.com/Eriemon/verilog-generator},
   license      = {Apache-2.0},
   note         = {Agent skill package for disciplined Verilog-2001 RTL workflows}
