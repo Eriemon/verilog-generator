@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-1f6feb"></a>
   <a href="pyproject.toml"><img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2f81f7"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-v0.2.6-7c3aed">
+  <img alt="Version" src="https://img.shields.io/badge/version-v0.2.8-7c3aed">
   <a href="SKILL.md"><img alt="Agent Skill" src="https://img.shields.io/badge/agent-skill-16a34a"></a>
   <a href="ENGINEERING_DESIGN_GOALS.md"><img alt="Target" src="https://img.shields.io/badge/target-Verilog--2001-f59e0b"></a>
 </p>
@@ -50,11 +50,12 @@ Use it when an agent needs to work on:
   <img src="docs/assets/workflow.svg" alt="Verilog Generator workflow" width="100%">
 </p>
 
-## What's New In v0.2.6
+## What's New In v0.2.8
 
-- Adds explicit generation shells for `regular`, `deep_review`, and `agentic_repair`, plus generation-only batch execution through the public facade.
-- Expands the existing-RTL and verify-repair surface while keeping diagnostics, patch planning, and closure artifacts as first-class outputs.
-- Continues the remote-first validation path and `.settings/*` configuration contract while refining workflow, provider, and validation orchestration for the public skill surface.
+- Adds the RTL-MD constraint catalog in `references/rtl-md-constraints.md` and `assets/rtl_md_constraints.json`, carrying MUST/REC RTL rules into prompts, static lint, and review evidence.
+- Adds read-only workflow routing through `runtime/verilog_generator/workflow_router.py`, helping agents choose spec-first generation, plan-seeded generation, existing-RTL assist, or evidence-first repair before mutating artifacts.
+- Strengthens ADC/DAC family guidance by packaging JESD, SPI, and mixed-signal use-case templates for board-level prompt context.
+- Extends validation and verify-repair coverage so RTL-MD constraints, diagnosis routing, and workflow reports are exercised in local and remote validation paths.
 
 ## Repository Map
 
@@ -69,7 +70,7 @@ Use it when an agent needs to work on:
 | `assets/use_case_templates/` | Packaged JESD, SPI, and mixed-signal reference templates with RTL, Tcl, and constraint skeletons. |
 | `assets/examples/` | Example specs, remote fixtures, existing-RTL inputs, and refined template inputs for validation and regression checks. |
 | `evals/` | Repo-local skill-effectiveness cases for workflow and remote-validation regressions. |
-| `RELEASE_RECEIPT.json` | Provenance record for the imported `v0.2.6` release package. |
+| `RELEASE_RECEIPT.json` | Provenance record for the imported `v0.2.8` release package. |
 
 ## Quick Start
 
@@ -91,7 +92,7 @@ python -m runtime.verilog_generator validate --spec .\reports\verilog\spec.json 
 
 External validation requires real HDL tools. This project does not claim Vivado/xsim, VCS, iverilog, or yosys acceptance unless those tools actually run.
 
-The `v0.2.6` update adds explicit generation shells, keeps extending the existing-RTL/verify-repair path, and refines the remote-first validation contract around `.settings/*`.
+The `v0.2.8` update adds RTL-MD constraints, workflow routing, ADC/DAC use-case guidance, and stronger validation coverage for prompt, lint, and verify-repair flows.
 
 ## Integration API
 
@@ -147,7 +148,7 @@ If this skill helps your research, teaching, or engineering workflow, please cit
   author       = {Jiyuan Liu and He Li},
   title        = {{Verilog Generator}: An Agent Skill for Verilog-2001 RTL Workflows},
   year         = {2026},
-  version      = {0.2.6},
+  version      = {0.2.8},
   date         = {2026-05-29},
   url          = {https://github.com/Eriemon/verilog-generator},
   license      = {Apache-2.0},

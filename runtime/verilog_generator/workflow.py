@@ -31,6 +31,7 @@ from .trace import append_trace_event, read_trace, safe_path, spec_summary
 from .validation import validate_generated
 from .vectors import audit_vectors
 from .verifier import verify_stage
+from .workflow_router import route_verilog_entry
 from .workspace import require_workspace_path, require_workspace_path_from, require_write_path, update_workflow_state, write_json, write_text
 
 WORKFLOW_STATUSES = (
@@ -104,6 +105,11 @@ def run_workflow(
     raw_spec = read_spec(spec_file, target=target)
     validate_requirement_confirmation(raw_spec)
     external_codegen_plan = _resolve_external_codegen_plan(raw_spec, spec_file)
+    route_decision = route_verilog_entry(
+        request_summary="Run Verilog workflow.",
+        spec=spec_file,
+        codegen_plan=external_codegen_plan,
+    )
     evidence = _read_json(evidence_path) if evidence_path else None
     plan = decompose_spec(raw_spec, target=target, evidence=evidence)
     write_spec(plan_path, plan)
@@ -120,6 +126,7 @@ def run_workflow(
         run_external=run_external,
         comment_language=comment_language,
         external_codegen_plan=external_codegen_plan,
+        route_decision=route_decision,
         model_timeout_s=model_timeout_s,
     )
     write_json(config_path, config)
@@ -132,6 +139,7 @@ def run_workflow(
         "plan_path": "plan.json",
         "workflow_config": "workflow_config.json",
         "trace_path": "trace.jsonl",
+        "route_decision": route_decision,
         "attempts": [],
     }
     _write_result(result_path, result)
@@ -1038,6 +1046,7 @@ def _workflow_config(
     run_external: bool,
     comment_language: str,
     external_codegen_plan: dict[str, Any] | None,
+    route_decision: dict[str, Any] | None,
     model_timeout_s: int,
 ) -> dict[str, Any]:
     provider_config = {
@@ -1068,6 +1077,7 @@ def _workflow_config(
         "comment_language": comment_language,
         "stream": bool(stream),
         "external_codegen_plan": copy.deepcopy(external_codegen_plan) if isinstance(external_codegen_plan, dict) else None,
+        "route_decision": copy.deepcopy(route_decision) if isinstance(route_decision, dict) else None,
         "model_timeout_s": model_timeout_s,
         "provider": provider_config,
         "budgets": {stage: "normal" for stage in _default_stages_for(plan["target"], resolved_generation_mode)},

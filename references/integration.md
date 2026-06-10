@@ -1,5 +1,14 @@
 # Integration Guide
 
+## Table of Contents
+
+- [Facade](#facade)
+- [Generation Modes](#generation-modes)
+- [Required Inputs](#required-inputs)
+- [Run Directories](#run-directories)
+- [Host Profile](#host-profile)
+- [Boundary](#boundary)
+
 ## Facade
 
 Use the Verilog-only facade:
@@ -9,6 +18,7 @@ from integration.verilog_adapter import (
     analyze_existing_verilog,
     compare_verilog_semantics,
     refine_existing_verilog,
+    route_verilog_request,
     run_verilog_batch,
     verify_existing_verilog,
     run_verilog_workflow,
@@ -18,6 +28,8 @@ from integration.verilog_adapter import (
 ```
 
 Use `run_verilog_workflow(...)` for full staged execution and resume. Use `run_verilog_batch(...)` when the caller has multiple generation specs and wants one aggregate summary while keeping each case in its own run directory. Use `render_verilog_prompt(...)` when the host already owns the model call. Use `validate_verilog_artifacts(...)` to gate generated `.v` files before downstream use. Use `analyze_existing_verilog(...)` to build `rtl_analysis.json`, `project_analysis.json`, and `design_explanation.md` from an existing design, `refine_existing_verilog(...)` to create `rtl_transform_plan.json` plus controlled helper artifacts, `compare_verilog_semantics(...)` to emit `equivalence.json`, `qor_report.json`, and `transform_validation.json`, and `verify_existing_verilog(...)` to run the log-driven verify-repair flow with stable run artifacts plus a diagnostics pack.
+
+Use `route_verilog_request(...)` before selecting a workflow when the host has mixed inputs. It is read-only and returns `route_decision` with `recommended_flow`, `entry_mode`, `required_inputs`, `missing_inputs`, `next_action`, `safe_recovery_hint`, `risk_flags`, and `provenance_policy`. It must not generate RTL, run validation, mutate source files, create backups, or start remote actions.
 
 ## Generation Modes
 
@@ -35,6 +47,13 @@ The same generation facade also accepts `stream=True` when the selected provider
 Specs keep `target="rtl"` for compatibility. Calls may omit `target`; the facade resolves it to `rtl`. Any other target is rejected before prompt generation or workflow execution.
 
 Existing RTL analysis/refinement flows do not require a generation spec. They operate on existing `.v` files, optionally accept a Markdown/text behavioral note source, and always write stable JSON evidence in the caller-selected output directory.
+
+The route decision uses four Erie entry modes:
+
+- `spec-first generation`: start from a spec and build the requirements plus codegen plan before generation.
+- `plan-seeded generation`: use an existing ready codegen plan as a seed only; do not bypass requirements confirmation or validation.
+- `existing-RTL assist/repair`: analyze, refine, compare, or verify existing Verilog sources with explicit automation boundaries.
+- `evidence-first debug/repair`: classify logs, validation reports, waveform clues, or remote-readiness requests before selecting repair or rerun.
 
 `run_verilog_batch(...)` is generation-only in v1. It intentionally does not cover existing-RTL mutation or decision-resume flows.
 

@@ -105,7 +105,8 @@ Strict quality control is mandatory. The required quality chain is:
 6. Treat semantic comment placement as a hard validation gate: every non-empty generated Verilog code line in RTL and testbench `.v` files must have a same-line explanatory comment in the requested language, and each construct type must follow `references/verilog-comment-placement.md`. Blank lines and pure comment lines are exempt; missing, misplaced, shared-adjacent, or generic Chinese comments under `comment_language=zh` are blocking errors.
 7. Avoid Verilog `function` and `task` blocks in generated Verilog, especially synthesizable RTL; prefer explicit always/assign logic and inline testbench checks for easier waveform debugging.
 8. Apply ASIC quality review rules for generated RTL: complete combinational assignments, case defaults, no raw gated clocks, documented CDC/reset assumptions, and timing-reviewable datapath/control structure. Load `references/asic-verilog-quality.md` for detailed review guidance.
-9. Validate with static checks by default; when external simulation is requested, select the highest available backend in this order: Vivado xsim, VCS+Verdi, then iverilog/vvp. Use `yosys` only for implement readiness.
+9. Apply the distilled RTL Markdown constraints in `references/rtl-md-constraints.md` and `assets/rtl_md_constraints.json`: all `MUST` rules are blocking generation/review constraints, high-confidence `MUST` rules are enforced by the static gate, and `REC` rules are default preferences whose deviations must be recorded in manifest checks.
+10. Validate with static checks by default; when external simulation is requested, select the highest available backend in this order: Vivado xsim, VCS+Verdi, then iverilog/vvp. Use `yosys` only for implement readiness.
 
 For `optimize_assist`, QoR output is advisory by default: it produces structural summaries and optional `yosys` evidence when available, but it does not automatically approve or rewrite RTL.
 For `merge_assist`, the flow stays plan-only by default: it emits `merge_plan.json`, `merge_wrapper.v`, `merge_validation.json`, and `merge_equivalence.json` to support wrapper-first repartition or recompose work without silently rewriting the source RTL.
@@ -134,6 +135,7 @@ For Vivado/Vitis project creation, Tcl execution, synthesis/implementation strat
 
 Use `integration.verilog_adapter`:
 
+- `route_verilog_request(...)` for a read-only entry decision before choosing generation, existing-RTL assist, or evidence-first debug/repair.
 - `run_verilog_workflow(...)` for full staged execution or resume.
 - `run_verilog_batch(...)` for generation-only batch execution across isolated case run directories.
 - `render_verilog_prompt(...)` when the host owns the model call.
@@ -176,6 +178,12 @@ python .\scripts\manage_skill_dependencies.py select-fpga-vendor --settings .\co
 python .\scripts\manage_skill_dependencies.py cleanup-fpga-agent-skills --settings .\config\defaults.json --yes
 ```
 
+Classify a workflow entry without executing generation, validation, repair, backup, or remote actions:
+
+```powershell
+python -m runtime.verilog_generator route-workflow --request-json .\reports\verilog\route-request.json --artifact-dir .\reports\verilog --out .\reports\verilog\route_decision.json
+```
+
 Record a user-confirmed remote toolchain selection in the remote workdir `.settings/verilog.remote.json`:
 
 ```powershell
@@ -202,6 +210,7 @@ python -m runtime.verilog_generator validate --spec .\reports\verilog\spec.json 
 - Load `assets/use_case_templates/catalog.json` and the selected bundle under `assets/use_case_templates/<family>/` when adding or reviewing ADC/DAC board-level family guidance.
 - Load `references/workflow-contracts.md` when handling run directories, statuses, resume behavior, or traces.
 - Load `references/asic-verilog-quality.md` when reviewing RTL for ASIC quality, static lint findings, reset/CDC assumptions, raw gated clocks, latch risk, or timing-reviewable structure.
+- Load `references/rtl-md-constraints.md` when changing generated RTL syntax constraints, static lint rules, prompt guidance for MUST/REC rules, or the `assets/rtl_md_constraints.json` catalog.
 - Load `references/lint-checklist.md` when running independent static lint, preparing review findings, or deciding whether a warning should become a blocking issue.
 - Load `references/testbench-patterns.md` when generating or repairing a Verilog-2001 self-checking testbench scaffold.
 - Use `assets/examples/rtl_erie_verilog_spec.json` as the canonical Verilog-only fixture.
@@ -212,6 +221,7 @@ python -m runtime.verilog_generator validate --spec .\reports\verilog\spec.json 
 - Use `assets/refined_verilog_templates/catalog.json` and the referenced `.vinc` snippets when the task benefits from compact AXI4-Lite CSR, AXIS ready/valid, AXI interconnect grouping, or convolution load/store pattern hints.
 - Use `assets/style_templates/` when refining Erie strict header, region-order, FSM, instance, or bus-grouping style guidance.
 - Use `assets/examples/remote_fixtures` when verifying real-style remote xsim coverage across combinational logic, sequential pipeline logic, and ready/valid handshakes.
+- Load `references/workflow-contracts.md` when changing read-only entry routing, route summaries, diagnosis route values, or workflow recovery hints.
 
 ## Boundaries
 

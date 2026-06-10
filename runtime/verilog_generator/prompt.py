@@ -11,6 +11,7 @@ from .interface_templates import InterfaceTemplateError, select_interface_templa
 from .planning import decompose_spec
 from .refined_templates import summarize_refined_templates
 from .reference_contract import REFERENCE_RESULT_TAG
+from .rtl_md_constraints import summarize_constraints_for_prompt
 from .spec import normalize_spec
 from .use_case_templates import UseCaseTemplateError, select_use_case_template, summarize_use_case_template
 from .vectors import VECTOR_HASH_TAG
@@ -113,6 +114,7 @@ def _render_rtl_prompt(spec: dict[str, Any], comment_language: str, *, decision:
                 "Keep datapath and control structure timing-reviewable by naming pipeline registers, avoiding hidden feedback, and keeping high-fanout enables visible.",
                 "Avoid #delay controls, force/release, multiple drivers, unintended latches, and non-synthesizable constructs in RTL source files.",
                 "Avoid Verilog function/task blocks in generated Verilog, especially synthesizable RTL; prefer explicit always/assign logic and inline testbench checks for easier waveform debugging.",
+                *_rtl_md_constraint_rules(),
                 "Keep simulation-only system tasks inside testbench files.",
                 "Include a focused self-checking testbench when requested by outputs.",
                 "Cover reset, normal operation, boundary conditions, and every behavior item in the testbench.",
@@ -332,6 +334,7 @@ def _stage_guidance(
             [
                 "Create `requirements_summary`, `interface_decision`, `pipeline_strategy`, `module_partition`, `signal_width_strategy`, `reset_clock_strategy`, `verification_strategy`, `syntax_risk_checks`, `open_questions`, and `ready_for_generation`.",
                 "If confirmation data is incomplete, put the blocker in `open_questions` and keep `ready_for_generation` false.",
+                *_rtl_md_constraint_rules(),
             ],
         )
     if stage == "python":
@@ -368,6 +371,7 @@ def _stage_guidance(
                 "Keep datapath and control structure timing-reviewable by naming pipeline registers, avoiding hidden feedback, and keeping high-fanout enables visible.",
                 "Avoid Verilog function/task blocks in generated Verilog, especially synthesizable RTL; prefer explicit always/assign logic and inline testbench checks for easier waveform debugging.",
                 "Keep simulation-only constructs out of RTL source files; they are allowed only in testbench files.",
+                *_rtl_md_constraint_rules(),
                 "Make outputs suitable for static, compile, execute, and implement readiness validation.",
                 *_rtl_style_rules(spec, comment_language),
                 *_comment_rules_for("rtl", comment_language),
@@ -474,6 +478,10 @@ def _comment_rules_for(target: str, comment_language: str) -> list[str]:
         f"If the RTL uses an FSM, it must use a three-block FSM style with fixed comment labels {rtl_labels}.",
         "Use the manifest `checks.reviewability_assessment` field to summarize comment coverage, FSM structure, and any reviewability limitation.",
     ]
+
+
+def _rtl_md_constraint_rules() -> list[str]:
+    return [summarize_constraints_for_prompt(max_rules_per_group=5)]
 
 
 def _rtl_style_rules(spec: dict[str, Any], comment_language: str) -> list[str]:

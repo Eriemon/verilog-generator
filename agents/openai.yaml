@@ -1,6 +1,6 @@
 interface:
   display_name: "Erie Verilog Generator"
-  short_description: "Generate, deep-review, batch-run, analyze, verify, refine, compare, debug, and validate Verilog RTL."
-  default_prompt: "Use $erie-verilog-generator to run regular or deep-review RTL generation, stream or batch supported generation runs, analyze existing RTL, emit design explanations, run agentic verify-repair flows with diagnostics packs, plan controlled refinement or merge assist, compare semantics, and validate synthesizable Verilog designs."
+  short_description: "Generate, review, repair, and validate Verilog RTL."
+  default_prompt: "Use $erie-verilog-generator to generate, review, repair, or validate Verilog-2001 RTL with local or remote evidence gates."
 policy:
   allow_implicit_invocation: true

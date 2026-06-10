@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .workflow_router import classify_diagnosis_route
+
 
 def simulation_slice_payload(*, compile_log: str, simulation_log: str, executed: bool, tb_contract: dict[str, Any], excerpt_fn: Any) -> dict[str, Any]:
     tb_tags = [tag for tag in tb_contract.get("log_tags", []) if tag in simulation_log]
@@ -95,10 +97,12 @@ def run_summary_payload(
     tb_contract: dict[str, Any],
     rtl_mutation: dict[str, Any],
 ) -> dict[str, Any]:
+    diagnosis_route = classify_diagnosis_route(diagnosis=diagnosis, validation_report=validation_report, tb_contract=tb_contract)
     return {
         "version": 1,
         "status": "completed",
         "outcome": diagnosis.get("outcome"),
+        "diagnosis_route": diagnosis_route,
         "validation_ok": bool(validation_report.ok()),
         "tb_mode": tb_contract.get("tb_mode"),
         "tb_language": tb_contract.get("tb_language"),
@@ -125,14 +129,17 @@ def terminal_status_payload(
     *,
     diagnosis: dict[str, Any],
     validation_report: Any,
+    tb_contract: dict[str, Any] | None = None,
     tb_mutation: dict[str, Any],
     rtl_mutation: dict[str, Any],
 ) -> dict[str, Any]:
     success = diagnosis.get("outcome") == "pass" and validation_report.ok()
+    diagnosis_route = classify_diagnosis_route(diagnosis=diagnosis, validation_report=validation_report, tb_contract=tb_contract or {})
     return {
         "version": 1,
         "success": success,
         "outcome": diagnosis.get("outcome"),
+        "diagnosis_route": diagnosis_route,
         "validation_ok": bool(validation_report.ok()),
         "tb_mutation_applied": bool(tb_mutation.get("applied")),
         "rtl_mutation_applied": bool(rtl_mutation.get("applied")),

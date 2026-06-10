@@ -26,6 +26,7 @@ from .trace import append_trace_event, read_trace, safe_path, spec_summary
 from .validation import READINESS_LEVELS, readiness_at_least, validate_generated
 from .vectors import audit_vectors
 from .verify_repair import AUTOMATION_MODES, TB_LANGUAGES, TB_MODES, verify_existing
+from .workflow_router import route_verilog_entry
 from .workflow import run_workflow
 from .workspace import require_workspace_path, require_write_path, update_workflow_state, write_json, write_text
 
@@ -35,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="verilog-gen",
         description="Prompt engineering CLI for Verilog-2001 RTL generation.",
     )
-    parser.add_argument("--version", action="version", version="erie-verilog-gen 0.2.6")
+    parser.add_argument("--version", action="version", version="erie-verilog-gen 0.2.8")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     scaffold = subparsers.add_parser("scaffold", help="Create a Verilog JSON generation spec template.")
@@ -118,6 +119,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_batch_parser.add_argument("--model-timeout", type=int, default=120)
     run_batch_parser.add_argument("--stop-on-human", action=argparse.BooleanOptionalAction, default=True)
     run_batch_parser.set_defaults(func=_cmd_run_batch)
+
+    route_parser = subparsers.add_parser("route-workflow", help="Classify the safest Verilog workflow entry without executing it.")
+    route_parser.add_argument("--request-json", required=True, type=Path)
+    route_parser.add_argument("--artifact-dir", type=Path)
+    route_parser.add_argument("--out", required=True, type=Path)
+    route_parser.set_defaults(func=_cmd_route_workflow)
 
     audit_vectors_parser = subparsers.add_parser("audit-vectors", help="Create a semantic contract from reference vectors JSON.")
     audit_vectors_parser.add_argument("--vectors", required=True, type=Path)
@@ -403,6 +410,26 @@ def _cmd_run_batch(args: argparse.Namespace) -> int:
     return 0 if result.get("status") == "passed" else 1
 
 
+def _cmd_route_workflow(args: argparse.Namespace) -> int:
+    request = _read_json_anywhere(args.request_json)
+    decision = route_verilog_entry(
+        request_summary=str(request.get("request_summary") or request.get("summary") or ""),
+        spec=request.get("spec"),
+        codegen_plan=request.get("codegen_plan"),
+        rtl=request.get("rtl"),
+        testbench=request.get("testbench"),
+        logs=request.get("logs"),
+        waveform=request.get("waveform"),
+        validation=request.get("validation"),
+        artifact_dir=args.artifact_dir or request.get("artifact_dir"),
+        remote_validation_requested=bool(request.get("remote_validation_requested", False)),
+    )
+    out = require_write_path(args.out, purpose="route decision output")
+    write_json(out, decision)
+    print(json.dumps(decision, indent=2, ensure_ascii=False))
+    return 0
+
+
 def _cmd_audit_vectors(args: argparse.Namespace) -> int:
     vectors_path = require_workspace_path(args.vectors, purpose="vectors path", must_exist=True)
     out = require_write_path(args.out, purpose="vector audit output")
@@ -635,6 +662,16 @@ def _read_json(path: Path | None) -> dict:
         raise ValueError(f"Invalid JSON in {json_path}: {exc}") from exc
     if not isinstance(data, dict):
         raise ValueError(f"Expected JSON object in {json_path}.")
+    return data
+
+
+def _read_json_anywhere(path: Path) -> dict:
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected JSON object in {path}.")
     return data
 
 

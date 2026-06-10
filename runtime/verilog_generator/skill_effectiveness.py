@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import shutil
 import time
 from pathlib import Path
@@ -15,6 +16,7 @@ from integration.verilog_adapter import (
     compare_verilog_semantics,
     refine_existing_verilog,
     render_verilog_prompt,
+    route_verilog_request,
     run_verilog_batch,
     run_verilog_workflow,
     validate_verilog_artifacts,
@@ -23,6 +25,8 @@ from integration.verilog_adapter import (
 
 from .config import skill_root
 from .refined_templates import summarize_refined_templates
+from .rtl_md_constraints import load_rtl_md_constraints, summarize_constraints_for_prompt
+from .static_lint import lint_generated_rtl
 from .workspace import workspace_root, write_json
 
 SKILL_ROOT = skill_root()
@@ -110,6 +114,10 @@ def _evaluate_case(case: dict[str, Any], temp_root: Path) -> dict[str, Any]:
         return _evaluate_verify_existing_rtl_repair_case(case, case_id, temp_root)
     if case.get("kind") == "verify_existing_rtl_patch_library_regression":
         return _evaluate_verify_existing_rtl_patch_library_case(case, case_id, temp_root)
+    if case.get("kind") == "routing_regression":
+        return _evaluate_routing_case(case, case_id, temp_root)
+    if case.get("kind") == "rtl_md_constraint_regression":
+        return _evaluate_rtl_md_constraint_case(case, case_id, temp_root)
     spec_path = SKILL_ROOT / str(case["spec"])
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
     case_root = temp_root / case_id
@@ -217,6 +225,65 @@ def _evaluate_analysis_case(case: dict[str, Any], case_id: str, temp_root: Path)
         "without_skill": {
             "expectation_checks": {key: False for key in checks},
         },
+        "comparison": comparison,
+        "refined_templates": [],
+    }
+
+
+def _evaluate_rtl_md_constraint_case(case: dict[str, Any], case_id: str, temp_root: Path) -> dict[str, Any]:
+    case_root = temp_root / case_id
+    generated = case_root / "generated"
+    generated.mkdir(parents=True, exist_ok=True)
+    (generated / "bad_constraints.v").write_text(_rtl_md_bad_fixture(), encoding="utf-8")
+    (generated / "good_constraints_tb.v").write_text(_rtl_md_clean_fixture().replace("good_constraints", "good_constraints_tb"), encoding="utf-8")
+    clean_root = case_root / "clean"
+    clean_root.mkdir(parents=True, exist_ok=True)
+    (clean_root / "good_constraints.v").write_text(_rtl_md_clean_fixture(), encoding="utf-8")
+
+    spec = _rtl_md_fixture_spec()
+    blocked_issues = lint_generated_rtl(spec, generated)
+    blocked_codes = {issue.code for issue in blocked_issues}
+    clean_issues = lint_generated_rtl(spec, clean_root)
+    catalog = load_rtl_md_constraints()
+    prompt_summary = summarize_constraints_for_prompt()
+    catalog_rule_ids = {str(rule["id"]) for rule in catalog["rules"]}
+    expectations = case.get("expectations", {}) if isinstance(case.get("expectations"), dict) else {}
+    checks: dict[str, bool] = {}
+    for code in expectations.get("blocked_codes", []):
+        checks[f"blocked_{code}"] = str(code) in blocked_codes
+    if expectations.get("clean_has_no_issues"):
+        checks["clean_has_no_issues"] = not clean_issues
+    if expectations.get("catalog_total_rules"):
+        checks["catalog_total_rules"] = catalog.get("total_rules") == expectations["catalog_total_rules"] == len(catalog.get("rules", []))
+    if expectations.get("prompt_mentions_all_rules"):
+        checks["prompt_mentions_all_rules"] = all(rule_id in prompt_summary for rule_id in catalog_rule_ids)
+    if expectations.get("static_issues_include_rule_ids"):
+        checks["static_issues_include_rule_ids"] = all(
+            re.search(r"(MUST|REC)_[A-Z0-9_]+", issue.message)
+            for issue in blocked_issues
+        )
+    if not checks:
+        checks = {
+            "blocked_any": bool(blocked_codes),
+            "clean_has_no_issues": not clean_issues,
+        }
+    comparison = {
+        "with_skill_pass_count": _pass_count(checks),
+        "without_skill_pass_count": 0,
+        "improved": _pass_count(checks) > 0,
+    }
+    return {
+        "id": case_id,
+        "kind": case.get("kind"),
+        "passed": all(checks.values()),
+        "with_skill": {
+            "stable": all(checks.values()),
+            "blocked_codes": sorted(blocked_codes),
+            "clean_issue_count": len(clean_issues),
+            "catalog_total_rules": catalog.get("total_rules"),
+            "expectation_checks": checks,
+        },
+        "without_skill": {"expectation_checks": {key: False for key in checks}},
         "comparison": comparison,
         "refined_templates": [],
     }
@@ -871,6 +938,87 @@ def _evaluate_verify_existing_rtl_patch_library_case(case: dict[str, Any], case_
     }
 
 
+def _evaluate_routing_case(case: dict[str, Any], case_id: str, temp_root: Path) -> dict[str, Any]:
+    case_root = temp_root / case_id
+    case_root.mkdir(parents=True, exist_ok=True)
+    source_path = SKILL_ROOT / str(case["source"]) if case.get("source") else None
+    if case.get("missing_source"):
+        source_path = case_root / "missing_rtl.v"
+    spec_source = SKILL_ROOT / str(case["spec_source"]) if case.get("spec_source") else None
+    artifact_dir = _routing_artifact_dir(case, case_root)
+    codegen_plan = case.get("codegen_plan") if isinstance(case.get("codegen_plan"), dict) else None
+    log_paths = _routing_log_paths(case, case_root)
+    decision = route_verilog_request(
+        request_summary=str(case.get("request_summary") or ""),
+        rtl=source_path,
+        spec=spec_source,
+        codegen_plan=codegen_plan,
+        logs=log_paths,
+        artifact_dir=artifact_dir,
+        remote_validation_requested=bool(case.get("remote_validation_requested", False)),
+    )
+    expectations = case.get("expectations", {}) if isinstance(case.get("expectations"), dict) else {}
+    checks = {}
+    if "recommended_flow" in expectations:
+        checks["recommended_flow"] = decision.get("recommended_flow") == expectations.get("recommended_flow")
+    if "entry_mode" in expectations:
+        checks["entry_mode"] = decision.get("entry_mode") == expectations.get("entry_mode")
+    for item in expectations.get("missing_inputs_contains", []):
+        checks[f"missing_inputs_contains_{item}"] = item in decision.get("missing_inputs", [])
+    for item in expectations.get("missing_inputs_not_contains", []):
+        checks[f"missing_inputs_not_contains_{item}"] = item not in decision.get("missing_inputs", [])
+    for item in expectations.get("risk_flags_contains", []):
+        checks[f"risk_flags_contains_{item}"] = item in decision.get("risk_flags", [])
+    if expectations.get("next_action_contains"):
+        checks["next_action_contains"] = str(expectations["next_action_contains"]) in str(decision.get("next_action", ""))
+    checks.update(
+        {
+        "provenance_policy_present": decision.get("provenance_policy", {}).get("reference_material") == "abstract_principles_only",
+        "reference_workspace_absent": "IC-" + "AGENT-HUB" not in json.dumps(decision, ensure_ascii=False),
+        }
+    )
+    checks = {key: value if expectations.get(key, True) else True for key, value in checks.items()}
+    comparison = {"with_skill_pass_count": _pass_count(checks), "without_skill_pass_count": 0, "improved": _pass_count(checks) > 0}
+    return {
+        "id": case_id,
+        "kind": case.get("kind"),
+        "source": str(case.get("source", "")),
+        "passed": all(checks.values()),
+        "with_skill": {"stable": all(checks.values()), "route_decision": decision, "expectation_checks": checks},
+        "without_skill": {"expectation_checks": {key: False for key in checks}},
+        "comparison": comparison,
+        "refined_templates": [],
+    }
+
+
+def _routing_artifact_dir(case: dict[str, Any], case_root: Path) -> Path | None:
+    artifact_config = case.get("artifact_dir")
+    if not isinstance(artifact_config, dict):
+        return None
+    artifact_dir = case_root / "artifacts"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    if artifact_config.get("spec"):
+        (artifact_dir / "spec.json").write_text(json.dumps({"target": "rtl", "module_name": "routing_eval"}, indent=2), encoding="utf-8")
+    if isinstance(artifact_config.get("codegen_plan"), dict):
+        (artifact_dir / "codegen_plan.json").write_text(json.dumps(artifact_config["codegen_plan"], indent=2), encoding="utf-8")
+    return artifact_dir
+
+
+def _routing_log_paths(case: dict[str, Any], case_root: Path) -> list[Path]:
+    logs = case.get("logs", [])
+    paths: list[Path] = []
+    if isinstance(logs, list):
+        for index, item in enumerate(logs, start=1):
+            if not isinstance(item, dict):
+                continue
+            path = case_root / str(item.get("name") or f"log_{index}.log")
+            path.write_text(str(item.get("text") or ""), encoding="utf-8")
+            paths.append(path)
+    if case.get("missing_log"):
+        paths.append(case_root / "missing.log")
+    return paths
+
+
 def _evaluate_remote_runs(remote_runs_report: dict[str, Any] | None, *, require_remote: bool) -> dict[str, Any]:
     if not remote_runs_report:
         return {
@@ -944,6 +1092,64 @@ def _render_baseline_prompt(spec: dict[str, Any]) -> str:
         "```json\n"
         + json.dumps(spec, indent=2, ensure_ascii=False)
         + "\n```\n"
+    )
+
+
+def _rtl_md_fixture_spec() -> dict[str, Any]:
+    return {
+        "name": "good_constraints",
+        "description": "RTL Markdown constraint evaluation fixture.",
+        "behavior": ["Register one input bit."],
+        "constraints": [],
+        "notes": [],
+        "clock": {"name": "clk", "edge": "posedge"},
+        "reset": {"name": "rst_n", "active": "low", "synchronous": False},
+        "interfaces": {
+            "ports": [
+                {"name": "clk", "direction": "input", "width": 1, "role": "clock"},
+                {"name": "rst_n", "direction": "input", "width": 1, "role": "reset"},
+                {"name": "a", "direction": "input", "width": 4},
+                {"name": "y", "direction": "output", "width": 1},
+            ]
+        },
+        "outputs": [{"path": "rtl/good_constraints.v", "kind": "source", "language": "verilog"}],
+    }
+
+
+def _rtl_md_bad_fixture() -> str:
+    return "\n".join(
+        [
+            "module bad_constraints(input wire clk, input wire rst_n, input wire [3:0] a, output reg y);",
+            "wire gated_clk = clk & rst_n;",
+            "initial y = 1'b0;",
+            "always @(a || rst_n) begin",
+            "  if (a == 4'bx) begin",
+            "    y <= 1'b1;",
+            "  end",
+            "  case (a)",
+            "    4'b0001: y = 1'b1;",
+            "  endcase",
+            "end",
+            "endmodule",
+            "",
+        ]
+    )
+
+
+def _rtl_md_clean_fixture() -> str:
+    return "\n".join(
+        [
+            "module good_constraints(input wire clk, input wire rst_n, input wire [3:0] a, output reg y);",
+            "always @(posedge clk or negedge rst_n) begin",
+            "  if (!rst_n) begin",
+            "    y <= 1'b0;",
+            "  end else begin",
+            "    y <= a[0];",
+            "  end",
+            "end",
+            "endmodule",
+            "",
+        ]
     )
 
 

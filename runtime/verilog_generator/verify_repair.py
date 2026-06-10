@@ -201,6 +201,7 @@ def verify_existing(
         terminal_status_payload(
             diagnosis=diagnosis,
             validation_report=validation_report,
+            tb_contract=tb_contract,
             tb_mutation=tb_mutation,
             rtl_mutation=rtl_mutation,
         ),

@@ -371,7 +371,22 @@ def cleanup_package(package_root: Path) -> None:
     resolved = package_root.resolve()
     if resolved.parent.name != "tmp" or not resolved.name.startswith("erie-verilog-generator-run-"):
         raise AssertionError(f"Refusing to remove unexpected package path: {package_root}")
-    shutil.rmtree(package_root)
+    remove_tree_with_retries(package_root)
+
+
+def remove_tree_with_retries(path: Path, *, attempts: int = 5, delay_s: float = 0.2) -> None:
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            shutil.rmtree(path)
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError as exc:
+            last_error = exc
+            time.sleep(delay_s * (attempt + 1))
+    if last_error is not None:
+        raise last_error
 
 
 def request_and_run(
@@ -632,6 +647,7 @@ else
 fi
 {py} -m compileall -q skills/erie-verilog-generator/runtime skills/erie-verilog-generator/integration skills/erie-verilog-generator/scripts smoke
 {py} smoke/run_smoke.py --settings skills/erie-verilog-generator/config/defaults.json
+{rtl_md_constraint_remote_snippet(remote_python)}
 if [ -n "$configured_simulator_backend" ]; then
   export VERILOG_GENERATOR_SIMULATOR_PRIORITY="$configured_simulator_backend"
   expected_sim_backend="$configured_simulator_backend"
@@ -732,6 +748,116 @@ fi
 {cleanup_snippet}
 find . -type d -name __pycache__ -prune -exec rm -rf {{}} +
 """.strip()
+
+
+def rtl_md_constraint_remote_snippet(remote_python: str) -> str:
+    py = sh_quote(remote_python)
+    template = r"""
+mkdir -p _smoke_runs/remote_rtl_md_constraints
+__PY__ - <<'PY'
+from pathlib import Path
+
+from runtime.verilog_generator.prompt import render_prompt
+from runtime.verilog_generator.rtl_md_constraints import load_rtl_md_constraints, summarize_constraints_for_prompt
+from runtime.verilog_generator.static_lint import lint_generated_rtl
+
+
+def spec(name="remote_rtl_md_constraints"):
+    return {
+        "name": name,
+        "description": "Remote RTL Markdown constraint regression fixture.",
+        "behavior": ["Register one input bit."],
+        "constraints": [],
+        "notes": [],
+        "clock": {"name": "clk", "edge": "posedge"},
+        "reset": {"name": "rst_n", "active": "low", "synchronous": False},
+        "interfaces": {
+            "ports": [
+                {"name": "clk", "direction": "input", "width": 1, "role": "clock"},
+                {"name": "rst_n", "direction": "input", "width": 1, "role": "reset"},
+                {"name": "a", "direction": "input", "width": 4},
+                {"name": "y", "direction": "output", "width": 1},
+            ]
+        },
+        "outputs": [{"path": f"rtl/{name}.v", "kind": "source", "language": "verilog"}],
+    }
+
+
+catalog = load_rtl_md_constraints()
+assert catalog["total_rules"] == 68, catalog
+assert catalog["required_rules"] == 47, catalog
+assert catalog["advisory_rules"] == 21, catalog
+prompt = render_prompt(spec(), stage="rtl")
+for marker in ("RTL Markdown constraints", "MUST_CASE_HAS_DEFAULT", "MUST_ASSIGN_WIDTH_MATCH", "REC_LITERAL_EXPLICIT_BASE_WIDTH"):
+    assert marker in prompt, marker
+summary = summarize_constraints_for_prompt(max_rules_per_group=3)
+assert "MUST rules are blocking error constraints" in summary, summary
+assert "REC rules are default warning-level preferences" in summary, summary
+
+bad_dir = Path("_smoke_runs/remote_rtl_md_constraints/bad")
+bad_dir.mkdir(parents=True, exist_ok=True)
+(bad_dir / "bad_constraints.v").write_text(
+    "\n".join(
+        [
+            "module bad_constraints(input wire clk, input wire rst_n, input wire [3:0] a, output reg y);",
+            "wire gated_clk = clk & rst_n;",
+            "initial y = 1'b0;",
+            "always @(a || rst_n) begin",
+            "  if (a == 4'bx) begin",
+            "    y <= 1'b1;",
+            "  end",
+            "  case (a)",
+            "    4'b0001: y = 1'b1;",
+            "  endcase",
+            "end",
+            "for (i = start; i < LIMIT; i = i + 1) begin",
+            "  y = y;",
+            "end",
+            "endmodule",
+            "",
+        ]
+    ),
+    encoding="utf-8",
+)
+codes = {issue.code for issue in lint_generated_rtl(spec("bad_constraints"), bad_dir)}
+for expected in ("WIRE_INIT", "SIM_ONLY", "SENS_OR_SEPARATOR", "XZ_LITERAL", "CASE_DEFAULT", "COMB_NONBLOCKING_ASSIGN", "FOR_CONST_BOUNDS"):
+    assert expected in codes, codes
+
+good_dir = Path("_smoke_runs/remote_rtl_md_constraints/good")
+good_dir.mkdir(parents=True, exist_ok=True)
+(good_dir / "good_constraints.v").write_text(
+    "\n".join(
+        [
+            "module good_constraints(input wire clk, input wire rst_n, input wire [3:0] a, output reg y);",
+            "always @(posedge clk or negedge rst_n) begin",
+            "  if (!rst_n) begin",
+            "    y <= 1'b0;",
+            "  end else begin",
+            "    y <= a[0];",
+            "  end",
+            "end",
+            "endmodule",
+            "",
+        ]
+    ),
+    encoding="utf-8",
+)
+assert lint_generated_rtl(spec("good_constraints"), good_dir) == []
+PY
+__PY__ -m runtime.verilog_generator eval-skill --evals skills/erie-verilog-generator/evals/evals.json --out _smoke_runs/remote_eval_skill.json --no-state
+__PY__ - <<'PY'
+import json
+from pathlib import Path
+
+report = json.loads(Path("_smoke_runs/remote_eval_skill.json").read_text(encoding="utf-8"))
+summary = report["summary"]
+assert summary["ok"] is True, summary
+assert summary["case_count"] >= 30, summary
+case = next((item for item in report["cases"] if item.get("id") == "rtl_md_constraints_gate"), None)
+assert case and case.get("passed") is True, case
+PY
+""".strip()
+    return template.replace("__PY__", py)
 
 
 def remote_output_cleanup_snippet(cleanup_outputs: bool) -> str:

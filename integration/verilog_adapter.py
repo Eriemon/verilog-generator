@@ -21,6 +21,7 @@ from runtime.verilog_generator.spec import normalize_spec, read_spec, write_spec
 from runtime.verilog_generator.validation import readiness_at_least, validate_generated
 from runtime.verilog_generator.verify_repair import verify_existing as verify_existing_runtime
 from runtime.verilog_generator.workflow import run_workflow
+from runtime.verilog_generator.workflow_router import route_verilog_entry
 from runtime.verilog_generator.workspace import use_workspace_root
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "refine_existing_verilog",
     "compare_verilog_semantics",
     "verify_existing_verilog",
+    "route_verilog_request",
     "load_default_workflow_config",
     "load_workflow_result",
 ]
@@ -48,6 +50,35 @@ def load_workflow_result(run_dir: str | Path) -> dict[str, Any]:
 
     result_path = Path(run_dir) / "workflow_result.json"
     return json.loads(result_path.read_text(encoding="utf-8"))
+
+
+def route_verilog_request(
+    *,
+    request_summary: str = "",
+    spec: str | Path | dict[str, Any] | None = None,
+    codegen_plan: str | Path | dict[str, Any] | None = None,
+    rtl: str | Path | list[str | Path] | None = None,
+    testbench: str | Path | list[str | Path] | None = None,
+    logs: str | Path | list[str | Path] | None = None,
+    waveform: str | Path | list[str | Path] | None = None,
+    validation: str | Path | dict[str, Any] | None = None,
+    artifact_dir: str | Path | None = None,
+    remote_validation_requested: bool = False,
+) -> dict[str, Any]:
+    """Classify the safest Verilog workflow entry without executing it."""
+
+    return route_verilog_entry(
+        request_summary=request_summary,
+        spec=spec,
+        codegen_plan=codegen_plan,
+        rtl=rtl,
+        testbench=testbench,
+        logs=logs,
+        waveform=waveform,
+        validation=validation,
+        artifact_dir=artifact_dir,
+        remote_validation_requested=remote_validation_requested,
+    )
 
 
 def analyze_existing_verilog(

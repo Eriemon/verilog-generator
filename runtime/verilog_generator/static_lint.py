@@ -17,6 +17,16 @@ class StaticLintIssue:
     source: str = "current_module_issue"
     code: str = "ASIC"
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "severity": self.severity,
+            "message": self.message,
+            "path": self.path,
+            "line": self.line,
+            "source": self.source,
+            "code": self.code,
+        }
+
 
 def lint_generated_rtl(spec: dict[str, Any], root: Path) -> list[StaticLintIssue]:
     """Run lightweight ASIC-oriented checks on RTL source files only."""
@@ -28,11 +38,23 @@ def lint_generated_rtl(spec: dict[str, Any], root: Path) -> list[StaticLintIssue
         rel = path.relative_to(root).as_posix()
         text = path.read_text(encoding="utf-8", errors="ignore")
         stripped_lines = [_strip_line_comments(line) for line in _strip_block_comments(text).splitlines()]
+        widths = _declared_widths(stripped_lines)
+        constants = _constant_names(stripped_lines)
         issues.extend(_function_task_issues(rel, stripped_lines))
         issues.extend(_case_default_issues(rel, stripped_lines))
+        issues.extend(_case_default_xz_issues(rel, stripped_lines))
+        issues.extend(_casex_casez_issues(rel, stripped_lines))
         issues.extend(_legacy_sensitivity_issues(rel, stripped_lines))
+        issues.extend(_sensitivity_separator_issues(rel, stripped_lines))
         issues.extend(_mixed_assignment_issues(rel, stripped_lines))
+        issues.extend(_assignment_style_issues(rel, stripped_lines))
         issues.extend(_raw_gated_clock_issues(rel, stripped_lines, clock_names))
+        issues.extend(_derived_clock_issues(rel, stripped_lines, clock_names))
+        issues.extend(_xz_literal_issues(rel, stripped_lines))
+        issues.extend(_wire_initialization_issues(rel, stripped_lines))
+        issues.extend(_simple_width_issues(rel, stripped_lines, widths))
+        issues.extend(_literal_base_width_issues(rel, stripped_lines))
+        issues.extend(_for_loop_bound_issues(rel, stripped_lines, constants))
         issues.extend(_simulation_construct_issues(rel, stripped_lines))
     return issues
 
@@ -40,11 +62,22 @@ def lint_generated_rtl(spec: dict[str, Any], root: Path) -> list[StaticLintIssue
 def _function_task_issues(rel: str, lines: list[str]) -> list[StaticLintIssue]:
     issues: list[StaticLintIssue] = []
     for index, line in enumerate(lines, start=1):
-        if re.search(r"\b(function|task)\b", line):
+        match = re.search(r"\b(function|task)\b", line)
+        if match:
+            if match.group(1) == "function":
+                message = (
+                    "Verilog function blocks are not allowed in generated RTL; "
+                    "MUST_FUNC_NO_RECURSION and MUST_FUNC_NO_NONBLOCKING keep generated logic inline and reviewable."
+                )
+            else:
+                message = (
+                    "Verilog task blocks are not allowed in generated RTL; "
+                    "MUST_TASK_NO_TIMING_CONTROL keeps generated logic free of task timing hazards."
+                )
             issues.append(
                 StaticLintIssue(
                     "error",
-                    "Verilog function/task blocks are not allowed in generated RTL; inline the logic for reviewability.",
+                    message,
                     rel,
                     index,
                     code="NO_TASK_FUNCTION",
@@ -66,13 +99,45 @@ def _case_default_issues(rel: str, lines: list[str]) -> list[StaticLintIssue]:
             if not case["has_default"]:
                 issues.append(
                     StaticLintIssue(
-                        "warning",
-                        "Case statement has no default branch; add an explicit safe default for ASIC review.",
+                        "error",
+                        "Case statement has no default branch; MUST_CASE_HAS_DEFAULT requires an explicit safe default.",
                         rel,
                         int(case["line"]),
                         code="CASE_DEFAULT",
                     )
                 )
+    return issues
+
+
+def _case_default_xz_issues(rel: str, lines: list[str]) -> list[StaticLintIssue]:
+    issues: list[StaticLintIssue] = []
+    for index, line in enumerate(lines, start=1):
+        if re.search(r"\bdefault\s*:\s*[^;]*\d+\s*'\s*[bBoOdDhH][0-9a-fA-F_xXzZ]*[xXzZ]", line):
+            issues.append(
+                StaticLintIssue(
+                    "warning",
+                    "REC_CASE_DEFAULT_NOT_XZ requires case default branches to drive deterministic non-x/z values.",
+                    rel,
+                    index,
+                    code="CASE_DEFAULT_XZ",
+                )
+            )
+    return issues
+
+
+def _casex_casez_issues(rel: str, lines: list[str]) -> list[StaticLintIssue]:
+    issues: list[StaticLintIssue] = []
+    for index, line in enumerate(lines, start=1):
+        if re.search(r"\bcase[xz]\s*\(", line):
+            issues.append(
+                StaticLintIssue(
+                    "warning",
+                    "REC_CASE_NO_CASEX_CASEZ prefers plain case for deterministic simulation.",
+                    rel,
+                    index,
+                    code="CASEX_CASEZ",
+                )
+            )
     return issues
 
 
@@ -89,12 +154,32 @@ def _legacy_sensitivity_issues(rel: str, lines: list[str]) -> list[StaticLintIss
         issues.append(
             StaticLintIssue(
                 "warning",
-                "Legacy combinational always block should use always @(*) to avoid incomplete sensitivity lists.",
+                "MUST_SENS_LIST_COMPLETE_MINIMAL requires complete sensitivity coverage; use always @(*) for combinational logic.",
                 rel,
                 index,
                 code="ALWAYS_STAR",
             )
         )
+    return issues
+
+
+def _sensitivity_separator_issues(rel: str, lines: list[str]) -> list[StaticLintIssue]:
+    issues: list[StaticLintIssue] = []
+    for index, line in enumerate(lines, start=1):
+        match = re.search(r"\balways\s*@\s*\(([^)]*)\)", line)
+        if not match:
+            continue
+        sensitivity = match.group(1)
+        if "|" in sensitivity:
+            issues.append(
+                StaticLintIssue(
+                    "error",
+                    "MUST_SENS_NO_OR_SEPARATOR forbids `|` or `||` in always sensitivity lists; list signals directly or use always @(*).",
+                    rel,
+                    index,
+                    code="SENS_OR_SEPARATOR",
+                )
+            )
     return issues
 
 
@@ -107,10 +192,39 @@ def _mixed_assignment_issues(rel: str, lines: list[str]) -> list[StaticLintIssue
             issues.append(
                 StaticLintIssue(
                     "warning",
-                    "Always block mixes blocking and nonblocking assignments; split combinational and sequential intent.",
+                    "MUST_COMB_BLOCKING_ASSIGN and MUST_SEQ_NONBLOCKING_ASSIGN require separated combinational and sequential assignment intent.",
                     rel,
                     start,
                     code="MIXED_ASSIGN",
+                )
+            )
+    return issues
+
+
+def _assignment_style_issues(rel: str, lines: list[str]) -> list[StaticLintIssue]:
+    issues: list[StaticLintIssue] = []
+    for start, block in _always_blocks(lines):
+        header = block[0]
+        sequential = bool(re.search(r"\b(posedge|negedge)\b", header, flags=re.IGNORECASE))
+        if sequential:
+            if any(_has_blocking_assignment(line) for line in block):
+                issues.append(
+                    StaticLintIssue(
+                        "error",
+                        "MUST_SEQ_NONBLOCKING_ASSIGN requires nonblocking assignments in sequential always blocks.",
+                        rel,
+                        start,
+                        code="SEQ_BLOCKING_ASSIGN",
+                    )
+                )
+        elif any("<=" in line for line in block):
+            issues.append(
+                StaticLintIssue(
+                    "error",
+                    "MUST_COMB_BLOCKING_ASSIGN requires blocking assignments in combinational always blocks.",
+                    rel,
+                    start,
+                    code="COMB_NONBLOCKING_ASSIGN",
                 )
             )
     return issues
@@ -132,7 +246,7 @@ def _raw_gated_clock_issues(rel: str, lines: list[str], clock_names: set[str]) -
             issues.append(
                 StaticLintIssue(
                     "error",
-                    "Raw gated clock logic is not ASIC safe; use clock-enable RTL or an approved ICG wrapper.",
+                    "MUST_CLK_NO_COMB_CLOCK forbids raw gated clock logic; use clock-enable RTL or an approved ICG wrapper.",
                     rel,
                     index,
                     code="RAW_GATED_CLOCK",
@@ -141,18 +255,216 @@ def _raw_gated_clock_issues(rel: str, lines: list[str], clock_names: set[str]) -
     return issues
 
 
+def _derived_clock_issues(rel: str, lines: list[str], clock_names: set[str]) -> list[StaticLintIssue]:
+    issues: list[StaticLintIssue] = []
+    for index, line in enumerate(lines, start=1):
+        match = re.search(r"\balways\s*@\s*\([^)]*\b(?:posedge|negedge)\s+([A-Za-z_][A-Za-z0-9_]*)", line)
+        if not match:
+            continue
+        name = match.group(1)
+        if name not in clock_names and ("clk" in name.lower() or "clock" in name.lower()):
+            issues.append(
+                StaticLintIssue(
+                    "error",
+                    "MUST_CLK_NO_COMB_CLOCK and MUST_CLK_NO_REGOUT_CLOCK require confirmed clock ports, not derived clock-like signals.",
+                    rel,
+                    index,
+                    code="DERIVED_CLOCK",
+                )
+            )
+    return issues
+
+
+def _xz_literal_issues(rel: str, lines: list[str]) -> list[StaticLintIssue]:
+    issues: list[StaticLintIssue] = []
+    for index, line in enumerate(lines, start=1):
+        if re.search(r"\d+\s*'\s*[bBoOdDhH][0-9a-fA-F_xXzZ]*[xXzZ][0-9a-fA-F_xXzZ]*", line):
+            issues.append(
+                StaticLintIssue(
+                    "error",
+                    "MUST_OP_NO_XZ_ARITH, MUST_OP_NO_XZ_CONDITION, and MUST_BRANCH_COND_NO_XZ forbid explicit x/z values in generated RTL logic.",
+                    rel,
+                    index,
+                    code="XZ_LITERAL",
+                )
+            )
+    return issues
+
+
+def _wire_initialization_issues(rel: str, lines: list[str]) -> list[StaticLintIssue]:
+    issues: list[StaticLintIssue] = []
+    for index, line in enumerate(lines, start=1):
+        if re.search(r"\bwire\b[^;]*=", line):
+            issues.append(
+                StaticLintIssue(
+                    "error",
+                    "MUST_ASSIGN_WIDTH_MATCH-compatible review requires wires to be declared separately from standalone assign statements.",
+                    rel,
+                    index,
+                    code="WIRE_INIT",
+                )
+            )
+    return issues
+
+
+def _simple_width_issues(rel: str, lines: list[str], widths: dict[str, int]) -> list[StaticLintIssue]:
+    issues: list[StaticLintIssue] = []
+    for index, line in enumerate(lines, start=1):
+        assign_match = re.search(r"\bassign\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]+);", line)
+        if assign_match:
+            lhs, rhs = assign_match.group(1), assign_match.group(2).strip()
+            issues.extend(_width_pair_issue(rel, index, lhs, rhs, widths, "ASSIGN_WIDTH"))
+        if re.search(r"\b(if|while)\s*\(|\?", line):
+            rel_match = re.search(r"([A-Za-z_][A-Za-z0-9_]*|\d+\s*'\s*[bBoOdDhH][0-9a-fA-F_xXzZ]+)\s*(==|!=|<=|>=|<|>)\s*([A-Za-z_][A-Za-z0-9_]*|\d+\s*'\s*[bBoOdDhH][0-9a-fA-F_xXzZ]+)", line)
+            if rel_match:
+                left, right = rel_match.group(1), rel_match.group(3)
+                issues.extend(_width_pair_issue(rel, index, left, right, widths, "REL_WIDTH"))
+    return issues
+
+
+def _literal_base_width_issues(rel: str, lines: list[str]) -> list[StaticLintIssue]:
+    issues: list[StaticLintIssue] = []
+    for index, line in enumerate(lines, start=1):
+        if re.search(r"=\s*\d+\s*;", line) and not re.search(r"\d+\s*'\s*[bBoOdDhH]", line):
+            issues.append(
+                StaticLintIssue(
+                    "warning",
+                    "REC_LITERAL_EXPLICIT_BASE_WIDTH prefers constants and parameters with explicit width and base.",
+                    rel,
+                    index,
+                    code="LITERAL_BASE_WIDTH",
+                )
+            )
+    return issues
+
+
+def _width_pair_issue(rel: str, line: int, left: str, right: str, widths: dict[str, int], code: str) -> list[StaticLintIssue]:
+    left_width = _expr_width(left, widths)
+    right_width = _expr_width(right, widths)
+    if left_width is None or right_width is None or left_width == right_width:
+        return []
+    rule = "MUST_ASSIGN_WIDTH_MATCH" if code == "ASSIGN_WIDTH" else "MUST_OP_REL_WIDTH_MATCH"
+    return [
+        StaticLintIssue(
+            "error",
+            f"{rule} requires simple compared or assigned expressions to use matching widths ({left_width} != {right_width}).",
+            rel,
+            line,
+            code=code,
+        )
+    ]
+
+
+def _for_loop_bound_issues(rel: str, lines: list[str], constants: set[str]) -> list[StaticLintIssue]:
+    issues: list[StaticLintIssue] = []
+    for index, line in enumerate(lines, start=1):
+        for_match = re.search(r"\bfor\s*\(([^;]+);([^;]+);([^)]+)\)", line)
+        if not for_match:
+            continue
+        init, cond, step = (part.strip() for part in for_match.groups())
+        init_match = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]+)", init)
+        step_match = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*=", step)
+        loop_var = init_match.group(1) if init_match else ""
+        init_value = init_match.group(2).strip() if init_match else ""
+        cond_rhs_match = re.search(r"(?:<=|>=|<|>)\s*([A-Za-z_][A-Za-z0-9_]*|\d+\s*'\s*[bBoOdDhH][0-9a-fA-F_]+|\d+)", cond)
+        cond_bound = cond_rhs_match.group(1).strip() if cond_rhs_match else ""
+        step_var = step_match.group(1) if step_match else ""
+        if (
+            not loop_var
+            or step_var != loop_var
+            or not _is_constant_expr(init_value, constants)
+            or not _is_constant_expr(cond_bound, constants)
+        ):
+            issues.append(
+                StaticLintIssue(
+                    "error",
+                    "MUST_LOOP_FOR_CONST_BOUNDS requires constant for-loop bounds and updates to the loop variable.",
+                    rel,
+                    index,
+                    code="FOR_CONST_BOUNDS",
+                )
+            )
+    return issues
+
+
 def _simulation_construct_issues(rel: str, lines: list[str]) -> list[StaticLintIssue]:
     issues: list[StaticLintIssue] = []
     patterns = {
-        r"\binitial\b": "Initial blocks are simulation-only and must stay out of RTL source.",
-        r"\#[0-9]+": "Delay controls are simulation-only and must stay out of RTL source.",
-        r"\$(display|finish|stop)\b": "Simulation system tasks must stay out of RTL source.",
+        r"\binitial\b": "MUST_INITIAL_FORBIDDEN keeps simulation-only initial blocks out of RTL source.",
+        r"\#[0-9]+": "MUST_ASSIGN_NO_DELAY and MUST_TASK_NO_TIMING_CONTROL keep delay controls out of RTL source.",
+        r"\$(display|finish|stop)\b": "MUST_TASK_NO_TIMING_CONTROL keeps simulation system tasks out of RTL source.",
     }
     for index, line in enumerate(lines, start=1):
         for pattern, message in patterns.items():
             if re.search(pattern, line):
                 issues.append(StaticLintIssue("error", message, rel, index, code="SIM_ONLY"))
     return issues
+
+
+def _declared_widths(lines: list[str]) -> dict[str, int]:
+    widths: dict[str, int] = {}
+    decl_re = re.compile(r"\b(?:input|output|inout|wire|reg)\b(?:\s+reg|\s+wire)?\s*(\[[^]]+\])?\s*([^;]+);")
+    ansi_decl_re = re.compile(r"\b(?:input|output|inout|wire|reg)\b(?:\s+reg|\s+wire)?\s*(\[[^]]+\])?\s+([A-Za-z_][A-Za-z0-9_]*)")
+    for line in lines:
+        for match in ansi_decl_re.finditer(line):
+            widths[match.group(2)] = _range_width(match.group(1))
+        match = decl_re.search(line)
+        if not match:
+            continue
+        width = _range_width(match.group(1))
+        for raw_name in match.group(2).split(","):
+            name_match = re.search(r"([A-Za-z_][A-Za-z0-9_]*)", raw_name)
+            if name_match:
+                widths[name_match.group(1)] = width
+    return widths
+
+
+def _constant_names(lines: list[str]) -> set[str]:
+    names: set[str] = set()
+    for line in lines:
+        match = re.search(r"\b(?:parameter|localparam)\b(?:\s+\[[^]]+\])?\s+([^;]+);", line)
+        if not match:
+            continue
+        for raw_name in match.group(1).split(","):
+            name_match = re.search(r"([A-Za-z_][A-Za-z0-9_]*)", raw_name)
+            if name_match:
+                names.add(name_match.group(1))
+    return names
+
+
+def _range_width(range_text: str | None) -> int:
+    if not range_text:
+        return 1
+    match = re.search(r"\[\s*(\d+)\s*:\s*(\d+)\s*\]", range_text)
+    if not match:
+        return 1
+    left, right = int(match.group(1)), int(match.group(2))
+    return abs(left - right) + 1
+
+
+def _expr_width(expr: str, widths: dict[str, int]) -> int | None:
+    expr = expr.strip()
+    literal = re.fullmatch(r"(\d+)\s*'\s*[bBoOdDhH][0-9a-fA-F_xXzZ]+", expr)
+    if literal:
+        return int(literal.group(1))
+    identifier = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)", expr)
+    if identifier:
+        return widths.get(identifier.group(1))
+    return None
+
+
+def _is_constant_expr(expr: str, constants: set[str]) -> bool:
+    expr = expr.strip()
+    return bool(
+        re.fullmatch(r"\d+", expr)
+        or re.fullmatch(r"\d+\s*'\s*[bBoOdDhH][0-9a-fA-F_]+", expr)
+        or expr in constants
+    )
+
+
+def _has_blocking_assignment(line: str) -> bool:
+    normalized = re.sub(r"(==|!=|<=|>=)", "", line)
+    return bool(re.search(r"(?<![<>=!])=(?!=)", normalized))
 
 
 def _always_blocks(lines: list[str]) -> list[tuple[int, list[str]]]:

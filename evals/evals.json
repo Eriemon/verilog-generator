@@ -13,6 +13,17 @@
       }
     },
     {
+      "id": "rtl_md_constraints_gate",
+      "kind": "rtl_md_constraint_regression",
+      "expectations": {
+        "blocked_codes": ["CASE_DEFAULT", "XZ_LITERAL", "WIRE_INIT"],
+        "clean_has_no_issues": true,
+        "catalog_total_rules": 68,
+        "prompt_mentions_all_rules": true,
+        "static_issues_include_rule_ids": true
+      }
+    },
+    {
       "id": "spi_adc",
       "kind": "use_case_template_regression",
       "spec": "assets/examples/use_case_templates/spi_adc.json",
@@ -258,6 +269,123 @@
         "auto_apply_downgraded_to_confirmation": true,
         "intervention_present_before_apply": true,
         "decision_resume_applies_and_regresses": true
+      }
+    },
+    {
+      "id": "workflow_routing_regression",
+      "kind": "routing_regression",
+      "request_summary": "Route an existing Verilog RTL block with a behavioral note into the safest existing-RTL workflow.",
+      "source": "assets/examples/existing_rtl/ready_valid_slice.v",
+      "spec_source": "assets/examples/existing_rtl/ready_valid_slice_spec.md",
+      "expectations": {
+        "recommended_flow": "verify_existing_verilog",
+        "entry_mode": "existing-RTL assist/repair",
+        "provenance_policy_present": true,
+        "reference_workspace_absent": true
+      }
+    },
+    {
+      "id": "workflow_routing_artifact_plan_seed_regression",
+      "kind": "routing_regression",
+      "request_summary": "Route a ready artifact directory with spec and codegen plan.",
+      "artifact_dir": {
+        "spec": true,
+        "codegen_plan": {
+          "ready_for_generation": true,
+          "open_questions": []
+        }
+      },
+      "expectations": {
+        "recommended_flow": "run_verilog_workflow",
+        "entry_mode": "plan-seeded generation",
+        "missing_inputs_not_contains": [
+          "codegen_plan"
+        ],
+        "provenance_policy_present": true,
+        "reference_workspace_absent": true
+      }
+    },
+    {
+      "id": "workflow_routing_compile_log_regression",
+      "kind": "routing_regression",
+      "request_summary": "Route compile evidence before repair.",
+      "logs": [
+        {
+          "name": "compile.log",
+          "text": "Error: syntax error near endmodule\n"
+        }
+      ],
+      "expectations": {
+        "recommended_flow": "verify_existing_verilog",
+        "entry_mode": "evidence-first debug/repair",
+        "risk_flags_contains": [
+          "compile_failure"
+        ],
+        "missing_inputs_not_contains": [
+          "logs"
+        ],
+        "provenance_policy_present": true,
+        "reference_workspace_absent": true
+      }
+    },
+    {
+      "id": "workflow_routing_sim_timeout_regression",
+      "kind": "routing_regression",
+      "request_summary": "Route simulation timeout evidence before repair.",
+      "logs": [
+        {
+          "name": "simulation.log",
+          "text": "[TB_ERROR] timeout while waiting for ready\n"
+        }
+      ],
+      "expectations": {
+        "recommended_flow": "verify_existing_verilog",
+        "entry_mode": "evidence-first debug/repair",
+        "risk_flags_contains": [
+          "sim_timeout",
+          "dut_tb_contract_risk"
+        ],
+        "provenance_policy_present": true,
+        "reference_workspace_absent": true
+      }
+    },
+    {
+      "id": "workflow_routing_missing_artifact_regression",
+      "kind": "routing_regression",
+      "request_summary": "Route an intended RTL file that is not present yet.",
+      "missing_source": true,
+      "expectations": {
+        "recommended_flow": "analyze_existing_verilog",
+        "entry_mode": "existing-RTL assist/repair",
+        "missing_inputs_contains": [
+          "rtl"
+        ],
+        "risk_flags_contains": [
+          "missing_artifact_inputs"
+        ],
+        "provenance_policy_present": true,
+        "reference_workspace_absent": true
+      }
+    },
+    {
+      "id": "workflow_routing_remote_request_regression",
+      "kind": "routing_regression",
+      "request_summary": "Route a remote validation request without starting remote actions.",
+      "remote_validation_requested": true,
+      "expectations": {
+        "recommended_flow": "verify_existing_verilog",
+        "entry_mode": "evidence-first debug/repair",
+        "missing_inputs_contains": [
+          "validation_artifacts",
+          "remote_selection",
+          "remote_workspace_settings"
+        ],
+        "risk_flags_contains": [
+          "remote_validation_requested"
+        ],
+        "next_action_contains": "erie-remote-ssh",
+        "provenance_policy_present": true,
+        "reference_workspace_absent": true
       }
     }
   ]

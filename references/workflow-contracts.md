@@ -3,6 +3,7 @@
 ## Table of Contents
 
 - [Run Directory](#run-directory)
+- [Entry Routing](#entry-routing)
 - [Fixed Generation Pipeline](#fixed-generation-pipeline)
 - [Existing RTL Assist Flows](#existing-rtl-assist-flows)
 - [Terminal Statuses](#terminal-statuses)
@@ -29,6 +30,32 @@ The adapter also materializes preflight inputs under `_adapter_inputs/`:
 - optional `decision.json`
 
 Each attempt lives under `attempt-001/`, `attempt-002/`, and so on. Stage outputs are separated by stage, for example `python/generated/...`, `rtl/generated/...`, `validation.json`, `repair_plan.json`, and `intervention.json`.
+
+## Entry Routing
+
+`route_verilog_entry(...)` is a read-only classifier. It may inspect caller-provided specs, codegen plans, RTL paths, testbench paths, logs, validation summaries, waveform clues, or an artifact directory, but it must not write source artifacts, start model calls, run validation, create backups, or trigger remote commands.
+
+The stable route decision fields are:
+
+- `recommended_flow`
+- `entry_mode`
+- `required_inputs`
+- `missing_inputs`
+- `next_action`
+- `safe_recovery_hint`
+- `risk_flags`
+- `provenance_policy`
+
+Entry modes are limited to:
+
+- `spec-first generation`
+- `plan-seeded generation`
+- `existing-RTL assist/repair`
+- `evidence-first debug/repair`
+
+`plan-seeded generation` only means an existing codegen plan can seed the workflow. It does not bypass requirement confirmation, Verilog-2001 target checks, Python reference generation, extraction, validation, or downstream quality gates.
+
+Route summaries may be copied into `workflow_config.json` and `workflow_result.json` as evidence. They are advisory and must not change `WORKFLOW_STATUSES`.
 
 ## Fixed Generation Pipeline
 
@@ -57,6 +84,8 @@ Existing-RTL helper flows do not use the staged generation pipeline. They are se
 `merge_assist` is assist-only by default. It produces a merge plan, wrapper skeleton, validation summary, and equivalence-review contract so repartition or recompose work remains explicit and reviewable.
 
 `verify_existing_verilog(...)` is a verification loop entrypoint rather than a fresh RTL generator. It stages source RTL into a project-local verification workspace, emits a log-driven scaffold testbench or augments an existing one, normalizes diagnosis results, and records the selected automation boundary. The caller must provide the automation mode explicitly.
+
+Existing-RTL verify-repair reports may add `diagnosis_route` to `run_summary.json` and `terminal_status.json`. The allowed values are `local_rtl_issue`, `spec_ambiguity`, `dut_tb_contract_drift`, `toolchain_issue`, `needs_external_validation`, and `unknown_or_mixed`. This field is an advisory routing summary and must not change terminal success semantics.
 
 For `tb_mode="augment"`, the run directory also writes:
 
