@@ -15,6 +15,7 @@ Use this reference for independent static lint, code review, and repair work on 
 | `A6` | Async reset is not modeled with the reset edge in the sensitivity list | Match the reset object exactly |
 | `A7` | Simulation-only `initial` block appears in RTL source | Keep `initial` blocks in testbench files only |
 | `A8` | Delay controls appear in RTL source | Remove `#delay` from synthesizable logic |
+| `A9` | A `wire` is assigned inside an `always` block | Declare the procedural target as `reg`/`logic` or use a continuous assignment |
 
 ## Category B: Quality Warnings
 
@@ -28,6 +29,7 @@ Use this reference for independent static lint, code review, and repair work on 
 | `B6` | High-fanout enable or control path is obscured | Makes timing review harder |
 | `B7` | Legacy combinational sensitivity list | Can hide simulation mismatches |
 | `B8` | Testbench and RTL responsibilities are mixed | Keep verification constructs separate |
+| `B9` | Port declarations in an ANSI module header hide driver/type mistakes | Parse header declarations when reviewing high-confidence lint findings |
 
 ## Category C: ASIC Quality Review
 

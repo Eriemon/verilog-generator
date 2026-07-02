@@ -1,17 +1,17 @@
 # Testbench Patterns
 
-Use this reference when generating or reviewing Verilog-2001 self-checking testbench scaffolds for the Erie workflow.
+Use this reference when generating or reviewing Verilog-2001 or SystemVerilog self-checking testbench scaffolds for the Erie workflow. Synthesizable RTL remains Verilog-2001 `.v`; SystemVerilog is allowed only for testbench `.sv` artifacts.
 
 ## In Scope
 
 - Simple directed testbenches for module-level bring-up
-- Self-checking PASS/FAIL reporting
+- Self-checking PASS/FAIL reporting backed by real comparisons
 - Reset, nominal behavior, boundary conditions, and timeout coverage
 - Stable vector-hash comments so downstream validation can line up reference cases
 
 ## Out Of Scope
 
-The current skill remains Verilog-only. Interface-heavy verification styles and class-based verification environments are out of the current skill boundary. They may be mentioned for comparison, but they are not generation targets.
+Synthesizable source RTL remains Verilog-only. Interface-heavy verification styles and class-based verification environments are out of the current skill boundary. They may be mentioned for comparison, but they are not generation targets.
 
 ## Simple Directed Testbench
 
@@ -22,7 +22,7 @@ Use this structure for small modules and quick validation:
 3. Apply reset through a dedicated task when the design has a reset signal.
 4. Initialize every driven DUT input before the first active cycle.
 5. Run a small set of named stimulus cases.
-6. Print explicit `PASS` or `FAIL` messages for every checked case.
+6. Print explicit `PASS` or `FAIL` messages for every checked case only after a real comparison has executed.
 7. Add a watchdog timeout so a hung simulation terminates cleanly.
 
 ## Self-Checking Testbench
@@ -33,8 +33,14 @@ Use a self-checking testbench whenever the DUT contract is deterministic enough 
 
 - Compare observed outputs against known expected values.
 - Emit one explicit `PASS` path and one explicit `FAIL` path.
+- Instantiate the DUT, drive at least one non-clock/non-reset input, and route failures through `$error`, `$fatal`, `$finish_and_return`, or explicit `FAIL` handling.
 - Keep checks local and readable; do not hide basic comparisons inside elaborate helpers.
 - Preserve any reference vector hash comment required by the workflow.
+- When a reference contract is present, mention every required case id and compare every checkpoint key against an expected value.
+
+## Scaffold Without Expectations
+
+When `scripts/tb_generator.py` is used without expectations or vector JSON, it must emit a scaffold that blocks success with a clear `$fatal` until the user fills module-specific expected values. It must not print `PASS`, must not contain a dummy never-failing comparison, and must not be treated as validation evidence.
 
 ## Minimal Checklist
 
@@ -43,7 +49,8 @@ Use a self-checking testbench whenever the DUT contract is deterministic enough 
 - Reset and nominal behavior are both exercised.
 - Boundary or corner conditions are represented.
 - Timeout handling exists.
-- PASS and FAIL strings are easy to grep from simulator output.
+- PASS and FAIL strings are easy to grep from simulator output, and PASS is reachable only after comparison code.
+- `.sv` testbenches are compiled with SystemVerilog flags when an external backend is used.
 
 ## Comparison Note
 

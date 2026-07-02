@@ -1,0 +1,27 @@
+{
+  "execution": {
+    "mode": "format",
+    "dry_run": false
+  },
+  "formatter": {
+    "preserve_comments": true,
+    "sort_ports": true,
+    "sort_params": true,
+    "auto_fix_prefix": true
+  },
+  "checks": {
+    "enable": true,
+    "diff": true
+  },
+  "naming": {
+    "preserve_port_names": [
+      "ap_clk",
+      "ap_rst_n",
+      "interrupt"
+    ],
+    "preserve_port_patterns": [
+      "^s_axi_control_.+$",
+      "^m_axi_[A-Za-z0-9]+_.+$"
+    ]
+  }
+}

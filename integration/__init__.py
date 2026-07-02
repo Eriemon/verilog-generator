@@ -1,1 +1,1 @@
-"""Host integration helpers for Verilog-only workflows."""
+"""宿主侧 Verilog-only 工作流集成辅助入口。"""

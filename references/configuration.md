@@ -34,15 +34,18 @@ Skill-effectiveness eval assets live under `evals/evals.json`. The file records 
 
 ## Skill Dependencies
 
-`skill_dependencies` records dependency groups by GitHub URL, expected local skill names, install policy, and adaptation policy. The required groups are:
+`skill_dependencies` records dependency groups by GitHub URL, expected local skill names, install policy, and adaptation policy. The required group is:
 
 - `https://github.com/Eriemon/remote-ssh.git`: provides `erie-remote-ssh` for remote SSH server selection and remote Verilog validation.
-- `https://github.com/adeleempurpled290/FPGA-Agent-skills.git`: provides `vivado-tcl`, `vivado-sim`, `vivado-synth`, `vivado-impl`, `vivado-analysis`, `vivado-constraints`, `vivado-debug`, and `vitis-hls-synthesis`.
 
 The recommended groups are:
 
 - `https://github.com/obra/superpowers.git`: planning, execution, TDD, and verification workflows.
 - `https://github.com/muratcankoylan/Agent-Skills-for-Context-Engineering.git`: engineering debug and context optimization workflows.
+
+The manual fallback group is:
+
+- `https://github.com/adeleempurpled290/FPGA-Agent-skills.git`: legacy Vivado/Vitis child skills. This group is never installed during normal preflight and requires explicit fallback approval.
 
 Run the dependency manager from the skill root:
 
@@ -78,9 +81,10 @@ Run the local confidence gate from the skill root:
 ```powershell
 python .\scripts\validate_verilog_skill.py --settings .\config\defaults.json
 python .\scripts\validate_verilog_skill.py --settings .\config\defaults.json --no-require-remote
+python .\scripts\validate_verilog_skill.py --settings .\config\defaults.json --with-external-audit --with-repo-regression --no-require-remote
 ```
 
-The default confidence gate now also runs `manage_docs.py work-folder-gate . --skill-dir skills/erie-verilog-generator --mode development` and requires real remote validation evidence. Use `--no-require-remote` only when you intentionally want a local-only diagnostic pass.
+The default confidence gate is install-package self-contained: it does not require repository-root `tests/`, `smoke/`, `quick_validate.py`, `audit_skill.py`, or `agents-md-generator` to exist in a clean extracted skill package. Use `--with-external-audit` for development or release audit tools outside the skill package, and use `--with-repo-regression` from the source repository to run root-level unittest and smoke suites. Use `--no-require-remote` only when you intentionally want a local-only diagnostic pass.
 
 Run the deterministic skill-effectiveness gate from the skill root:
 
@@ -95,6 +99,8 @@ python .\scripts\preflight_verilog_toolchain.py --settings .\config\defaults.jso
 ```
 
 If the report sets `remote_selection_required=true`, do not silently fall back to local external tools. Refresh `.settings/server_list.local.json` through `erie-remote-ssh`, confirm the selected server in `.settings/remote-selection.local.json`, and ensure the remote workdir provides `.settings/verilog.remote.json` before remote validation.
+
+For `validate`, compile, execute, or implement readiness is only credible when an external backend actually runs. Combining those readiness levels with `--no-external` produces a `toolchain_issue` error and reports `static_passed`, `compile_not_run`, `sim_not_run`, and remote-required status separately.
 
 ## Simulator Selection
 

@@ -1,137 +1,242 @@
-"""End-to-end workflow runner for staged prompt generation."""
-
+"""分阶段提示生成的端到端工作流门面。"""
+# 标准库导入提供路径和动态关键字参数类型。
 from __future__ import annotations
 
-import copy
-import json
+# 标准库类型用于声明路径和动态关键字入口。
 from pathlib import Path
 from typing import Any
 
-from .extractor import ExtractionError, extract_response
-from .interface_contract import audit_interface
-from .model_provider import (
-    GenerationContext,
-    ManualResponseRequired,
-    ModelProviderError,
-    build_model_provider,
-)
-from .optimizer import build_prompt_memory
+# 本包导入负责规格解析、路由、执行和工作区安全边界。
 from .planning import decompose_spec
-from .prompt import _manifest_for, _stage_manifest_for, render_prompt
-from .requirements import (
-    build_codegen_plan,
-    build_requirements_payload,
-    validate_codegen_plan_payload,
-    validate_requirement_confirmation,
+
+# 需求确认 gate 在生成前阻断不完整规格。
+from .requirements import validate_requirement_confirmation
+
+# spec helper 负责读写规范化计划。
+from .spec import read_spec, write_spec
+
+# execution helper 承接 attempt 循环和验证修复。
+from .workflow_execution import _execute_workflow
+
+# gate helper 保持旧模块可导入的兼容符号。
+from .workflow_gates import _combine_gate_results, _interface_gate, _review_artifact_gate, _review_gate, _semantic_gate
+
+# support helper 提供状态、配置和路径治理能力。
+from .workflow_support import (
+    # 常量导出保持旧调用方兼容。
+    DEFAULT_STAGE_SETS,
+    FINAL_STAGE,
+    GENERATION_MODES,
+    WORKFLOW_STATUSES,
+
+    # 异常和 stage helper 支撑门面逻辑。
+    WorkflowError,
+    _default_stages_for,
+
+    # JSON、state 和 codegen plan helper 管理运行证据。
+    _read_json,
+    _record_state,
+    _resolve_external_codegen_plan,
+
+    # 配置、result 和 mode helper 交给 execution 层消费。
+    _workflow_config,
+    _write_result,
+    require_generation_mode,
 )
-from .reference_contract import audit_reference
-from .reflection import build_diagnosis, build_intervention, build_repair_plan, generate_repair_prompt
-from .spec import SpecError, read_spec, write_spec
-from .trace import append_trace_event, read_trace, safe_path, spec_summary
-from .validation import validate_generated
-from .vectors import audit_vectors
-from .verifier import verify_stage
+
+# router helper 负责 spec-only 和 plan-seeded 入口分流。
 from .workflow_router import route_verilog_entry
-from .workspace import require_workspace_path, require_workspace_path_from, require_write_path, update_workflow_state, write_json, write_text
 
-WORKFLOW_STATUSES = (
-    "passed",
-    "failed",
-    "blocked_human",
-    "blocked_toolchain",
-    "max_attempts",
-    "invalid_response",
-)
-GENERATION_MODES = ("regular", "deep_review")
-DEFAULT_STAGE_SETS = {
-    "rtl": {
-        "regular": ["requirements", "codegen_plan", "python", "rtl"],
-        "deep_review": ["requirements", "codegen_plan", "python", "review", "rtl"],
-    },
-}
-FINAL_STAGE = {"rtl": "rtl"}
+# workspace helper 约束所有读写路径。
+from .workspace import require_workspace_path, require_write_path, write_json
 
+# workflow 门面接受历史关键字参数，并把执行细节转交给拆分后的 helper。
+def run_workflow(**kwargs: Any) -> dict[str, Any]:
+    """执行或恢复分阶段 Spec2RTL 工作流。
 
-class WorkflowError(ValueError):
-    """Raised when workflow configuration or resume state is invalid."""
+    参数:
+        kwargs: 旧 API 和 CLI 透传的 workflow 运行选项。
 
+    返回:
+        workflow_result.json 对应的运行结果字典。
 
-def run_workflow(
-    *,
-    spec_path: Path | None = None,
-    target: str | None = None,
-    out_dir: Path | None = None,
-    resume_dir: Path | None = None,
-    decision_path: Path | None = None,
-    evidence_path: Path | None = None,
-    provider_name: str = "manual",
-    provider_command: str | None = None,
-    generation_mode: str | None = None,
-    stream: bool | None = None,
-    readiness: str = "static",
-    max_attempts: int = 3,
-    stop_on_human: bool = True,
-    run_external: bool = True,
-    comment_language: str = "zh",
-    model_timeout_s: int = 120,
-    state_updates: bool = True,
-) -> dict[str, Any]:
-    """Execute or resume a staged Spec2RTL workflow."""
+    异常:
+        WorkflowError: 新运行缺少必需路径，或恢复流程缺少人工决策。
+    """
 
-    if resume_dir is not None:
-        return _resume_workflow(
-            resume_dir=resume_dir,
-            decision_path=decision_path,
-            generation_mode=generation_mode,
-            stream=stream,
-            stop_on_human=stop_on_human,
-            run_external=run_external,
-            comment_language=comment_language,
-            model_timeout_s=model_timeout_s,
-            state_updates=state_updates,
-        )
-    if spec_path is None or out_dir is None:
-        raise WorkflowError("New workflow runs require both spec_path and out_dir.")
+    # resume_dir 存在时沿用旧入口语义，直接进入恢复路径。
+    obj_resume_dir: object = kwargs.get("resume_dir")  # 恢复运行目录参数
 
-    spec_file = require_workspace_path(spec_path, purpose="spec path", must_exist=True)
-    run_dir = require_write_path(out_dir, purpose="workflow output directory")
-    run_dir.mkdir(parents=True, exist_ok=True)
-    trace_path = run_dir / "trace.jsonl"
-    state_path = run_dir / "workflow-state.json"
-    result_path = run_dir / "workflow_result.json"
-    config_path = run_dir / "workflow_config.json"
-    plan_path = run_dir / "plan.json"
+    # 恢复模式不要求新 spec/out_dir，避免误触发新运行校验。
+    if obj_resume_dir is not None:
 
-    raw_spec = read_spec(spec_file, target=target)
+        # 恢复分支只透传原始关键字表，由恢复 helper 统一读取默认值。
+        return _resume_workflow(**kwargs)
+
+    # spec_path 和 out_dir 是新 workflow 的最小必需输入。
+    obj_spec_path: object = kwargs.get("spec_path")  # 新运行规格文件参数
+
+    # out_dir 决定新 workflow 的所有证据输出位置。
+    obj_out_dir: object = kwargs.get("out_dir")  # 新运行输出目录参数
+
+    # 新运行缺少任一必需路径时立即失败，保持旧错误语义。
+    if obj_spec_path is None or obj_out_dir is None:
+
+        # 缺少新运行路径时不能创建半成品 run 目录。
+        raise WorkflowError("> ERR: [Python] New workflow runs require both spec_path and out_dir.")
+
+    # new_run_context 汇总新运行需要的路径、计划、配置和初始结果。
+    dict_new_run_context = _prepare_new_workflow_run(kwargs, obj_spec_path, obj_out_dir)  # 新运行执行上下文
+
+    # 执行 helper 负责 attempt 循环、stage、validation、gate 和 repair。
+    return _execute_workflow(**dict_new_run_context)
+
+# 新 workflow 准备 helper 只做可重复的路径、计划和配置写盘。
+def _prepare_new_workflow_run(kwargs: dict[str, Any], spec_path: Any, out_dir: Any) -> dict[str, Any]:
+    """创建新 workflow 的初始上下文。
+
+    参数:
+        kwargs: 旧 API 和 CLI 透传的 workflow 运行选项。
+        spec_path: 新运行规格文件路径。
+        out_dir: 新运行输出目录路径。
+
+    返回:
+        可直接传给 _execute_workflow 的执行上下文字典。
+    """
+
+    # spec_file 限定在工作区内，防止读取不受控规格。
+    spec_file = require_workspace_path(spec_path, purpose="spec path", must_exist=True)  # 工作区内规格路径
+
+    # run_dir 是 workflow 所有证据文件的根目录。
+    path_run_dir: Path = require_write_path(out_dir, purpose="workflow output directory")  # workflow 输出根目录
+
+    # 输出目录先创建，后续写 plan/config/result 不再重复建目录。
+    path_run_dir.mkdir(parents=True, exist_ok=True)
+
+    # dict_paths 固定 run 内部所有治理证据文件名。
+    dict_paths = _workflow_paths(path_run_dir)  # workflow 证据路径集合
+
+    # raw_spec 是用户规格经 target 约束后的结构化输入。
+    raw_spec = read_spec(spec_file, target=kwargs.get("target"))  # 规格解析结果
+
+    # 需求确认 gate 在生成计划前阻断不完整输入。
     validate_requirement_confirmation(raw_spec)
-    external_codegen_plan = _resolve_external_codegen_plan(raw_spec, spec_file)
-    route_decision = route_verilog_entry(
-        request_summary="Run Verilog workflow.",
-        spec=spec_file,
-        codegen_plan=external_codegen_plan,
-    )
-    evidence = _read_json(evidence_path) if evidence_path else None
-    plan = decompose_spec(raw_spec, target=target, evidence=evidence)
-    write_spec(plan_path, plan)
 
-    config = _workflow_config(
-        plan,
-        provider_name=provider_name,
-        provider_command=provider_command,
-        generation_mode=generation_mode,
-        stream=stream,
-        readiness=readiness,
-        max_attempts=max_attempts,
-        stop_on_human=stop_on_human,
-        run_external=run_external,
-        comment_language=comment_language,
-        external_codegen_plan=external_codegen_plan,
-        route_decision=route_decision,
-        model_timeout_s=model_timeout_s,
-    )
-    write_json(config_path, config)
+    # external_codegen_plan 支持由规格旁路携带的已确认 codegen plan。
+    obj_external_codegen_plan: object = _resolve_external_codegen_plan(raw_spec, spec_file)  # 外部 codegen plan 路径
 
-    result = {
+    # route_decision 记录 spec-only 或 plan-seeded 路由结论。
+    dict_route_decision: dict[str, Any] = route_verilog_entry(  # 入口路由摘要和证据
+        request_summary="Run Verilog workflow.",  # route trace 中的人类可读请求摘要
+        spec=spec_file,  # 路由分析读取的规格文件
+        codegen_plan=obj_external_codegen_plan,  # 可选的外部 codegen plan
+    )  # workflow 路由决策
+
+    # evidence 用于把外部证据注入规格分解。
+    evidence = _read_json(kwargs.get("evidence_path")) if kwargs.get("evidence_path") else None  # 规格分解证据
+
+    # plan 是后续 stage、validation 和 gate 的共同事实来源。
+    dict_plan: dict[str, Any] = decompose_spec(raw_spec, target=kwargs.get("target"), evidence=evidence)  # 规范化生成计划
+
+    # plan 写盘后 result/config 只保存相对索引。
+    write_spec(dict_paths["plan_path"], dict_plan)
+
+    # dict_config 将 CLI/API 选项规范化为 execution helper 可消费的配置。
+    dict_config = _build_workflow_config(kwargs, dict_plan, obj_external_codegen_plan, dict_route_decision)  # execution 使用的规范化配置
+
+    # config 写盘是 resume 路径的配置事实来源。
+    write_json(dict_paths["config_path"], dict_config)
+
+    # dict_result 初始化 workflow_result.json 的 release-safe 顶层结构。
+    dict_result = _initial_result(dict_plan, dict_route_decision)  # workflow 初始结果
+
+    # 初始 result 写盘后 attempt 循环可以安全恢复。
+    _write_result(dict_paths["result_path"], dict_result)
+
+    # state 记录新运行启动证据，供治理 resume-check 使用。
+    _record_state(
+        dict_paths["state_path"],
+        "run_workflow",
+        {"out_dir": path_run_dir, "target": dict_plan["target"], "name": dict_plan["name"]},
+        enabled=bool(kwargs.get("state_updates", True)),
+    )
+
+    # 执行上下文只包含 _execute_workflow 明确需要的关键字。
+    return _execution_context(kwargs, path_run_dir, dict_plan, dict_config, dict_result, dict_paths)
+
+# workflow 路径 helper 统一 run 目录内的固定文件名。
+def _workflow_paths(run_dir: Path) -> dict[str, Path]:
+    """生成 workflow run 内部固定路径。
+
+    参数:
+        run_dir: workflow 输出根目录。
+
+    返回:
+        trace、state、result、config 和 plan 的路径字典。
+    """
+
+    # 路径集合用于避免多个 helper 重复拼接文件名。
+    return {
+        "trace_path": run_dir / "trace.jsonl",
+        "state_path": run_dir / "workflow-state.json",
+        "result_path": run_dir / "workflow_result.json",
+        "config_path": run_dir / "workflow_config.json",
+        "plan_path": run_dir / "plan.json",
+    }
+
+# 配置 helper 保持旧 run_workflow 关键字参数的默认值。
+def _build_workflow_config(
+    kwargs: dict[str, Any],
+    plan: dict[str, Any],
+    external_codegen_plan: Any,
+    route_decision: dict[str, Any],
+) -> dict[str, Any]:
+    """构造 workflow execution 配置。
+
+    参数:
+        kwargs: 旧 API 和 CLI 透传的 workflow 运行选项。
+        plan: 已规范化的生成计划。
+        external_codegen_plan: 可选外部 codegen plan 证据。
+        route_decision: workflow 入口路由决策。
+
+    返回:
+        execution helper 可消费的规范化配置字典。
+    """
+
+    # dict_config 由 workflow_support 统一校验 generation mode 和 stage 集合。
+    dict_config = _workflow_config(  # 执行层选择 stage、provider 和验证策略的规范化配置
+        plan,  # 配置构造读取的目标语言和 stage 默认值
+        provider_name=str(kwargs.get("provider_name", "manual")),  # 配置中的模型提供方名称
+        provider_command=kwargs.get("provider_command"),  # 命令型提供方的可执行命令
+        generation_mode=kwargs.get("generation_mode"),  # 配置中的生成模式覆盖值
+        stream=kwargs.get("stream"),  # 配置中的 provider 流式输出开关
+        readiness=str(kwargs.get("readiness", "static")),  # validation gates 选择静态或仿真 readiness 档位
+        max_attempts=int(kwargs.get("max_attempts", 3)),  # 自动修复最大轮数
+        stop_on_human=bool(kwargs.get("stop_on_human", True)),  # 人工介入是否立即停机
+        run_external=bool(kwargs.get("run_external", True)),  # 是否运行外部验证工具
+        comment_language=str(kwargs.get("comment_language", "zh")),  # 生成注释语言策略
+        external_codegen_plan=external_codegen_plan,  # 外部 codegen plan 证据
+        route_decision=route_decision,  # workflow 入口路由决策
+        model_timeout_s=int(kwargs.get("model_timeout_s", 120)),  # 模型调用超时时间
+    )
+
+    # 返回配置供写盘和执行共用。
+    return dict_config
+
+# 初始 result helper 保持 workflow_result.json 顶层 schema。
+def _initial_result(plan: dict[str, Any], route_decision: dict[str, Any]) -> dict[str, Any]:
+    """构造 workflow 初始 result。
+
+    参数:
+        plan: 已规范化的生成计划。
+        route_decision: workflow 入口路由决策。
+
+    返回:
+        workflow_result.json 的初始字典。
+    """
+
+    # 初始 result 在第一次 attempt 前写盘，避免失败时缺少 receipt。
+    return {
         "version": 1,
         "name": plan["name"],
         "target": plan["target"],
@@ -142,1108 +247,221 @@ def run_workflow(
         "route_decision": route_decision,
         "attempts": [],
     }
-    _write_result(result_path, result)
-    _record_state(
-        state_path,
-        "run_workflow",
-        {"out_dir": run_dir, "target": plan["target"], "name": plan["name"]},
-        enabled=state_updates,
-    )
-    return _execute_workflow(
-        run_dir=run_dir,
-        plan=plan,
-        config=config,
-        result=result,
-        result_path=result_path,
-        trace_path=trace_path,
-        state_path=state_path,
-        decision=_read_json(decision_path) if decision_path else None,
-        state_updates=state_updates,
-    )
 
-
-def _resume_workflow(
-    *,
-    resume_dir: Path,
-    decision_path: Path | None,
-    generation_mode: str | None,
-    stream: bool | None,
-    stop_on_human: bool,
-    run_external: bool,
-    comment_language: str,
-    model_timeout_s: int,
-    state_updates: bool,
+# execution context helper 把门面上下文压缩为执行 helper 的关键字。
+def _execution_context(
+    kwargs: dict[str, Any],
+    run_dir: Path,
+    plan: dict[str, Any],
+    dict_config: dict[str, Any],
+    dict_result: dict[str, Any],
+    dict_paths: dict[str, Path],
 ) -> dict[str, Any]:
-    run_dir = require_workspace_path(resume_dir, purpose="workflow resume directory", must_exist=True)
-    config_path = require_workspace_path(run_dir / "workflow_config.json", purpose="workflow config", must_exist=True)
-    result_path = require_workspace_path(run_dir / "workflow_result.json", purpose="workflow result", must_exist=True)
-    plan_path = require_workspace_path(run_dir / "plan.json", purpose="workflow plan", must_exist=True)
-    trace_path = require_write_path(run_dir / "trace.jsonl", purpose="workflow trace")
-    state_path = require_write_path(run_dir / "workflow-state.json", purpose="workflow state")
+    """构造 _execute_workflow 的参数字典。
 
-    config = _read_json(config_path)
-    result = _read_json(result_path)
-    plan = read_spec(plan_path, target=str(config.get("target") or None) or None)
-    decision = _read_json(decision_path) if decision_path else None
+    参数:
+        kwargs: 旧 API 和 CLI 透传的 workflow 运行选项。
+        run_dir: workflow 输出根目录。
+        plan: 已规范化的生成计划。
+        dict_config: execution helper 可消费的配置字典。
+        dict_result: 当前 workflow 结果字典。
+        dict_paths: workflow 运行证据路径集合。
 
-    if result.get("status") == "blocked_human" and decision is None:
-        raise WorkflowError("Resuming a blocked_human workflow requires a decision JSON file.")
+    返回:
+        可直接展开给 _execute_workflow 的参数字典。
+    """
 
-    if generation_mode is not None:
-        config["generation_mode"] = require_generation_mode(generation_mode)
-        config["stages"] = _default_stages_for(str(config.get("target") or "rtl"), str(config["generation_mode"]))
-    if stream is not None:
-        config["stream"] = bool(stream)
-    config["stop_on_human"] = stop_on_human
-    config["run_external"] = run_external
-    config["comment_language"] = comment_language or config.get("comment_language", "zh")
-    config["model_timeout_s"] = model_timeout_s or int(config.get("model_timeout_s", 120))
-    write_json(config_path, config)
+    # 默认新运行不携带人工决策内容。
+    dict_decision: dict[str, Any] | None = None  # 人工决策输入
+
+    # 显式 decision_path 会把人工选择注入下一轮 prompt。
+    if kwargs.get("decision_path"):
+
+        # 人工决策 JSON 由 workspace helper 统一读取和校验。
+        dict_decision = _read_json(kwargs.get("decision_path"))  # 已读取的人工决策输入
+
+    # execution_context 严格匹配 _execute_workflow 的 keyword-only 契约。
+    dict_execution_context = {  # 恢复执行层所需的 run 目录、计划、决策和状态路径集合
+        "run_dir": run_dir,  # 执行层写入所有运行证据的目录
+        "plan": plan,  # 执行层驱动 stage 的生成计划
+        "config": dict_config,  # 执行层读取的规范化运行配置
+        "result": dict_result,  # 执行层持续更新的结果对象
+        "result_path": dict_paths["result_path"],  # 持久化最终 workflow_result.json 的证据路径
+        "trace_path": dict_paths["trace_path"],  # 追加记录 stage 事件 trace.jsonl 的审计路径
+        "state_path": dict_paths["state_path"],  # resume 读取 workflow-state.json 的检查点路径
+        "decision": dict_decision,  # resume 人工决策内容
+        "state_updates": bool(kwargs.get("state_updates", True)),  # 是否写 state 文件
+    }  # _execute_workflow 参数集合
+
+    # 返回执行上下文给门面入口调用。
+    return dict_execution_context
+
+# resume 门面读取已存在 run 目录，并允许覆盖少量运行选项。
+def _resume_workflow(**kwargs: Any) -> dict[str, Any]:
+    """恢复已存在的 workflow run。
+
+    参数:
+        kwargs: 旧 API 和 CLI 透传的恢复选项。
+
+    返回:
+        workflow_result.json 对应的运行结果字典。
+    """
+
+    # run_dir 必须指向已存在的 workflow 输出目录。
+    path_run_dir: Path = require_workspace_path(  # 工作区内已有 workflow 恢复目录
+        kwargs["resume_dir"],  # 调用方传入的 resume 目录
+        purpose="workflow resume directory",  # workspace 错误消息用途
+        must_exist=True,  # 恢复目录必须已经存在
+    )
+
+    # dict_paths 复用固定文件名，让 resume 严格读取原 run 的证据集合。
+    dict_paths = _workflow_paths(path_run_dir)  # 恢复已有运行时使用的证据路径集合
+
+    # 恢复前先确认 config/result/plan 已存在。
+    _require_resume_files(dict_paths)
+
+    # dict_config 是 resume 修改和执行的配置事实来源。
+    dict_config = _read_json(dict_paths["config_path"])  # 已保存 workflow 配置
+
+    # dict_result 保存已完成 attempt 和当前状态。
+    dict_result = _read_json(dict_paths["result_path"])  # 已保存 workflow 结果
+
+    # 已保存 target 需要恢复为 read_spec 接受的可选字符串。
+    str_saved_target = str(dict_config.get("target") or None) or None  # 已保存或缺省的目标语言
+
+    # plan 重新读取，保持 execution helper 接口不变。
+    dict_plan: dict[str, Any] = read_spec(  # 恢复运行使用的生成计划
+        dict_paths["plan_path"],  # 已保存 plan.json 路径
+        target=str_saved_target,  # 已保存生成目标
+    )  # 已保存生成计划
+
+    # decision 在 blocked_human 恢复时必须存在。
+    dict_decision: dict[str, Any] | None = _resume_decision(kwargs, dict_result)  # resume 人工决策
+
+    # resume 覆盖项写回 config，供后续 attempt 使用。
+    _update_resume_config(dict_config, kwargs)
+
+    # 更新后的 config 写盘，保证再次 resume 可复现。
+    write_json(dict_paths["config_path"], dict_config)
+
+    # state 记录 resume 操作及 decision 路径。
     _record_state(
-        state_path,
+        dict_paths["state_path"],
         "resume_workflow",
-        {"resume_dir": run_dir, "decision": decision_path},
-        enabled=state_updates,
+        {"resume_dir": path_run_dir, "decision": kwargs.get("decision_path")},
+        enabled=bool(kwargs.get("state_updates", True)),
     )
+
+    # 执行 helper 继续 attempt 循环或处理人工决策。
     return _execute_workflow(
-        run_dir=run_dir,
-        plan=plan,
-        config=config,
-        result=result,
-        result_path=result_path,
-        trace_path=trace_path,
-        state_path=state_path,
-        decision=decision,
-        state_updates=state_updates,
+        run_dir=path_run_dir,
+        plan=dict_plan,
+        config=dict_config,
+        result=dict_result,
+        result_path=dict_paths["result_path"],
+        trace_path=dict_paths["trace_path"],
+        state_path=dict_paths["state_path"],
+        decision=dict_decision,
+        state_updates=bool(kwargs.get("state_updates", True)),
     )
 
+# resume 文件 gate 防止在不完整 run 目录上继续执行。
+def _require_resume_files(dict_paths: dict[str, Path]) -> None:
+    """确认 resume 需要的文件存在。
 
-def _execute_workflow(
-    *,
-    run_dir: Path,
-    plan: dict[str, Any],
-    config: dict[str, Any],
-    result: dict[str, Any],
-    result_path: Path,
-    trace_path: Path,
-    state_path: Path,
-    decision: dict[str, Any] | None,
-    state_updates: bool,
-) -> dict[str, Any]:
-    provider = build_model_provider(
-        str(config["provider"]["name"]),
-        command=config["provider"].get("command"),
-        timeout_s=int(config.get("model_timeout_s", 120)),
-        config=config,
-    )
-    stages = [str(item) for item in config.get("stages", []) or _default_stages_for(plan["target"], str(config.get("generation_mode") or "regular"))]
-    max_attempts = int(config.get("max_attempts", 3))
+    参数:
+        dict_paths: workflow 运行证据路径集合。
 
-    while len(result.get("attempts", [])) < max_attempts:
-        attempt_number = len(result.get("attempts", [])) + 1
-        attempt_id = f"attempt-{attempt_number:03d}"
-        attempt_dir = require_write_path(run_dir / attempt_id, purpose="attempt directory")
-        attempt_dir.mkdir(parents=True, exist_ok=True)
-        attempt_record = _new_attempt_record(attempt_id, FINAL_STAGE[plan["target"]], provider.name)
-        result.setdefault("attempts", []).append(attempt_record)
-        _write_result(result_path, result)
+    返回:
+        无返回值。
+    """
 
-        if len(result["attempts"]) > 1 and trace_path.exists():
-            memory = build_prompt_memory(trace_path, plan)
-            memory_path = attempt_dir / "prompt_memory.json"
-            write_json(memory_path, memory)
-            attempt_record["memory_path"] = safe_path(memory_path)
-        else:
-            memory = None
-            memory_path = None
+    # workflow_config.json 缺失时无法恢复 provider 和 stage 设置。
+    require_workspace_path(dict_paths["config_path"], purpose="workflow config", must_exist=True)
 
-        stage_outputs: dict[str, dict[str, Any]] = {}
-        active_codegen_plan: dict[str, Any] | None = None
-        try:
-            for stage in stages:
-                stage_output = _run_generation_stage(
-                    run_dir=run_dir,
-                    attempt_dir=attempt_dir,
-                    attempt_id=attempt_id,
-                    plan=plan,
-                    stage=stage,
-                    provider=provider,
-                    config=config,
-                    memory=memory if stage in {"python", "rtl"} else None,
-                    decision=decision,
-                    previous_stage=stage_outputs.get(_previous_stage(stage, stages)),
-                    stage_outputs=stage_outputs,
-                    active_codegen_plan=active_codegen_plan,
-                    trace_path=trace_path,
-                    state_path=state_path,
-                    state_updates=state_updates,
-                )
-                stage_outputs[stage] = stage_output
-                attempt_record.setdefault("stage_outputs", {})[stage] = stage_output["summary"]
-                if stage == "codegen_plan":
-                    plan["codegen_plan_path"] = stage_output["summary"]["artifact_path"]
-                    codegen_plan = stage_output.get("codegen_plan")
-                    if codegen_plan:
-                        active_codegen_plan = codegen_plan
-                        if not codegen_plan.get("ready_for_generation", False) or codegen_plan.get("open_questions"):
-                            intervention_path = attempt_dir / "intervention.json"
-                            intervention = {
-                                "version": 1,
-                                "action": "ask_human",
-                                "primary_source": "needs_human_intervention",
-                                "question": str((codegen_plan.get("open_questions") or ["Confirm the remaining design requirements."])[0]),
-                                "observations": codegen_plan.get("open_questions", []),
-                                "attempted_actions": ["requirements normalization", "code generation planning"],
-                                "expected_answer_format": {
-                                    "decision": "one concise design decision",
-                                    "evidence": "requirement source or design rationale",
-                                    "constraints": "any interface or pipeline constraints to preserve",
-                                },
-                            }
-                            write_json(intervention_path, intervention)
-                            attempt_record["intervention_path"] = safe_path(intervention_path)
-                            attempt_record["status"] = "blocked_human"
-                            result["status"] = "blocked_human"
-                            _write_result(result_path, result)
-                            _record_state(
-                                state_path,
-                                "human_intervention",
-                                {"output": intervention_path, "attempt_id": attempt_id, "primary_source": "needs_human_intervention"},
-                                enabled=state_updates,
-                            )
-                            append_trace_event(
-                                trace_path,
-                                {
-                                    "event": "human_intervention",
-                                    "attempt_id": attempt_id,
-                                    "output": intervention_path,
-                                    "primary_source": "needs_human_intervention",
-                                    "provider": provider.name,
-                                },
-                            )
-                            return result
-                if stage == FINAL_STAGE[plan["target"]]:
-                    attempt_record["prompt_path"] = stage_output["summary"]["prompt_path"]
-                    attempt_record["response_path"] = stage_output["summary"]["response_path"]
-                    attempt_record["artifact_dir"] = stage_output["summary"]["artifact_dir"]
-                    attempt_record["stage"] = stage
-                    result["last_attempt_id"] = attempt_id
-                    _write_result(result_path, result)
-        except ManualResponseRequired as exc:
-            attempt_record["status"] = "invalid_response"
-            attempt_record["error"] = str(exc)
-            result["status"] = "invalid_response"
-            _write_result(result_path, result)
-            return result
-        except (ExtractionError, ModelProviderError, SpecError, ValueError) as exc:
-            attempt_record["status"] = "invalid_response" if isinstance(exc, ExtractionError) else "failed"
-            attempt_record["error"] = str(exc)
-            result["status"] = attempt_record["status"]
-            _write_result(result_path, result)
-            return result
+    # workflow_result.json 缺失时无法恢复 attempt 状态。
+    require_workspace_path(dict_paths["result_path"], purpose="workflow result", must_exist=True)
 
-        final_stage = FINAL_STAGE[plan["target"]]
-        final_output = stage_outputs[final_stage]
+    # plan.json 缺失时无法继续生成或验证。
+    require_workspace_path(dict_paths["plan_path"], purpose="workflow plan", must_exist=True)
 
-        validation_report = validate_generated(
-            plan,
-            final_output["artifact_dir"],
-            target=plan["target"],
-            run_external=bool(config.get("run_external", True)),
-            readiness=str(config.get("readiness", "execute")),
-            comment_language=str(config.get("comment_language", "zh")),
-            reference_contract=stage_outputs.get("python", {}).get("reference_contract"),
-        )
-        validation_json_path = attempt_dir / "validation.json"
-        write_json(validation_json_path, validation_report.to_dict())
-        attempt_record["validation_json"] = safe_path(validation_json_path)
-        _record_state(
-            state_path,
-            "validate",
-            {
-                "path": final_output["artifact_dir"],
-                "output": validation_json_path,
-                "readiness": config.get("readiness"),
-                "ok": validation_report.ok(),
-            },
-            enabled=state_updates,
-        )
-        error_sources = sorted(
-            {
-                issue.source
-                for issue in validation_report.issues
-                if issue.severity in {"error", "warning", "skip"}
-            }
-        )
-        append_trace_event(
-            trace_path,
-            {
-                "event": "validate",
-                "attempt_id": attempt_id,
-                "target": plan["target"],
-                "readiness": config.get("readiness"),
-                "path": final_output["artifact_dir"],
-                "ok": validation_report.ok(),
-                "errors": validation_report.errors,
-                "warnings": validation_report.warnings,
-                "skips": validation_report.skips,
-                "error_sources": error_sources,
-                "report_json": validation_json_path,
-                "metrics": validation_report.metrics or {},
-                "issues": [issue.to_dict() for issue in validation_report.issues],
-                "comment_language": config.get("comment_language"),
-                "provider": provider.name,
-                "semantic_ready": (validation_report.metrics or {}).get("semantic_execution", {}).get("semantic_ready")
-                if isinstance((validation_report.metrics or {}).get("semantic_execution"), dict)
-                else None,
-            },
-        )
+    # trace/state 是可追加输出，使用 write path 约束即可。
+    require_write_path(dict_paths["trace_path"], purpose="workflow trace")
 
-        contract_paths = dict(final_output["contract_paths"])
-        interface_gate = _interface_gate(plan, stage_outputs, final_output, attempt_dir, trace_path)
-        if interface_gate is not None:
-            contract_paths["interface_gate"] = safe_path(interface_gate["path"])
-        semantic_gate = _semantic_gate(plan, validation_report, stage_outputs, attempt_dir, trace_path)
-        if semantic_gate is not None:
-            contract_paths["semantic_gate"] = safe_path(semantic_gate["path"])
-        combined_gate = _combine_gate_results(interface_gate["result"] if interface_gate else None, semantic_gate["result"] if semantic_gate else None)
-        effective_gate = combined_gate
-        if any(issue.source == "spec_issue" for issue in validation_report.issues):
-            effective_gate = None
-        stage_verification_path = None
-        if combined_gate:
-            stage_verification_path = attempt_dir / "stage_verification.json"
-            write_json(stage_verification_path, combined_gate)
-            contract_paths["stage_verification"] = safe_path(stage_verification_path)
-            _record_state(
-                state_path,
-                "verify_stage",
-                {"output": stage_verification_path, "ready": combined_gate.get("ready")},
-                enabled=state_updates,
-            )
+    # workflow-state.json 可追加写入，用 write path 保护目录边界。
+    require_write_path(dict_paths["state_path"], purpose="workflow state")
 
-        attempt_record["contract_paths"] = contract_paths
-        if validation_report.ok() and (combined_gate is None or combined_gate.get("ready", True)):
-            attempt_record["status"] = "passed"
-            result["status"] = "passed"
-            result["last_attempt_id"] = attempt_id
-            _write_result(result_path, result)
-            _record_state(
-                state_path,
-                "workflow_attempt",
-                {"attempt_id": attempt_id, "status": "passed", "validation_json": validation_json_path},
-                enabled=state_updates,
-            )
-            return result
+# resume decision helper 校验 blocked_human 恢复所需的人类决策。
+def _resume_decision(kwargs: dict[str, Any], dict_result: dict[str, Any]) -> dict[str, Any] | None:
+    """读取并校验 resume decision。
 
-        report_text = validation_report.format()
-        repair_prompt_path = attempt_dir / "repair_prompt.md"
-        repair_plan_path = attempt_dir / "repair_plan.json"
-        diagnosis_path = attempt_dir / "diagnosis.json"
-        repair_prompt = generate_repair_prompt(
-            report_text,
-            plan,
-            read_trace(trace_path),
-            validation_report.to_dict(),
-            None,
-            effective_gate,
-        )
-        write_text(repair_prompt_path, repair_prompt)
-        repair_plan = build_repair_plan(
-            report_text,
-            plan,
-            read_trace(trace_path),
-            validation_report.to_dict(),
-            None,
-            effective_gate,
-        )
-        diagnosis = build_diagnosis(plan, read_trace(trace_path), validation_report.to_dict(), effective_gate)
-        write_json(repair_plan_path, repair_plan)
-        write_json(diagnosis_path, diagnosis)
-        attempt_record["repair_plan"] = safe_path(repair_plan_path)
-        attempt_record["diagnosis_path"] = safe_path(diagnosis_path)
-        _record_state(
-            state_path,
-            "reflect",
-            {"output": repair_prompt_path, "repair_plan": repair_plan_path, "diagnosis": diagnosis_path},
-            enabled=state_updates,
-        )
-        append_trace_event(
-            trace_path,
-            {
-                "event": "reflect",
-                "attempt_id": attempt_id,
-                "output": repair_prompt_path,
-                "repair_plan": repair_plan_path,
-                "error_sources": repair_plan.get("error_sources", []),
-                "action": repair_plan.get("action"),
-                "diagnosis": diagnosis,
-                "auto_debug_before_human": diagnosis.get("auto_debug_before_human"),
-            },
-        )
+    参数:
+        kwargs: 旧 API 和 CLI 透传的恢复选项。
+        dict_result: 已保存 workflow 结果字典。
 
-        if repair_plan.get("action") == "ask_human" and bool(config.get("stop_on_human", True)):
-            intervention_path = attempt_dir / "intervention.json"
-            write_json(intervention_path, build_intervention(repair_plan, report_text, validation_report.to_dict()))
-            attempt_record["intervention_path"] = safe_path(intervention_path)
-            attempt_record["status"] = "blocked_human"
-            result["status"] = "blocked_human"
-            _write_result(result_path, result)
-            _record_state(
-                state_path,
-                "human_intervention",
-                {"output": intervention_path, "attempt_id": attempt_id, "primary_source": repair_plan.get("primary_source")},
-                enabled=state_updates,
-            )
-            append_trace_event(
-                trace_path,
-                {
-                    "event": "human_intervention",
-                    "attempt_id": attempt_id,
-                    "output": intervention_path,
-                    "primary_source": repair_plan.get("primary_source"),
-                    "provider": provider.name,
-                },
-            )
-            return result
+    返回:
+        人工决策字典；未提供时返回 None。
 
-        if repair_plan.get("primary_source") == "toolchain_issue":
-            attempt_record["status"] = "blocked_toolchain"
-            result["status"] = "blocked_toolchain"
-            _write_result(result_path, result)
-            return result
+    异常:
+        WorkflowError: blocked_human 状态缺少 decision JSON 时抛出。
+    """
 
-        if len(result.get("attempts", [])) >= max_attempts:
-            attempt_record["status"] = "max_attempts"
-            result["status"] = "max_attempts"
-            _write_result(result_path, result)
-            return result
+    # blocked_human 恢复入口先以未提交人工回答作为初始状态。
+    dict_decision: dict[str, Any] | None = None  # 待注入的恢复决策
 
-        attempt_record["status"] = "failed"
-        result["status"] = "failed"
-        _write_result(result_path, result)
+    # decision_path 存在时才读取用户已经确认的恢复决策。
+    if kwargs.get("decision_path"):
 
-    result["status"] = "max_attempts"
-    _write_result(result_path, result)
-    return result
+        # 恢复决策读取后会交给 execution helper 写入 prompt。
+        dict_decision = _read_json(kwargs.get("decision_path"))  # 已读取的恢复决策
 
+    # blocked_human 没有 decision 时不能继续自动执行。
+    if dict_result.get("status") == "blocked_human" and dict_decision is None:
 
-def _run_generation_stage(
-    *,
-    run_dir: Path,
-    attempt_dir: Path,
-    attempt_id: str,
-    plan: dict[str, Any],
-    stage: str,
-    provider: Any,
-    config: dict[str, Any],
-    memory: dict[str, Any] | None,
-    decision: dict[str, Any] | None,
-    previous_stage: dict[str, Any] | None,
-    stage_outputs: dict[str, dict[str, Any]],
-    active_codegen_plan: dict[str, Any] | None,
-    trace_path: Path,
-    state_path: Path,
-    state_updates: bool,
-) -> dict[str, Any]:
-    stage_dir = require_write_path(attempt_dir / stage, purpose="stage directory")
-    stage_dir.mkdir(parents=True, exist_ok=True)
-    prompt_path = stage_dir / f"{stage}_prompt.md"
-    response_path = stage_dir / f"{stage}_response.md"
-    artifact_dir = require_write_path(stage_dir / "generated", purpose="artifact directory")
-    artifact_dir.mkdir(parents=True, exist_ok=True)
-    manifest = _stage_manifest(plan, stage)
-    if stage == "requirements":
-        return _run_internal_json_stage(
-            attempt_id=attempt_id,
-            plan=plan,
-            stage=stage,
-            manifest=manifest,
-            stage_dir=stage_dir,
-            artifact_dir=artifact_dir,
-            trace_path=trace_path,
-            state_path=state_path,
-            state_updates=state_updates,
-            payload=build_requirements_payload(plan),
-        )
-    if stage == "codegen_plan":
-        payload = config.get("external_codegen_plan") or build_codegen_plan(plan)
-        return _run_internal_json_stage(
-            attempt_id=attempt_id,
-            plan=plan,
-            stage=stage,
-            manifest=manifest,
-            stage_dir=stage_dir,
-            artifact_dir=artifact_dir,
-            trace_path=trace_path,
-            state_path=state_path,
-            state_updates=state_updates,
-            payload=payload,
-            payload_key="codegen_plan",
-        )
-    context_manifest = previous_stage.get("manifest") if previous_stage else None
-    context_dir = previous_stage.get("artifact_dir") if previous_stage else None
-    vector_contract = previous_stage.get("vector_contract") if previous_stage else None
-    if stage == "rtl" and vector_contract is None:
-        vector_contract = stage_outputs.get("python", {}).get("vector_contract")
-    prompt_text = render_prompt(
-        plan,
-        target=plan["target"],
-        stage=stage,
-        context_manifest=context_manifest,
-        context_dir=context_dir,
-        memory=memory,
-        comment_language=str(config.get("comment_language", "zh")),
-        vector_contract=vector_contract,
-        codegen_plan=active_codegen_plan,
-        budget=_stage_budget(config, stage),
-        decision=decision,
-    )
-    write_text(prompt_path, prompt_text)
-    prompt_stats = _prompt_stats(
-        prompt_text,
-        stage=stage,
-        budget=_stage_budget(config, stage),
-        subfunction=None,
-        context_manifest=context_manifest,
-        context_dir=context_dir,
-        vector_contract=vector_contract,
-        decision=decision,
-    )
-    _record_state(
-        state_path,
-        "prompt",
-        {"output": prompt_path, "stage": stage, "budget": _stage_budget(config, stage)},
-        enabled=state_updates,
-    )
-    append_trace_event(
-        trace_path,
-        {
-            "event": "prompt",
-            "attempt_id": attempt_id,
-            "target": plan["target"],
-            "stage": stage,
-            "spec": spec_summary(plan),
-            "output": prompt_path,
-            "context_manifest": previous_stage.get("manifest_path") if previous_stage else None,
-            "context_dir": context_dir,
-            "memory": previous_stage.get("memory_path") if previous_stage else None,
-            "comment_language": config.get("comment_language"),
-            "vector_contract": safe_path(previous_stage["vector_contract_path"]) if previous_stage and previous_stage.get("vector_contract_path") else None,
-            "decision": decision is not None,
-            "subfunction": None,
-            "budget": _stage_budget(config, stage),
-            "prompt_stats": prompt_stats,
-            "provider": provider.name,
-        },
-    )
+        # 缺少人工决策会导致模型继续猜测用户意图。
+        raise WorkflowError("> ERR: [Python] Resuming a blocked_human workflow requires a decision JSON file.")
 
-    generation_context = GenerationContext(
-        attempt_id=attempt_id,
-        stage=stage,
-        prompt_path=prompt_path,
-        response_path=response_path,
-        run_dir=run_dir,
-        attempt_dir=attempt_dir,
-        spec=plan,
-        manifest=manifest,
-        workflow_config=config,
-        vector_contract=vector_contract,
-        comment_language=str(config.get("comment_language", "zh")),
-    )
-    response_text, stream_summary = _generate_model_response(
-        provider=provider,
-        prompt_text=prompt_text,
-        context=generation_context,
-        stage_dir=stage_dir,
-        config=config,
-    )
-    write_text(response_path, response_text)
-    _record_state(
-        state_path,
-        "model_generate",
-        {"output": response_path, "provider": provider.name, "stage": stage},
-        enabled=state_updates,
-    )
-    append_trace_event(
-        trace_path,
-        {
-            "event": "model_stream",
-            "attempt_id": attempt_id,
-            "stage": stage,
-            "provider": provider.name,
-            **stream_summary,
-        },
-    )
-    append_trace_event(
-        trace_path,
-        {
-            "event": "model_generate",
-            "attempt_id": attempt_id,
-            "stage": stage,
-            "provider": provider.name,
-            "prompt_path": prompt_path,
-            "response_path": response_path,
-        },
-    )
+    # 返回 decision 供 execution helper 写入下一轮 prompt。
+    return dict_decision
 
-    written = extract_response(response_text, artifact_dir)
-    _record_state(
-        state_path,
-        "extract",
-        {"response": response_path, "out_dir": artifact_dir, "written_files": written},
-        enabled=state_updates,
-    )
-    append_trace_event(
-        trace_path,
-        {
-            "event": "extract",
-            "attempt_id": attempt_id,
-            "response": response_path,
-            "out_dir": artifact_dir,
-            "written_files": [safe_path(path) for path in written],
-        },
-    )
+# resume config helper 应用命令行覆盖项。
+def _update_resume_config(dict_config: dict[str, Any], kwargs: dict[str, Any]) -> None:
+    """更新 resume 时允许覆盖的配置项。
 
-    output = {
-        "stage": stage,
-        "prompt_path": prompt_path,
-        "response_path": response_path,
-        "artifact_dir": artifact_dir,
-        "manifest": manifest,
-        "manifest_path": response_path,
-        "contract_paths": {},
-        "summary": {
-            "prompt_path": safe_path(prompt_path),
-            "response_path": safe_path(response_path),
-            "artifact_dir": safe_path(artifact_dir),
-            **stream_summary,
-        },
-    }
-    if stage == "python":
-        reference_contract = audit_reference(artifact_dir)
-        reference_contract_path = stage_dir / "reference_contract.json"
-        write_json(reference_contract_path, reference_contract)
-        python_contract = audit_interface("python", artifact_dir)
-        python_contract_path = stage_dir / "python_interface.json"
-        write_json(python_contract_path, python_contract)
-        vector_path = next(
-            (path for path in written if path.name.endswith("_vectors.json")),
-            None,
-        )
-        vector_contract = audit_vectors(vector_path) if vector_path is not None else None
-        vector_contract_path = stage_dir / "vector_contract.json" if vector_contract is not None else None
-        if vector_contract_path is not None:
-            write_json(vector_contract_path, vector_contract)
-        output["reference_contract"] = reference_contract
-        output["python_contract"] = python_contract
-        output["vector_contract"] = vector_contract
-        output["vector_contract_path"] = vector_contract_path
-        output["contract_paths"].update(
-            {
-                "reference_contract": safe_path(reference_contract_path),
-                "python_interface": safe_path(python_contract_path),
-            }
-        )
-        if vector_contract_path is not None:
-            output["contract_paths"]["vector_contract"] = safe_path(vector_contract_path)
-        _record_state(
-            state_path,
-            "audit_reference",
-            {"path": artifact_dir, "output": reference_contract_path, "case_count": reference_contract.get("case_count")},
-            enabled=state_updates,
-        )
-        _record_state(
-            state_path,
-            "audit_interface",
-            {"target": "python", "path": artifact_dir, "output": python_contract_path},
-            enabled=state_updates,
-        )
-        append_trace_event(
-            trace_path,
-            {
-                "event": "audit_reference",
-                "attempt_id": attempt_id,
-                "path": artifact_dir,
-                "output": reference_contract_path,
-                "case_count": reference_contract.get("case_count"),
-                "case_ids": reference_contract.get("case_ids", []),
-                "sha256": reference_contract.get("sha256"),
-            },
-        )
-        append_trace_event(
-            trace_path,
-            {
-                "event": "audit_interface",
-                "attempt_id": attempt_id,
-                "target": "python",
-                "path": artifact_dir,
-                "output": python_contract_path,
-                "interface_sha256": python_contract.get("interface_sha256"),
-                "top": python_contract.get("top"),
-                "case_ids": python_contract.get("case_ids", []),
-                "vector_hashes": python_contract.get("vector_hashes", []),
-            },
-        )
-    elif stage == "rtl":
-        interface_contract = audit_interface(stage, artifact_dir)
-        interface_contract_path = stage_dir / f"{stage}_interface.json"
-        write_json(interface_contract_path, interface_contract)
-        output["interface_contract"] = interface_contract
-        output["contract_paths"][f"{stage}_interface"] = safe_path(interface_contract_path)
-        _record_state(
-            state_path,
-            "audit_interface",
-            {"target": stage, "path": artifact_dir, "output": interface_contract_path},
-            enabled=state_updates,
-        )
-        append_trace_event(
-            trace_path,
-            {
-                "event": "audit_interface",
-                "attempt_id": attempt_id,
-                "target": stage,
-                "path": artifact_dir,
-                "output": interface_contract_path,
-                "interface_sha256": interface_contract.get("interface_sha256"),
-                "top": interface_contract.get("top"),
-                "case_ids": interface_contract.get("case_ids", []),
-                "vector_hashes": interface_contract.get("vector_hashes", []),
-            },
-        )
-    return output
+    参数:
+        dict_config: 已保存并准备更新的 workflow 配置。
+        kwargs: 旧 API 和 CLI 透传的恢复选项。
 
+    返回:
+        无返回值。
+    """
 
-def _interface_gate(
-    plan: dict[str, Any],
-    stage_outputs: dict[str, dict[str, Any]],
-    final_output: dict[str, Any],
-    attempt_dir: Path,
-    trace_path: Path,
-) -> dict[str, Any] | None:
-    python_contract = stage_outputs.get("python", {}).get("python_contract")
-    interface_contract = final_output.get("interface_contract")
-    if not python_contract or not interface_contract:
-        return None
-    result = verify_stage(plan, python_contract, interface_contract)
-    path = attempt_dir / "interface_gate.json"
-    write_json(path, result)
-    append_trace_event(
-        trace_path,
-        {
-            "event": "verify_stage",
-            "attempt_id": attempt_dir.name,
-            "from_contract": stage_outputs.get("python", {}).get("contract_paths", {}).get("python_interface"),
-            "to_contract": final_output.get("contract_paths", {}),
-            "output": path,
-            "ready": result.get("ready"),
-            "error_sources": result.get("error_sources", []),
-            "recommended_action": result.get("recommended_action"),
-            "issues": result.get("issues", []),
-            "semantic_ready": result.get("semantic_ready"),
-            "mismatched_cases": result.get("mismatched_cases", []),
-            "checkpoint_drift": result.get("checkpoint_drift", []),
-            "localization_confidence": result.get("localization_confidence"),
-        },
-    )
-    return {"path": path, "result": result}
+    # generation_mode 覆盖时必须同步 stage 集合。
+    if kwargs.get("generation_mode") is not None:
 
+        # 先校验 mode，再按 target 重建 stages。
+        dict_config["generation_mode"] = require_generation_mode(kwargs["generation_mode"])  # resume 后的生成模式
 
-def _semantic_gate(
-    plan: dict[str, Any],
-    validation_report: Any,
-    stage_outputs: dict[str, dict[str, Any]],
-    attempt_dir: Path,
-    trace_path: Path,
-) -> dict[str, Any] | None:
-    reference_contract = stage_outputs.get("python", {}).get("reference_contract")
-    if not reference_contract or not validation_report.metrics:
-        return None
-    result = verify_stage(
-        plan,
-        reference_contract,
-        {
-            "metrics": validation_report.metrics,
-            "case_ids": reference_contract.get("case_ids", []),
-        },
-    )
-    path = attempt_dir / "semantic_gate.json"
-    write_json(path, result)
-    append_trace_event(
-        trace_path,
-        {
-            "event": "verify_stage",
-            "attempt_id": attempt_dir.name,
-            "from_contract": stage_outputs.get("python", {}).get("contract_paths", {}).get("reference_contract"),
-            "to_contract": path,
-            "output": path,
-            "ready": result.get("ready"),
-            "error_sources": result.get("error_sources", []),
-            "recommended_action": result.get("recommended_action"),
-            "issues": result.get("issues", []),
-            "semantic_ready": result.get("semantic_ready"),
-            "mismatched_cases": result.get("mismatched_cases", []),
-            "checkpoint_drift": result.get("checkpoint_drift", []),
-            "localization_confidence": result.get("localization_confidence"),
-        },
-    )
-    return {"path": path, "result": result}
+        # stages 必须跟随 generation_mode 同步更新。
+        dict_config["stages"] = _default_stages_for(  # 新 generation mode 对应的 stage 顺序
+            str(dict_config.get("target") or "rtl"),  # 已保存或默认的目标语言
+            str(dict_config["generation_mode"]),  # 已校验的生成模式
+        )  # resume 后的 stage 顺序
 
+    # stream 只有显式传入时覆盖历史配置。
+    if kwargs.get("stream") is not None:
 
-def _combine_gate_results(
-    interface_gate: dict[str, Any] | None,
-    semantic_gate: dict[str, Any] | None,
-) -> dict[str, Any] | None:
-    if interface_gate is None and semantic_gate is None:
-        return None
-    issues: list[dict[str, Any]] = []
-    error_sources: list[str] = []
-    recommended_action = None
-    ready = True
-    for gate in [interface_gate, semantic_gate]:
-        if not gate:
-            continue
-        for issue in gate.get("issues", []) or []:
-            if issue not in issues:
-                issues.append(issue)
-        for source in gate.get("error_sources", []) or []:
-            if source not in error_sources:
-                error_sources.append(source)
-        if gate.get("ready") is False:
-            ready = False
-            if recommended_action is None:
-                recommended_action = gate.get("recommended_action")
-    return {
-        "version": 1,
-        "ready": ready,
-        "issues": issues,
-        "error_sources": error_sources,
-        "recommended_action": recommended_action or "regenerate_current",
-        "semantic_ready": semantic_gate.get("semantic_ready") if semantic_gate else interface_gate.get("semantic_ready") if interface_gate else None,
-        "mismatched_cases": semantic_gate.get("mismatched_cases", []) if semantic_gate else [],
-        "checkpoint_drift": semantic_gate.get("checkpoint_drift", []) if semantic_gate else [],
-        "failed_cases": semantic_gate.get("failed_cases", []) if semantic_gate else [],
-        "localization_confidence": semantic_gate.get("localization_confidence") if semantic_gate else None,
-    }
+        # stream 会改变 provider 调用方式，但不改变 stage 顺序。
+        dict_config["stream"] = bool(kwargs["stream"])  # resume 后的流式输出开关
 
+    # 这些覆盖项每次 resume 都按调用方输入或旧默认写回。
+    dict_config["stop_on_human"] = bool(kwargs.get("stop_on_human", True))  # 人工介入停机策略
 
-def _run_internal_json_stage(
-    *,
-    attempt_id: str,
-    plan: dict[str, Any],
-    stage: str,
-    manifest: dict[str, Any],
-    stage_dir: Path,
-    artifact_dir: Path,
-    trace_path: Path,
-    state_path: Path,
-    state_updates: bool,
-    payload: dict[str, Any],
-    payload_key: str | None = None,
-) -> dict[str, Any]:
-    prompt_path = stage_dir / f"{stage}_prompt.md"
-    response_path = stage_dir / f"{stage}_response.md"
-    write_text(prompt_path, f"# Internal {stage} stage\n\nThis stage is synthesized from confirmed inputs and local planning rules.\n")
-    files = [entry for entry in manifest.get("files", []) if isinstance(entry, dict) and entry.get("path")]
-    if len(files) != 1:
-        raise WorkflowError(f"Internal stage {stage!r} expects exactly one manifest file.")
-    artifact_rel_path = str(files[0]["path"])
-    artifact_path = artifact_dir / Path(*Path(artifact_rel_path).parts)
-    artifact_path.parent.mkdir(parents=True, exist_ok=True)
-    write_json(artifact_path, payload)
-    response_text = _internal_stage_response_text(manifest, artifact_rel_path, payload)
-    write_text(response_path, response_text)
-    _record_state(
-        state_path,
-        "prompt",
-        {"output": prompt_path, "stage": stage, "budget": "internal"},
-        enabled=state_updates,
-    )
-    _record_state(
-        state_path,
-        "extract",
-        {"response": response_path, "out_dir": artifact_dir, "written_files": [artifact_path]},
-        enabled=state_updates,
-    )
-    append_trace_event(
-        trace_path,
-        {
-            "event": "prompt",
-            "attempt_id": attempt_id,
-            "target": plan["target"],
-            "stage": stage,
-            "spec": spec_summary(plan),
-            "output": prompt_path,
-            "budget": "internal",
-            "provider": "internal",
-        },
-    )
-    append_trace_event(
-        trace_path,
-        {
-            "event": "extract",
-            "attempt_id": attempt_id,
-            "response": response_path,
-            "out_dir": artifact_dir,
-            "written_files": [safe_path(artifact_path)],
-        },
-    )
-    output = {
-        "stage": stage,
-        "prompt_path": prompt_path,
-        "response_path": response_path,
-        "artifact_dir": artifact_dir,
-        "manifest": manifest,
-        "manifest_path": response_path,
-        "contract_paths": {},
-        "summary": {
-            "prompt_path": safe_path(prompt_path),
-            "response_path": safe_path(response_path),
-            "artifact_dir": safe_path(artifact_dir),
-            "artifact_path": safe_path(artifact_path),
-        },
-    }
-    if payload_key:
-        output[payload_key] = payload
-    else:
-        output[stage] = payload
-    return output
+    # run_external 决定 resume 后是否继续外部验证。
+    dict_config["run_external"] = bool(kwargs.get("run_external", True))  # 外部验证开关
 
+    # comment_language 维持旧配置，除非调用方显式覆盖。
+    dict_config["comment_language"] = kwargs.get("comment_language") or dict_config.get("comment_language", "zh")  # 注释语言策略
 
-def _internal_stage_response_text(manifest: dict[str, Any], artifact_rel_path: str, payload: dict[str, Any]) -> str:
-    response_manifest = {
-        **manifest,
-        "checks": {
-            "spec_coverage": [f"Internal {manifest.get('stage')} stage synthesized from confirmed inputs."],
-            "verification_plan": ["No model generation was used for this planning stage."],
-            "execution_plan": ["This planning artifact is consumed by later generation stages."],
-            "implementation_assessment": ["The internal planning payload was generated locally."],
-            "reviewability_assessment": ["The planning payload is fully structured JSON."],
-            "assumptions": [],
-            "known_limitations": [],
-        },
-    }
-    return (
-        "```json\n"
-        + json.dumps(response_manifest, indent=2, ensure_ascii=False)
-        + "\n```\n"
-        + f"```json path={artifact_rel_path}\n"
-        + json.dumps(payload, indent=2, ensure_ascii=False)
-        + "\n```\n"
-    )
-
-
-def _workflow_config(
-    plan: dict[str, Any],
-    *,
-    provider_name: str,
-    provider_command: str | None,
-    generation_mode: str | None,
-    stream: bool | None,
-    readiness: str,
-    max_attempts: int,
-    stop_on_human: bool,
-    run_external: bool,
-    comment_language: str,
-    external_codegen_plan: dict[str, Any] | None,
-    route_decision: dict[str, Any] | None,
-    model_timeout_s: int,
-) -> dict[str, Any]:
-    provider_config = {
-        "name": provider_name,
-        "command": provider_command,
-    }
-    resolved_generation_mode = require_generation_mode(generation_mode or "regular")
-    return {
-        "version": 1,
-        "mode": str((plan.get("workflow") or {}).get("mode") or "generate"),
-        "generation_mode": resolved_generation_mode,
-        "name": plan["name"],
-        "target": plan["target"],
-        "rtl_dialect": plan.get("rtl_dialect"),
-        "rtl_style_profile": plan.get("rtl_style_profile"),
-        "design_requirements": copy.deepcopy(plan.get("design_requirements", {})) if isinstance(plan.get("design_requirements"), dict) else {},
-        "streamability": plan.get("streamability"),
-        "interface_family": plan.get("interface_family"),
-        "interface_profile": copy.deepcopy(plan.get("interface_profile", {})) if isinstance(plan.get("interface_profile"), dict) else {},
-        "pipeline_required": bool(plan.get("pipeline_required", True)),
-        "codegen_plan_required": bool(plan.get("codegen_plan_required", True)),
-        "codegen_plan_path": plan.get("codegen_plan_path"),
-        "stages": _default_stages_for(plan["target"], resolved_generation_mode),
-        "readiness": readiness,
-        "max_attempts": max_attempts,
-        "stop_on_human": stop_on_human,
-        "run_external": run_external,
-        "comment_language": comment_language,
-        "stream": bool(stream),
-        "external_codegen_plan": copy.deepcopy(external_codegen_plan) if isinstance(external_codegen_plan, dict) else None,
-        "route_decision": copy.deepcopy(route_decision) if isinstance(route_decision, dict) else None,
-        "model_timeout_s": model_timeout_s,
-        "provider": provider_config,
-        "budgets": {stage: "normal" for stage in _default_stages_for(plan["target"], resolved_generation_mode)},
-        "mock_behavior": (plan.get("workflow") or {}).get("mock_behavior"),
-    }
-
-
-def _stage_manifest(plan: dict[str, Any], stage: str) -> dict[str, Any]:
-    if stage:
-        return _stage_manifest_for(plan, stage)
-    return _manifest_for(plan)
-
-
-def _stage_budget(config: dict[str, Any], stage: str) -> str:
-    budgets = config.get("budgets", {})
-    if isinstance(budgets, dict) and stage in budgets:
-        return str(budgets[stage])
-    return "normal"
-
-
-def require_generation_mode(value: str) -> str:
-    normalized = value.lower()
-    if normalized not in GENERATION_MODES:
-        raise WorkflowError(f"generation_mode must be one of {', '.join(GENERATION_MODES)}.")
-    return normalized
-
-
-def _default_stages_for(target: str, generation_mode: str) -> list[str]:
-    normalized_target = str(target).lower()
-    normalized_mode = require_generation_mode(generation_mode)
-    stage_sets = DEFAULT_STAGE_SETS.get(normalized_target)
-    if not stage_sets or normalized_mode not in stage_sets:
-        raise WorkflowError(f"No stage set defined for target={normalized_target!r} generation_mode={normalized_mode!r}.")
-    return list(stage_sets[normalized_mode])
-
-
-def _new_attempt_record(attempt_id: str, stage: str, provider: str) -> dict[str, Any]:
-    return {
-        "attempt_id": attempt_id,
-        "stage": stage,
-        "prompt_path": None,
-        "response_path": None,
-        "artifact_dir": None,
-        "validation_json": None,
-        "contract_paths": {},
-        "repair_plan": None,
-        "status": "failed",
-        "provider": provider,
-    }
-
-
-def _generate_model_response(
-    *,
-    provider: Any,
-    prompt_text: str,
-    context: GenerationContext,
-    stage_dir: Path,
-    config: dict[str, Any],
-) -> tuple[str, dict[str, Any]]:
-    stream_requested = bool(config.get("stream", False))
-    stream_supported = bool(getattr(provider, "supports_streaming", False))
-    transcript_path = stage_dir / f"{context.stage}_stream.txt" if stream_requested else None
-    if transcript_path is not None and transcript_path.exists():
-        transcript_path.unlink()
-
-    if stream_requested and stream_supported:
-        chunks: list[str] = []
-        chunk_count = 0
-        with transcript_path.open("a", encoding="utf-8") as handle:  # type: ignore[union-attr]
-            for chunk in provider.generate_stream(prompt_text, context):
-                if not chunk:
-                    continue
-                chunk_count += 1
-                chunks.append(chunk)
-                handle.write(chunk)
-        response_text = "".join(chunks)
-        return response_text, {
-            "stream_requested": True,
-            "stream_supported": True,
-            "stream_used": True,
-            "stream_chunk_count": chunk_count,
-            "stream_transcript_path": safe_path(transcript_path) if transcript_path is not None else None,
-        }
-
-    response_text = provider.generate(prompt_text, context)
-    if transcript_path is not None:
-        write_text(transcript_path, response_text)
-    return response_text, {
-        "stream_requested": stream_requested,
-        "stream_supported": stream_supported,
-        "stream_used": False,
-        "stream_chunk_count": 1 if response_text else 0,
-        "stream_transcript_path": safe_path(transcript_path) if transcript_path is not None else None,
-    }
-
-
-def _write_result(path: Path, result: dict[str, Any]) -> None:
-    if result.get("status") not in WORKFLOW_STATUSES and result.get("attempts"):
-        raise WorkflowError(f"Workflow status must be one of {', '.join(WORKFLOW_STATUSES)}.")
-    write_json(path, result)
-
-
-def _previous_stage(stage: str, stages: list[str]) -> str | None:
-    try:
-        index = stages.index(stage)
-    except ValueError:
-        return None
-    if index <= 0:
-        return None
-    return stages[index - 1]
-
-
-def _prompt_stats(
-    output: str,
-    *,
-    stage: str,
-    budget: str,
-    subfunction: str | None,
-    context_manifest: dict[str, Any] | None,
-    context_dir: Path | None,
-    vector_contract: dict[str, Any] | None,
-    decision: dict[str, Any] | None,
-) -> dict[str, Any]:
-    manifest_artifacts = len(context_manifest.get("files", []) if isinstance(context_manifest, dict) else [])
-    context_artifacts = manifest_artifacts + (1 if context_dir else 0)
-    return {
-        "version": 1,
-        "chars": len(output),
-        "approx_tokens": max(1, len(output) // 4),
-        "context_artifacts": context_artifacts,
-        "has_vector_contract": bool(vector_contract),
-        "has_decision": bool(decision),
-        "budget": budget,
-        "subfunction": subfunction,
-        "stage": stage,
-    }
-
-
-def _read_json(path: Path | None) -> dict[str, Any]:
-    if path is None:
-        return {}
-    json_path = require_workspace_path(path, purpose="JSON path", must_exist=True)
-    try:
-        data = json.loads(json_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise WorkflowError(f"Invalid JSON in {json_path}: {exc}") from exc
-    if not isinstance(data, dict):
-        raise WorkflowError(f"Expected JSON object in {json_path}.")
-    return data
-
-
-def _record_state(state_path: Path, event: str, payload: dict[str, Any], *, enabled: bool) -> None:
-    update_workflow_state(state_path, event, payload, enabled=enabled)
-
-
-def _resolve_external_codegen_plan(spec: dict[str, Any], spec_file: Path) -> dict[str, Any] | None:
-    raw_path = spec.get("codegen_plan_path")
-    if not raw_path:
-        return None
-    plan_path = require_workspace_path_from(
-        spec_file,
-        Path(str(raw_path)),
-        purpose="codegen plan path",
-        must_exist=True,
-    )
-    payload = _read_json(plan_path)
-    validate_codegen_plan_payload(spec, payload, require_ready=False)
-    return payload
-
+    # model_timeout_s 使用新传入值或保存的旧值。
+    dict_config["model_timeout_s"] = int(kwargs.get("model_timeout_s") or dict_config.get("model_timeout_s", 120))  # 模型超时秒数

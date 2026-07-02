@@ -47,6 +47,7 @@ Coverage map:
   - `enc_`
   - `dec_`
 - Internal output-driving signals prefer `_o` suffixes when outputs are routed through explicit `assign` statements.
+- Repeated semantic prefixes such as `C_C_`, `ST_ST_`, `reg_reg_`, `cnt_cnt_`, `flag_flag_`, `enc_enc_`, `dec_dec_`, and `state_state_` are invalid deliverable names.
 - Standard bus clocks and resets prefer Erie bus-family naming such as:
   - `i_clk`, `i_rstn`
   - `i_axi_aclk`, `i_axi_arstn`
@@ -81,6 +82,7 @@ Coverage map:
   - always blocks
   - module instantiations
 - Default inline prose should be Chinese, while signal names, protocol names, identifiers, and proper nouns may remain in English.
+- Entity comments must not be exact or near-duplicate reuse of another entity comment. Standard region banners and group labels are navigation aids; parameters, ports, signals, assigns, always blocks, and instance mappings still need distinct semantic comments.
 
 ## State Machine Rules
 

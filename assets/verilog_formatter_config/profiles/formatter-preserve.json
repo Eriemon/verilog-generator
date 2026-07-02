@@ -1,0 +1,20 @@
+{
+  "formatter": {
+    "sort_ports": false,
+    "sort_params": false,
+    "auto_fix_prefix": false
+  },
+  "rewrite_policy": {
+    "mode": "preserve"
+  },
+  "structure": {
+    "enforce_region_order": false,
+    "place_instances_last": false
+  },
+  "always_rules": {
+    "auto_split": false
+  },
+  "wire_assign_rules": {
+    "rewrite_inline_wire_assign": false
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "execution": {
+    "mode": "lint",
+    "dry_run": true,
+    "in_place": false
+  },
+  "checks": {
+    "enable": true,
+    "naming": true,
+    "prefix": true,
+    "region_layout": true,
+    "diff": false
+  },
+  "backup": {
+    "enabled": false
+  }
+}

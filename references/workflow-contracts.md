@@ -68,6 +68,8 @@ The staged generation workflow uses:
 
 The workflow does not enter prompt-driven code generation until the confirmed requirement contract is complete. If planning finds unresolved requirements, it stops with `blocked_human`.
 
+`deep_review` inserts a `review` stage between `python` and `rtl`. The stage must write a non-empty `*plan_review.md` artifact that covers interface, reset, timing/pipeline, handshake or FSM behavior, width, synthesis, testbench coverage, and risk. Empty JSON, placeholder text, or missing coverage keeps the attempt failed.
+
 ## Existing RTL Assist Flows
 
 Existing-RTL helper flows do not use the staged generation pipeline. They are separate stable subflows exposed through the facade and CLI:
@@ -83,7 +85,7 @@ Existing-RTL helper flows do not use the staged generation pipeline. They are se
 
 `merge_assist` is assist-only by default. It produces a merge plan, wrapper skeleton, validation summary, and equivalence-review contract so repartition or recompose work remains explicit and reviewable.
 
-`verify_existing_verilog(...)` is a verification loop entrypoint rather than a fresh RTL generator. It stages source RTL into a project-local verification workspace, emits a log-driven scaffold testbench or augments an existing one, normalizes diagnosis results, and records the selected automation boundary. The caller must provide the automation mode explicitly.
+`verify_existing_verilog(...)` is a verification loop entrypoint rather than a fresh RTL generator. It stages source RTL into a project-local verification workspace, emits a log-driven scaffold testbench or augments an existing one, normalizes diagnosis results, and records the selected automation boundary. The caller must provide the automation mode explicitly. Existing source RTL uses diagnostic comment gates: comment-density and placement failures are warnings so compile, semantic, interface, and high-confidence lint errors stay visible.
 
 Existing-RTL verify-repair reports may add `diagnosis_route` to `run_summary.json` and `terminal_status.json`. The allowed values are `local_rtl_issue`, `spec_ambiguity`, `dut_tb_contract_drift`, `toolchain_issue`, `needs_external_validation`, and `unknown_or_mixed`. This field is an advisory routing summary and must not change terminal success semantics.
 
@@ -137,8 +139,14 @@ iverilog/vvp. Missing higher-priority simulators are recorded in validation metr
 but they do not block if a lower-priority backend actually runs. If no simulator backend is
 available, validation reports a `toolchain_issue` error and workflow execution stops at
 `blocked_toolchain`. Do not claim compile, execute, or implementation validation unless the
-reported tool actually ran. Use `--no-external` only when the caller intentionally wants static
-validation without local tool execution.
+reported tool actually ran. Use `--no-external` only for static readiness; if a caller asks for
+compile, execute, or implement readiness with external execution disabled, validation reports a
+`toolchain_issue` error and separates `static_passed`, `compile_not_run`, `sim_not_run`, and
+remote-required status in metrics.
+
+SystemVerilog testbenches are allowed as `.sv` verification artifacts. Backend commands must use
+SystemVerilog compile flags (`xvlog -sv`, `vcs -sverilog`, or `iverilog -g2012`) when any `.sv`
+testbench is present. Synthesizable RTL source remains Verilog-2001 `.v`.
 
 ## Trace Semantics
 

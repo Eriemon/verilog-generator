@@ -1,0 +1,24 @@
+{
+  "execution": {
+    "mode": "format",
+    "dry_run": false
+  },
+  "formatter": {
+    "preserve_comments": true,
+    "auto_fix_prefix": true
+  },
+  "compat": {
+    "example_compat": true
+  },
+  "text_io": {
+    "encoding_policy": "utf-8",
+    "eol_policy": "lf",
+    "bom_policy": "strip",
+    "final_newline_policy": "ensure"
+  },
+  "strict_mode": {
+    "enabled": true,
+    "fail_on_unsupported_syntax": true,
+    "fail_on_missing_clock_reset": true
+  }
+}

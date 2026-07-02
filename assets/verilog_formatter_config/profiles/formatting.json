@@ -1,0 +1,16 @@
+{
+  "execution": {
+    "mode": "format",
+    "dry_run": false
+  },
+  "formatter": {
+    "preserve_comments": true,
+    "sort_ports": true,
+    "sort_params": true,
+    "auto_fix_prefix": true
+  },
+  "checks": {
+    "enable": true,
+    "diff": true
+  }
+}

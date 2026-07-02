@@ -1,2 +1,2 @@
-"""Vendored package namespace for the migration bundle."""
+"""迁移包内置 runtime 的命名空间入口。"""
 

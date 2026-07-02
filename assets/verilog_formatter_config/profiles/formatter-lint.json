@@ -1,0 +1,9 @@
+{
+  "execution": {
+    "mode": "lint",
+    "dry_run": true
+  },
+  "rewrite_policy": {
+    "mode": "never"
+  }
+}

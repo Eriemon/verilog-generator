@@ -32,6 +32,84 @@ For existing RTL assets, the same runtime now exposes:
   The same verify-repair flow also emits `simulation_slice.json`, `timing_diagnostic.json`, `expected_trace.md`, `waveform_diff.json`, `testcase_matrix.json`, `run_summary.json`, `synth_readiness.json`, and `terminal_status.json` so the verification closure is explicit even when the run stays in static mode.
   When RTL repair is applicable, the same flow also emits `rtl_patch_plan.json`, `rtl_patch_diff.txt`, `rtl_intervention.json`, `post_apply_validation.json`, and `post_apply_equivalence.json`.
 
+
+## Readable Erie Verilog generation overlay
+
+This skill now follows the same governance pattern as `readable-python-generator`, but for Verilog RTL: generated RTL must be readable, comment-rich, naming-consistent, formatter-checkable, and safe to review before it is considered usable.
+
+The governing rule is:
+
+> Generated Verilog must pass the formatter-backed deliverable gate before it is delivered, modified, or comment-annotated.
+
+For this project, default to the `erie_strict` RTL profile unless the user explicitly asks for a legacy/reference analysis mode. The profile requires:
+
+- standard bilingual file header and `timescale 1ns / 1ps`;
+- ANSI-style module header;
+- Tab indentation and no trailing whitespace;
+- `i_` / `o_` / `io_` port prefixes;
+- `C_` module parameters, uppercase localparams, `ST_` state parameters;
+- `reg_`, `cnt_`, `state_`, `flag_`, `enc_`, `dec_`, and internal `_o` output signal naming, with no repeated semantic prefixes such as `C_C_`, `ST_ST_`, or `reg_reg_`;
+- output bridge style for registered/complex outputs;
+- one primary target per `always` block;
+- active-low reset using `negedge i_rstn` or protocol reset names;
+- three-segment FSMs using `state_current`, `state_next`, and `ST_*`;
+- fixed Chinese region banners and Chinese-first semantic comments that are entity-specific, non-placeholder, and not exact or near-duplicate reuse of another entity comment.
+
+Load these references before generating, refactoring, or reviewing RTL for this user:
+
+1. `references/verilog-code-comment-naming-standard.zh.txt` for the canonical detailed rule text.
+2. `assets/verilog_style_rules.json` for machine-readable naming, region, comment, protocol, and statement constraints.
+3. `references/verilog-comment-placement.md` before adding or rewriting comments.
+4. `references/workflows/verilog_dispatcher.md` before routing generation, modification, comment, analysis, or validation tasks.
+5. `references/checklists/verilog_readability_gate.md` before final review of generated RTL.
+6. `references/workflow-contracts.md` before changing workflow artifacts or validation output.
+7. `assets/verilog_formatter_config/` when interpreting formatter profiles or AST quality-gate results.
+8. `references/ideal-verilog-style-observations.zh.txt` for empirical style traits extracted from the ideal and bad corpora.
+
+### Mandatory formatter-AST deliverable gate
+
+The skill vendors the formatter backend under `runtime/verilog_generator/formatter_backend/` and exposes the generator-facing bridge in `runtime/verilog_generator/formatter_ast.py`. Do not create a second Verilog parser for quality checks. Use the formatter-backed model for module names, ports, parameters, declarations, assigns, always blocks, generate blocks, instances, tasks, functions, and raw blocks.
+
+After generating or modifying RTL, run the integrated final gate:
+
+```bash
+python scripts/verilog_generated_deliverable_gate.py <rtl-file-or-dir> --json deliverable_gate.json --markdown deliverable_gate.md
+```
+
+The deliverable gate aggregates formatter AST, the VG quality gate, static lint, comment checks, and rulebook consistency. Strict mode is the default and requires `errors == 0` and `strict_warnings == 0`. The lower-level VG quality gate remains available for focused debugging:
+
+```bash
+python scripts/verilog_quality_gate.py <rtl-file-or-dir> --json quality_gate.json --markdown quality_gate.md
+```
+
+The normal validation command also invokes this gate automatically through `validate_generated(...)` and reports it as `formatter_ast_quality_gate`:
+
+```bash
+python -m runtime.verilog_generator.cli validate --spec spec.json --path out_dir --no-external --report-json validation_report.json
+```
+
+Use `--non-strict --warn-only` only for legacy reference analysis against the migrated historical corpora under `tests/cases/ideal/rtl` and `tests/cases/bad/rtl`. Do not use non-strict mode for newly generated deliverables. Repository tests must use the stable corpus under `tests/cases` and the `tests/cases/manifests/verilog_case_manifest.json` expectations, not the one-time migration input area.
+
+The strict gate rejects missing bilingual header fields, compact/non-ANSI module headers, missing port group comments on non-trivial headers, trailing whitespace, block comments, placeholder/template comments, incorrect prefixes, unsafe output-port assignment, multi-target `always` blocks, incomplete reset/FSM structure, formatter-AST parse diagnostics, missing or untrusted AST spans (`VG050`), header/module semantic mismatch (`VG051`), wrong region ownership (`VG052`), reset condition polarity errors (`VG053`), incomplete strict FSM next-state structure (`VG054`), hollow Chinese comments (`VG055`), formatter fallback comments in deliverables (`VG056`), protocol port ordering drift (`VG057`), include/vendor/SV normalize misuse (`VG058`), rulebook drift (`VG059`), region comment-anchor drift (`VG060`), general region ownership drift (`VG061`), missing procedural assignment comments (`VG062`), misplaced leading comments (`VG063`), missing instance mapping comments (`VG064`), missing definition group comments (`VG065`), and repeated, near-duplicate, or template-reused entity comments (`VG066`). Keep corpus-derived analysis reproducible with:
+
+```bash
+python scripts/analyze_verilog_style_corpus.py --ideal ../../tests/cases/ideal/rtl --bad ../../tests/cases/bad/rtl --out corpus_metrics.json
+```
+
+### Comment annotation pipeline
+
+For tasks that add, rewrite, translate, or optimize Verilog comments, follow this exact pipeline:
+
+1. Normalize the original RTL to an immutable `baseline.v` using formatter-AST-backed normalization.
+2. Add or rewrite only `//` comments on a copy of that baseline.
+3. Run `python scripts/verify_verilog_comment_only.py baseline.v annotated.v --require-comment-delta`.
+4. Run the final deliverable gate on the annotated file.
+5. Re-format the annotated file if required, then run the comment-only verifier again from the immutable baseline.
+6. Deliver only when both comment-only checks and the final deliverable gate pass.
+
+Never treat pre-header comments as the only valid annotation delta. Never allow comment generation to change RTL tokens, module names, port lists, lvalues, reset behavior, always targets, or instance connections. Do not reuse one generic Chinese sentence across multiple parameters, ports, signals, assigns, process assignments, or instance mappings; standard region banners are navigation only and do not exempt entity-level comments from the `VG066` reuse gate.
+
+
 ## Dependency Preflight
 
 On first use in a Codex installation, and before any remote/Vivado/Vitis-related workflow, run the dependency check from this skill root:
@@ -79,11 +157,11 @@ Developer routing preference is: `vivado-developer`, then `vitis-developer`, for
 5. Generate a Python reference model before RTL when running the workflow; use it as the semantic contract for the Verilog testbench.
 6. Streaming is optional and applies only to provider interaction. Use it when the selected provider supports streaming and the host benefits from partial output visibility. The finalized response artifact remains the extraction source of truth.
 7. Batch generation is generation-only in v1. Use `run_verilog_batch(...)` for multiple confirmed specs, keep each case in its own run directory, and do not use batch mode for existing-RTL mutation or decision-resume flows.
-8. Run the mandatory quality gate before claiming usable output. `validate_verilog_artifacts(...)` and `scripts/validate_verilog_skill.py` are required quality-control steps; skipping optional helpers does not bypass this gate.
+8. Run the mandatory deliverable gate before claiming usable output. `validate_verilog_artifacts(...)` and `scripts/validate_verilog_skill.py` are required quality-control steps; by default the skill script runs only self-contained package gates, while repository regressions and external skill audits require explicit flags. Skipping optional helpers does not bypass this gate.
 9. Use optional helper tools only when they add value to the request:
    - Run `scripts/verilog_lint.py` when the user asks for independent static lint, standalone review findings, or a quick local lint pass on existing RTL or testbench files.
    - Run `scripts/tb_generator.py` when the user asks for a fast self-checking testbench scaffold or when a repair starts from module ports rather than the full staged workflow.
-10. If the request includes compile, execute, or implement readiness, continue into the local or remote backend validation path. Prefer Vivado xsim first, then VCS+Verdi, then iverilog/vvp. Use `yosys` only for implement readiness.
+10. If the request includes compile, execute, or implement readiness, continue into the local or remote backend validation path. `--no-external` is valid only for static readiness; compile, execute, or implement readiness without external validation is a blocking error. Prefer Vivado xsim first, then VCS+Verdi, then iverilog/vvp. Use `yosys` only for implement readiness.
 11. If the request starts from an existing RTL file instead of a fresh spec, choose the existing-RTL branch first:
    - `analyze_existing_verilog(...)` for structural understanding, feature mapping, and a durable `design_explanation.md`
    - `verify_existing_verilog(...)` when the task is to build a log-driven verification loop, classify failures, or prepare patch candidates with explicit automation boundaries; present this path as `agentic_repair`
@@ -97,16 +175,16 @@ Developer routing preference is: `vivado-developer`, then `vitis-developer`, for
 
 Strict quality control is mandatory. The required quality chain is:
 
-1. Generate only synthesizable Verilog-2001 RTL. Verification testbenches may stay in Verilog-2001 or use SystemVerilog when the verify-repair flow needs assertion/property support.
+1. Generate only synthesizable Verilog-2001 RTL in `.v` files. Verification testbenches may stay in Verilog-2001 `.v` files or use SystemVerilog `.sv` files when the verify-repair flow needs assertion/property support; source RTL `.sv` files remain outside this skill boundary.
 2. Prefer standardized interfaces: AXI-Stream for streaming data, AXI4-Lite for control/status registers, AXI4 for memory-mapped bulk transfers, and AHB/APB when a platform requires them. If a custom shape still needs bus unification, extend AXI-Stream with explicit sideband metadata in `interface_profile`.
 3. Use the local standard bus templates in `assets/interface_templates` whenever `interface_family` is `axi_stream`, `axi4_lite`, `axi4`, `ahb`, or `apb`. Treat their port names, parameter names, and Chinese comments as strict-preferred defaults; only adapt them when the confirmed spec explicitly conflicts, and record the adaptation reason in the generated checks.
 4. When `workflow.use_case_template_id` is set, preserve the selected family bundle from `assets/use_case_templates/` as board-level guidance and keep any adaptation visible in the generated checks and codegen plan.
 5. When `rtl_style_profile=erie_strict`, also follow the ref-derived Erie naming, header, FSM, instance, and bus-grouping conventions captured in `references/erie-ref-style.md` and `assets/style_templates/`.
-6. Treat semantic comment placement as a hard validation gate: every non-empty generated Verilog code line in RTL and testbench `.v` files must have a same-line explanatory comment in the requested language, and each construct type must follow `references/verilog-comment-placement.md`. Blank lines and pure comment lines are exempt; missing, misplaced, shared-adjacent, or generic Chinese comments under `comment_language=zh` are blocking errors.
+6. Treat semantic comment placement as a hard validation gate: generated Verilog must use entity-level comments for module headers, parameters, ports, declarations, assigns, always blocks, FSM branches, instances, and generate blocks. Same-line comments are required for stable single-line entities, while leading comments should explain block intent. Do not add mechanical comments to every syntactic line just to raise density. Missing, misplaced, shared-adjacent, generic, hollow Chinese, formatter fallback, repeated, near-duplicate, or template-reused comments under `comment_language=zh` are blocking errors.
 7. Avoid Verilog `function` and `task` blocks in generated Verilog, especially synthesizable RTL; prefer explicit always/assign logic and inline testbench checks for easier waveform debugging.
 8. Apply ASIC quality review rules for generated RTL: complete combinational assignments, case defaults, no raw gated clocks, documented CDC/reset assumptions, and timing-reviewable datapath/control structure. Load `references/asic-verilog-quality.md` for detailed review guidance.
 9. Apply the distilled RTL Markdown constraints in `references/rtl-md-constraints.md` and `assets/rtl_md_constraints.json`: all `MUST` rules are blocking generation/review constraints, high-confidence `MUST` rules are enforced by the static gate, and `REC` rules are default preferences whose deviations must be recorded in manifest checks.
-10. Validate with static checks by default; when external simulation is requested, select the highest available backend in this order: Vivado xsim, VCS+Verdi, then iverilog/vvp. Use `yosys` only for implement readiness.
+10. Validate with static checks by default; when external simulation is requested, select the highest available backend in this order: Vivado xsim, VCS+Verdi, then iverilog/vvp. SystemVerilog testbenches require the matching backend flags (`xvlog -sv`, `vcs -sverilog`, or `iverilog -g2012`). Use `yosys` only for implement readiness.
 
 For `optimize_assist`, QoR output is advisory by default: it produces structural summaries and optional `yosys` evidence when available, but it does not automatically approve or rewrite RTL.
 For `merge_assist`, the flow stays plan-only by default: it emits `merge_plan.json`, `merge_wrapper.v`, `merge_validation.json`, and `merge_equivalence.json` to support wrapper-first repartition or recompose work without silently rewriting the source RTL.
@@ -115,6 +193,9 @@ For verify-repair flows, `conservative` is report-only, `semi_auto` requires use
 When `tb_mode="augment"`, preserve the original testbench body, emit `tb_augment_plan.json` plus `tb_augment_diff.txt`, back up the original testbench before any overwrite, and record original/backup/active paths in `tb_contract.json`.
 When RTL mutation is available, emit `rtl_patch_plan.json` plus `rtl_patch_diff.txt`, back up every affected RTL file before overwrite, record backup/active paths in `patch_candidate.json`, and use `rtl_intervention.json` plus `decision.json` for confirmation-driven resume. Current patch categories include `reset_initialization_completion`, `case_default_completion`, `state_hold_clear_completion`, and `output_register_completion`; only `reset_initialization_completion` keeps `auto_apply` eligibility, while the newer control/timing categories downgrade to confirmation before apply even when the requested mode is `auto_apply`.
 Every verify-repair run must also preserve the standardized diagnostics pack and terminal-status artifact so downstream tooling can distinguish `pass`, `not_run`, `timeout`, and confirmation-blocked closures without scraping free-form logs.
+For existing RTL diagnostics, comment-placement failures are advisory warnings rather than blocking errors; compile, semantic, interface, and high-confidence lint failures remain prioritized.
+
+`deep_review` runs are blocked unless the review artifact is non-empty and covers interface, reset, timing/pipeline, handshake or FSM behavior, width, synthesis, testbench coverage, and risk items. Empty `{}` review artifacts or template-only review text are not acceptable evidence.
 
 Optional helper tools are inside the workflow, but strict quality control is the only mandatory gate.
 
@@ -151,6 +232,7 @@ Run smoke validation from this skill root:
 ```powershell
 python .\scripts\validate_verilog_skill.py --settings .\config\defaults.json
 python .\scripts\validate_verilog_skill.py --settings .\config\defaults.json --no-require-remote
+python .\scripts\validate_verilog_skill.py --settings .\config\defaults.json --with-external-audit --with-repo-regression --no-require-remote
 python -m runtime.verilog_generator run-workflow --spec .\assets\examples\rtl_erie_verilog_spec.json --out-dir .\reports\verilog\regular --model-provider mock --generation-mode regular --no-external
 python -m runtime.verilog_generator run-workflow --spec .\assets\examples\rtl_erie_verilog_spec.json --out-dir .\reports\verilog\deep-review --model-provider mock --generation-mode deep_review --stream --no-external
 python -m runtime.verilog_generator run-batch --spec .\assets\examples\rtl_erie_verilog_spec.json --spec .\assets\examples\use_case_templates\spi_adc.json --out-dir .\reports\verilog\batch --model-provider mock --generation-mode regular --no-external
@@ -159,6 +241,7 @@ python -m runtime.verilog_generator run-batch --spec .\assets\examples\rtl_erie_
 Run optional helper tools only when the request benefits from them:
 
 ```powershell
+python .\scripts\verilog_generated_deliverable_gate.py .\reports\verilog\generated\rtl\erie_adapter.v --json .\reports\verilog\deliverable_gate.json --markdown .\reports\verilog\deliverable_gate.md
 python .\scripts\verilog_lint.py .\reports\verilog\generated\rtl\erie_adapter.v
 python .\scripts\tb_generator.py .\reports\verilog\generated\rtl\erie_adapter.v --output .\reports\verilog\tb_erie_adapter.v
 python -m runtime.verilog_generator verify-existing --source .\assets\examples\existing_rtl\ready_valid_slice.v --out-dir .\reports\verilog\verify-existing --spec-source .\assets\examples\existing_rtl\ready_valid_slice_spec.md --automation-mode semi_auto --tb-mode generate --tb-language verilog --no-external
