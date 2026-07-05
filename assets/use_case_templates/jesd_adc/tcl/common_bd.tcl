@@ -2,7 +2,7 @@
 source $ad_hdl_dir/library/jesd204/scripts/jesd204.tcl
 
 # RX_JESD_L 来自板级 ADI 参数表，确保 GT lane 数和接收 link 宽度一致
-set rxNumOfLanes $adProjectParams(RX_JESD_L)
+set countRxNumOfLanes [set ad_project_params(RX_JESD_L)]
 
 # RX_NUM_OF_CONVERTERS 控制 converter 通道展开，确保 TPL 与 cpack 结构匹配
 set countRxNumOfConverters [get_env_param RX_NUM_OF_CONVERTERS 2]
@@ -14,22 +14,22 @@ set countRxSamplesPerFrame [get_env_param RX_JESD_S 1]
 set countRxSampleWidth [get_env_param RX_SAMPLE_WIDTH 16]
 
 # 每通道样本数由 lane 吞吐推导，确保 cpack 写入速率和 JESD link 数据宽度匹配
-set countRxSamplesPerChannel [expr {($rxNumOfLanes * 32) / ($countRxNumOfConverters * $countRxSampleWidth)}]
+set countRxSamplesPerChannel [expr {($countRxNumOfLanes * 32) / ($countRxNumOfConverters * $countRxSampleWidth)}]
 
 # JESD ADC 收发器实例承载物理接收 lane，确保 GT 配置独立于链路层 IP
 ad_ip_instance axi_adxcvr axi_jesd_adc_xcvr
 
 # 收发器 lane 数锁定到模板参数，避免 GT 与 link 配置错位
-ad_ip_parameter axi_jesd_adc_xcvr CONFIG.NUM_OF_LANES $rxNumOfLanes
+ad_ip_parameter axi_jesd_adc_xcvr CONFIG.NUM_OF_LANES $countRxNumOfLanes
 
 # 收发器方向限制为接收模式，确保 ADC 数据只沿 RX 路径进入系统
 ad_ip_parameter axi_jesd_adc_xcvr CONFIG.TX_OR_RX_N 0
 
 # JESD204 接收链路 IP 使用同一 lane 宽度，确保链路层和物理层同步
-adi_axi_jesd204_rx_create axi_jesd_adc_link $rxNumOfLanes
+adi_axi_jesd204_rx_create axi_jesd_adc_link $countRxNumOfLanes
 
 # ADC TPL 负责 converter 样本恢复，确保链路帧转换成后级可消费的数据流
-adi_tpl_jesd204_rx_create axi_jesd_adc_tpl $rxNumOfLanes $countRxNumOfConverters $countRxSamplesPerFrame $countRxSampleWidth
+adi_tpl_jesd204_rx_create axi_jesd_adc_tpl $countRxNumOfLanes $countRxNumOfConverters $countRxSamplesPerFrame $countRxSampleWidth
 
 # cpack 汇聚 converter 样本到 DMA FIFO 写口，确保多通道采样按统一总线落地
 ad_ip_instance util_cpack2 axi_jesd_adc_cpack [list \

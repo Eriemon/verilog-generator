@@ -2,7 +2,7 @@
 source $ad_hdl_dir/library/jesd204/scripts/jesd204.tcl
 
 # TX_JESD_L 来自板级 ADI 参数表，确保 GT lane 数和发送 link 宽度一致
-set txNumOfLanes $adProjectParams(TX_JESD_L)
+set countTxNumOfLanes [set ad_project_params(TX_JESD_L)]
 
 # TX_NUM_OF_CONVERTERS 控制 converter 通道展开，确保 TPL 与 upack 结构匹配
 set countTxNumOfConverters [get_env_param TX_NUM_OF_CONVERTERS 2]
@@ -14,7 +14,7 @@ set countTxSamplesPerFrame [get_env_param TX_JESD_S 1]
 set countTxSampleWidth [get_env_param TX_SAMPLE_WIDTH 16]
 
 # 每通道样本数由 JESD lane 吞吐推导，确保 upack 和链路发送带宽匹配
-set countTxSamplesPerChannel [expr {($txNumOfLanes * 32) / ($countTxNumOfConverters * $countTxSampleWidth)}]
+set countTxSamplesPerChannel [expr {($countTxNumOfLanes * 32) / ($countTxNumOfConverters * $countTxSampleWidth)}]
 
 # DAC_FIFO_ADDRESS_WIDTH 控制发送缓存深度，避免 DMA 写入节奏直接压迫链路侧
 set countDacFifoAddressWidth [get_env_param DAC_FIFO_ADDRESS_WIDTH 13]
@@ -26,16 +26,16 @@ set countDacDataWidth [expr {$countTxSampleWidth * $countTxNumOfConverters * $co
 ad_ip_instance axi_adxcvr axi_jesd_dac_xcvr
 
 # 收发器 lane 数锁定到模板参数，避免 GT 与 link 配置错位
-ad_ip_parameter axi_jesd_dac_xcvr CONFIG.NUM_OF_LANES $txNumOfLanes
+ad_ip_parameter axi_jesd_dac_xcvr CONFIG.NUM_OF_LANES $countTxNumOfLanes
 
 # 收发器方向限制为发送模式，确保 DAC 数据只沿 TX 路径离开系统
 ad_ip_parameter axi_jesd_dac_xcvr CONFIG.TX_OR_RX_N 1
 
 # JESD204 发送链路 IP 使用同一 lane 宽度，确保链路层和物理层同步
-adi_axi_jesd204_tx_create axi_jesd_dac_link $txNumOfLanes
+adi_axi_jesd204_tx_create axi_jesd_dac_link $countTxNumOfLanes
 
 # DAC TPL 负责 converter 样本到链路帧的映射，确保发送帧结构由参数控制
-adi_tpl_jesd204_tx_create axi_jesd_dac_tpl $txNumOfLanes $countTxNumOfConverters $countTxSamplesPerFrame $countTxSampleWidth
+adi_tpl_jesd204_tx_create axi_jesd_dac_tpl $countTxNumOfLanes $countTxNumOfConverters $countTxSamplesPerFrame $countTxSampleWidth
 
 # upack 将 FIFO 总线展开成 converter 通道，确保 TPL 接收的数据布局正确
 ad_ip_instance util_upack2 axi_jesd_dac_upack [list \

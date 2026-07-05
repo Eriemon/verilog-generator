@@ -1,7 +1,7 @@
 {
   "meta": {
     "version": 1,
-    "note": "Corpus traits are advisory; generated delivery RTL is enforced by runtime/verilog_generator/quality_gate.py and formatter_ast.py."
+    "note": "Corpus traits are advisory; generated delivery RTL is enforced by scripts/python/quality/quality_gate.py and formatter_ast.py."
   },
   "ideal": {
     "file_count": 57,

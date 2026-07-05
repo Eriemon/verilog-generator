@@ -290,19 +290,27 @@
         }
       }
     },
+    "markdown_non_ascii_allowlist": [
+      "README-CN.md",
+      "references/rules/verilog-code-comment-naming-standard.md",
+      "references/corpus/verilog-style-observations.md"
+    ],
     "legacy_term_allowlist": [
       "ENGINEERING_DESIGN_GOALS.md",
       "assets/ideal_bad_style_metrics.json",
       "assets/verilog_style_rules.json",
-      "integration/verilog_adapter.py",
-      "references/checklists/verilog_readability_gate.md",
-      "references/verilog-code-comment-naming-standard.zh.txt",
-      "runtime/verilog_generator/cli.py",
-      "runtime/verilog_generator/deliverable_gate.py",
-      "runtime/verilog_generator/formatter_backend/layout_mixin.py",
-      "runtime/verilog_generator/quality_gate.py",
-      "scripts/verilog_generated_deliverable_gate.py",
-      "scripts/verilog_quality_gate.py"
+      "scripts/python/facade/verilog_api.py",
+      "references/checklists/verilog-readability-gate.md",
+      "references/rules/verilog-code-comment-naming-standard.md",
+      "scripts/python/facade/verilog_api.py",
+      "scripts/python/workflow/cli.py",
+      "scripts/python/quality/deliverable_gate.py",
+      "scripts/python/quality/formatter_backend/layout_mixin.py",
+      "scripts/python/quality/quality_gate.py",
+      "scripts/python/validation/verilog_generated_deliverable_gate.py",
+      "scripts/python/quality/verilog_quality_gate.py",
+      "scripts/python/validation/verilog_generated_deliverable_gate.py",
+      "scripts/python/quality/verilog_quality_gate.py"
     ],
     "forbidden_residuals": [
       "__pycache__",

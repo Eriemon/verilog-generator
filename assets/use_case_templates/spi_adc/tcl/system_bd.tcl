@@ -16,11 +16,11 @@ set countAdcNumChannels [get_env_param ADC_NUM_CHANNELS 1]
 # ADC_SAMPLING_RATE 决定 CNV 周期，确保脉冲发生器匹配目标采样节拍
 set countAdcSamplingRate [get_env_param ADC_SAMPLING_RATE 1000000]
 
-# 模板目录显式保存为 smoke 与 ADI 入口契约，确保公共片段从当前模板目录加载
-set "template_dir" [file dirname [info script]]
+# 模板目录使用当前脚本目录变量，确保公共片段从当前模板目录加载
+set templateDir [file dirname [info script]]
 
 # SPI ADC 公共片段承接采样参数，确保采集链路和 DMA 在同一 BD 上下文生成
-source [file join $template_dir common_bd.tcl]
+source [file join $templateDir common_bd.tcl]
 
 # SYSID ROM 地址空间限制为模板初始化文件规模，避免 Vivado 期望额外内容
 ad_ip_parameter axi_sysid_0 CONFIG.ROM_ADDR_BITS 9

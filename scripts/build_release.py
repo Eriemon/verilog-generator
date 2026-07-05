@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""构建 Erie Verilog Generator 的确定性发布产物。"""
+"""构建 Erie Verilog Generator 的确定性公开发布产物。"""
 
 from __future__ import annotations
 
@@ -21,58 +21,58 @@ DIST_ROOT = ROOT / "dist"
 MANIFEST_PATH = DIST_ROOT / "manifest.json"
 RECEIPT_NAME = "RELEASE_RECEIPT.json"
 ZIP_TIMESTAMP = (2026, 1, 1, 0, 0, 0)
-POLICY_VERSION = "2026-07-02-v1"
+POLICY_VERSION = "2026-07-05-v1"
 TOP_LEVEL_FILE_MODE = "explicit-allowlist"
 
 ALLOWED_TOP_LEVEL_FILES = [
-    ".gitignore",
-    "CITATION.cff",
-    "CONTRIBUTING.md",
     "ENGINEERING_DESIGN_GOALS.md",
     "LICENSE",
     "README-CN.md",
     "README.md",
     "RELEASE_RECEIPT.json",
-    "SECURITY.md",
     "SKILL.md",
     "VERSION",
-    "pyproject.toml",
 ]
 
 ALLOWED_TOP_LEVEL_DIRS = [
     "agents",
     "assets",
     "config",
-    "docs",
     "evals",
-    "integration",
     "references",
-    "runtime",
     "scripts",
 ]
 
-FORBIDDEN_EXACT_NAMES = [
+FORBIDDEN_TOP_LEVEL_NAMES = [
     ".erie-verilog-generator-state",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
     ".settings",
-    "__pycache__",
-    "_smoke_runs",
     "dist",
     "downloads",
+    "integration",
     "logs",
     "reports",
     "requests",
     "runs",
+    "runtime",
     "smoke",
     "test",
     "tests",
     "tmp",
 ]
 
+FORBIDDEN_NESTED_NAMES = [
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "_smoke_runs",
+]
+
 FORBIDDEN_PREFIXES = ["smoke"]
 FORBIDDEN_SUFFIXES = [".log", ".pyc", ".pyo"]
+FORBIDDEN_RELEASE_RELATIVE_PATHS = {
+    "scripts/build_release.py",
+}
 
 
 def should_exclude(path: Path, root: Path) -> bool:
@@ -82,11 +82,22 @@ def should_exclude(path: Path, root: Path) -> bool:
     list_lower_parts = [part.casefold() for part in path_relative.parts]
     str_lower_name = path.name.casefold()
     str_posix = path_relative.as_posix()
+    str_top_level = path_relative.parts[0]
+    str_top_level_lower = str_top_level.casefold()
 
     if ".git" in list_lower_parts:
         return True
 
-    if any(part in FORBIDDEN_EXACT_NAMES for part in list_lower_parts):
+    if str_top_level not in ALLOWED_TOP_LEVEL_FILES and str_top_level not in ALLOWED_TOP_LEVEL_DIRS:
+        return True
+
+    if str_posix in FORBIDDEN_RELEASE_RELATIVE_PATHS:
+        return True
+
+    if str_top_level_lower in FORBIDDEN_TOP_LEVEL_NAMES:
+        return True
+
+    if any(part in FORBIDDEN_NESTED_NAMES for part in list_lower_parts):
         return True
 
     if any(part.startswith(tuple(FORBIDDEN_PREFIXES)) for part in list_lower_parts):
@@ -291,18 +302,30 @@ def tracked_forbidden_paths() -> list[str]:
             continue
         str_rel = raw_path.decode("utf-8", errors="ignore").replace("\\", "/")
         path_rel = Path(str_rel)
+        path_source = ROOT / path_rel
         list_lower_parts = [part.casefold() for part in path_rel.parts]
         str_lower_name = path_rel.name.casefold()
+        str_top_level_lower = path_rel.parts[0].casefold()
 
-        if any(part in FORBIDDEN_EXACT_NAMES for part in list_lower_parts):
+        if not path_source.exists():
+            continue
+
+        if str_top_level_lower in FORBIDDEN_TOP_LEVEL_NAMES:
             list_violations.append(str_rel)
             continue
+
+        if any(part in FORBIDDEN_NESTED_NAMES for part in list_lower_parts):
+            list_violations.append(str_rel)
+            continue
+
         if any(part.startswith(tuple(FORBIDDEN_PREFIXES)) for part in list_lower_parts):
             list_violations.append(str_rel)
             continue
+
         if str_lower_name == "project.local.json" or str_lower_name.endswith(".local.json"):
             list_violations.append(str_rel)
             continue
+
         if (
             str_lower_name.startswith("server_list.local.json.bak")
             or ".bak." in str_lower_name
@@ -362,9 +385,11 @@ def release_content_analysis(root: Path) -> dict[str, object]:
         "top_level_file_mode": TOP_LEVEL_FILE_MODE,
         "allowed_top_level_files": ALLOWED_TOP_LEVEL_FILES,
         "allowed_top_level_dirs": ALLOWED_TOP_LEVEL_DIRS,
-        "forbidden_exact_names": FORBIDDEN_EXACT_NAMES,
+        "forbidden_top_level_names": FORBIDDEN_TOP_LEVEL_NAMES,
+        "forbidden_nested_names": FORBIDDEN_NESTED_NAMES,
         "forbidden_prefixes": FORBIDDEN_PREFIXES,
         "forbidden_suffixes": FORBIDDEN_SUFFIXES,
+        "forbidden_release_relative_paths": sorted(FORBIDDEN_RELEASE_RELATIVE_PATHS),
         "included_file_count": len(list_included_files),
         "included_top_level_entries": list_top_level_entries,
         "unexpected_top_level_entries": list_unexpected_entries,
@@ -408,6 +433,11 @@ def write_release_receipt(str_branch: str, str_commit: str, bool_dirty: bool) ->
         encoding="utf-8",
         newline="\n",
     )
+    (ROOT / RECEIPT_NAME).write_text(
+        json.dumps(dict_receipt, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
 
 
 def write_manifest(str_branch: str, str_commit: str, bool_dirty: bool) -> None:
@@ -429,12 +459,15 @@ def write_manifest(str_branch: str, str_commit: str, bool_dirty: bool) -> None:
         "file_count": len(release_files(path_dist_skill)),
         "release_created_at": str_release_created_at,
         "validation_commands": [
-            r"python .\scripts\validate_verilog_skill.py --no-require-remote",
-            r"python .\scripts\validate_verilog_skill.py --no-require-remote --with-external-audit",
+            r"python -m scripts.python.workflow.cli --version",
+            r"python .\scripts\python\validation\validate_verilog_skill.py --no-require-remote",
             r"python .\scripts\build_release.py",
         ],
         "excludes": [
             "dist/",
+            "docs/",
+            "integration/",
+            "runtime/",
             ".settings/",
             ".erie-verilog-generator-state/",
             "reports/",
@@ -453,6 +486,7 @@ def write_manifest(str_branch: str, str_commit: str, bool_dirty: bool) -> None:
             "*.log",
             "*.pyc",
             "*.pyo",
+            "scripts/build_release.py",
         ],
     }
 

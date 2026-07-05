@@ -7,8 +7,11 @@ source $ad_hdl_dir/projects/scripts/adi_project_xilinx.tcl
 # ZC706 板级封装限制器件、参考时钟和处理系统约束来源，防止跨板资源混用
 source $ad_hdl_dir/projects/scripts/adi_board.tcl
 
-# 工程名绑定采集模板和 ZC706 目标板，避免生成目录覆盖其它模板产物
-adi_project jesd_adc_template_zc706
+# 工程参数在创建 block design 前注入 ADI 参数表，确保 system_bd.tcl 读取到可覆盖的 JESD 默认值
+adi_project jesd_adc_template_zc706 0 [list \
+	RX_JESD_L [get_env_param RX_JESD_L 2] \
+	RX_JESD_S [get_env_param RX_JESD_S 1] \
+]
 
 # 文件集合只包含模板顶层和本地约束，确保采集链路约束边界清晰
 adi_project_files jesd_adc_template_zc706 [list \

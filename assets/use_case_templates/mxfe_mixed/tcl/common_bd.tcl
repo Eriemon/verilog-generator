@@ -1,15 +1,15 @@
 
-# ADC FIFO 容量以 converter 为粒度换算成 sample 数，确保公共封装获得明确接收缓存深度
-set countAdcFifoSamplesPerConverter [expr {$adProjectParams(RX_KS_PER_CHANNEL) * 1024}]
+# 先把 ADI 参数表中的 ADC FIFO 容量读到本地变量，确保强 parser 能验证后续算术表达式
+set countRxKsPerChannel [set ad_project_params(RX_KS_PER_CHANNEL)]
 
-# ADI 旧变量名继续暴露 ADC FIFO 容量，避免公共 helper 读取传统全局名失败
-set "adc_fifo_samples_per_converter" $countAdcFifoSamplesPerConverter
+# ADC FIFO 容量以 converter 为粒度换算成 sample 数，确保公共封装获得明确接收缓存深度
+set countAdcFifoSamplesPerConverter [expr {$countRxKsPerChannel * 1024}]
+
+# 先把 ADI 参数表中的 DAC FIFO 容量读到本地变量，确保强 parser 能验证后续算术表达式
+set countTxKsPerChannel [set ad_project_params(TX_KS_PER_CHANNEL)]
 
 # DAC FIFO 容量以 converter 为粒度换算成 sample 数，确保公共封装获得明确发送缓存深度
-set countDacFifoSamplesPerConverter [expr {$adProjectParams(TX_KS_PER_CHANNEL) * 1024}]
-
-# DAC FIFO 公共封装仍读取传统全局容量名，回填可避免发送缓存深度回落默认值
-set "dac_fifo_samples_per_converter" $countDacFifoSamplesPerConverter
+set countDacFifoSamplesPerConverter [expr {$countTxKsPerChannel * 1024}]
 
 # ADC FIFO helper 进入 Tcl 环境，确保接收缓存由 ADI 公共封装生成
 source $ad_hdl_dir/projects/common/xilinx/adcfifo_bd.tcl

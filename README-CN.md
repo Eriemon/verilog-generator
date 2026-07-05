@@ -10,8 +10,8 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-1f6feb"></a>
-  <a href="pyproject.toml"><img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2f81f7"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-v0.3.6-7c3aed">
+  <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-2f81f7">
+  <img alt="Version" src="https://img.shields.io/badge/version-v0.4.0-7c3aed">
   <a href="SKILL.md"><img alt="Agent Skill" src="https://img.shields.io/badge/agent-skill-16a34a"></a>
   <a href="ENGINEERING_DESIGN_GOALS.md"><img alt="Target" src="https://img.shields.io/badge/target-Verilog--2001-f59e0b"></a>
 </p>
@@ -19,12 +19,12 @@
 <h1 align="center">Verilog Generator</h1>
 
 <p align="center">
-  面向 Codex/Agent 的 Verilog-2001 RTL 专业工作流 Skill。
+  面向 Codex/Agent 的 Verilog-2001 RTL 生成、审查、修复与验证工作流 Skill。
 </p>
 
-Verilog Generator 用来把 AI 编程代理变成更可靠的 RTL 工程助手。它提供触发元数据、工作流指令、接口模板、确定性 runtime、示例和验证门禁，帮助 Agent 从确认后的硬件意图稳定推进到可综合 Verilog 与自检查 testbench。
+Verilog Generator 用来把 AI 编程代理变成更可靠的 RTL 与 FPGA 工程助手。它提供触发元数据、工作流指令、确定性 Python helper、结构化风格资产、代表性夹具和验证门禁，帮助 Agent 从确认后的硬件意图稳定推进到可综合 Verilog、自检查 testbench 和有证据的审查产物。
 
-这个仓库首先是一个 **Agent Skill Package**。Python CLI 是确定性执行层，但主要入口是 Agent 可加载、可遵循的 skill 结构。
+这个仓库是一个公开的 **Agent Skill Package**。从 `v0.4.0` 开始，稳定公开的运行时表面已经切到 `scripts/python/...` 包结构，并以 `SKILL.md` 为主约束入口。
 
 ## 为什么需要它
 
@@ -33,10 +33,10 @@ RTL 工作在写代码之前就需要精确确认。Verilog Generator 会要求 
 适用场景包括：
 
 - 可综合 Verilog-2001 RTL 模块。
-- 自检查 Verilog testbench。
-- 用于语义比对的 Python reference contract。
+- 自检查 Verilog 或 SystemVerilog 验证产物。
+- existing-RTL 的 analyze、compare、improve 和 verify-repair 闭环。
 - AXI-Stream、AXI4-Lite、AXI4、AHB、APB、native 或 custom 接口形态。
-- 静态验证、仿真就绪检查、workflow trace 和生成产物审查。
+- 静态验证、仿真就绪检查、workflow trace 和受治理的审查证据。
 
 ## Skill 架构
 
@@ -50,12 +50,39 @@ RTL 工作在写代码之前就需要精确确认。Verilog Generator 会要求 
   <img src="docs/assets/workflow-cn.svg" alt="Verilog Generator 工作流" width="100%">
 </p>
 
-## v0.3.6 重点更新
+## v0.4.0 重点更新
 
-- 补齐基于 formatter 的风格资产与结构化规则数据：通过 `assets/verilog_formatter_config/`、`assets/verilog_style_rules.json`、`runtime/verilog_generator/formatter_ast.py` 和 `runtime/verilog_generator/rulebook.py`，让格式化、规则解释和质量门共享同一套规则源。
-- 新增更严格的可读性与最终交付门：通过 `references/checklists/verilog_readability_gate.md`、`scripts/verilog_generated_deliverable_gate.py`、`runtime/verilog_generator/quality_gate.py`、`runtime/verilog_generator/deliverable_gate.py` 和 `assets/ideal_bad_style_metrics.json`，把“可生成”提升到“可交付”。
-- 将 CLI 拆分为按职责划分的命令模块，并补齐 workflow dispatcher：新增 `runtime/verilog_generator/cli_*`、`route-workflow`、`runtime/verilog_generator/workflow_execution.py`、`runtime/verilog_generator/workflow_gates.py`、`runtime/verilog_generator/workflow_stage.py` 以及 `references/workflows/verilog_dispatcher.md`。
-- 新增显式依赖与远程验证路由：通过 `scripts/manage_skill_dependencies.py`、`config/defaults.json` 中的 `skill_dependencies` 与 FPGA 路由配置，以及 `references/configuration.md`，让 Agent 能在不硬编码本地 helper 路径的前提下协调 remote SSH 和 FPGA developer 工作流。
+- 将公开实现主树从 `runtime/verilog_generator/` 迁移到 `scripts/python/...`，让公开仓库和 staged `v0.4.0` skill 包结构一致，不再延续此前的 source-first 形态。
+- 把 `scripts.python.workflow.cli` 提升为主要公开执行入口，用于 scaffold、prompt、validate、workflow route、batch 和 existing-RTL 工作流。
+- 把既有 RTL 的受控精修接口从 `refine_existing_verilog(...)` 正式切换为 `improve_existing_verilog(...)`，并将稳定 facade 对齐到 `scripts.python.facade.verilog_api`。
+- 用 `assets/verilog_pattern_templates/` 替代 `assets/refined_verilog_templates/`，同时把 references 重组为 `references/checklists/`、`references/rules/`、`references/integration/`、`references/skill/` 和 `references/workflows/`。
+- 收紧公开发布边界：GitHub release 资产一律从清理后的当前仓库重建，`tmp/` 里的原始压缩包只作为本地导入输入，不会直接上传。
+
+## Breaking Change
+
+`v0.4.0` 是一次明确的 **破坏性升级**，会主动放弃旧的 source-first 公开契约：
+
+- `runtime.verilog_generator` 不再是公开运行时包。
+- `integration.verilog_adapter` 不再是公开 facade 路径。
+- `scripts/verilog_lint.py`、`scripts/tb_generator.py` 这类顶层 helper wrapper 不再公开发布。
+- 这个仓库不再对外提供 `pyproject.toml` 打包契约。
+
+如果你有自动化脚本依赖旧入口，需要迁移到下面的新路径。
+
+## 迁移指南
+
+| 旧公开入口 | 新公开入口 |
+| --- | --- |
+| `python -m runtime.verilog_generator scaffold ...` | `python -m scripts.python.workflow.cli scaffold ...` |
+| `python -m runtime.verilog_generator run-workflow ...` | `python -m scripts.python.workflow.cli run-workflow ...` |
+| `python -m runtime.verilog_generator run-batch ...` | `python -m scripts.python.workflow.cli run-batch ...` |
+| `python -m runtime.verilog_generator validate ...` | `python -m scripts.python.workflow.cli validate ...` |
+| `python .\scripts\verilog_lint.py ...` | `python .\scripts\python\quality\verilog_lint.py ...` |
+| `python .\scripts\tb_generator.py ...` | `python .\scripts\python\generation\tb_generator.py ...` |
+| `integration.verilog_adapter` | `scripts.python.facade.verilog_api` |
+| `refine_existing_verilog(...)` | `improve_existing_verilog(...)` |
+| `assets/refined_verilog_templates/` | `assets/verilog_pattern_templates/` |
+| 扁平的 `references/*.md` | 分层后的 `references/checklists/`、`references/rules/`、`references/integration/`、`references/skill/`、`references/workflows/` |
 
 ## 仓库结构
 
@@ -63,76 +90,87 @@ RTL 工作在写代码之前就需要精确确认。Verilog Generator 会要求 
 | --- | --- |
 | `SKILL.md` | 面向 Agent 的触发、流程、约束和工具使用规则。 |
 | `agents/openai.yaml` | Skill 列表和调用入口的 UI 元数据。 |
-| `runtime/verilog_generator/` | scaffold、prompt 渲染、抽取、验证、workflow 路由和分阶段执行辅助模块。 |
-| `integration/verilog_adapter.py` | 面向宿主应用的稳定接口。 |
-| `assets/verilog_formatter_config/` | formatter profile、schema 和可复用任务模板。 |
-| `assets/verilog_style_rules.json` | 供质量门共享的命名、注释和布局规则数据。 |
-| `references/checklists/` | 人工审查检查单，包含最终 Verilog readability gate。 |
-| `references/workflows/` | generation、modify、comment、analyze、validate 等任务的只读 dispatcher 参考。 |
-| `scripts/manage_skill_dependencies.py` | 面向 remote 和 developer skill 的依赖检查、安装、适配与 FPGA 路由辅助脚本。 |
-| `scripts/verilog_generated_deliverable_gate.py` | 面向生成 RTL 的最终交付门。 |
-| `evals/` | 仓库内 skill-effectiveness 用例，用于 workflow 与 remote-validation 回归检查。 |
-| `RELEASE_RECEIPT.json` | 导入的 `v0.3.6` staging 发布包来源记录；GitHub release 资产会基于当前仓库状态重新构建后再上传。 |
+| `scripts/python/workflow/` | 主 staged workflow 运行时、CLI handler、路由和产物编排逻辑。 |
+| `scripts/python/facade/` | 面向宿主系统的稳定 Python facade。 |
+| `scripts/python/existing_rtl/` | existing-RTL analyze、compare、intervention 和 verify-repair helper。 |
+| `scripts/python/quality/` | deliverable gate、quality gate、formatter bridge、lint helper 和 comment-only verifier。 |
+| `scripts/python/generation/tb_generator.py` | 自检查 testbench scaffold helper。 |
+| `assets/verilog_pattern_templates/` | 常见 RTL 结构的紧凑模板提示资产。 |
+| `assets/verilog_formatter_config/` | formatter profile、schema 和可复用 gate 模板。 |
+| `references/` | rules、integration、workflows、checklists 和 skill standards 的结构化说明。 |
+| `docs/assets/` | 仅供 GitHub README 渲染的 SVG 资源，不会进入 release zip。 |
+| `RELEASE_RECEIPT.json` | 基于当前清理后仓库重建得到的公开 release 来源记录。 |
 
 ## 快速开始
 
-直接告诉你的 AI：请安装 https://github.com/Eriemon/verilog-generator
+直接告诉你的 AI：请安装 [https://github.com/Eriemon/verilog-generator](https://github.com/Eriemon/verilog-generator)
 
-如果需要固定公开版本，请使用 `v0.3.6` tag 或 GitHub Releases 中重建得到的 `erie-verilog-generator-v0.3.6.zip` 资产。
+如果需要固定公开版本，请使用 `v0.4.0` tag 或 GitHub Releases 中重建得到的 `erie-verilog-generator-v0.4.0.zip` 资产。
 
-把本仓库放入 Codex skill 搜索路径即可作为 Agent Skill 使用。开发 runtime 或做本地检查时：
+把本仓库放入 Codex skill 搜索路径即可作为 Agent Skill 使用。做本地 workflow 检查时：
 
 ```powershell
-python -m runtime.verilog_generator --version
-python .\scripts\manage_skill_dependencies.py check --settings .\config\defaults.json
-python -m runtime.verilog_generator scaffold --name rtl_adapter --out .\reports\verilog\spec.json
-python -m runtime.verilog_generator prompt --spec .\reports\verilog\spec.json --out .\reports\verilog\prompt.md
+python -m scripts.python.workflow.cli --version
+python -m scripts.python.workflow.cli scaffold --name rtl_adapter --out .\reports\verilog\spec.json
+python -m scripts.python.workflow.cli prompt --spec .\reports\verilog\spec.json --out .\reports\verilog\prompt.md
+python -m scripts.python.workflow.cli route-workflow --request-summary "generate an AXI4-Lite CSR block"
 ```
 
 不依赖外部 HDL 工具的静态验证：
 
 ```powershell
-python -m runtime.verilog_generator validate --spec .\reports\verilog\spec.json --path .\reports\verilog\generated --no-external
-python .\scripts\verilog_generated_deliverable_gate.py .\reports\verilog\generated
+python -m scripts.python.workflow.cli validate --spec .\reports\verilog\spec.json --path .\reports\verilog\generated --no-external
+python .\scripts\python\quality\verilog_lint.py .\reports\verilog\generated\rtl\rtl_adapter.v
+python .\scripts\python\generation\tb_generator.py .\reports\verilog\generated\rtl\rtl_adapter.v --output .\reports\verilog\generated\tb\rtl_adapter_tb.v
 ```
 
-如果宿主系统想在写任何 RTL 文件之前先做只读入口分类，可以使用 `route-workflow`。
+代表性的 existing-RTL 工作流：
 
-外部验证需要真实 HDL 工具。只有实际运行 Vivado/xsim、VCS、iverilog 或 yosys 后，才可以声称对应工具验证通过。
+```powershell
+python -m scripts.python.workflow.cli analyze-existing --rtl .\assets\examples\existing_rtl\ready_valid_slice.v --out-dir .\reports\existing
+python -m scripts.python.workflow.cli improve-existing --rtl .\assets\examples\existing_rtl\ready_valid_slice.v --improve-goal style_improve --out-dir .\reports\improve
+python -m scripts.python.workflow.cli verify-existing --rtl .\assets\examples\existing_rtl\ready_valid_slice.v --automation-mode conservative --out-dir .\reports\verify
+```
 
-发布来源说明：`v0.3.6` 的 GitHub release 资产是在导入并审查最新 staging 包后，基于当前仓库状态重新构建的。`tmp/` 下的原始压缩包只作为本地导入输入，不会直接上传。
+## 公开 Python Facade
 
-## 集成接口
+稳定 facade 现在位于 `scripts.python.facade.verilog_api`：
 
 ```python
-from integration.verilog_adapter import (
+from scripts.python.facade.verilog_api import (
     analyze_existing_verilog,
     compare_verilog_semantics,
-    refine_existing_verilog,
+    improve_existing_verilog,
     render_verilog_prompt,
+    route_verilog_request,
     run_verilog_batch,
+    run_verilog_cases,
     run_verilog_workflow,
     validate_verilog_artifacts,
     verify_existing_verilog,
 )
 ```
 
-- `analyze_existing_verilog(...)`：把现有 RTL 分析成稳定 JSON 契约，并输出可复用的设计说明。
-- `refine_existing_verilog(...)`：规划 tb scaffold、style refine、partition assist、merge assist、optimize assist 等受控 refine 流程。
-- `compare_verilog_semantics(...)`：比较 candidate 与 reference RTL 的接口和 checkpoint 漂移。
-- `run_verilog_batch(...)`：在相互隔离的 case run 目录中执行仅生成型 batch 流程。
-- `run_verilog_workflow(...)`：运行或恢复分阶段 RTL 工作流。
-- `render_verilog_prompt(...)`：宿主系统自行调用模型时渲染 prompt。
-- `validate_verilog_artifacts(...)`：下游使用前验证生成 RTL。
-- `verify_existing_verilog(...)`：运行 existing-RTL verify-repair 闭环并输出诊断、patch plan 与闭环工件。
+如果宿主系统想在 Python 层稳定调用 Verilog Generator，而不再依赖旧的 `runtime.*` 或 `integration.*` 布局，应切到这里。
+
+## 发布来源与敏感信息边界
+
+这个仓库现在采用更严格的公开发布边界：
+
+- `tmp/` 里的原始压缩包只作为本地导入输入。
+- GitHub release 资产通过 `scripts/build_release.py` 基于当前仓库状态重新构建。
+- 重建后的 zip 只包含公开 skill 载荷：`README.md`、`README-CN.md`、`LICENSE`、`SKILL.md`、`VERSION`、`ENGINEERING_DESIGN_GOALS.md`、`RELEASE_RECEIPT.json`、`agents/`、`assets/`、`config/`、`evals/`、`references/`、`scripts/`。
+- `docs/assets/`、`CITATION.cff`、`CONTRIBUTING.md`、`SECURITY.md`、`.gitignore`、release helper、本地 settings、缓存运行目录、reports 和私有工作区痕迹都不会进入 release zip。
+- 绝对本地路径、本地状态目录、session/bootstrap 痕迹、私有服务器信息、token、password 和 private key 都属于发布阻断项。
 
 ## 边界
 
-- 生成 Verilog-2001 `.v` 产物和自检查 Verilog testbench。
-- 不生成高层综合流、C/C++ kernel 或其他 RTL 方言。
-- 为了更容易进行波形调试，优先使用显式逻辑，而不是 Verilog `function` 和 `task`。
-- 本地密钥、私有硬件设计、生成缓存和私有远程服务器细节不应进入仓库。
-- 项目本地远程配置应放在 `.settings/` 下，这个公开仓库不会继续保留 repo-tracked `smoke/` 或测试型验证源码目录。
+Verilog Generator 的公开边界是刻意收窄的：
+
+- 面向 Verilog-2001 RTL 及其受治理验证侧产物。
+- 不把高层综合流、C/C++ kernel 生成或其他 RTL 方言当作公开 release 保证。
+- 优先保持可检查、可审查、可做波形定位的显式逻辑表达。
+- 外部验证结论仍然必须来自真实工具执行；Vivado/xsim、VCS、iverilog、yosys 或 remote validation 没跑过，就不能声称对应验证已通过。
 
 ## 机构说明
 
@@ -145,8 +183,6 @@ Jiyuan Liu 和 He Li 隶属于东南大学电子科学与工程学院。
 
 ## 引用
 
-本 skill 由东南大学电子科学与工程学院异构智能与量子计算实验室（HIQC 课题组）相关作者维护。
-
 如果本 skill 对你的研究、教学或工程流程有帮助，请引用。规范引用元数据以 [CITATION.cff](CITATION.cff) 为准。
 
 ```bibtex
@@ -154,8 +190,8 @@ Jiyuan Liu 和 He Li 隶属于东南大学电子科学与工程学院。
   author       = {Jiyuan Liu and He Li},
   title        = {{Verilog Generator}: An Agent Skill for Verilog-2001 RTL Workflows},
   year         = {2026},
-  version      = {0.3.6},
-  date         = {2026-07-02},
+  version      = {0.4.0},
+  date         = {2026-07-05},
   url          = {https://github.com/Eriemon/verilog-generator},
   license      = {Apache-2.0},
   note         = {Agent skill package for disciplined Verilog-2001 RTL workflows}

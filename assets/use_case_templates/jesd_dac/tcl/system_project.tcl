@@ -7,8 +7,11 @@ source $ad_hdl_dir/projects/scripts/adi_project_xilinx.tcl
 # ZCU102 板级封装限制 GT 参考时钟和处理系统约束来源，防止跨板资源混用
 source $ad_hdl_dir/projects/scripts/adi_board.tcl
 
-# 工程名绑定发送模板和 ZCU102 目标板，避免生成目录覆盖其它模板产物
-adi_project jesd_dac_template_zcu102
+# 工程参数在创建 block design 前注入 ADI 参数表，确保 system_bd.tcl 读取到可覆盖的 JESD 默认值
+adi_project jesd_dac_template_zcu102 0 [list \
+	TX_JESD_L [get_env_param TX_JESD_L 4] \
+	TX_JESD_S [get_env_param TX_JESD_S 1] \
+]
 
 # 文件集合同时保留模板约束与 ZCU102 公共约束，确保顶层 pin 约束完整
 adi_project_files jesd_dac_template_zcu102 [list \

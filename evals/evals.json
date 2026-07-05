@@ -70,45 +70,45 @@
     },
     {
       "id": "axi4_lite_csr",
-      "kind": "refined_template_regression",
-      "spec": "assets/examples/refined_verilog_templates/axi4_lite_csr.json",
+      "kind": "pattern_template_regression",
+      "spec": "assets/examples/verilog_pattern_templates/axi4_lite_csr.json",
       "expectations": {
         "rtl_style_profile": "erie_strict",
-        "selected_refined_template_ids": ["axi4_lite_csr_shell"],
-        "requires_refined_template_section": true,
+        "selected_pattern_template_ids": ["axi4_lite_csr_shell"],
+        "requires_pattern_template_section": true,
         "ready_for_generation": true
       }
     },
     {
       "id": "axis_ready_valid",
-      "kind": "refined_template_regression",
-      "spec": "assets/examples/refined_verilog_templates/axis_ready_valid.json",
+      "kind": "pattern_template_regression",
+      "spec": "assets/examples/verilog_pattern_templates/axis_ready_valid.json",
       "expectations": {
         "rtl_style_profile": "erie_strict",
-        "selected_refined_template_ids": ["axis_ready_valid_slice"],
-        "requires_refined_template_section": true,
+        "selected_pattern_template_ids": ["axis_ready_valid_slice"],
+        "requires_pattern_template_section": true,
         "ready_for_generation": true
       }
     },
     {
       "id": "axi_interconnect_dma",
-      "kind": "refined_template_regression",
-      "spec": "assets/examples/refined_verilog_templates/axi_interconnect_dma.json",
+      "kind": "pattern_template_regression",
+      "spec": "assets/examples/verilog_pattern_templates/axi_interconnect_dma.json",
       "expectations": {
         "rtl_style_profile": "erie_strict",
-        "selected_refined_template_ids": ["axi_interconnect_port_groups"],
-        "requires_refined_template_section": true,
+        "selected_pattern_template_ids": ["axi_interconnect_port_groups"],
+        "requires_pattern_template_section": true,
         "ready_for_generation": true
       }
     },
     {
       "id": "conv_load_store",
-      "kind": "refined_template_regression",
-      "spec": "assets/examples/refined_verilog_templates/conv_load_store.json",
+      "kind": "pattern_template_regression",
+      "spec": "assets/examples/verilog_pattern_templates/conv_load_store.json",
       "expectations": {
         "rtl_style_profile": "erie_strict",
-        "selected_refined_template_ids": ["conv_load_store_pipeline"],
-        "requires_refined_template_section": true,
+        "selected_pattern_template_ids": ["conv_load_store_pipeline"],
+        "requires_pattern_template_section": true,
         "ready_for_generation": true
       }
     },
@@ -135,13 +135,13 @@
       }
     },
     {
-      "id": "style_refine_regression",
-      "kind": "style_refine_regression",
+      "id": "style_improve_regression",
+      "kind": "style_improve_regression",
       "source": "assets/examples/existing_rtl/traffic_light.v",
       "expectations": {
         "style_report_present": true,
         "preserve_section_present": true,
-        "suggested_refinements_present": true,
+        "suggested_improvements_present": true,
         "ready_state_recorded": true
       }
     },
@@ -281,7 +281,7 @@
         "recommended_flow": "verify_existing_verilog",
         "entry_mode": "existing-RTL assist/repair",
         "provenance_policy_present": true,
-        "reference_workspace_absent": true
+        "temporary_source_workspace_absent": true
       }
     },
     {
@@ -302,7 +302,7 @@
           "codegen_plan"
         ],
         "provenance_policy_present": true,
-        "reference_workspace_absent": true
+        "temporary_source_workspace_absent": true
       }
     },
     {
@@ -325,7 +325,7 @@
           "logs"
         ],
         "provenance_policy_present": true,
-        "reference_workspace_absent": true
+        "temporary_source_workspace_absent": true
       }
     },
     {
@@ -346,7 +346,7 @@
           "dut_tb_contract_risk"
         ],
         "provenance_policy_present": true,
-        "reference_workspace_absent": true
+        "temporary_source_workspace_absent": true
       }
     },
     {
@@ -364,7 +364,7 @@
           "missing_artifact_inputs"
         ],
         "provenance_policy_present": true,
-        "reference_workspace_absent": true
+        "temporary_source_workspace_absent": true
       }
     },
     {
@@ -385,7 +385,7 @@
         ],
         "next_action_contains": "erie-remote-ssh",
         "provenance_policy_present": true,
-        "reference_workspace_absent": true
+        "temporary_source_workspace_absent": true
       }
     }
   ]
