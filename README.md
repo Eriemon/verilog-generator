@@ -19,7 +19,13 @@
   Define the ports, clock, reset, and behavior. Get RTL that is readable, traceable, and verifiable.
 </p>
 
-## What It Is For
+## What is Verilog Generator?
+
+Verilog Generator is a Codex skill for everyday Verilog-2001 work. Give it a module requirement, existing RTL, a testbench, or a tool log. It can write a new module, explain old code, add useful comments, or repair code against actual diagnostics.
+
+The project follows one rule: generated RTL should be easy for the next engineer to read, review, and verify. It records what was checked and never presents unrun simulation or synthesis as evidence.
+
+## What can it do?
 
 <table>
   <tr>
@@ -41,7 +47,7 @@
   </tr>
 </table>
 
-## What The Output Looks Like
+## Generated RTL example
 
 The example below is a 32-bit AXI-Stream meter. It counts valid bytes only when `TVALID` and `TREADY` complete a transfer, counts packets on a transferred `TLAST`, and saturates instead of wrapping.
 
@@ -81,7 +87,7 @@ end
 
 > This is static repository-local evidence. No simulator, synthesis, hardware, or remote-tool result is claimed here.
 
-## Install
+## Installation
 
 > Tell Codex: `Install https://github.com/Eriemon/verilog-generator`
 
@@ -95,7 +101,7 @@ For a pinned install, use tag `v0.4.0` or `erie-verilog-generator-v0.4.0.zip` fr
   <img src="docs/assets/authors.svg" alt="Jiyuan Liu and He Li, Southeast University HIQC Laboratory" width="100%">
 </p>
 
-## Citation
+## How to cite
 
 > If this skill supports your research, teaching, or engineering work, cite the release below. [CITATION.cff](CITATION.cff) remains the canonical metadata source.
 
