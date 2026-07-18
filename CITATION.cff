@@ -9,6 +9,7 @@ authors:
     affiliation: "Southeast University"
   - family-names: "Li"
     given-names: "He"
+    email: "helix@seu.edu.cn"
     affiliation: "Southeast University"
 abstract: "Verilog Generator is a Codex-ready agent skill package for disciplined Verilog-2001 RTL generation, existing-RTL review and repair, validation gates, and evidence-backed workflow orchestration."
 keywords:
