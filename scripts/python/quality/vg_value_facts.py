@@ -13,6 +13,9 @@ from dataclasses import dataclass
 from .formatter_backend.statement_render_mixin import StatementRenderMixin
 from .formatter_backend.syntax_utils import SyntaxUtilsMixin
 
+# 实例分析词法模式保留字符串，同时识别行注释和跨行块注释。
+INSTANCE_ANALYSIS_TOKEN_PATTERN = re.compile(r'"(?:\\.|[^"\\])*"|//[^\r\n]*|/\*.*?(?:\*/|$)', re.DOTALL)  # 分析词法边界
+
 # ConstantBits 保存已解析常量的固定位宽模式。
 @dataclass(frozen=True)
 class ConstantBits:
@@ -90,7 +93,59 @@ def module_parameter_values(dict_module: dict[str, object]) -> dict[str, int]:
 class InstanceSectionParser(StatementRenderMixin, SyntaxUtilsMixin):
     """为 VG097 暴露 formatter 内部的纯实例结构解析能力。"""
 
-# _parse_instance_sections 从 formatter canonical 解析结果分离参数区与端口区。
+# _strip_instance_comments_for_analysis 只移除语义分区不需要的注释文本。
+def _strip_instance_comments_for_analysis(str_instance_text: str) -> str | None:
+    """移除实例语义分析路径中的行注释和块注释。
+
+    参数:
+        str_instance_text: formatter AST 保留的完整实例文本。
+    返回:
+        保留字符串字面量的无注释实例文本；块注释未闭合时返回 None。
+    """
+
+    # fragments 按原顺序拼接代码与字符串，避免注释两侧 token 粘连。
+    list_fragments: list[str] = []  # 去注释实例文本的有序片段
+
+    # cursor 指向上一个已处理词法片段之后的位置。
+    int_cursor = 0  # 待复制源码片段的起始下标
+
+    # 逐个处理字符串或注释 token，普通代码由相邻下标区间保留。
+    for obj_token_match in INSTANCE_ANALYSIS_TOKEN_PATTERN.finditer(str_instance_text):
+
+        # 当前 token 之前的普通 Verilog 文本不作改写。
+        list_fragments.append(str_instance_text[int_cursor : obj_token_match.start()])
+
+        # token 文本用于区分字符串、行注释和块注释。
+        str_token = obj_token_match.group(0)  # 当前字符串或注释词法片段
+
+        # 字符串中的注释标记和括号仍属于连接表达式。
+        if str_token.startswith('"'):
+
+            # 原样保留字符串，让括号扫描器继续忽略字符串内部字符。
+            list_fragments.append(str_token)
+
+        # 未闭合块注释使后续实例边界不再可信。
+        elif str_token.startswith("/*") and not str_token.endswith("*/"):
+
+            # fail-closed，禁止把注释尾部误当作端口关联。
+            return None
+
+        # 已闭合注释替换为空格，保持注释两侧 token 独立。
+        else:
+
+            # 单个空格足以维持 Verilog 词法分隔，不保留注释正文。
+            list_fragments.append(" ")
+
+        # 下一段普通代码从当前 token 末尾继续复制。
+        int_cursor = obj_token_match.end()  # 已消费词法片段后的源码下标
+
+    # 末尾没有匹配 token 的普通代码仍需保留。
+    list_fragments.append(str_instance_text[int_cursor:])
+
+    # 返回仅供结构分析使用的无注释实例文本。
+    return "".join(list_fragments)
+
+# _parse_instance_sections 使用独立分析入口分离参数区与端口区。
 def _parse_instance_sections(
     str_instance_text: str,
     str_module_name: str,
@@ -104,26 +159,76 @@ def _parse_instance_sections(
         参数关联项和端口关联项；结构不完整时返回 None。
     """
 
-    # formatter parser 已按配对括号分离 params 与 ports。
-    dict_sections = InstanceSectionParser()._parse_instance_for_render(str_instance_text)  # canonical 实例分区结果
+    # analysis parser 只借用括号匹配和顶层切分，不进入 formatter 渲染入口。
+    obj_parser = InstanceSectionParser()  # VG097 实例语义分区器
 
-    # 注释、括号不完整或非 canonical 实例保持未知。
-    if dict_sections is None:
+    # 注释正文不参与参数或端口关联，但字符串字面量必须原样保留。
+    str_analysis_text = _strip_instance_comments_for_analysis(str_instance_text)  # 无注释实例分析文本
 
-        # 缺少稳定分区时不能继续比较端口位宽。
+    # 未闭合块注释不能建立可靠实例边界。
+    if str_analysis_text is None:
+
+        # 注释词法边界不完整时保持未知。
         return None
 
+    # 去除注释后的非空行合并为括号扫描使用的单行文本。
+    str_compact = " ".join(  # VG097 实例单行分析文本
+        str_line.strip()  # 当前实例代码行
+        for str_line in str_analysis_text.splitlines()  # 遍历无注释实例文本
+        if str_line.strip()  # 忽略仅由注释留下的空白行
+    )
+
+    # 完整实例必须以外层端口右括号和分号收尾。
+    if not str_compact.endswith(");"):
+
+        # 语句尾部不完整时不能继续比较端口位宽。
+        return None
+
+    # 模块前缀解析建立参数区或端口区的起始位置。
+    tuple_module_parts = obj_parser._parse_instance_module_prefix(str_compact)  # 实例模块前缀字段
+
+    # 无法识别模块前缀时没有可信的实例结构。
+    if tuple_module_parts is None:
+
+        # 非标准或不完整实例保持未知。
+        return None
+
+    # 前缀字段提供模块名、剩余文本和模块名结束下标。
+    str_parsed_module_name, str_remainder, int_module_end = tuple_module_parts  # 实例前缀解析字段
+
     # AST 模块名与文本解析结果必须一致。
-    if str(dict_sections.get("module_name") or "") != str_module_name:
+    if str_parsed_module_name != str_module_name:
 
         # 名称漂移说明实例文本事实不可信。
         return None
 
-    # formatter 已完成顶层切分，复制为当前规则的字符串列表。
-    list_parameter_items = [str(str_item) for str_item in dict_sections.get("params", [])]  # 参数关联项
+    # 参数区使用配对括号定位，不会把参数关联并入端口列表。
+    tuple_parameter_parts = obj_parser._parse_instance_parameter_section(  # 参数区解析字段
+        str_compact,  # 完整单行实例文本
+        str_remainder,  # 模块名后的实例文本
+        int_module_end,  # 模块名结束下标
+    )
 
-    # 端口关联项来自参数区之后的独立括号。
-    list_port_items = [str(str_item) for str_item in dict_sections.get("ports", [])]  # 端口关联项
+    # 参数括号不完整时禁止回退到子模块默认参数。
+    if tuple_parameter_parts is None:
+
+        # 无法安全分区时保持未知。
+        return None
+
+    # 参数字段同时返回端口区之前的剩余实例文本。
+    list_parameter_items, str_port_remainder = tuple_parameter_parts  # 参数关联与端口区文本
+
+    # 端口区继续使用配对括号和顶层逗号分割连接项。
+    tuple_port_parts = obj_parser._parse_instance_port_section(str_port_remainder)  # 端口区解析字段
+
+    # 端口括号或实例尾部不完整时不能建立连接事实。
+    if tuple_port_parts is None:
+
+        # 缺少稳定端口分区时保持未知。
+        return None
+
+    # 实例名仅证明端口区结构完整，VG097 只消费连接项。
+    _, list_port_items = tuple_port_parts  # 实例名称与端口关联项
 
     # 返回两个互不重叠的关联区。
     return list_parameter_items, list_port_items
