@@ -18,8 +18,20 @@ from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passe
 # reset rules 提供统一的复位、清零和置位名称角色判断。
 from .vg_reset_rules import is_reset_control_name
 
+# 实例事实 helper 负责参数覆盖和真实端口区的结构化解析。
+from .vg_value_facts import (
+    _instance_parameter_overrides,
+    _named_port_connections,
+    _parse_instance_sections,
+)
+
 # 共享位宽事实确保实例连接与表达式规则采用同一受限求值语义。
-from .vg_value_facts import constant_integer, expression_width, module_parameter_values, module_widths
+from .vg_value_facts import (
+    constant_integer,
+    expression_width,
+    module_parameter_values,
+    module_widths,
+)
 
 # 确定数位的定宽字面量在标识符提取前作为原子常量处理。
 DETERMINISTIC_BASED_LITERAL_PATTERN = re.compile(  # Verilog-2001 确定定宽常量
@@ -303,17 +315,47 @@ def _connection_port_width_match(facts: VgFacts) -> VgEvaluation:
                 # 该实例没有可靠接口事实，跳过其连接比较。
                 continue
 
-            # 子模块端口宽度与父模块连接宽度使用同一求值器。
-            dict_child_widths = module_widths(dict_child)  # 子模块端口位宽表
-
-            # 保留实例原文用于提取命名端口连接表达式。
+            # 保留实例原文用于结构化分离参数区和端口区。
             str_instance_text = str(dict_instance.get("text") or "")  # formatter 保留的实例原文
 
-            # 仅提取可以与子模块端口名稳定对应的命名连接。
-            list_connections = re.findall(r"\.(\w+)\s*\(\s*([^)]*?)\s*\)", str_instance_text)  # 端口名与连接表达式列表
+            # 配对括号解析确保参数关联不会进入端口连接比较。
+            tuple_sections = _parse_instance_sections(str_instance_text, str_child_name)  # 参数区与端口区解析结果
+
+            # 无法稳定分区的实例不能继续比较连接位宽。
+            if tuple_sections is None:
+
+                # 标记当前实例结构事实不足。
+                bool_unknown = True  # 当前实例参数区或端口区无法可靠分离
+
+                # 跳过缺少可靠实例分区的当前实例。
+                continue
+
+            # 参数覆盖和端口项来自互不重叠的实例文本区间。
+            list_parameter_items, list_port_items = tuple_sections  # 当前实例参数项与端口项
+
+            # 当前受限求值器无法安全处理的参数关联必须 fail-closed。
+            dict_parameter_overrides = _instance_parameter_overrides(dict_child, list_parameter_items)  # 当前实例参数覆盖
+
+            # 未知名称、表达式或对应关系使当前实例参数环境未知。
+            if dict_parameter_overrides is None:
+
+                # 禁止在参数解析失败后继续使用子模块默认值。
+                bool_unknown = True  # 当前实例参数覆盖无法安全解析
+
+                # 跳过没有可靠参数环境的当前实例。
+                continue
+
+            # 子模块端口宽度使用默认参数叠加当前实例已验证覆盖。
+            dict_child_widths = module_widths(  # 当前实例参数环境下的子模块端口位宽表
+                dict_child,  # 子模块 formatter AST 声明事实
+                parameter_overrides=dict_parameter_overrides,  # 替换声明默认值的整数映射
+            )
+
+            # 只解析真正端口区中的完整命名连接。
+            list_connections = _named_port_connections(list_port_items)  # 端口名与连接表达式列表
 
             # 位置连接或无法提取的连接列表保持未知。
-            if not list_connections:
+            if list_connections is None or not list_connections:
 
                 # 无命名连接事实时保留不确定状态。
                 bool_unknown = True  # 当前实例的连接形式无法可靠解析

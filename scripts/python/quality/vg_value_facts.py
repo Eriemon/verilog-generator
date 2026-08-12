@@ -9,6 +9,10 @@ import re
 # dataclass 固定共享常量事实的不可变字段。
 from dataclasses import dataclass
 
+# formatter 实例渲染器提供已验证的配对括号和顶层逗号拆分逻辑。
+from .formatter_backend.statement_render_mixin import StatementRenderMixin
+from .formatter_backend.syntax_utils import SyntaxUtilsMixin
+
 # ConstantBits 保存已解析常量的固定位宽模式。
 @dataclass(frozen=True)
 class ConstantBits:
@@ -82,12 +86,242 @@ def module_parameter_values(dict_module: dict[str, object]) -> dict[str, int]:
     # 返回可供区间和重复连接消费的整数表。
     return dict_values
 
-# module_widths 从 formatter 声明事实建立作用域位宽表。
-def module_widths(dict_module: dict[str, object]) -> dict[str, int | None]:
+# InstanceSectionParser 复用 formatter 已验证的实例括号与顶层切分实现。
+class InstanceSectionParser(StatementRenderMixin, SyntaxUtilsMixin):
+    """为 VG097 暴露 formatter 内部的纯实例结构解析能力。"""
+
+# _parse_instance_sections 从 formatter canonical 解析结果分离参数区与端口区。
+def _parse_instance_sections(
+    str_instance_text: str,
+    str_module_name: str,
+) -> tuple[list[str], list[str]] | None:
+    """按配对括号解析实例参数和端口关联区。
+
+    参数:
+        str_instance_text: formatter AST 保留的完整实例文本。
+        str_module_name: formatter AST 提供的被例化模块名。
+    返回:
+        参数关联项和端口关联项；结构不完整时返回 None。
+    """
+
+    # formatter parser 已按配对括号分离 params 与 ports。
+    dict_sections = InstanceSectionParser()._parse_instance_for_render(str_instance_text)  # canonical 实例分区结果
+
+    # 注释、括号不完整或非 canonical 实例保持未知。
+    if dict_sections is None:
+
+        # 缺少稳定分区时不能继续比较端口位宽。
+        return None
+
+    # AST 模块名与文本解析结果必须一致。
+    if str(dict_sections.get("module_name") or "") != str_module_name:
+
+        # 名称漂移说明实例文本事实不可信。
+        return None
+
+    # formatter 已完成顶层切分，复制为当前规则的字符串列表。
+    list_parameter_items = [str(str_item) for str_item in dict_sections.get("params", [])]  # 参数关联项
+
+    # 端口关联项来自参数区之后的独立括号。
+    list_port_items = [str(str_item) for str_item in dict_sections.get("ports", [])]  # 端口关联项
+
+    # 返回两个互不重叠的关联区。
+    return list_parameter_items, list_port_items
+
+# _parse_named_association 解析单个完整命名关联项。
+def _parse_named_association(str_item: str) -> tuple[str, str] | None:
+    """解析 `.NAME(expression)` 形式的完整关联项。
+
+    参数:
+        str_item: 顶层切分后的单个参数或端口关联。
+    返回:
+        名称和表达式；不是完整命名关联时返回 None。
+    """
+
+    # 前缀只接纳 Verilog 标准标识符形式。
+    obj_name = re.match(r"^\.\s*([A-Za-z_]\w*)\s*", str_item)  # 命名关联前缀匹配结果
+
+    # 没有命名关联前缀时不能建立名称对应。
+    if obj_name is None:
+
+        # 非命名关联交由调用方保留未知状态。
+        return None
+
+    # 名称之后必须是完整配对的表达式括号。
+    str_remainder = str_item[obj_name.end() :].strip()  # 命名关联的表达式括号
+
+    # 表达式缺少左括号时关联项结构不完整。
+    if not str_remainder.startswith("("):
+
+        # 不完整关联项不得继续提取表达式。
+        return None
+
+    # 关联项末尾不能在配对右括号之后包含其他文本。
+    int_close = InstanceSectionParser()._find_matching_paren_in_text(str_remainder, 0)  # 命名关联右括号下标
+
+    # 缺失配对右括号或尾随文本都使关联不可信。
+    if int_close == -1 or str_remainder[int_close + 1 :].strip():
+
+        # 畸形命名关联交由上层返回未知。
+        return None
+
+    # 表达式保留内部文本，调用方决定空连接或求值语义。
+    return obj_name.group(1), str_remainder[1:int_close].strip()
+
+# _instance_parameter_overrides 建立当前实例的受限整数参数覆盖。
+def _instance_parameter_overrides(
+    dict_child: dict[str, object],
+    list_parameter_items: list[str],
+) -> dict[str, int] | None:
+    """验证并解析当前实例的命名或位置参数覆盖。
+
+    参数:
+        dict_child: formatter AST 中的子模块声明。
+        list_parameter_items: 已从实例参数区分离的顶层关联项。
+    返回:
+        已验证的整数参数覆盖；无法安全对应或求值时返回 None。
+    """
+
+    # 参数声明顺序是位置关联唯一允许使用的对应依据。
+    list_parameter_names = [
+        str(dict_item.get("name") or "")  # 当前 parameter 声明名称
+        for dict_item in dict_child.get("params", []) or []  # 遍历子模块 parameter 声明
+    ]  # 子模块 parameter 声明顺序
+
+    # 空参数名称不能建立可靠参数环境。
+    if any(not str_name for str_name in list_parameter_names):
+
+        # 缺失声明名称时无法安全对应任何覆盖。
+        return None
+
+    # 重复参数名称使命名和位置关联都不唯一。
+    if len(set(list_parameter_names)) != len(list_parameter_names):
+
+        # 声明名称不唯一时必须保持未知。
+        return None
+
+    # 没有显式覆盖时沿用子模块默认参数。
+    if not list_parameter_items:
+
+        # 空覆盖表让 module_widths 保持原默认参数行为。
+        return {}
+
+    # 命名与位置关联不能混用，否则顺序语义不可靠。
+    list_is_named = [str_item.lstrip().startswith(".") for str_item in list_parameter_items]  # 每项是否为命名参数
+
+    # 混合关联没有安全且一致的对应策略。
+    if any(list_is_named) and not all(list_is_named):
+
+        # 禁止回退到默认参数掩盖混合关联。
+        return None
+
+    # overrides 只接纳已声明且可由受限求值器解析的整数参数。
+    dict_overrides: dict[str, int] = {}  # 当前实例已验证参数覆盖
+
+    # 命名参数按显式名称建立覆盖，不依赖书写顺序。
+    if all(list_is_named):
+
+        # 每个命名关联独立验证名称、重复项和整数值。
+        for str_item in list_parameter_items:
+
+            # 当前关联必须完整符合命名参数语法。
+            tuple_association = _parse_named_association(str_item)  # 当前命名参数关联
+
+            # 畸形命名关联不能建立参数环境。
+            if tuple_association is None:
+
+                # 不完整参数关联保持未知。
+                return None
+
+            # 参数名必须真实存在且不能重复覆盖。
+            str_name, str_expression = tuple_association  # 当前参数名称与覆盖表达式
+
+            # 未知或重复参数名均禁止静默使用默认值。
+            if str_name not in list_parameter_names or str_name in dict_overrides:
+
+                # 参数名称无法唯一对应声明时保持未知。
+                return None
+
+            # 实例参数仅接受受限整数常量，复杂表达式保持未知。
+            int_value = parameter_integer(str_expression)  # 当前命名参数整数值
+
+            # 受限求值器不支持的表达式不能进入覆盖表。
+            if int_value is None:
+
+                # 禁止不可求值表达式回退到声明默认值。
+                return None
+
+            # 已验证整数值覆盖同名 parameter 默认值。
+            dict_overrides[str_name] = int_value  # 当前命名参数的确定覆盖值
+
+        # 返回全部已验证命名覆盖。
+        return dict_overrides
+
+    # 位置实参数量不能超过子模块 parameter 声明数量。
+    if len(list_parameter_items) > len(list_parameter_names):
+
+        # 超出声明数量后无法安全对应剩余实参。
+        return None
+
+    # 位置参数严格按 formatter 保留的声明顺序对应。
+    for int_index, str_expression in enumerate(list_parameter_items):
+
+        # 每个位置表达式必须由受限整数求值器确认。
+        int_value = parameter_integer(str_expression)  # 当前位置参数整数值
+
+        # 不可求值的位置表达式使整个参数环境未知。
+        if int_value is None:
+
+            # 禁止局部覆盖后对未知位置回退默认值。
+            return None
+
+        # 声明顺序唯一决定当前位置的参数名称。
+        dict_overrides[list_parameter_names[int_index]] = int_value  # 当前位置参数的确定覆盖值
+
+    # 返回全部已验证位置覆盖。
+    return dict_overrides
+
+# _named_port_connections 只从已分离端口区读取命名连接。
+def _named_port_connections(list_port_items: list[str]) -> list[tuple[str, str]] | None:
+    """解析实例端口区中的完整命名连接。
+
+    参数:
+        list_port_items: 已从实例文本分离的端口关联项。
+    返回:
+        端口名称和连接表达式列表；含位置连接或畸形项时返回 None。
+    """
+
+    # connections 保持端口书写顺序，便于稳定生成发现项。
+    list_connections: list[tuple[str, str]] = []  # 已验证命名端口连接
+
+    # 每个端口项必须完整符合命名关联形式。
+    for str_item in list_port_items:
+
+        # 当前端口关联只在完整命名形式下进入位宽比较。
+        tuple_association = _parse_named_association(str_item)  # 当前命名端口关联
+
+        # 位置或畸形端口关联不能可靠对应子模块端口名。
+        if tuple_association is None:
+
+            # 上层将 None 传播为 VG097 未知状态。
+            return None
+
+        # 已验证命名端口按实例书写顺序收集。
+        list_connections.append(tuple_association)
+
+    # 返回只含真实端口区内容的连接列表。
+    return list_connections
+
+# module_widths 从 formatter 声明事实和可选实例参数覆盖建立作用域位宽表。
+def module_widths(
+    dict_module: dict[str, object],
+    parameter_overrides: dict[str, int] | None = None,
+) -> dict[str, int | None]:
     """提取端口、声明和局部常量的简单位宽。
 
     参数:
         dict_module: formatter AST 中的单个 module 报告。
+        parameter_overrides: 已验证的实例 parameter 整数覆盖；省略时沿用声明默认值。
     返回:
         标识符到确定位宽或未知值的映射。
     """
@@ -97,6 +331,12 @@ def module_widths(dict_module: dict[str, object]) -> dict[str, int | None]:
 
     # parameter 整数用于解析符号区间端点。
     dict_parameter_values = module_parameter_values(dict_module)  # 解析声明区间使用的整数参数环境
+
+    # 实例级覆盖只在调用方完成参数名和表达式验证后替换默认值。
+    if parameter_overrides is not None:
+
+        # 复制传入整数值，保持无覆盖调用方的既有行为不变。
+        dict_parameter_values.update(parameter_overrides)
 
     # 端口和内部声明共享相同 width 字段解析规则。
     for str_collection in ("ports", "decls"):
@@ -211,11 +451,44 @@ def parameter_integer(str_value: str) -> int | None:
         十进制整数；不支持的常量形式返回 None。
     """
 
-    # 显式十进制前缀允许带位宽但不接纳未知态数位。
-    obj_match = re.fullmatch(r"(?:(?:\d+)'[dD])?(\d+)", str_value.strip())  # parameter 十进制匹配结果
+    # 显式十进制前缀单独捕获位宽，以便应用 Verilog 截断语义。
+    obj_match = re.fullmatch(r"(?:(\d+)'[dD])?(\d+)", str_value.strip())  # parameter 十进制匹配结果
 
-    # 未匹配时保持未知，匹配时转换捕获的十进制数位。
-    return None if obj_match is None else int(obj_match.group(1))
+    # 未匹配的常量形式不进入静态整数环境。
+    if obj_match is None:
+
+        # 受限求值器无法确认该常量的整数语义。
+        return None
+
+    # 十进制数位先转换为未截断的非负整数。
+    int_value = int(obj_match.group(2))  # parameter 原始十进制数值
+
+    # 裸十进制常量没有显式位宽，保持原整数值。
+    if obj_match.group(1) is None:
+
+        # 无定宽前缀时不存在高位截断。
+        return int_value
+
+    # Verilog 定宽常量要求正位宽，零位宽保持未知。
+    int_width = int(obj_match.group(1))  # parameter 显式常量位宽
+
+    # 非法零位宽不能生成可靠整数结果。
+    if int_width <= 0:
+
+        # 交由上层传播 inconclusive，避免猜测非法常量。
+        return None
+
+    # 数值已能放入声明位宽时无需构造截断掩码。
+    if int_value.bit_length() <= int_width:
+
+        # 未溢出的定宽十进制值保持不变。
+        return int_value
+
+    # 超出位宽的高位按 Verilog 无符号定宽常量语义截断。
+    int_mask = (1 << int_width) - 1  # 保留低 int_width 位的截断掩码
+
+    # 返回定宽常量在 elaboration 中实际携带的非负整数值。
+    return int_value & int_mask
 
 # constant_width 推断定宽字面量或受限重复连接的结果宽度。
 def constant_width(str_value: str, dict_parameter_values: dict[str, int]) -> int | None:
