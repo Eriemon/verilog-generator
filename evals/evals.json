@@ -18,7 +18,7 @@
       "expectations": {
         "failed_gate_ids": ["VG078", "VG079", "VG090", "VG101", "VG109", "VG111", "VG117", "VG124", "VG142"],
         "clean_all_active_passed": true,
-        "catalog_total_rules": 121,
+        "catalog_total_rules": 123,
         "prompt_mentions_all_rules": true,
         "failed_results_use_vg_ids": true
       }

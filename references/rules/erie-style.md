@@ -86,13 +86,14 @@ Coverage map:
 
 ## State Machine Rules
 
-- FSMs strongly prefer explicit `state_current` and `state_next` registers.
+- FSMs require explicit `state_current` and `state_next` registers.
 - State encoding should use `localparam ST_*`.
-- State-machine organization should prefer the Erie three-block shape:
+- State-machine organization must use the Erie three-block shape:
   - combinational next-state decision
   - sequential state transition register
   - separate output / task processing blocks
-- Even when the source is not fully abstracted into a textbook three-block FSM, the naming pattern remains stable and should be preserved.
+- Continuous assignment to `state_next` is forbidden; the next-state process uses blocking assignments inside its own `always @(*)` block.
+- The state output/task process must remain independent from both state-register and next-state writes.
 
 ## Module Instantiation Rules
 

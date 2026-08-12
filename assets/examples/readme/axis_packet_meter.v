@@ -59,10 +59,6 @@ module axis_packet_meter
 	output [31:0]o_byte_count                   // 已传输有效字节的饱和计数值
 );
 
-	//-----------------计数信号-----------------//
-	//当前握手拍的有效字节数
-	wire [2:0]cnt_byte;                         // tkeep 掩码对应的有效字节数量
-
 	//-----------------标志信号-----------------//
 	//AXI-Stream 事务与数据包边界
 	wire flag_transfer;                         // 本拍完成 valid-ready 握手
@@ -70,9 +66,11 @@ module axis_packet_meter
 
 	//-----------------其他信号-----------------//
 	//饱和计数使用的扩展位运算量
-	wire [31:0]data_byte_increment;             // 零扩展后的单拍有效字节增量
 	wire [32:0]data_frame_sum;                  // 数据包计数器加一后的扩展结果
-	wire [32:0]data_byte_sum;                   // 字节计数器累加后的扩展结果
+	wire [32:0]data_byte_sum_1;                 // 字节计数器加一后的扩展结果
+	wire [32:0]data_byte_sum_2;                 // 字节计数器加二后的扩展结果
+	wire [32:0]data_byte_sum_3;                 // 字节计数器加三后的扩展结果
+	wire [32:0]data_byte_sum_4;                 // 字节计数器加四后的扩展结果
 
 	//-----------------输出信号-----------------//
 	//用户接口--统计控制与读出
@@ -85,15 +83,14 @@ module axis_packet_meter
 	assign flag_transfer = i_axis_tvalid & i_axis_tready; // 仅在发送方与接收方同时就绪时采样
 	assign flag_packet_end = flag_transfer & i_axis_tlast; // 完成握手且 tlast 有效时结束数据包
 
-	//单拍字节数与饱和累加量
-	assign cnt_byte = {2'b00, i_axis_tkeep[0]} + {2'b00, i_axis_tkeep[1]} + {2'b00, i_axis_tkeep[2]} + {2'b00, i_axis_tkeep[3]}; // 累加四个字节使能位
-	assign data_byte_increment = {29'd0, cnt_byte}; // 将单拍字节数零扩展为 32 位
-
 	//其他信号连线
 	assign data_frame_sum = {1'b0, cnt_packet_o} + 1'b1; // 用扩展位捕获数据包计数进位
 
-	//AXIS接口
-	assign data_byte_sum = {1'b0, cnt_byte_o} + {1'b0, data_byte_increment}; // 用扩展位捕获字节计数进位
+	//单拍字节数与饱和累加量
+	assign data_byte_sum_1 = {1'b0, cnt_byte_o} + 1'b1; // 捕获一个字节增量的进位
+	assign data_byte_sum_2 = {1'b0, cnt_byte_o} + 2'd2; // 捕获两个字节增量的进位
+	assign data_byte_sum_3 = {1'b0, cnt_byte_o} + 2'd3; // 捕获三个字节增量的进位
+	assign data_byte_sum_4 = {1'b0, cnt_byte_o} + 3'd4; // 捕获四个字节增量的进位
 
 	//---------------输出信号连线---------------//
 	//用户接口--统计控制与读出
@@ -126,11 +123,42 @@ module axis_packet_meter
 		end else if(i_clear == 1'b1)begin
 			cnt_byte_o <= 32'd0;                // 软件清零请求同步清空字节统计
 		end else if(flag_transfer == 1'b1)begin
-			if(data_byte_sum[32] == 1'b0)begin
-				cnt_byte_o <= data_byte_sum[31:0]; // 未产生进位时累加当前拍的有效字节数
-			end else begin
-				cnt_byte_o <= 32'hFFFF_FFFF;    // 本次累加将溢出时直接饱和
-			end
+			case(i_axis_tkeep)
+				4'b0000:begin
+					cnt_byte_o <= cnt_byte_o;   // 当前拍没有有效字节时保持累计值
+				end
+				4'b0001, 4'b0010, 4'b0100, 4'b1000:begin
+					if(data_byte_sum_1[32] == 1'b0)begin
+						cnt_byte_o <= data_byte_sum_1[31:0]; // 累加一个有效字节
+					end else begin
+						cnt_byte_o <= 32'hFFFF_FFFF; // 一个字节增量溢出时饱和
+					end
+				end
+				4'b0011, 4'b0101, 4'b0110, 4'b1001, 4'b1010, 4'b1100:begin
+					if(data_byte_sum_2[32] == 1'b0)begin
+						cnt_byte_o <= data_byte_sum_2[31:0]; // 累加两个有效字节
+					end else begin
+						cnt_byte_o <= 32'hFFFF_FFFF; // 两个字节增量溢出时饱和
+					end
+				end
+				4'b0111, 4'b1011, 4'b1101, 4'b1110:begin
+					if(data_byte_sum_3[32] == 1'b0)begin
+						cnt_byte_o <= data_byte_sum_3[31:0]; // 累加三个有效字节
+					end else begin
+						cnt_byte_o <= 32'hFFFF_FFFF; // 三个字节增量溢出时饱和
+					end
+				end
+				4'b1111:begin
+					if(data_byte_sum_4[32] == 1'b0)begin
+						cnt_byte_o <= data_byte_sum_4[31:0]; // 累加四个有效字节
+					end else begin
+						cnt_byte_o <= 32'hFFFF_FFFF; // 四个字节增量溢出时饱和
+					end
+				end
+				default:begin
+					cnt_byte_o <= cnt_byte_o;   // 四态仿真出现未知掩码时保持统计值
+				end
+			endcase
 		end else begin
 			cnt_byte_o <= cnt_byte_o;           // 当前拍未握手时保持累计字节数
 		end

@@ -637,7 +637,7 @@ def _evaluate_rtl_md_constraint_case(
     dict_clean_report = run_verilog_quality_gate(path_clean_root, spec=dict_spec).to_dict()  # 合规 fixture VG 报告
 
     # effectiveness clean 条件只评价迁移语义段，原生可读性规则由独立质量回归覆盖。
-    bool_clean_semantic_ready = all(  # VG072-VG143 是否全部确定通过
+    bool_clean_semantic_ready = all(  # VG072-VG145 是否全部确定通过
         dict_result["status"] == "passed"  # 当前语义规则是否确定通过
         for dict_result in dict_clean_report["vg_rule_results"]  # 遍历统一逐规则结果
         if int(str(dict_result["gate_id"])[2:]) >= 72  # 只评价迁移语义段

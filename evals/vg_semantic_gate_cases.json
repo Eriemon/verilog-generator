@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "catalog_version": 3,
+  "catalog_version": 5,
   "description": "Self-contained three-way fixture routing for every active VG semantic gate.",
   "fixtures": {
     "canonical_clean": "module dut (\n    input wire clk,\n    input wire [3:0] a,\n    output reg y\n);\nalways @(posedge clk) begin\n    y <= a[0];\nend\nendmodule\n",
@@ -96,7 +96,11 @@
     "vg082_comb_reset": "module dut\n(\n    input wire clk,\n    input wire ext_rst_n,\n    input wire enable,\n    output reg y\n);\nwire rst_n;\nassign rst_n = ext_rst_n & enable;\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) y <= 1'b0;\n    else y <= 1'b1;\nend\nendmodule\n",
     "vg099_inline_reset": "module dut\n(\n    input wire clk,\n    input wire ext_rst_n,\n    output reg y\n);\nwire rst_n;\nassign rst_n = ext_rst_n & 1'b1;\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) y <= 1'b0;\n    else y <= 1'b1;\nend\nendmodule\n",
     "vg119_high_flip": "module dut\n(\n    input wire clk,\n    input wire rst_n,\n    output reg done\n);\nlocalparam [1:0] IDLE = 2'b00;\nlocalparam [1:0] DONE = 2'b11;\nreg [1:0] state;\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) state <= IDLE;\n    else state <= DONE;\nend\nalways @(*) begin\n    done = (state == DONE);\nend\nendmodule\n",
-    "vg125_literal_width": "module dut\n(\n    output wire [7:0] value\n);\nassign value = 8'd3;\nendmodule\n"
+    "vg125_literal_width": "module dut\n(\n    output wire [7:0] value\n);\nassign value = 8'd3;\nendmodule\n",
+    "vg144_three_process_fsm": "module dut\n(\n    input wire clk,\n    input wire rst_n,\n    input wire start,\n    output reg busy\n);\nlocalparam ST_IDLE = 1'b0;\nlocalparam ST_BUSY = 1'b1;\nreg state_current;\nreg state_next;\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) state_current <= ST_IDLE;\n    else state_current <= state_next;\nend\nalways @(*) begin\n    state_next = state_current;\n    case (state_current)\n        ST_IDLE: if (start) state_next = ST_BUSY;\n        ST_BUSY: state_next = ST_IDLE;\n        default: state_next = ST_IDLE;\n    endcase\nend\nalways @(*) begin\n    busy = 1'b0;\n    case (state_current)\n        ST_BUSY: busy = 1'b1;\n        default: busy = 1'b0;\n    endcase\nend\nendmodule\n",
+    "vg144_assign_next_state": "module dut\n(\n    input wire clk,\n    input wire rst_n,\n    input wire start,\n    output reg busy\n);\nlocalparam ST_IDLE = 1'b0;\nlocalparam ST_BUSY = 1'b1;\nreg state_current;\nwire state_next;\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) state_current <= ST_IDLE;\n    else state_current <= state_next;\nend\nassign state_next = start ? ST_BUSY : ST_IDLE;\nalways @(*) begin\n    case (state_current)\n        ST_IDLE: busy = 1'b0;\n        ST_BUSY: busy = 1'b1;\n        default: busy = 1'b0;\n    endcase\nend\nendmodule\n",
+    "vg145_three_source_cone": "module dut\n(\n    input wire [2:0] data,\n    output wire y\n);\nassign y = data[0] | data[1] | data[2];\nendmodule\n",
+    "vg145_four_source_cone": "module dut\n(\n    input wire a,\n    input wire b,\n    input wire c,\n    input wire d,\n    output wire y\n);\nwire pair_ab;\nreg merged;\nassign pair_ab = a & b;\nalways @(*) begin\n    if (c) merged = pair_ab;\n    else merged = d;\nend\nassign y = merged;\nendmodule\n"
   },
   "shared_fixtures": {
     "positive": "canonical_clean",
@@ -533,6 +537,21 @@
         "VG125"
       ]
     },
+    "VG144": {
+      "positive": "vg144_three_process_fsm",
+      "negative": "vg144_assign_next_state",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": [
+        "VG094",
+        "VG098"
+      ]
+    },
+    "VG145": {
+      "positive": "vg145_three_source_cone",
+      "negative": "vg145_four_source_cone",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
     "VG087": {
       "positive": "reset_clean",
       "negative": "reset_override",
@@ -778,7 +797,8 @@
         "VG080",
         "VG082",
         "VG119",
-        "VG125"
+        "VG125",
+        "VG144"
       ]
     },
     "VG093": {
@@ -802,7 +822,8 @@
         "VG080",
         "VG082",
         "VG119",
-        "VG125"
+        "VG125",
+        "VG144"
       ]
     },
     "VG098": {
@@ -814,7 +835,8 @@
         "VG080",
         "VG082",
         "VG119",
-        "VG125"
+        "VG125",
+        "VG144"
       ]
     },
     "VG100": {
@@ -867,7 +889,8 @@
         "VG080",
         "VG082",
         "VG119",
-        "VG125"
+        "VG125",
+        "VG144"
       ]
     },
     "VG118": {

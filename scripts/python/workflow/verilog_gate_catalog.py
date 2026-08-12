@@ -18,8 +18,8 @@ from typing import Any
 # 资产路径相对技能根解析，安装后无需依赖当前工作目录。
 ASSET_PATH = Path(__file__).resolve().parents[3] / "assets" / "verilog_quality_gates.json"  # 统一 VG catalog 路径
 
-# 编号序列保留既有 VG 空洞，并追加连续 VG072 至 VG143。
-EXPECTED_GATE_IDS = (  # 121 个实际发射的统一 VG 编号
+# 编号序列保留既有 VG 空洞，并追加连续 VG072 至 VG145。
+EXPECTED_GATE_IDS = (  # 123 个实际发射的统一 VG 编号
     *(f"VG{int_index:03d}" for int_index in range(0, 16)),  # 首段连续编号
     *(f"VG{int_index:03d}" for int_index in range(20, 26)),  # 第二段连续编号
     "VG030",  # 原生检查单点编号一
@@ -27,7 +27,7 @@ EXPECTED_GATE_IDS = (  # 121 个实际发射的统一 VG 编号
     "VG040",  # 中段原生规则起点
     "VG041",  # 中段原生规则次项
     "VG042",  # 中段原生规则末项
-    *(f"VG{int_index:03d}" for int_index in range(50, 144)),  # 主体连续编号
+    *(f"VG{int_index:03d}" for int_index in range(50, 146)),  # 主体连续编号
 )
 
 # 目录只允许阻断和警告两种治理等级。
@@ -36,8 +36,8 @@ ALLOWED_LEVELS = frozenset({"BLOCKER", "WARNING"})  # 合法 catalog 等级
 # v0.7.0 不再允许同版本保留 reserved 占位。
 ALLOWED_STATUSES = frozenset({"active"})  # 合法 catalog 状态
 
-# v4 统一目录的固定版本、总数、状态和等级计数。
-EXPECTED_CATALOG_COUNTS = (4, 121, 121, 0, 121, 0, 51, 70)  # 统一 catalog 不变量期望元组
+# v5 统一目录的固定版本、总数、状态和等级计数。
+EXPECTED_CATALOG_COUNTS = (5, 123, 123, 0, 123, 0, 53, 70)  # 统一 catalog 不变量期望元组
 
 # load_verilog_quality_gates 是目录读取与结构校验的唯一入口。
 @lru_cache(maxsize=1)
@@ -65,7 +65,7 @@ def load_verilog_quality_gates() -> dict[str, Any]:
 
 # summarize_constraints_for_prompt 将完整目录注入生成与审查提示。
 def summarize_constraints_for_prompt(*, max_rules_per_group: int = 5) -> str:
-    """渲染包含全部 72 条 VG 门禁的稳定提示词摘要。
+    """渲染包含全部 74 条 VG 门禁的稳定提示词摘要。
 
     参数:
         max_rules_per_group: 兼容旧调用方的保留参数，不裁剪门禁。
@@ -80,7 +80,7 @@ def summarize_constraints_for_prompt(*, max_rules_per_group: int = 5) -> str:
     dict_catalog = load_verilog_quality_gates()  # 已验证的统一 VG 目录
 
     # 列表副本用于按 catalog 顺序分组渲染。
-    list_rules = list(dict_catalog["rules"])  # 72 条固定规则记录
+    list_rules = list(dict_catalog["rules"])  # 123 条固定规则记录
 
     # dict.fromkeys 保留 topic 首次出现顺序。
     list_topic_order = list(  # catalog 中稳定的主题顺序
@@ -139,7 +139,7 @@ def active_vg_gate_ids() -> tuple[str, ...]:
     # 元组保持 catalog 顺序，供测试和报告稳定比较。
     return tuple(
         str(dict_rule["gate_id"])  # 当前激活规则的固定编号
-        for dict_rule in dict_catalog["rules"]  # 遍历全部 72 条目录记录
+        for dict_rule in dict_catalog["rules"]  # 遍历全部 123 条目录记录
         if dict_rule["status"] == "active"  # 排除 reserved 指导规则
     )
 
@@ -171,16 +171,16 @@ def _validate_catalog(dict_payload: dict[str, Any]) -> None:
     # rules 是后续所有固定合同检查的基础列表。
     list_rules = dict_payload.get("rules")  # catalog 的规则记录集合
 
-    # 统一目录必须始终完整包含 121 条实际规则。
-    if not isinstance(list_rules, list) or len(list_rules) != 121:
+    # 统一目录必须始终完整包含 123 条实际规则。
+    if not isinstance(list_rules, list) or len(list_rules) != 123:
 
         # 缺项或额外项都会破坏固定编号合同。
-        raise ValueError("> ERR: [Python] Verilog VG catalog must contain exactly 121 rules.")
+        raise ValueError("> ERR: [Python] Verilog VG catalog must contain exactly 123 rules.")
 
     # 编号列表用于一次性核对连续性、顺序和唯一性。
     list_gate_ids = [  # catalog 实际固定编号顺序
         str(dict_rule.get("gate_id") or "")  # 当前规则编号或空占位
-        for dict_rule in list_rules  # 遍历全部 72 条记录
+        for dict_rule in list_rules  # 遍历全部 123 条记录
     ]
 
     # 精确元组比较同时防止重复、跳号和乱序。
@@ -225,7 +225,7 @@ def _catalog_counts(dict_payload: dict[str, Any], list_rules: list[dict[str, Any
 
     参数:
         dict_payload: 包含顶层声明计数的目录载荷。
-        list_rules: 已确认长度为 72 的规则记录。
+        list_rules: 已确认长度为 123 的规则记录。
     返回:
         可与固定 v3 不变量直接比较的八项元组。
     """
@@ -244,6 +244,6 @@ def _catalog_counts(dict_payload: dict[str, Any], list_rules: list[dict[str, Any
         ),
         sum(  # 校验 strict 模式消费的警告规则数量
             dict_rule["status"] == "active" and dict_rule["level"] == "WARNING"  # 当前规则是否为激活警告项
-            for dict_rule in list_rules  # 从 72 条记录筛选激活警告项
+            for dict_rule in list_rules  # 从 123 条记录筛选激活警告项
         ),
     )

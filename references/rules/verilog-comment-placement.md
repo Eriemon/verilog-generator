@@ -25,7 +25,7 @@ The comment gate checks placement and basic usefulness at the code-entity level.
 - `VG063` keeps ownership of leading-comment adjacency, alignment, and blank-line layout for procedural blocks, instances, and `case(state_current)` branches via `comments.case_branch_leading_comment`.
 - The formatter AST stores comments bound before a branch label on the corresponding `CaseItem.leading_comments`; renderers must preserve that field before the item label so formatter output cannot create a later `VG063` violation.
 - `VG067` owns pure `assign` subgroup spacing via `comments.assign_group_spacing`. The gate does not require every `assign` subgroup to exist; it only constrains the layout when such a pure comment is present.
-- `VG054` keeps ownership of next-state structure via `fsm.next_state_default`, `fsm.next_state_hold`, and `fsm.next_state_branch_closure`. Generated next-state logic should prefer `state_next <= ...;`, while the gate remains compatible with legacy `state_next = ...;` during migration.
+- `VG054` keeps ownership of next-state defaults, holds, and branch closure. `VG144` additionally requires a separate procedural combinational next-state process, forbids continuous assignment to `state_next`, and requires blocking `state_next = ...;` assignments in that process.
 
 ## Placement Matrix
 

@@ -4453,8 +4453,8 @@ def _fsm_next_state_rules(dict_module: dict[str, Any], str_rel_path: str, *, str
                 QualityIssue(
                     "VG054",
                     _style_severity(strict),
-                    "FSM next-state block must default `state_next <= state_current;` or "
-                    "`state_next = state_current;` before overrides.",
+                    "FSM next-state block must default `state_next = state_current;` "
+                    "before overrides.",
                     str_rel_path,
                     int_line_no,
                     rule="fsm.next_state_hold",

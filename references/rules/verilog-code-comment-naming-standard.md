@@ -10,7 +10,9 @@
 
 - `VG001`、`VG003`、`VG004`、`VG005`、`VG025`：覆盖 ``timescale 1ns / 1ps``、行尾空白、Tab 缩进、文件末尾换行、控制语句显式 `begin/end`。
 - `VG010`、`VG011`、`VG012`、`VG013`、`VG014`、`VG024`：覆盖端口方向前缀、ANSI header 禁止 `wire/reg/logic` 与 `output reg`、`C_`/`ST_`/内部语义前缀、内部输出 `_o` 约束、输出桥接存在性、实例命名语义。
-- `VG021`、`VG023`、`VG053`、`VG054`、`VG057`：覆盖时钟/复位命名与低有效复位结构、FSM 三段式和 next-state 的 default、默认保持、`if / else if` 显式闭合，以及协议端口 section 顺序；生成侧新规范优先 `state_next <= ...;`，门禁过渡兼容历史 `=`.
+- `VG021`、`VG023`、`VG053`、`VG054`、`VG057`：覆盖时钟/复位命名与低有效复位结构、FSM next-state 的 default、默认保持、`if / else if` 显式闭合，以及协议端口 section 顺序。
+- `VG144`：FSM 必须严格使用三个独立过程；下一状态必须在组合过程内用阻塞赋值 `=` 计算，严禁 `assign state_next = ...`。
+- `VG145`：连续赋值与组合 `always` 共用完整 module 局部依赖锥，展开后的运行时来源最多三个；搬入组合 `always` 不能规避。只有输出端口直接连接时序驱动 `_o` `reg` 的单信号 bridge 可豁免。
 - `VG031`、`VG052`、`VG061`：覆盖固定区域 banner、output bridge 所属区域、参数/声明/过程块/实例的区域归属。
 - `VG040`、`VG041`、`VG055`、`VG056`、`VG060`、`VG066`：覆盖中文优先注释、占位注释、同线注释覆盖、尾随注释对齐、重复/近似重复注释。
 - `VG063`：覆盖过程块、实例以及 `case(state_current)` 下 `ST_*:begin`、`default:begin` 的前导纯注释贴邻、左对齐和空行布局。
@@ -484,7 +486,9 @@ formatter 可吸收旧代码中的 `input wire` / `output reg`，但最终规范
 ### 9.1 普通 assign
 
 - 所有连续赋值使用显式 `assign lhs = rhs;`。
-- `assign` 一行一个；复杂表达式应优先拆出中间信号，避免长行难读。
+- `assign` 一行一个；每个连续或过程组合目标都必须展开完整依赖锥，运行时来源最多三个。
+- 中间组合信号不会重置 VG145 的计数；跨 `assign` 与组合 `always` 的传递依赖仍属于同一组合锥。
+- 超过三个来源时必须用时序 `reg` 隔断，禁止把逻辑改写进组合 `always` 规避门禁。
 - assign 区按功能/来源分组，可有小组注释。
 - 若写纯分组注释引入后续 `assign` 小组，则该注释上方必须满足唯一空行，或直接紧跟区域横幅；不能直接贴在上一条代码后面。
 - `assign` 区不承载时序逻辑，不写阻塞/非阻塞赋值。
@@ -504,6 +508,8 @@ formatter 可吸收旧代码中的 `input wire` / `output reg`，但最终规范
 
 - 不能把 output bridge 混入其他信号连线区域。
 - 时序 output 的赋值逻辑应在 `输出信号处理区域` 中驱动内部 `_o` 信号，再 bridge 到端口。
+- 输出优先使用 `assign o_xxx = xxx_o;`，其中 `xxx_o` 必须声明为 `reg` 并由时序过程驱动。
+- 只有上述单信号直接 bridge 豁免 VG145；取反、拼接、算术、逻辑或多信号输出表达式仍按完整组合锥检查。
 
 ---
 
@@ -543,7 +549,7 @@ end
 - 组合逻辑使用 `always@(*)begin`。
 - 组合 always 内使用阻塞赋值 `=`。
 - 必须覆盖所有分支，避免锁存器；必要时先给默认值。
-- 三段式 FSM 的 next-state 组合段属于项目特例：新生成模板优先使用 `state_next <= ...;`，门禁过渡期兼容历史 `state_next = ...;`。
+- 三段式 FSM 的 next-state 组合段必须使用阻塞赋值 `state_next = ...;`，不得使用非阻塞赋值或 continuous assign。
 - formatter 对简单条件会标准化：
   - `if(flag)` -> `if(flag == 1'b1)`。
   - `if(!flag)`/`if(~flag)` -> `if(flag == 1'b0)`。
@@ -568,7 +574,7 @@ end
 2. **下一状态组合段**：组合 always，根据 `state_current`、输入和条件计算 `state_next`。
 3. **状态输出/任务段**：根据状态执行输出或任务处理；若输出是寄存器输出，进入输出信号处理区域或状态任务处理区域。
 
-formatter 源码中的自动验证重点检查 state 参数/信号出现时是否存在组合与时序状态块；它不一定能证明设计语义完全符合“三段式”。因此生成器/人工必须按三段式模板生成和评审。
+VG144 自动验证三个独立过程、状态角色 `reg` 声明，并阻断任何 continuous next-state assign；生成器和人工评审必须使用同一严格三段式合同。
 
 ### 11.2 FSM 命名与结构
 
@@ -576,7 +582,7 @@ formatter 源码中的自动验证重点检查 state 参数/信号出现时是�
 - state signal：`state_current`、`state_next`。
 - reset 初始状态必须明确，例如 `state_current <= ST_IDLE;`。
 - `case(state_current)` 必须覆盖所有状态；必须有 `default`。
-- `state_next` 组合 always 要先设置默认值，通常为 `state_current`；新生成规范优先写成 `state_next <= state_current;`。
+- `state_next` 组合 always 要先设置默认值，通常写成 `state_next = state_current;`。
 - next-state 组合逻辑中的 `if / else if` 链必须显式闭合到最终 `else`。
 - `case(state_current)` 下的 `ST_*:begin` 与 `default:begin` 上方必须有纯注释，且该注释与分支标签左侧对齐。
 - 输出逻辑不要在 next-state 组合逻辑里混杂大量非状态赋值。
@@ -604,27 +610,27 @@ formatter 源码中的自动验证重点检查 state 参数/信号出现时是�
     
     //主状态机
     always@(*)begin
-        state_next <= state_current;
+        state_next = state_current;
         case(state_current)
             //空闲状态转移分支
             ST_IDLE:begin
                 if(i_start == 1'b1)begin
-                    state_next <= ST_RUN;
+                    state_next = ST_RUN;
                 end else begin
-                    state_next <= ST_IDLE;
+                    state_next = ST_IDLE;
                 end
             end
             //运行状态转移分支
             ST_RUN:begin
                 if(i_start == 1'b0)begin
-                    state_next <= ST_IDLE;
+                    state_next = ST_IDLE;
                 end else begin
-                    state_next <= ST_RUN;
+                    state_next = ST_RUN;
                 end
             end
             //默认状态转移分支
             default:begin
-                state_next <= ST_IDLE;
+                state_next = ST_IDLE;
             end
         endcase
     end
@@ -940,13 +946,13 @@ endmodule
 
 1. **端口/信号 packed width 与 name 当前可能无空格。** 这是渲染实现事实；不影响语义，但会影响人工期待。
 2. **`Referrences` 拼写按实现输出。** 这是当前字面合同；不要在 formatter 接管文件中手动改回 `References`。
-3. **三段式 FSM 的项目规范强于工具自动验证。** 工具能检查一部分状态机结构，但不能证明完整三段式语义。
+3. **VG144 强制三段式 FSM。** 工具检查三个独立过程并禁止 continuous next-state assign；人工仍需复核状态转移语义是否正确。
 4. **`end/req/ack/done/valid` 等 flag 语义不一定全部自动加 `flag_`。** 生成器必须主动遵守。
 5. **协议专用 clock/reset 名不一定由 formatter 自动推断。** `i_axi_aclk`、`i_axis_arstn` 等要由生成器或人工指定。
 6. **实例名规范主要靠项目模板。** formatter 保证实例语法和位置，但不强制实例名语义化。
 7. **function/task 内部是 raw-block 级处理。** 可参与标识符重命名，但不会完整拆解语义。
 8. **复杂非 Verilog-2001 结构不应直接 normalize。** interface/package/class/modport 等需保守处理。
-9. **output direct assign 与 output bridge 有区别。** direct output assign 可能不会生成内部 `_o`；时序/复杂输出必须 bridge。
+9. **output direct assign 与 output bridge 有区别。** 优先使用时序 `_o` reg 的单信号直接 bridge；复杂输出 assign 继续接受 VG145 完整组合锥检查。
 10. **默认 auto 不等于强制 normalize。** auto 可能保留源文件，这是设计上的安全策略。
 
 ---

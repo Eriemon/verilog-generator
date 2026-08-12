@@ -67,10 +67,10 @@ RESET_GATES = frozenset(  # 复位和触发器初始化规则编号
 )
 
 # FSM 模块集中处理初态、非法状态恢复、可达性和状态数量规则。
-FSM_GATES = frozenset({"VG086", "VG094", "VG098", "VG112", "VG119"})  # 状态机结构规则编号
+FSM_GATES = frozenset({"VG086", "VG094", "VG098", "VG112", "VG119", "VG144"})  # 状态机结构规则编号
 
 # 结构模块集中处理锁存环、数组常量边界和普通组合反馈。
-STRUCTURE_GATES = frozenset({"VG104", "VG130", "VG136"})  # 组合结构规则编号
+STRUCTURE_GATES = frozenset({"VG104", "VG130", "VG136", "VG145"})  # 组合结构规则编号
 
 # run_vg_semantic_gate 是迁移语义规则的内部执行入口。
 def run_vg_semantic_gate(
@@ -81,7 +81,7 @@ def run_vg_semantic_gate(
     include_testbench: bool = False,
     facts: VgFacts | None = None,
 ) -> dict[str, Any]:
-    """运行 VG072 至 VG143 语义门禁并返回 fail-closed 报告。
+    """运行 VG072 至 VG145 语义门禁并返回 fail-closed 报告。
 
     参数:
         root: 待检查的 Verilog 文件或目录。
@@ -91,13 +91,13 @@ def run_vg_semantic_gate(
         facts: 可选的预构建 VG 事实；提供时禁止再次解析 RTL。
 
     返回:
-        包含 72 条逐门禁结果、摘要和交付结论的字典。
+        包含 74 条逐门禁结果、摘要和交付结论的字典。
     """
 
     # 绝对路径保证报告和 formatter 扫描使用同一目标。
     path_root = root.resolve()  # 待检查 RTL 根路径
 
-    # catalog 决定 72 条规则的固定顺序和治理元数据。
+    # catalog 决定 74 条规则的固定顺序和治理元数据。
     dict_catalog = load_verilog_quality_gates()  # 已校验的统一 VG 目录
 
     # 单次事实构建避免每条规则重复解析 RTL。
@@ -108,7 +108,7 @@ def run_vg_semantic_gate(
     )
 
     # 结果列表严格按 catalog 顺序保留全部激活和预留编号。
-    list_results: list[dict[str, Any]] = []  # 72 条逐门禁结果
+    list_results: list[dict[str, Any]] = []  # 74 条逐门禁结果
 
     # 只执行迁移后的语义段；既有 VG000-VG071 由统一质量门原生规则负责。
     for dict_rule in dict_catalog["rules"]:
@@ -341,7 +341,7 @@ def _result_dict(dict_rule: dict[str, Any], evaluation: VgEvaluation) -> dict[st
 
 # _summarize_results 同时统计目录状态和执行状态。
 def _summarize_results(list_results: list[dict[str, Any]]) -> dict[str, Any]:
-    """按状态和目录类别汇总 72 条结果。
+    """按状态和目录类别汇总 74 条结果。
 
     参数:
         list_results: 按 catalog 顺序生成的全部规则结果。

@@ -160,7 +160,7 @@ def run_verilog_quality_gate(
         spec=spec,  # 调用方提供的可选设计规格
     )
 
-    # 迁移语义段通过统一入口生成 VG072-VG143 结果。
+    # 迁移语义段通过统一入口生成 VG072-VG145 结果。
     dict_semantic_report = run_vg_semantic_gate(  # 72 条迁移语义规则报告
         path_root,  # 本轮统一质量门扫描根
         spec=spec,  # 语义规则可选设计规格

@@ -350,19 +350,19 @@ def spec(name="remote_verilog_quality_gates"):
 
 
 catalog = load_verilog_quality_gates()
-assert catalog["total_rules"] == 121, catalog
-assert catalog["active_rules"] == 121, catalog
+assert catalog["total_rules"] == 123, catalog
+assert catalog["active_rules"] == 123, catalog
 assert catalog["reserved_rules"] == 0, catalog
 prompt = render_prompt(spec(), stage="rtl")
 for marker in (
     "Verilog quality gates",
     "VG072",
     "VG111",
-    "VG143",
+    "VG145",
 ):
     assert marker in prompt, marker
 summary = summarize_constraints_for_prompt(max_rules_per_group=3)
-assert "121 active gates" in summary, summary
+assert "123 active gates" in summary, summary
 assert "reserved gates" not in summary, summary
 
 bad_dir = Path("_smoke_runs/remote_verilog_quality_gates/bad")

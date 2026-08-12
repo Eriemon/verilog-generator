@@ -12,7 +12,7 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 - Public entry: `run_verilog_quality_gate(...)`
 - Report schema: v2
 - Report fields: `vg_catalog_version`, `vg_rule_summary`, and `vg_rule_results`
-- Catalog size: 121 active rules and 0 reserved rules
+- Catalog size: 123 active rules and 0 reserved rules
 - Severity policy: BLOCKER non-pass results always block; WARNING non-pass results block strict runs
 
 ## Catalog
@@ -140,6 +140,8 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 | VG141 | BLOCKER | multiple_drivers | active |
 | VG142 | BLOCKER | wire_declaration_inline_assignment | active |
 | VG143 | BLOCKER | simulation_system_task_in_rtl | active |
+| VG144 | BLOCKER | fsm_three_segment_procedural_next_state | active |
+| VG145 | BLOCKER | comb_cone_max_three_sources | active |
 
 ## Recognition Scope Contracts
 
@@ -148,6 +150,9 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 - VG012 requires module `parameter` names to use `C_` plus uppercase naming. Ordinary non-state `localparam` names must be uppercase without `C_`; state encodings continue to use `ST_`.
 - VG081 and VG123 resolve `parameter` and `localparam` names only in the module that declares them. VG123 accepts deterministic Verilog-2001 sized binary, octal, decimal, and hexadecimal literals, while X, Z, question-mark, malformed, and undeclared-symbol expressions remain unsupported.
 - Shared width facts accept a parameter or integer endpoint with one optional decimal `+/-` delta and optional surrounding whitespace. Multiplication, compound arithmetic, malformed expressions, and unknown parameters remain unresolved.
+- VG144 requires three independent FSM processes: a clocked current-state register, a procedural combinational next-state process, and a separate state-driven output/task process. `assign state_next = ...` and equivalent next-state aliases are BLOCKER findings.
+- VG145 combines continuous assigns and combinational `always` assignments into one module-local transitive graph. Data expressions, conditions, comparisons, shifts, concatenations, selections, ternaries, and function arguments contribute dependencies. Different bit-selects or slices remain distinct sources; parameter/localparam/genvar/loop constants are excluded; sequential registers and instance outputs terminate expansion.
+- VG145 allows at most three expanded runtime source references for every combinational target. Moving a chain into `always @(*)` does not bypass the gate. The only output exemption is an exact `assign <output> = <name>_o;` bridge where `<name>_o` is declared `reg` and driven by a clocked process; any output-side operation or multi-source expression remains checked.
 
 ## Formerly Reserved Rules
 

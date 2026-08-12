@@ -300,8 +300,8 @@ def _rtl_generation_rules(dict_spec: dict[str, Any], str_comment_language: str) 
             "in an always-block sensitivity list."
         ),
         (
-            "Separate registered state updates from combinational next-state logic when that "
-            "makes the design clearer."
+            "Every FSM must use three independent processes: a clocked current-state register, "
+            "procedural combinational next-state logic, and separate state output/task logic."
         ),
         (
             "Use complete combinational assignments with safe defaults before if/case decisions "
@@ -1167,9 +1167,19 @@ def _rtl_style_rules(dict_spec: dict[str, Any], str_comment_language: str) -> li
             "`ST_*:begin` and `default:begin` branch."
         ),
         (
-            "In generated next-state combinational logic, prefer `state_next <= ...;`, default "
-            "`state_next <= state_current;` before branch overrides, and close every `if / else if` "
-            "chain with an explicit final `else`."
+            "Generated next-state logic must use blocking `state_next = ...;` assignments in its "
+            "own combinational always block, must default to `state_next = state_current;`, and "
+            "must never use a continuous assign for `state_next`."
+        ),
+        (
+            "Expand every continuous and procedural combinational target through its complete "
+            "module-local dependency cone. At most three runtime source references are allowed; "
+            "moving logic into a combinational always block does not bypass this limit."
+        ),
+        (
+            "Prefer exact output bridges such as `assign o_done = done_o;`, where `done_o` is a "
+            "clocked internal reg. Only that single-signal bridge shape is exempt from the "
+            "three-source combinational-cone limit."
         ),
         "Split sequential logic so that each `always` block assigns exactly one reg signal.",
         "Do not use `wire xxx = ...;`; declare the wire first and use a separate `assign` statement.",

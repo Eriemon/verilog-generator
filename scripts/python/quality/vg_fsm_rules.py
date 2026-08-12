@@ -39,10 +39,263 @@ def evaluate_fsm_gate(str_gate_id: str, facts: VgFacts) -> VgEvaluation:
         "VG098": _fsm_no_dead_unreachable,  # 状态可达性检查
         "VG112": _fsm_limit_state_count,  # 状态数量上限检查
         "VG119": _fsm_min_transition_flips,  # 状态转换翻转位数检查
+        "VG144": _fsm_strict_three_processes,  # 严格三段式状态机检查
     }
 
     # engine 已保证编号属于本模块，直接执行唯一对应函数。
     return dict_evaluators[str_gate_id](facts)
+
+# _fsm_strict_three_processes 禁止连续赋值下一状态并要求三个独立过程。
+def _fsm_strict_three_processes(facts: VgFacts) -> VgEvaluation:
+    """检查 FSM 是否采用状态寄存、组合转移和独立输出三段式结构。
+
+    参数:
+        facts: formatter AST 构建的可信扫描事实。
+    返回:
+        非三段式状态机的失败证据或适用性结论。
+    """
+
+    # findings 汇总每个 module 的三段式结构违规。
+    list_findings: list[VgFinding] = []  # 严格三段式状态机违规证据
+
+    # applicable 区分普通数据通路与可识别 FSM。
+    bool_applicable = False  # 是否发现状态常量和状态角色信号
+
+    # 每个 module 的状态角色与过程集合必须独立判定。
+    for source_facts, dict_module, str_module_text, int_base_line in iter_trusted_modules(facts):
+
+        # 状态常量是进入 FSM 结构门禁的必要事实。
+        if not _declared_states(str_module_text):
+
+            # 普通 module 不属于本规则对象。
+            continue
+
+        # 当前状态与下一状态支持仓库常用的两组明确别名。
+        tuple_roles = _fsm_state_roles(str_module_text)  # 当前 module 的状态角色信号
+
+        # 缺少任一状态角色时不能证明严格三段式结构。
+        if tuple_roles is None:
+
+            # 已有状态常量使规则适用，并形成确定结构失败。
+            bool_applicable = True  # 当前 module 是不完整 FSM 候选
+
+            # 状态角色缺失时定位到首个状态常量。
+            list_findings.append(
+                _finding(
+                    source_facts,
+                    str_module_text,
+                    int_base_line,
+                    "ST_",
+                    "FSM 必须显式声明当前状态和下一状态寄存器。",
+                    "missing current/next state roles",
+                )
+            )
+
+            # 当前 module 无法继续建立三类过程。
+            continue
+
+        # 解包已确认存在的当前状态和下一状态名称。
+        str_current_state, str_next_state = tuple_roles  # 当前状态与下一状态信号
+
+        # 完整状态角色说明严格三段式规则正式适用。
+        bool_applicable = True  # 当前 module 是可识别 FSM
+
+        # 两个状态角色都必须声明为可由过程块驱动的 reg。
+        set_reg_names = {  # 收集当前模块内可作为当前状态和下一状态存储单元的全部 reg 名称
+            str(dict_decl.get("name") or "")  # 读取可由 FSM 过程块赋值的内部信号名称
+            for dict_decl in dict_module.get("decls", [])  # 逐条检查当前 module 的内部信号声明
+            if str(dict_decl.get("kind") or "").lower() == "reg"  # 状态存储候选必须明确声明为 reg 类型
+        }
+
+        # wire 状态角色不能满足严格过程式三段结构。
+        if not {str_current_state, str_next_state} <= set_reg_names:
+
+            # 诊断明确列出缺少 reg 声明的状态角色。
+            set_missing_regs = {str_current_state, str_next_state} - set_reg_names  # 非 reg 状态角色
+
+            # 状态声明违规定位到首个缺失名称。
+            list_findings.append(
+                _finding(
+                    source_facts,
+                    str_module_text,
+                    int_base_line,
+                    sorted(set_missing_regs)[0],
+                    "FSM 当前状态和下一状态必须声明为 reg 并由过程块赋值。",
+                    ", ".join(sorted(set_missing_regs)),
+                )
+            )
+
+        # 连续赋值列表由 formatter AST 提供，避免正文误匹配。
+        list_assigns = list(dict_module.get("assigns", []))  # 当前 module 的连续赋值集合
+
+        # 下一状态禁止由任何连续 assign 驱动。
+        list_next_assigns = [  # 驱动下一状态的连续赋值
+            dict_assign  # 当前连续赋值事实
+            for dict_assign in list_assigns  # 遍历当前 module 全部 assign
+            if _lvalue_base(str(dict_assign.get("lhs") or "")) == str_next_state  # 只选择下一状态目标
+        ]
+
+        # 连续下一状态赋值直接违反用户确认的硬门禁。
+        if list_next_assigns:
+
+            # 首条 assign 的 AST 行号用于精确定位。
+            int_line = int(list_next_assigns[0].get("line_start") or int_base_line)  # 连续赋值文件行号
+
+            # 报告禁止形态和目标信号。
+            list_findings.append(
+                VgFinding(
+                    source_facts.relative_path,
+                    int_line,
+                    "FSM 下一状态禁止使用 continuous assign，必须放在独立组合过程。",
+                    f"assign {str_next_state} = ...",
+                )
+            )
+
+        # formatter always 事实用于验证三个过程相互独立。
+        list_always = list(dict_module.get("always", []))  # 当前 module 的全部过程块
+
+        # 第一段必须是时序过程且只承担当前状态更新。
+        list_state_registers = [  # 当前状态时序寄存过程
+            dict_always  # 可能承担组合状态转移职责的过程事实
+            for dict_always in list_always  # 第二段只从组合触发且写下一状态的过程产生
+            if str(dict_always.get("trigger_kind") or "") != "comb"  # 排除组合过程
+            and str_current_state in _always_target_bases(dict_always)  # 必须写当前状态
+            and str_next_state not in _always_target_bases(dict_always)  # 不得同时写下一状态
+        ]
+
+        # 第二段必须是只写下一状态的组合过程。
+        list_next_logic = [  # 下一状态组合转移过程
+            dict_always  # 可能承担状态输出或任务职责的过程事实
+            for dict_always in list_always  # 从全部过程筛选第三段状态逻辑
+            if str(dict_always.get("trigger_kind") or "") == "comb"  # 必须是组合过程
+            and str_next_state in _always_target_bases(dict_always)  # 必须写下一状态
+            and str_current_state not in _always_target_bases(dict_always)  # 不得反写当前状态
+        ]
+
+        # 第三段必须引用状态且写入状态角色以外的输出或任务信号。
+        list_output_logic = [  # 状态输出或任务过程
+            dict_always  # 当前候选过程块
+            for dict_always in list_always  # 遍历全部过程块
+            if _always_references_signal(dict_always, str_current_state)  # 必须消费当前状态
+            and bool(_always_target_bases(dict_always) - {str_current_state, str_next_state})  # 必须写其他信号
+            and str_current_state not in _always_target_bases(dict_always)  # 第三段不得更新当前状态
+            and str_next_state not in _always_target_bases(dict_always)  # 第三段不得更新下一状态
+        ]
+
+        # 三类过程必须各自存在，并且由三个不同 always 块承担。
+        bool_three_processes = bool(list_state_registers and list_next_logic and list_output_logic)  # 三段职责完整性
+
+        # 缺少任一独立段时形成确定阻断证据。
+        if not bool_three_processes:
+
+            # 诊断列出三类过程的识别数量，便于直接修复。
+            str_evidence = (  # 三类过程识别数量
+                f"state_register={len(list_state_registers)}, "
+                f"next_logic={len(list_next_logic)}, "
+                f"output_logic={len(list_output_logic)}"
+            )
+
+            # 状态机结构失败统一定位到当前状态信号。
+            list_findings.append(
+                _finding(
+                    source_facts,
+                    str_module_text,
+                    int_base_line,
+                    str_current_state,
+                    "FSM 必须由独立的状态寄存、组合下一状态和状态输出三个过程组成。",
+                    str_evidence,
+                )
+            )
+
+    # 任一 module 违反严格三段式合同都使门禁失败。
+    if list_findings:
+
+        # 返回全部可定位的三段式结构违规。
+        return failed(*list_findings)
+
+    # 没有 FSM 时不适用，其余情况通过。
+    return passed(applicable=bool_applicable)
+
+# _fsm_state_roles 返回当前 module 中可识别的状态角色名称。
+def _fsm_state_roles(str_module_text: str) -> tuple[str, str] | None:
+    """识别当前状态和下一状态的明确命名对。
+
+    参数:
+        str_module_text: formatter 确认边界的 module 原文。
+    返回:
+        当前状态与下一状态名称；缺少明确命名对时返回 None。
+    """
+
+    # 命名对按仓库推荐形式优先，再兼容常见 current_state 形式。
+    tuple_aliases = (  # 可接受的当前状态与下一状态命名对
+        ("state_current", "state_next"),  # 仓库推荐命名
+        ("current_state", "next_state"),  # 常见等价命名
+        ("state_q", "state_d"),  # 寄存器数据端命名
+    )
+
+    # 只有两个名称都在 module 中作为独立标识符出现才返回。
+    for str_current, str_next in tuple_aliases:
+
+        # 当前命名对必须同时存在。
+        if re.search(rf"\b{re.escape(str_current)}\b", str_module_text) and re.search(
+            rf"\b{re.escape(str_next)}\b",
+            str_module_text,
+        ):
+
+            # 返回首个按优先级匹配的明确命名对。
+            return str_current, str_next
+
+    # 没有明确状态角色时交由调用方形成失败结论。
+    return None
+
+# _always_target_bases 返回过程块的左值基名集合。
+def _always_target_bases(dict_always: dict[str, object]) -> set[str]:
+    """提取一个 always 块写入的信号基名。
+
+    参数:
+        dict_always: formatter AST 中的过程块事实。
+    返回:
+        当前过程块全部左值基名集合。
+    """
+
+    # targets 已由 formatter 聚合过程块内全部赋值目标。
+    return {  # 当前过程块的左值基名集合
+        _lvalue_base(str(str_target))  # 位选和切片统一到声明基名
+        for str_target in dict_always.get("targets", [])  # 遍历 formatter 目标集合
+    }
+
+# _always_references_signal 判断过程源码是否消费指定信号。
+def _always_references_signal(dict_always: dict[str, object], str_signal: str) -> bool:
+    """判断一个 always 块是否引用指定信号。
+
+    参数:
+        dict_always: formatter AST 中的过程块事实。
+        str_signal: 需要确认的状态信号名称。
+    返回:
+        过程正文引用该信号时返回 True。
+    """
+
+    # lines 保留控制条件和表达式，适合精确标识符匹配。
+    str_body = "\n".join(str(str_line) for str_line in dict_always.get("lines", []))  # 当前过程正文
+
+    # 独立词边界防止状态名子串误命中。
+    return re.search(rf"\b{re.escape(str_signal)}\b", str_body) is not None
+
+# _lvalue_base 返回左值表达式的声明基名。
+def _lvalue_base(str_lvalue: str) -> str:
+    """提取左值位选、切片或简单名称的基名。
+
+    参数:
+        str_lvalue: formatter 返回的左值表达式。
+    返回:
+        左值开头的标识符基名；无法识别时返回空字符串。
+    """
+
+    # 左值必须以普通 Verilog 标识符开头。
+    obj_match = re.match(r"\s*([A-Za-z_]\w*)", str_lvalue)  # 左值基名匹配
+
+    # 缺失标识符时返回空文本，避免伪造角色。
+    return obj_match.group(1) if obj_match else ""
 
 # _fsm_min_transition_flips 检查首个可证明状态转换的编码翻转量。
 def _fsm_min_transition_flips(facts: VgFacts) -> VgEvaluation:

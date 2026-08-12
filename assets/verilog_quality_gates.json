@@ -1,15 +1,15 @@
 {
-  "version": 4,
+  "version": 5,
   "name": "verilog_quality_gate_catalog",
   "description": "Unified VG catalog for readable Verilog RTL generation, review, and semantic validation.",
-  "total_rules": 121,
-  "active_rules": 121,
+  "total_rules": 123,
+  "active_rules": 123,
   "reserved_rules": 0,
   "status_counts": {
-    "active": 121
+    "active": 123
   },
   "active_level_counts": {
-    "BLOCKER": 51,
+    "BLOCKER": 53,
     "WARNING": 70
   },
   "policy": {
@@ -984,6 +984,22 @@
       "status": "active",
       "topic": "结构说明语句",
       "summary": "设计 RTL 中禁止使用 $display、$finish 或 $stop。"
+    },
+    {
+      "gate_id": "VG144",
+      "rule_key": "fsm_three_segment_procedural_next_state",
+      "level": "BLOCKER",
+      "status": "active",
+      "topic": "状态机",
+      "summary": "FSM 必须严格采用三段式结构，下一状态必须在独立组合过程内赋值，禁止使用 continuous assign。"
+    },
+    {
+      "gate_id": "VG145",
+      "rule_key": "comb_cone_max_three_sources",
+      "level": "BLOCKER",
+      "status": "active",
+      "topic": "赋值语句和块语句",
+      "summary": "连续赋值与组合过程形成的完整 module 局部组合依赖锥最多允许三个源信号；仅豁免输出端口到时序 `_o` reg 的直接桥。"
     }
   ]
 }
