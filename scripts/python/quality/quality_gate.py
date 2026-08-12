@@ -66,6 +66,38 @@ from .quality_gate_text_rules import _raw_text_rules
 from .vg_semantic_engine import run_vg_semantic_gate
 from .vg_semantic_facts import build_vg_facts_from_reports
 
+# 运行时外部接口来源暂存于规格副本，避免扩大稳定公共质量门签名。
+EXTERNAL_INTERFACE_SOURCES_SPEC_KEY = "__external_interface_sources__"  # 规格载体中的运行时专用键
+
+# _semantic_runtime_inputs 从规格副本中分离非设计合同的运行时来源。
+def _semantic_runtime_inputs(
+    spec: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, tuple[Path, ...]]:
+    """分离语义规格与只供本轮执行使用的外部接口来源。
+
+    参数:
+        spec: 调用方提供的设计规格及可选运行时来源。
+    返回:
+        不含运行时键的规格副本，以及规范化外部接口路径。
+    """
+
+    # 复制输入，禁止清理运行时键时修改调用方持有的字典。
+    dict_semantic_spec = dict(spec or {})  # 本轮独立的语义规格副本
+
+    # 运行时来源只参与事实构建，不进入规则可见的设计规格。
+    tuple_source_values = tuple(  # 调用方显式提供的外部接口路径值
+        dict_semantic_spec.pop(EXTERNAL_INTERFACE_SOURCES_SPEC_KEY, ()) or ()  # 尚未规范化的来源序列
+    )  # 保持调用顺序的来源序列
+
+    # Path 归一化让 CLI 字符串和程序化 Path 输入共享同一事实入口。
+    tuple_external_sources = tuple(Path(obj_value) for obj_value in tuple_source_values)  # 外部接口路径
+
+    # 空规格保持旧有 None 语义，避免给规则注入无意义空合同。
+    dict_normalized_spec = dict_semantic_spec or None  # 规则可见的纯设计规格
+
+    # 返回彼此隔离的设计合同与运行时文件来源。
+    return dict_normalized_spec, tuple_external_sources
+
 # 组织目录级质量门运行并保持旧入口签名稳定。
 def run_verilog_quality_gate(
     root: Path,
@@ -153,17 +185,27 @@ def run_verilog_quality_gate(
     # 聚合 module 数复用 AST summary，避免重复口径。
     dict_aggregate_metrics["modules"] = dict_ast_tree_report["summary"]["modules"]  # 已解析 module 总数
 
+    # 设计规格与外部 stub 路径必须在进入事实层前解除混合。
+    tuple_semantic_inputs = _semantic_runtime_inputs(spec)  # 已分离的语义事实输入
+
+    # 第一项仅保留规则能够消费的设计合同。
+    dict_semantic_spec = tuple_semantic_inputs[0]  # 去除运行时键的规格副本
+
+    # 第二项提供 VG097 额外可见的模块接口来源。
+    tuple_external_sources = tuple_semantic_inputs[1]  # 规范化外部接口路径
+
     # 迁移语义段复用本轮已经生成的 formatter AST，禁止第二次解析。
     vg_facts = build_vg_facts_from_reports(  # 共享 AST 语义事实
         path_root,  # 语义执行器消费的规范 RTL 入口
         list_file_reports,  # 已生成的逐文件 AST 报告
-        spec=spec,  # 调用方提供的可选设计规格
+        spec=dict_semantic_spec,  # 已移除运行时键的设计规格
+        external_interface_sources=tuple_external_sources,  # 仅供 VG097 的外部接口 stub
     )
 
     # 迁移语义段通过统一入口生成 VG072-VG145 结果。
     dict_semantic_report = run_vg_semantic_gate(  # 72 条迁移语义规则报告
         path_root,  # 本轮统一质量门扫描根
-        spec=spec,  # 语义规则可选设计规格
+        spec=dict_semantic_spec,  # 语义规则可选设计规格
         strict=strict,  # WARNING 级结果的阻断策略
         include_testbench=include_testbench,  # testbench 纳入策略
         facts=vg_facts,  # 复用本轮唯一 AST 事实

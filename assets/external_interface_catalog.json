@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "validated_vivado_versions": [
+    "2022.2",
+    "2023.2"
+  ],
+  "xpm_templates": {
+    "cdc": [
+      "xpm_cdc_array_single",
+      "xpm_cdc_async_rst",
+      "xpm_cdc_gray",
+      "xpm_cdc_handshake",
+      "xpm_cdc_low_latency_handshake",
+      "xpm_cdc_pulse",
+      "xpm_cdc_single",
+      "xpm_cdc_sync_rst"
+    ],
+    "fifo": [
+      "xpm_fifo_async",
+      "xpm_fifo_axif",
+      "xpm_fifo_axil",
+      "xpm_fifo_axis",
+      "xpm_fifo_sync"
+    ],
+    "memory": [
+      "xpm_memory_dpdistram",
+      "xpm_memory_dprom",
+      "xpm_memory_sdpram",
+      "xpm_memory_spram",
+      "xpm_memory_sprom",
+      "xpm_memory_tdpram"
+    ]
+  },
+  "project_ip_scaffolds": [
+    "vio",
+    "ila",
+    "clock_wizard",
+    "processor_system_reset",
+    "block_memory_generator",
+    "fifo_generator",
+    "axi_memory_mapped",
+    "axi_stream",
+    "gt_phy",
+    "generic_ip"
+  ],
+  "primitive_templates": {
+    "input_buffers": [
+      "IBUF",
+      "IBUFDS",
+      "IBUFDS_GTE2",
+      "IBUFDS_GTE3",
+      "IBUFDS_GTE4"
+    ],
+    "output_buffers": [
+      "OBUF",
+      "OBUFT",
+      "OBUFDS",
+      "OBUFTDS"
+    ],
+    "bidirectional_buffers": [
+      "IOBUF",
+      "IOBUFDS"
+    ],
+    "clock_buffers": [
+      "BUFG",
+      "BUFGCE",
+      "BUFGCTRL",
+      "BUFH",
+      "BUFHCE",
+      "BUFIO",
+      "BUFR"
+    ],
+    "clock_management": [
+      "MMCME2_ADV",
+      "PLLE2_ADV",
+      "MMCME3_ADV",
+      "PLLE3_ADV",
+      "MMCME4_ADV",
+      "PLLE4_ADV"
+    ],
+    "registers_and_latches": [
+      "FDRE",
+      "FDSE",
+      "FDCE",
+      "FDPE",
+      "LDCE",
+      "LDPE"
+    ],
+    "block_memory_and_fifo": [
+      "RAMB18E1",
+      "RAMB36E1",
+      "RAMB18E2",
+      "RAMB36E2",
+      "FIFO18E1",
+      "FIFO36E1",
+      "FIFO18E2",
+      "FIFO36E2"
+    ],
+    "dsp": [
+      "DSP48E1",
+      "DSP48E2"
+    ],
+    "configuration_and_startup": [
+      "STARTUPE2",
+      "STARTUPE3",
+      "ICAPE2",
+      "ICAPE3",
+      "DNA_PORT",
+      "USR_ACCESSE2"
+    ],
+    "serial_transceivers": [
+      "GTXE2_CHANNEL",
+      "GTHE3_CHANNEL",
+      "GTYE4_CHANNEL"
+    ]
+  },
+  "primitive_extraction_parts": [
+    "xc7a35tcpg236-1",
+    "xcku040-ffva1156-2-e",
+    "xcu55c-fsvh2892-2L-e"
+  ],
+  "validated_smoke": {
+    "xpm_module_count_per_version": 19,
+    "primitive_module_count_per_version": 49,
+    "formatter_parse_errors": 0,
+    "implementation_tokens_retained": false
+  },
+  "policies": {
+    "xpm_source": "extract_installed_vivado_declarations",
+    "primitive_source": "extract_vivado_library_cells_without_count_cap",
+    "project_ip_source": "extract_generated_product_interfaces",
+    "sv_module_variants": "exclude_suffix_SV_from_verilog_2001_stubs",
+    "target_module_precedence": "target_rtl_wins",
+    "duplicate_stub_modules": "fail_closed"
+  }
+}

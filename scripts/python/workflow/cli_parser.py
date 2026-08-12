@@ -447,6 +447,11 @@ def _feedback_command_specs() -> tuple[CommandSpec, ...]:
             "Run deterministic skill-effectiveness checks from eval cases.",
             "eval-skill",
             (
+                arg(
+                    "--workspace-root",
+                    type=Path,
+                    help="Explicit existing workspace root for eval inputs, outputs, and state.",
+                ),
                 arg("--evals", required=True, type=Path),
                 arg("--out", required=True, type=Path),
                 arg("--remote-runs-json", type=Path, help="Optional retained remote run summary JSON."),

@@ -238,6 +238,20 @@
     },
     {
       "command_ids": [
+        "validation.generated-deliverable",
+        "quality.verilog"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "外部接口源只补充 VG097 静态接口事实，不替代目标 RTL 或外部工具证据。",
+      "sources": [
+        "SKILL.md",
+        "references/skill/script-guide.md"
+      ],
+      "value": "--external-interface-source"
+    },
+    {
+      "command_ids": [
         "registry.ask",
         "registry.document-governance",
         "validation.generated-deliverable",
@@ -303,6 +317,18 @@
     },
     {
       "command_ids": [
+        "quality.external-interface-manifest"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "manifest 只由项目 IP 接口渲染子命令读取。",
+      "sources": [
+        "references/skill/script-guide.md"
+      ],
+      "value": "--manifest"
+    },
+    {
+      "command_ids": [
         "validation.generated-deliverable",
         "quality.verilog"
       ],
@@ -314,6 +340,18 @@
         "references/rules/verilog-code-comment-naming-standard.md"
       ],
       "value": "--markdown"
+    },
+    {
+      "command_ids": [
+        "quality.external-interface-extract"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "module 白名单限制 vendor 源提取范围并使缺失或重复定义 fail closed。",
+      "sources": [
+        "references/skill/script-guide.md"
+      ],
+      "value": "--module"
     },
     {
       "command_ids": [
@@ -372,6 +410,19 @@
         "references/integration/configuration.md"
       ],
       "value": "--out"
+    },
+    {
+      "command_ids": [
+        "quality.external-interface-extract",
+        "quality.external-interface-manifest"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "两个 stub 子命令只写入调用方显式指定的 Verilog 输出文件。",
+      "sources": [
+        "references/skill/script-guide.md"
+      ],
+      "value": "--output"
     },
     {
       "command_ids": [
@@ -488,6 +539,18 @@
     },
     {
       "command_ids": [
+        "quality.external-interface-extract"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "source 只声明允许扫描的 vendor Verilog/SystemVerilog 文件或目录。",
+      "sources": [
+        "references/skill/script-guide.md"
+      ],
+      "value": "--source"
+    },
+    {
+      "command_ids": [
         "remote.validate"
       ],
       "decision": "mapped",
@@ -560,6 +623,18 @@
         "references/integration/configuration.md"
       ],
       "value": "--with-repo-regression"
+    },
+    {
+      "command_ids": [
+        "workflow.evaluate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "显式工作区根只属于 eval-skill，并由该命令的 fail-closed 路径合同负责。",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--workspace-root"
     },
     {
       "command_ids": [

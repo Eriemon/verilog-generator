@@ -86,11 +86,13 @@ python -m scripts.python.validation.validate_verilog_skill --settings .\config\d
 
 The default confidence gate is install-package self-contained: it does not require repository-root `tests/`, `tests/smoke/`, `quick_validate.py`, `audit_skill.py`, or `agents-md-generator` to exist in a clean extracted skill package. Use `--with-external-audit` for development or release audit tools outside the skill package, and use `--with-repo-regression` from the source repository to run root-level unittest and smoke suites. Use `--no-require-remote` only when you intentionally want a local-only diagnostic pass.
 
-Run the deterministic skill-effectiveness gate from the skill root:
+Run the deterministic skill-effectiveness gate from the source repository's skill root. The explicit workspace root keeps repository-level reports outside the installable skill payload while preserving path validation:
 
 ```powershell
-python -m scripts.python.workflow.cli eval-skill --evals .\evals\evals.json --out .\reports\verilog\skill_effectiveness.json
+python -B -m scripts.python.workflow.cli eval-skill --workspace-root ..\.. --evals skills\readable-verilog-generator\evals\evals.json --out reports\verilog\skill_effectiveness.json
 ```
+
+In an installed skill copy, omit `--workspace-root` to retain the skill directory as the default boundary and write only to an explicitly allowed path inside that workspace. An explicit root must already exist and be a directory; eval inputs, the output report, optional remote-run evidence, and workflow state remain fail-closed inside that root.
 
 Run the local toolchain preflight from the skill root when a caller asks for compile, execute, or implement readiness:
 

@@ -44,7 +44,7 @@ Exact or fuzzy similarity is a review signal, not permission to delete text. Con
 
 - `registry`: JSON/SQLite build, query, and document governance.
 - `validation`: package validation and generated-deliverable closure.
-- `quality`: unified VG quality, comment-only equivalence, and lint views.
+- `quality`: unified VG quality, comment-only equivalence, lint views, and governed external-interface stub generation.
 - `workflow`: route, scaffold, prompt, generate, batch, review, existing-RTL verify, and evaluation flows.
 - `toolchain`: dependency checks, explicit installation/skip/adaptation, FPGA routing, and external preflight.
 - `remote`: discovery, user-confirmed selection, remote validation, retained-run reporting, and cleanup boundaries.
@@ -52,6 +52,24 @@ Exact or fuzzy similarity is a review signal, not permission to delete text. Con
 - `external`: xsim, VCS, Verdi, iverilog/vvp, yosys, and Verilator invocation contracts referenced by this skill.
 
 All public commands used by `SKILL.md` or references must have a command record with entrypoint, subcommand, parameters, invocation templates, examples, prerequisites, outputs, risks, boundaries, and related IDs. Workflows remain separate records that order command IDs without weakening command-level semantics.
+
+## External Interface Stubs For VG097
+
+`VG097` reports `inconclusive` when an instantiated module has no statically visible interface. Do not treat that state as a confirmed width mismatch and do not suppress the rule. Generate a pure interface bundle, then pass the resulting `.v` file through the quality or generated-deliverable command's repeatable `--external-interface-source` option.
+
+For XPM, UNISIM primitives, or other available vendor HDL, extract only an explicit module whitelist:
+
+```text
+python -m scripts.python.quality.external_interface_stubs extract --source <vendor-file-or-dir> --module <module-name> [--module <module-name> ...] --output <stubs.v>
+```
+
+For project-generated IP such as VIO, ILA, Clocking Wizard, Processor System Reset, Block Memory Generator, FIFO Generator, AXI interfaces, AXI-Stream interfaces, or GT PHY wrappers, render a reviewed JSON manifest:
+
+```text
+python -m scripts.python.quality.external_interface_stubs render-manifest --manifest <external-ip-interfaces.json> --output <project-ip-stubs.v>
+```
+
+The bundled `assets/external_interface_catalog.json` records the XPM families and common UNISIM primitive names smoke-checked against Vivado 2022.2 and 2023.2, plus project-IP scaffold categories. `assets/project_ip_interface_manifest.template.json` provides ten deliberately renamed `*_example` manifest scaffolds; copy only the needed objects, rename them to exact instantiated module names, and verify every interface field against generated project evidence. The catalog is not an embedded copy of AMD-Xilinx source. Missing definitions, duplicate definitions, unsupported conditional alternatives, invalid manifest fields, and empty interfaces fail closed. A target RTL definition overrides a same-name external stub; competing external definitions remain an error. Stubs provide static interface facts only and never replace vendor simulation libraries, elaboration, synthesis, implementation, or hardware evidence.
 
 ## Compatibility And Ownership
 

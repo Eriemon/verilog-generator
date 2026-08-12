@@ -52,12 +52,16 @@ class VgFacts:
     # spec 保留调用方提供的归一化设计合同。
     spec: dict[str, Any]  # 可供接口和时钟规则消费的规格
 
+    # external_modules 只供需要跨模块接口的规则消费，不进入普通 RTL 规则扫描。
+    external_modules: tuple[dict[str, Any], ...] = ()  # 受治理 stub 提供的模块接口
+
 # build_vg_facts 只通过 formatter AST 建立规则事实。
 def build_vg_facts(
     root: Path,
     *,
     spec: dict[str, Any] | None = None,
     include_testbench: bool = False,
+    external_interface_sources: tuple[Path, ...] = (),
 ) -> VgFacts:
     """建立可供固定 VG 规则消费的可信源码事实。
 
@@ -65,6 +69,7 @@ def build_vg_facts(
         root: 待扫描的 Verilog 文件或目录。
         spec: 可选的归一化设计规格。
         include_testbench: 是否把 testbench 纳入设计 RTL 检查。
+        external_interface_sources: 只为跨模块接口规则提供事实的 stub 来源。
     返回:
         包含源码、AST、解析错误和规格的不可变事实对象。
     """
@@ -132,6 +137,7 @@ def build_vg_facts(
         sources=tuple(list_sources),  # 稳定顺序的文件事实
         parse_errors=tuple(list_parse_errors),  # 所有阻断解析诊断
         spec=dict(spec or {}),  # 复制可选规格，隔离调用方后续修改
+        external_modules=_load_external_modules(external_interface_sources),
     )
 
 # build_vg_facts_from_reports 复用统一质量门的 AST，避免二次解析。
@@ -140,6 +146,7 @@ def build_vg_facts_from_reports(
     reports: list[dict[str, Any]],
     *,
     spec: dict[str, Any] | None = None,
+    external_interface_sources: tuple[Path, ...] = (),
 ) -> VgFacts:
     """复用统一质量门已经生成的 formatter AST 报告构建语义事实。
 
@@ -147,6 +154,7 @@ def build_vg_facts_from_reports(
         root: 本轮统一质量门的源文件或目录入口。
         reports: 已完成 formatter 解析的逐文件 AST 报告。
         spec: 可选归一化设计规格。
+        external_interface_sources: 只为跨模块接口规则提供事实的 stub 来源。
     返回:
         可供全部 VG 语义规则共享的不可变事实对象。
     """
@@ -204,7 +212,100 @@ def build_vg_facts_from_reports(
         sources=tuple(list_sources),  # 按既有 AST 报告顺序冻结文件事实
         parse_errors=tuple(list_parse_errors),  # 复用报告内的 formatter 错误集合
         spec=dict(spec or {}),  # 为语义规则复制可选设计合同
+        external_modules=_load_external_modules(external_interface_sources),  # VG097 外部接口集合
     )
+
+# 外部接口装载与普通 RTL 事实隔离，避免 stub 触发无关规则。
+def _load_external_modules(tuple_sources: tuple[Path, ...]) -> tuple[dict[str, Any], ...]:
+    """从显式 stub 来源读取 formatter 已确认的模块接口。
+
+    参数:
+        tuple_sources: 调用方明确提供的 Verilog stub 文件或目录。
+    返回:
+        仅含模块声明事实的不可变集合。
+    异常:
+        ValueError: stub 解析失败、模块名为空或来源中存在重复 module。
+    """
+
+    # 外部接口按调用顺序装载，重复名称交由消费规则 fail-closed。
+    list_modules: list[dict[str, Any]] = []  # 外部模块接口事实
+
+    # 已见名称阻止多个 stub 来源用遍历顺序互相覆盖。
+    set_module_names: set[str] = set()  # 外部接口中已经登记的 module 名称
+
+    # 每个显式来源独立通过 formatter AST，禁止宽松文本解析。
+    for path_source_root in tuple_sources:
+
+        # 目录和单文件都复用 formatter 的稳定 Verilog 发现顺序。
+        for path_source in iter_verilog_sources(path_source_root.resolve()):
+
+            # stub 必须通过同一 formatter AST，禁止引入宽松的第二解析器。
+            dict_report = build_ast_report_for_path(path_source)  # 外部 stub AST 报告
+
+            # 单文件 helper 集中处理解析错误、重名检查和模块登记。
+            _append_external_report_modules(
+                dict_report,
+                path_source,
+                list_modules,
+                set_module_names,
+            )
+
+    # 返回稳定顺序的外部模块接口。
+    return tuple(list_modules)
+
+# 单文件 stub 报告必须在登记前通过解析和名称唯一性检查。
+def _append_external_report_modules(
+    dict_report: dict[str, Any],
+    path_source: Path,
+    list_modules: list[dict[str, Any]],
+    set_module_names: set[str],
+) -> None:
+    """把一份可信 stub 报告追加到外部接口集合。
+
+    参数:
+        dict_report: formatter AST 生成的单文件报告。
+        path_source: 报告对应的 stub 来源路径。
+        list_modules: 等待追加的外部模块接口集合。
+        set_module_names: 已登记的外部 module 名称。
+    返回:
+        本函数原地更新集合，不返回业务值。
+    异常:
+        ValueError: 报告含解析错误、空模块名或重复模块名。
+    """
+
+    # formatter 错误使整个 stub 来源不可作为可信接口。
+    bool_has_error = any(  # 当前 stub 是否包含阻断解析诊断
+        dict_item.get("severity") == "error"  # error 级诊断会破坏接口可信度
+        for dict_item in dict_report.get("diagnostics", [])  # 当前 stub 的 formatter 诊断集合
+    )  # 阻断当前 stub 登记的解析状态
+
+    # 无法确认端口声明的 stub 必须阻断，不能静默退化为缺失接口。
+    if bool_has_error:
+
+        # 异常消息明确指出出错来源，供 CLI 转换为非零退出。
+        raise ValueError(
+            f"> ERR: [Python] External interface stub failed formatter parsing: {path_source}"
+        )
+
+    # 逐 module 检查重复名称后再加入隔离接口集合。
+    for dict_module in dict_report.get("modules", []):
+
+        # 空名称不具备可引用的接口身份。
+        str_module_name = str(dict_module.get("name") or "")  # 当前外部 module 名称
+
+        # 任意重复名称都使 stub 来源优先级不唯一。
+        if not str_module_name or str_module_name in set_module_names:
+
+            # fail-closed 阻止同名声明依赖输入顺序覆盖。
+            raise ValueError(
+                f"> ERR: [Python] Duplicate external interface module: {str_module_name or '<empty>'}"
+            )
+
+        # 名称确认唯一后登记，供后续来源冲突检查。
+        set_module_names.add(str_module_name)
+
+        # 只复制 module 接口事实，不把 stub 源码交给其他 VG 规则。
+        list_modules.append(dict_module)
 
 # iter_trusted_modules 只产出 formatter 已确认的 module span。
 def iter_trusted_modules(facts: VgFacts) -> Iterator[tuple[VgSourceFacts, dict[str, Any], str, int]]:
@@ -320,5 +421,8 @@ def _is_testbench_path(path_source: Path) -> bool:
     # 小写 POSIX 路径统一 Windows 与 Linux 判断行为。
     str_normalized = path_source.as_posix().lower()  # 当前文件的规范化分类路径
 
+    # 路径组件判断避免把平台分隔符编码进 testbench 目录规则。
+    set_path_parts = {str_part.lower() for str_part in path_source.parts}  # 当前文件的小写路径组件
+
     # 同时兼容 tb 目录、testbench 名称和 _tb 文件后缀。
-    return "/tb/" in str_normalized or "testbench" in str_normalized or path_source.stem.lower().endswith("_tb")
+    return "tb" in set_path_parts or "testbench" in str_normalized or path_source.stem.lower().endswith("_tb")

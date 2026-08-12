@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "template_only": true,
+  "requires_interface_review": true,
+  "review_sources": [
+    "generated HDL wrapper",
+    "XCI configuration",
+    "IP customization report",
+    "synthesis or elaboration log"
+  ],
+  "instructions": "Copy only the needed module objects, rename every *_example module to the exact instantiated name, and verify every parameter, port, direction, and width before rendering.",
+  "modules": [
+    {
+      "name": "vio_example",
+      "parameters": [
+        {"name": "C_PROBE_IN0_WIDTH", "value": "8"},
+        {"name": "C_PROBE_OUT0_WIDTH", "value": "8"}
+      ],
+      "ports": [
+        {"direction": "input", "name": "clk"},
+        {"direction": "input", "name": "probe_in0", "width": "C_PROBE_IN0_WIDTH-1:0"},
+        {"direction": "output", "name": "probe_out0", "width": "C_PROBE_OUT0_WIDTH-1:0"}
+      ]
+    },
+    {
+      "name": "ila_example",
+      "parameters": [
+        {"name": "C_PROBE0_WIDTH", "value": "32"},
+        {"name": "C_PROBE1_WIDTH", "value": "1"}
+      ],
+      "ports": [
+        {"direction": "input", "name": "clk"},
+        {"direction": "input", "name": "probe0", "width": "C_PROBE0_WIDTH-1:0"},
+        {"direction": "input", "name": "probe1", "width": "C_PROBE1_WIDTH-1:0"}
+      ]
+    },
+    {
+      "name": "clock_wizard_example",
+      "ports": [
+        {"direction": "input", "name": "clk_in1"},
+        {"direction": "input", "name": "reset"},
+        {"direction": "output", "name": "clk_out1"},
+        {"direction": "output", "name": "locked"}
+      ]
+    },
+    {
+      "name": "processor_system_reset_example",
+      "parameters": [
+        {"name": "C_NUM_BUS_RST", "value": "1"},
+        {"name": "C_NUM_PERP_RST", "value": "1"},
+        {"name": "C_NUM_INTERCONNECT_ARESETN", "value": "1"},
+        {"name": "C_NUM_PERP_ARESETN", "value": "1"}
+      ],
+      "ports": [
+        {"direction": "input", "name": "slowest_sync_clk"},
+        {"direction": "input", "name": "ext_reset_in"},
+        {"direction": "input", "name": "aux_reset_in"},
+        {"direction": "input", "name": "mb_debug_sys_rst"},
+        {"direction": "input", "name": "dcm_locked"},
+        {"direction": "output", "name": "mb_reset"},
+        {"direction": "output", "name": "bus_struct_reset", "width": "C_NUM_BUS_RST-1:0"},
+        {"direction": "output", "name": "peripheral_reset", "width": "C_NUM_PERP_RST-1:0"},
+        {"direction": "output", "name": "interconnect_aresetn", "width": "C_NUM_INTERCONNECT_ARESETN-1:0"},
+        {"direction": "output", "name": "peripheral_aresetn", "width": "C_NUM_PERP_ARESETN-1:0"}
+      ]
+    },
+    {
+      "name": "block_memory_generator_example",
+      "parameters": [
+        {"name": "C_ADDR_WIDTH", "value": "10"},
+        {"name": "C_DATA_WIDTH", "value": "32"}
+      ],
+      "ports": [
+        {"direction": "input", "name": "clka"},
+        {"direction": "input", "name": "ena"},
+        {"direction": "input", "name": "wea", "width": "C_DATA_WIDTH/8-1:0"},
+        {"direction": "input", "name": "addra", "width": "C_ADDR_WIDTH-1:0"},
+        {"direction": "input", "name": "dina", "width": "C_DATA_WIDTH-1:0"},
+        {"direction": "output", "name": "douta", "width": "C_DATA_WIDTH-1:0"}
+      ]
+    },
+    {
+      "name": "fifo_generator_example",
+      "parameters": [
+        {"name": "C_DATA_WIDTH", "value": "32"},
+        {"name": "C_COUNT_WIDTH", "value": "10"}
+      ],
+      "ports": [
+        {"direction": "input", "name": "rst"},
+        {"direction": "input", "name": "wr_clk"},
+        {"direction": "input", "name": "rd_clk"},
+        {"direction": "input", "name": "din", "width": "C_DATA_WIDTH-1:0"},
+        {"direction": "input", "name": "wr_en"},
+        {"direction": "input", "name": "rd_en"},
+        {"direction": "output", "name": "dout", "width": "C_DATA_WIDTH-1:0"},
+        {"direction": "output", "name": "full"},
+        {"direction": "output", "name": "empty"},
+        {"direction": "output", "name": "wr_data_count", "width": "C_COUNT_WIDTH-1:0"},
+        {"direction": "output", "name": "rd_data_count", "width": "C_COUNT_WIDTH-1:0"}
+      ]
+    },
+    {
+      "name": "axi_memory_mapped_example",
+      "parameters": [
+        {"name": "C_AXI_ADDR_WIDTH", "value": "32"},
+        {"name": "C_AXI_DATA_WIDTH", "value": "32"},
+        {"name": "C_AXI_ID_WIDTH", "value": "4"}
+      ],
+      "ports": [
+        {"direction": "input", "name": "s_axi_aclk"},
+        {"direction": "input", "name": "s_axi_aresetn"},
+        {"direction": "input", "name": "s_axi_awid", "width": "C_AXI_ID_WIDTH-1:0"},
+        {"direction": "input", "name": "s_axi_awaddr", "width": "C_AXI_ADDR_WIDTH-1:0"},
+        {"direction": "input", "name": "s_axi_awlen", "width": "7:0"},
+        {"direction": "input", "name": "s_axi_awsize", "width": "2:0"},
+        {"direction": "input", "name": "s_axi_awburst", "width": "1:0"},
+        {"direction": "input", "name": "s_axi_awvalid"},
+        {"direction": "output", "name": "s_axi_awready"},
+        {"direction": "input", "name": "s_axi_wdata", "width": "C_AXI_DATA_WIDTH-1:0"},
+        {"direction": "input", "name": "s_axi_wstrb", "width": "C_AXI_DATA_WIDTH/8-1:0"},
+        {"direction": "input", "name": "s_axi_wlast"},
+        {"direction": "input", "name": "s_axi_wvalid"},
+        {"direction": "output", "name": "s_axi_wready"},
+        {"direction": "output", "name": "s_axi_bid", "width": "C_AXI_ID_WIDTH-1:0"},
+        {"direction": "output", "name": "s_axi_bresp", "width": "1:0"},
+        {"direction": "output", "name": "s_axi_bvalid"},
+        {"direction": "input", "name": "s_axi_bready"},
+        {"direction": "input", "name": "s_axi_arid", "width": "C_AXI_ID_WIDTH-1:0"},
+        {"direction": "input", "name": "s_axi_araddr", "width": "C_AXI_ADDR_WIDTH-1:0"},
+        {"direction": "input", "name": "s_axi_arlen", "width": "7:0"},
+        {"direction": "input", "name": "s_axi_arsize", "width": "2:0"},
+        {"direction": "input", "name": "s_axi_arburst", "width": "1:0"},
+        {"direction": "input", "name": "s_axi_arvalid"},
+        {"direction": "output", "name": "s_axi_arready"},
+        {"direction": "output", "name": "s_axi_rid", "width": "C_AXI_ID_WIDTH-1:0"},
+        {"direction": "output", "name": "s_axi_rdata", "width": "C_AXI_DATA_WIDTH-1:0"},
+        {"direction": "output", "name": "s_axi_rresp", "width": "1:0"},
+        {"direction": "output", "name": "s_axi_rlast"},
+        {"direction": "output", "name": "s_axi_rvalid"},
+        {"direction": "input", "name": "s_axi_rready"}
+      ]
+    },
+    {
+      "name": "axi_stream_example",
+      "parameters": [
+        {"name": "C_AXIS_DATA_WIDTH", "value": "32"},
+        {"name": "C_AXIS_KEEP_WIDTH", "value": "4"},
+        {"name": "C_AXIS_USER_WIDTH", "value": "1"}
+      ],
+      "ports": [
+        {"direction": "input", "name": "s_axis_aclk"},
+        {"direction": "input", "name": "s_axis_aresetn"},
+        {"direction": "input", "name": "s_axis_tdata", "width": "C_AXIS_DATA_WIDTH-1:0"},
+        {"direction": "input", "name": "s_axis_tkeep", "width": "C_AXIS_KEEP_WIDTH-1:0"},
+        {"direction": "input", "name": "s_axis_tlast"},
+        {"direction": "input", "name": "s_axis_tuser", "width": "C_AXIS_USER_WIDTH-1:0"},
+        {"direction": "input", "name": "s_axis_tvalid"},
+        {"direction": "output", "name": "s_axis_tready"},
+        {"direction": "output", "name": "m_axis_tdata", "width": "C_AXIS_DATA_WIDTH-1:0"},
+        {"direction": "output", "name": "m_axis_tkeep", "width": "C_AXIS_KEEP_WIDTH-1:0"},
+        {"direction": "output", "name": "m_axis_tlast"},
+        {"direction": "output", "name": "m_axis_tuser", "width": "C_AXIS_USER_WIDTH-1:0"},
+        {"direction": "output", "name": "m_axis_tvalid"},
+        {"direction": "input", "name": "m_axis_tready"}
+      ]
+    },
+    {
+      "name": "gt_phy_example",
+      "parameters": [
+        {"name": "C_LANES", "value": "4"},
+        {"name": "C_DATA_WIDTH", "value": "32"}
+      ],
+      "ports": [
+        {"direction": "input", "name": "refclk_p"},
+        {"direction": "input", "name": "refclk_n"},
+        {"direction": "input", "name": "reset"},
+        {"direction": "input", "name": "rxp", "width": "C_LANES-1:0"},
+        {"direction": "input", "name": "rxn", "width": "C_LANES-1:0"},
+        {"direction": "output", "name": "txp", "width": "C_LANES-1:0"},
+        {"direction": "output", "name": "txn", "width": "C_LANES-1:0"},
+        {"direction": "input", "name": "tx_data", "width": "C_LANES*C_DATA_WIDTH-1:0"},
+        {"direction": "output", "name": "rx_data", "width": "C_LANES*C_DATA_WIDTH-1:0"},
+        {"direction": "output", "name": "tx_reset_done", "width": "C_LANES-1:0"},
+        {"direction": "output", "name": "rx_reset_done", "width": "C_LANES-1:0"}
+      ]
+    },
+    {
+      "name": "generic_ip_example",
+      "parameters": [
+        {"name": "C_INPUT_WIDTH", "value": "32"},
+        {"name": "C_OUTPUT_WIDTH", "value": "32"}
+      ],
+      "ports": [
+        {"direction": "input", "name": "clk"},
+        {"direction": "input", "name": "rst_n"},
+        {"direction": "input", "name": "input_data", "width": "C_INPUT_WIDTH-1:0"},
+        {"direction": "input", "name": "input_valid"},
+        {"direction": "output", "name": "input_ready"},
+        {"direction": "output", "name": "output_data", "width": "C_OUTPUT_WIDTH-1:0"},
+        {"direction": "output", "name": "output_valid"},
+        {"direction": "input", "name": "output_ready"}
+      ]
+    }
+  ]
+}

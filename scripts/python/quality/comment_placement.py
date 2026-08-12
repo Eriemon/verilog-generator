@@ -428,10 +428,10 @@ def _required_comment_is_available(
         # 同行注释是首选证据。
         return True
 
-    # always/initial 允许使用相邻纯注释说明过程块目的。
-    if str_construct == "always" and _valid_adjacent_comment(infos, index, comment_language):
+    # always 与 generate 都允许使用 formatter 保留的相邻纯注释说明块目的。
+    if str_construct in {"always", "generate"} and _valid_adjacent_comment(infos, index, comment_language):
 
-        # 邻接纯注释可替代 always 行内注释。
+        # 邻接纯注释可替代块关键字行内注释。
         return True
 
     # 其他强制注释构造必须在同一行给出说明。

@@ -1,7 +1,7 @@
 {
   "documents": [
     {
-      "content_sha256": "c8db92514760f75aeeeef4c11f1a5a2bb83bb3cea2801276470f89d04b2040a5",
+      "content_sha256": "b14c3b84670330a42cc9820e7eaac38139f2b3cb1b45f559f5d3df12fba81b54",
       "id": "document.skill",
       "keywords": [
         "route",
@@ -83,20 +83,22 @@
       "title": "Verilog Style Observations"
     },
     {
-      "content_sha256": "5e1054cc14f8e05bf5e63275a9aca8e21f744912999d1e2589dbe0b8ee9d0e95",
+      "content_sha256": "8bd03585b591e03a79dd21a073761747230d251e5fb36abc1642d847ffb64b84",
       "id": "document.references-integration-configuration",
       "keywords": [
         "settings",
         "dependencies",
         "remote",
         "toolchain",
-        "validation"
+        "validation",
+        "workspace",
+        "eval"
       ],
       "path": "references/integration/configuration.md",
-      "responsibility": "定义设置文件、依赖、验证、远程目标、工具链选择和运行目录配置合同。",
+      "responsibility": "定义设置文件、依赖、验证、远程目标、工具链选择、效果评估工作区和运行目录配置合同。",
       "source_anchor": "",
       "status": "current",
-      "summary": "本地与远程 Verilog 工作流配置合同。",
+      "summary": "本地、远程与效果评估 Verilog 工作流配置合同。",
       "title": "Configuration"
     },
     {
@@ -234,20 +236,22 @@
       "title": "Verilog Quality Gates"
     },
     {
-      "content_sha256": "47ba6878553ba4213f51ba623d41ec19d0f8703b4e7fdefcc24a7f32c8ca7aa7",
+      "content_sha256": "059f2153fdde590f9093919df56bab4e78ab27b7e86f935ea48df2acabf3e571",
       "id": "document.references-skill-script-guide",
       "keywords": [
         "SQLite",
         "FTS5",
         "registry",
         "query",
-        "governance"
+        "governance",
+        "stub",
+        "VG097"
       ],
       "path": "references/skill/script-guide.md",
-      "responsibility": "定义 SQLite 注册表查询、构建、文档治理与命令分类的紧凑入口。",
+      "responsibility": "定义 SQLite 注册表查询、构建、文档治理、命令分类与外部接口 stub 生成入口。",
       "source_anchor": "",
       "status": "current",
-      "summary": "自包含命令和文档注册表使用指南。",
+      "summary": "自包含命令、文档注册表与外部接口 stub 使用指南。",
       "title": "Script Guide"
     },
     {

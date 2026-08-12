@@ -89,6 +89,49 @@ def module_parameter_values(dict_module: dict[str, object]) -> dict[str, int]:
     # 返回可供区间和重复连接消费的整数表。
     return dict_values
 
+# module_instance_parameter_values 为实例覆盖解析补充父模块 localparam。
+def module_instance_parameter_values(dict_module: dict[str, object]) -> dict[str, int]:
+    """返回可供子实例参数覆盖引用的父模块整数常量。
+
+    参数:
+        dict_module: formatter AST 中的父模块报告。
+    返回:
+        parameter 与可确定 localparam 名称到整数值的映射。
+    """
+
+    # 原始常量集合同时包含 parameter 与 localparam，且保持声明覆盖顺序。
+    dict_constant_values = module_constant_values(dict_module)  # 父模块常量原文环境
+
+    # 实例 elaboration 可引用参数和模块体内已经声明的 localparam。
+    dict_values: dict[str, int] = {}  # 子实例可见的确定整数环境
+
+    # 逐项解析声明顺序确定的父模块常量。
+    for str_name, str_value in dict_constant_values.items():
+
+        # 先保留既有十进制截断语义。
+        int_value = parameter_integer(str_value)  # 当前父模块常量整数值
+
+        # 其他确定进制字面量通过统一比特解析器转换。
+        if int_value is None:
+
+            # 只接受不含未知态的定宽常量。
+            constant_bits = resolve_constant_bits(str_value, dict_constant_values)  # 当前父模块常量固定位模式
+
+            # 未知态不能作为确定的 elaboration 整数。
+            if constant_bits is not None and set(constant_bits.bits) <= {"0", "1"}:
+
+                # 二进制位模式转换为非负整数 elaboration 值。
+                int_value = int(constant_bits.bits, 2)  # 当前常量的非负整数值
+
+        # 只有确定整数才进入子实例可见的参数环境。
+        if int_value is not None:
+
+            # 名称沿用 formatter 提供的 parameter 或 localparam 标识符。
+            dict_values[str_name] = int_value  # 登记可引用父模块常量
+
+    # 返回不改变端口头参数表的实例专用环境。
+    return dict_values
+
 # InstanceSectionParser 复用 formatter 已验证的实例括号与顶层切分实现。
 class InstanceSectionParser(StatementRenderMixin, SyntaxUtilsMixin):
     """为 VG097 暴露 formatter 内部的纯实例结构解析能力。"""
@@ -277,12 +320,14 @@ def _parse_named_association(str_item: str) -> tuple[str, str] | None:
 def _instance_parameter_overrides(
     dict_child: dict[str, object],
     list_parameter_items: list[str],
+    dict_parent_parameters: dict[str, int] | None = None,
 ) -> dict[str, int] | None:
     """验证并解析当前实例的命名或位置参数覆盖。
 
     参数:
         dict_child: formatter AST 中的子模块声明。
         list_parameter_items: 已从实例参数区分离的顶层关联项。
+        dict_parent_parameters: 父模块中可供实例覆盖引用的整数 parameter。
     返回:
         已验证的整数参数覆盖；无法安全对应或求值时返回 None。
     """
@@ -311,11 +356,11 @@ def _instance_parameter_overrides(
         # 空覆盖表让 module_widths 保持原默认参数行为。
         return {}
 
-    # 命名与位置关联不能混用，否则顺序语义不可靠。
-    list_is_named = [str_item.lstrip().startswith(".") for str_item in list_parameter_items]  # 每项是否为命名参数
+    # 关联模式 helper 集中拒绝命名与位置参数混用。
+    str_association_mode = _parameter_association_mode(list_parameter_items)  # 当前参数关联模式
 
     # 混合关联没有安全且一致的对应策略。
-    if any(list_is_named) and not all(list_is_named):
+    if str_association_mode is None:
 
         # 禁止回退到默认参数掩盖混合关联。
         return None
@@ -324,7 +369,7 @@ def _instance_parameter_overrides(
     dict_overrides: dict[str, int] = {}  # 当前实例已验证参数覆盖
 
     # 命名参数按显式名称建立覆盖，不依赖书写顺序。
-    if all(list_is_named):
+    if str_association_mode == "named":
 
         # 每个命名关联独立验证名称、重复项和整数值。
         for str_item in list_parameter_items:
@@ -347,8 +392,11 @@ def _instance_parameter_overrides(
                 # 参数名称无法唯一对应声明时保持未知。
                 return None
 
-            # 实例参数仅接受受限整数常量，复杂表达式保持未知。
-            int_value = parameter_integer(str_expression)  # 当前命名参数整数值
+            # 统一 helper 限制符号放宽仅覆盖父模块已确认的单参数引用。
+            int_value = _instance_parameter_integer(  # 当前命名参数整数值
+                str_expression,  # 当前命名覆盖表达式
+                dict_parent_parameters,  # 可解析符号的父模块参数环境
+            )
 
             # 受限求值器不支持的表达式不能进入覆盖表。
             if int_value is None:
@@ -371,8 +419,11 @@ def _instance_parameter_overrides(
     # 位置参数严格按 formatter 保留的声明顺序对应。
     for int_index, str_expression in enumerate(list_parameter_items):
 
-        # 每个位置表达式必须由受限整数求值器确认。
-        int_value = parameter_integer(str_expression)  # 当前位置参数整数值
+        # 位置参数与命名参数共享相同的受限父参数求值边界。
+        int_value = _instance_parameter_integer(  # 当前位置参数整数值
+            str_expression,  # 当前声明位置对应的覆盖表达式
+            dict_parent_parameters,  # 允许引用的父模块整数参数
+        )
 
         # 不可求值的位置表达式使整个参数环境未知。
         if int_value is None:
@@ -385,6 +436,81 @@ def _instance_parameter_overrides(
 
     # 返回全部已验证位置覆盖。
     return dict_overrides
+
+# _parameter_association_mode 区分全命名、全位置和禁止的混合关联。
+def _parameter_association_mode(list_parameter_items: list[str]) -> str | None:
+    """确定实例参数关联是否采用单一模式。
+
+    参数:
+        list_parameter_items: 实例参数区中的顶层关联项。
+    返回:
+        全命名返回 named，全位置返回 positional，混合形式返回 None。
+    """
+
+    # 每项是否以点号开头决定命名或位置关联。
+    list_is_named = [str_item.lstrip().startswith(".") for str_item in list_parameter_items]  # 关联类型标记
+
+    # 全部带点号时采用命名参数关联。
+    if all(list_is_named):
+
+        # 调用方按显式名称验证参数。
+        return "named"
+
+    # 全部不带点号时采用声明顺序位置关联。
+    if not any(list_is_named):
+
+        # 调用方按 parameter 声明顺序验证参数。
+        return "positional"
+
+    # 混合两种关联方式时无法建立唯一参数环境。
+    return None
+
+# _instance_parameter_integer 只解析字面量或父模块中的单个已知 parameter。
+def _instance_parameter_integer(
+    str_expression: str,
+    dict_parent_parameters: dict[str, int] | None,
+) -> int | None:
+    """在不放宽复杂算术的前提下解析实例参数。
+
+    参数:
+        str_expression: 实例参数关联中的原始表达式。
+        dict_parent_parameters: 父模块已确认的整数 parameter。
+    返回:
+        可确定的整数值；未知或复杂表达式返回 None。
+    """
+
+    # 原求值器继续负责裸十进制和定宽十进制常量。
+    int_value = parameter_integer(str_expression)  # 已支持字面量结果
+
+    # 确定二、八、十六进制定宽字面量也可直接用于实例覆盖。
+    if int_value is None:
+
+        # 统一比特解析器拒绝 x、z 和超宽不确定形式。
+        constant_bits = resolve_constant_bits(str_expression, {})  # 当前实例覆盖固定位模式
+
+        # 未知态不能作为确定的实例参数覆盖。
+        if constant_bits is not None and set(constant_bits.bits) <= {"0", "1"}:
+
+            # 确定比特模式转换为 elaboration 使用的非负整数。
+            int_value = int(constant_bits.bits, 2)  # 当前覆盖表达式的非负整数值
+
+    # 已经确定的字面量无需查询父模块环境。
+    if int_value is not None:
+
+        # 保持原有字面量截断语义。
+        return int_value
+
+    # 只接纳父模块参数表中真实存在的完整标识符。
+    str_parameter_name = str_expression.strip()  # 候选父模块参数名
+
+    # 未知名称不能回退为任意表达式求值。
+    if str_parameter_name not in (dict_parent_parameters or {}):
+
+        # 复杂算术和未知名称继续 fail-closed。
+        return None
+
+    # 单个已知父参数通过共享常量求值器读取整数值。
+    return constant_integer(str_parameter_name, dict_parent_parameters or {})
 
 # _named_port_connections 只从已分离端口区读取命名连接。
 def _named_port_connections(list_port_items: list[str]) -> list[tuple[str, str]] | None:
@@ -434,17 +560,26 @@ def module_widths(
     # widths 为未知区间显式保留 None，供规则传播 inconclusive。
     dict_widths: dict[str, int | None] = {}  # 当前 module 的标识符位宽表
 
-    # parameter 整数用于解析符号区间端点。
-    dict_parameter_values = module_parameter_values(dict_module)  # 解析声明区间使用的整数参数环境
+    # 端口头部只能引用 header parameter，不能前向引用模块体 localparam。
+    dict_parameter_values = module_parameter_values(dict_module)  # 解析端口区间使用的整数参数环境
+
+    # 内部声明位于 localparam 之后时可以引用模块体内的确定整数常量。
+    dict_decl_parameter_values = module_instance_parameter_values(dict_module)  # 内部声明可见的整数常量环境
 
     # 实例级覆盖只在调用方完成参数名和表达式验证后替换默认值。
     if parameter_overrides is not None:
 
-        # 复制传入整数值，保持无覆盖调用方的既有行为不变。
+        # 覆盖值同时影响实例端口和该实例内部由 parameter 派生的声明。
         dict_parameter_values.update(parameter_overrides)
 
-    # 端口和内部声明共享相同 width 字段解析规则。
-    for str_collection in ("ports", "decls"):
+        # 内部声明必须使用同一实例的参数覆盖环境。
+        dict_decl_parameter_values.update(parameter_overrides)
+
+    # 端口和内部声明共享解析器，但使用符合各自可见性的符号环境。
+    for str_collection, dict_visible_values in (
+        ("ports", dict_parameter_values),
+        ("decls", dict_decl_parameter_values),
+    ):
 
         # 每条声明独立计算静态位宽。
         for dict_item in dict_module.get(str_collection, []) or []:
@@ -452,7 +587,7 @@ def module_widths(
             # 未知位宽仍登记名称，便于区分已声明信号与未知符号。
             dict_widths[str(dict_item.get("name") or "")] = parse_width(  # 登记声明信号位宽
                 str(dict_item.get("width") or ""),  # formatter 保留的区间文本
-                dict_parameter_values,  # 区间表达式可引用的整数参数
+                dict_visible_values,  # 当前声明位置可见的整数常量
             )
 
     # localparam 的常量结果宽度也可参与表达式比较。
@@ -461,7 +596,7 @@ def module_widths(
         # 仅支持定宽字面量和受限重复连接。
         dict_widths[str(dict_item.get("name") or "")] = constant_width(  # 登记局部常量位宽
             str(dict_item.get("value") or ""),  # localparam 原始常量文本
-            dict_parameter_values,  # 重复次数可引用的整数参数
+            dict_decl_parameter_values,  # 重复次数可引用参数和先前 localparam
         )
 
     # 返回当前 formatter module 的完整简单位宽环境。

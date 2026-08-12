@@ -79,7 +79,10 @@ def run_vg_semantic_gate(
     spec: dict[str, Any] | None = None,
     strict: bool = True,
     include_testbench: bool = False,
+
+    # 以下参数控制预构建事实和显式外部接口来源。
     facts: VgFacts | None = None,
+    external_interface_sources: tuple[Path, ...] = (),
 ) -> dict[str, Any]:
     """运行 VG072 至 VG145 语义门禁并返回 fail-closed 报告。
 
@@ -89,6 +92,7 @@ def run_vg_semantic_gate(
         strict: 是否让激活 WARNING 的非通过状态阻断交付。
         include_testbench: 是否把 testbench 文件纳入设计 RTL 检查。
         facts: 可选的预构建 VG 事实；提供时禁止再次解析 RTL。
+        external_interface_sources: 未提供预构建事实时装载的外部接口 stub 来源。
 
     返回:
         包含 74 条逐门禁结果、摘要和交付结论的字典。
@@ -105,6 +109,7 @@ def run_vg_semantic_gate(
         path_root,  # 待分析的规范 RTL 入口
         spec=spec,  # 可选设计规格
         include_testbench=include_testbench,  # testbench 纳入策略
+        external_interface_sources=external_interface_sources,  # 显式外部接口 stub
     )
 
     # 结果列表严格按 catalog 顺序保留全部激活和预留编号。

@@ -38,6 +38,15 @@ def create_parser() -> argparse.ArgumentParser:
     # 可选规格为位宽、时钟与接口类 VG 门禁提供合同事实。
     parser.add_argument("--spec", type=Path, help="Optional normalized Verilog spec JSON path.")
 
+    # 外部接口 stub 可重复提供，且只进入 VG097 跨模块位宽事实。
+    parser.add_argument(
+        "--external-interface-source",
+        action="append",
+        default=[],
+        type=Path,
+        help="Verilog stub file or directory used only by VG097; repeatable.",
+    )
+
     # 注释语言策略传给 quality gate。
     parser.add_argument("--comment-language", choices=("zh", "en"), default="zh")
 
@@ -121,6 +130,7 @@ def main() -> int:
         run_verilog_deliverable_gate,
         write_verilog_deliverable_gate_report,
     )
+    from scripts.python.quality.quality_gate import EXTERNAL_INTERFACE_SOURCES_SPEC_KEY
     from scripts.python.quality.quality_gate_common import ensure_runtime_visible_target_path
 
     # 解析命令行参数。
@@ -146,6 +156,15 @@ def main() -> int:
 
     # 规格只在调用方显式提供时读取，缺省保持纯 RTL 审查模式。
     dict_spec = json.loads(args.spec.read_text(encoding="utf-8")) if args.spec is not None else None  # 可选 VG 规格合同
+
+    # 外部接口来源通过运行时专用键进入质量门，并在事实构建前从设计规格中剥离。
+    if args.external_interface_source:
+
+        # 复制可选规格后再注入路径，避免改变已读取 JSON 对象的知识语义。
+        dict_spec = dict(dict_spec or {})  # 包含本轮运行时来源的规格载体
+
+        # 专用键只在质量门入口存活，随后会与设计规格分离。
+        dict_spec[EXTERNAL_INTERFACE_SOURCES_SPEC_KEY] = tuple(args.external_interface_source)  # 外部接口路径
 
     # 执行最终交付门禁。
     dict_report = run_verilog_deliverable_gate(  # 保存完整诊断、摘要计数和退出码依据

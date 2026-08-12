@@ -8,6 +8,9 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
+# re 只用于剥离 generate 实例前受 Verilog 语法允许的 attribute。
+import re
+
 # formatter 配置工厂提供唯一受控的 parser/backend 入口。
 from .formatter_backend import FormatterBackend, VerilogFormatterError
 from .formatter_config import create_formatter_backend
@@ -404,7 +407,101 @@ def _formatter_violations(
         # 违规文本仍由调用方展示，不转换为 AST error。
         return [str(exc)]
 
+# _instance_from_control_statement 对单个控制树叶子执行有界实例识别。
+def _instance_from_control_statement(formatter_engine: Any, str_statement: str) -> Any | None:
+    """识别 generate 控制树叶子中的实例。
+
+    参数:
+        formatter_engine: formatter 后端。
+        str_statement: 单条叶子语句。
+    返回:
+        实例模型或 ``None``。
+    """
+
+    # attribute 不是模块名的一部分，必须在实例起点识别前完整剥离。
+    str_instance_candidate = re.sub(  # 去除连续前导 attribute 后的实例候选
+        r"^(?:\s*\(\*.*?\*\)\s*)+",  # 仅匹配 statement 起始处的 attribute 块
+        "",  # attribute 不进入后端实例名解析
+        str_statement,  # 控制树已经隔离出的叶子 statement
+        flags=re.DOTALL,  # 允许 attribute 自身跨越物理行
+    )  # attribute 清理结果
+
+    # 规范候选行供实例起点识别。
+    list_normalized_lines = [
+        formatter_engine._normalize_statement_line(str_line.strip())  # 当前实例候选规范行
+        for str_line in str_instance_candidate.splitlines()  # attribute 后的 statement 行集合
+        if str_line.strip()  # 空行不参与实例起点判断
+    ]  # 有效实例候选行
+
+    # attribute 后没有可见语句时不存在实例模型。
+    if not list_normalized_lines:
+
+        # 空候选交回普通 statement 路径。
+        return None
+
+    # 首行提供模块名或参数起点。
+    str_first_line = list_normalized_lines[0]  # 实例候选首行
+
+    # 次行补足跨行参数化实例。
+    str_next_line = list_normalized_lines[1] if len(list_normalized_lines) > 1 else ""  # 实例候选次行
+
+    # 非实例 statement 不得交给实例元数据 parser 猜测。
+    if not formatter_engine._is_instance_start_line(str_first_line, str_next_line):
+
+        # 普通 assign 或声明继续由既有控制树语义处理。
+        return None
+
+    # 单实例 parser 只提取当前声明，不递归扫描 module body。
+    return formatter_engine._parse_instance_block("\n".join(list_normalized_lines))
+
 # _parse_module_with_formatter 把 formatter module 模型转成稳定 JSON 字典。
+def _instances_from_control_nodes(formatter_engine: Any, list_nodes: list[Any]) -> list[Any]:
+    """按源码顺序收集 generate 控制树中的实例。
+
+    参数:
+        formatter_engine: formatter 后端。
+        list_nodes: generate 控制节点。
+    返回:
+        实例模型列表。
+    """
+
+    # 控制树遍历保持源码顺序，确保实例 span 后续可以稳定定位。
+    list_instances: list[Any] = []  # generate 内实例块
+
+    # 逐节点保留 parser 给出的源码顺序，避免实例定位游标倒退。
+    for obj_node in list_nodes:
+
+        # statement 节点文本已排除 if/else 外壳，只需执行有界实例识别。
+        if str(obj_node.kind) == "statement" and str(obj_node.text).strip():
+
+            # 有界 helper 禁止把叶子 statement 重新解释成完整 module body。
+            obj_instance = _instance_from_control_statement(  # 当前叶子的可选实例模型
+                formatter_engine,  # 复用现有实例起点与单实例 parser
+                str(obj_node.text),  # 控制树隔离出的叶子 statement
+            )  # 有界识别结果
+
+            # 只有后端实例起点合同确认的声明才进入公开 AST。
+            if obj_instance is not None:
+
+                # 单个 statement 最多对应一个实例声明。
+                list_instances.append(obj_instance)
+
+        # 遍历普通分支。
+        for list_child_nodes in (obj_node.children, obj_node.alternate):
+
+            # 合并子分支实例。
+            list_instances.extend(_instances_from_control_nodes(formatter_engine, list_child_nodes))
+
+        # 遍历 case 分支。
+        for obj_case_item in obj_node.items:
+
+            # 合并 case 实例。
+            list_instances.extend(_instances_from_control_nodes(formatter_engine, obj_case_item.children))
+
+    # 返回保持控制树源码顺序的实例集合。
+    return list_instances
+
+# module 转换继续消费包含 generate 实例的统一集合。
 def _parse_module_with_formatter(formatter_engine: Any, module_text: str, *, index: int) -> dict[str, Any]:
     """解析单个 module section 并返回结构化字典。
 
@@ -455,6 +552,15 @@ def _parse_module_with_formatter(formatter_engine: Any, module_text: str, *, ind
     # localparam 集合保留参数声明顺序。
     list_localparams = [_param_to_dict(item) for item in dict_body_items.get("localparams", [])]  # 当前 module 的局部参数报告列表
 
+    # generate 内部的控制节点也需要向语义门禁暴露实例事实。
+    list_instances = list(dict_body_items.get("instances", []))  # module 全部可见实例
+
+    # 每个 generate 控制树按出现顺序合并内部实例。
+    for obj_generate in dict_body_items.get("generates", []) or []:
+
+        # 只对已经由 generate parser 确认的 statement 节点重用 body 实例解析。
+        list_instances.extend(_instances_from_control_nodes(formatter_engine, obj_generate.nodes))
+
     # 返回字段沿用 formatter AST quality gate 的既有契约。
     return {
         "index": index,
@@ -466,7 +572,7 @@ def _parse_module_with_formatter(formatter_engine: Any, module_text: str, *, ind
         "decls": list_declarations,
         "assigns": list_assigns,
         "always": list_always_blocks,
-        "instances": [_instance_to_dict(item) for item in dict_body_items.get("instances", [])],
+        "instances": [_instance_to_dict(item) for item in list_instances],
         "generates": [_block_to_dict(item) for item in dict_body_items.get("generates", [])],
         "initials": [_block_to_dict(item) for item in dict_body_items.get("initials", [])],
         "functions": [_block_to_dict(item) for item in dict_body_items.get("functions", [])],
@@ -1030,6 +1136,31 @@ def _attach_block_collection_spans(
 
     # 遍历当前块集合。
     for dict_item in dict_module.get(str_collection_name, []) or []:
+
+        # generate 需定位外层关键字。
+        if str_collection_name == "generates":
+
+            # 从前一块后继续查找。
+            int_line_index = _find_line_index_containing(list_module_lines, "generate", int_cursor)  # generate 起始索引
+
+            # 结束行从起点后查找。
+            int_end_index = _find_line_index_containing(list_module_lines, "endgenerate", int_line_index + 1)  # generate 结束索引
+
+            # 关键字完整时记录范围。
+            if int_line_index >= 0 and int_end_index >= int_line_index:
+
+                # 范围覆盖外层关键字。
+                _set_line_span(
+                    dict_item,
+                    int_module_line_start + int_line_index,
+                    int_module_line_start + int_end_index,
+                )
+
+                # 游标移到当前块后。
+                int_cursor = int_end_index + 1  # 后续 generate 的起点
+
+                # 跳过普通块估算。
+                continue
 
         # 选择可用于定位的文本片段。
         str_anchor = _block_anchor_text(dict_item)  # 当前块定位文本

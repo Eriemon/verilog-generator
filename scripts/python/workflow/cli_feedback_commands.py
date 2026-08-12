@@ -6,6 +6,7 @@ from __future__ import annotations
 # 标准库负责 argparse 命名空间与 JSON 文本输出。
 import argparse
 import json
+from pathlib import Path
 
 # 评估模块分别处理 trace 指标和 skill-effectiveness 指标。
 from scripts.python.validation.evaluation import write_eval_metrics
@@ -25,9 +26,21 @@ from scripts.python.existing_rtl.optimizer import build_prompt_memory, optimize_
 
 # 共享 helper 负责 JSON 读取和状态记录。
 from .cli_support import read_json, record_state
-from .spec import read_spec
+
+# 规格模块提供统一 CLI 输入错误和规格读取。
+from .spec import SpecError, read_spec
+
+# trace 模块读取工作流追踪记录。
 from .trace import read_trace
-from .workspace import require_workspace_path, require_write_path, write_json, write_text
+
+# 工作区模块集中执行读写边界与临时根覆盖。
+from .workspace import (
+    require_workspace_path,
+    require_write_path,
+    use_workspace_root,
+    write_json,
+    write_text,
+)
 
 # cmd_reflect 根据验证报告生成修复 prompt 和诊断材料。
 def cmd_reflect(args: argparse.Namespace) -> int:
@@ -212,11 +225,11 @@ def cmd_eval(args: argparse.Namespace) -> int:
     return 0
 
 # cmd_eval_skill 运行 skill-effectiveness 评价集。
-def cmd_eval_skill(args: argparse.Namespace) -> int:
-    """处理 eval-skill 子命令并生成技能有效性报告。
+def _run_eval_skill_in_workspace(args: argparse.Namespace) -> int:
+    """在当前工作区边界内执行技能效果评估。
 
     参数:
-        args: argparse 解析出的 eval-skill 命名空间，包含 evals、out、remote_runs_json 和 require_remote。
+        args: argparse 解析出的 eval-skill 命名空间。
 
     返回:
         命令退出码；summary.ok 为真时返回 0，否则返回 1。
@@ -228,8 +241,21 @@ def cmd_eval_skill(args: argparse.Namespace) -> int:
     # eval-skill 输出路径保存完整评价报告。
     path_output = require_write_path(args.out, purpose="skill effectiveness output")  # skill 有效性报告路径
 
-    # remote runs 可选注入远程验证证据。
-    dict_remote_runs = read_json(args.remote_runs_json) if args.remote_runs_json else None  # 远程验证运行摘要
+    # 缺省不加载远程报告，保持该证据源为可选输入。
+    path_remote_runs: Path | None = None  # 已验证的远程运行报告路径
+
+    # 远程报告存在时也必须落在当前工作区边界内。
+    if args.remote_runs_json:
+
+        # 解析并验证可选远程报告，禁止直接读取未受控路径。
+        path_remote_runs = require_workspace_path(  # 当前工作区内的远程报告绝对路径
+            args.remote_runs_json,  # 调用方提供的远程报告路径
+            purpose="remote runs report",  # 路径错误使用的职责标签
+            must_exist=True,  # 远程报告必须在读取前存在
+        )
+
+    # remote runs 可选注入已经通过路径门禁的远程验证证据。
+    dict_remote_runs = read_json(path_remote_runs) if path_remote_runs else None  # 远程验证运行摘要
 
     # evaluate_skill_effectiveness 产出 summary.ok 作为命令退出依据。
     dict_report = evaluate_skill_effectiveness(  # 汇总每个 eval case 的技能有效性报告
@@ -247,6 +273,64 @@ def cmd_eval_skill(args: argparse.Namespace) -> int:
 
     # summary.ok 是 eval-skill 的唯一成功判据。
     return 0 if bool_report_ok else 1
+
+# cmd_eval_skill 只在调用方明确指定时扩大源码仓库内的路径边界。
+def cmd_eval_skill(args: argparse.Namespace) -> int:
+    """处理 eval-skill 子命令并按需采用显式工作区根。
+
+    参数:
+        args: argparse 解析出的 eval-skill 命名空间，可包含 workspace_root。
+
+    返回:
+        命令退出码；summary.ok 为真时返回 0，否则返回 1。
+    异常:
+        SpecError: 显式工作区根不存在、无法解析或不是目录。
+    """
+
+    # 未提供新参数时直接沿用现有工作区边界，保持安装副本行为不变。
+    path_workspace_root_argument = getattr(args, "workspace_root", None)  # 调用方显式工作区根
+
+    # 缺省调用不进入 ContextVar 覆盖，兼容既有直接处理器调用。
+    if path_workspace_root_argument is None:
+
+        # 直接执行当前边界内的既有评估流程。
+        return _run_eval_skill_in_workspace(args)
+
+    # 显式根必须在进入路径解析上下文前完成存在性规范化。
+    try:
+
+        # strict 解析同时消除符号链接并验证路径存在。
+        path_workspace_root = Path(path_workspace_root_argument).resolve(strict=True)  # 规范化后的显式根
+
+    # 缺失根转换成 CLI 统一捕获的规格错误。
+    except FileNotFoundError:
+
+        # 抛出当前 CLI 主入口能够转换成输入错误的异常。
+        raise SpecError(
+            f"> ERR: [Python] workspace root does not exist: {path_workspace_root_argument}"
+        ) from None
+
+    # 其他路径解析错误也不得把原始异常泄漏为 traceback。
+    except OSError as exc:
+
+        # 保留操作系统原因，帮助用户定位权限或路径设备问题。
+        raise SpecError(
+            f"> ERR: [Python] workspace root cannot be resolved: {path_workspace_root_argument}: {exc}"
+        ) from None
+
+    # 普通文件不能作为目录边界，避免后续相对路径产生含混语义。
+    if not path_workspace_root.is_dir():
+
+        # 文件型路径以统一规格错误拒绝，不进入 ContextVar。
+        raise SpecError(
+            f"> ERR: [Python] workspace root must be a directory: {path_workspace_root_argument}"
+        )
+
+    # ContextVar 作用域覆盖所有输入、输出、评估和 state 写入，并在退出时恢复。
+    with use_workspace_root(path_workspace_root):
+
+        # 在显式边界内执行完整评估，并由上下文管理器负责恢复。
+        return _run_eval_skill_in_workspace(args)
 
 # _read_reflection_report 汇总 reflect 支持的两种报告输入。
 def _read_reflection_report(args: argparse.Namespace) -> str:

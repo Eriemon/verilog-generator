@@ -25,5 +25,5 @@
   },
   "generated_database": "registry.sqlite3",
   "fts_tokenizer": "trigram",
-  "public_entrypoint_count": 40
+  "public_entrypoint_count": 42
 }

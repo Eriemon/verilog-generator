@@ -12,25 +12,19 @@ from typing import Callable
 # facts 提供可信 module 文本和结构化 always、声明事实。
 from .vg_semantic_facts import VgFacts, iter_trusted_modules
 
+# 实例规则独立负责 VG097 端口连接位宽检查。
+from .vg_instance_rules import _connection_port_width_match
+
 # models 统一逐门禁状态和定位证据。
 from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passed
 
 # reset rules 提供统一的复位、清零和置位名称角色判断。
 from .vg_reset_rules import is_reset_control_name
 
-# 实例事实 helper 负责参数覆盖和真实端口区的结构化解析。
-from .vg_value_facts import (
-    _instance_parameter_overrides,
-    _named_port_connections,
-    _parse_instance_sections,
-)
-
 # 共享位宽事实确保实例连接与表达式规则采用同一受限求值语义。
 from .vg_value_facts import (
     constant_integer,
-    expression_width,
     module_parameter_values,
-    module_widths,
 )
 
 # 确定数位的定宽字面量在标识符提取前作为原子常量处理。
@@ -262,167 +256,6 @@ def _synth_no_reset_override(facts: VgFacts) -> VgEvaluation:
 
     # 确定覆盖指令优先返回失败。
     return failed(*list_findings) if list_findings else passed(applicable=bool_applicable)
-
-# _connection_port_width_match 比较已解析子模块端口与父模块连接信号位宽。
-def _connection_port_width_match(facts: VgFacts) -> VgEvaluation:
-    """检查命名实例连接两侧的静态可知位宽。
-
-    参数:
-        facts: formatter AST 构建的可信扫描事实。
-    返回:
-        已知连接的位宽匹配结论，或静态事实不足时的不确定结论。
-    """
-
-    # module 名称映射只来自本轮 formatter AST，外部接口保持未知。
-    dict_modules = {
-        str(dict_module.get("name") or ""): dict_module  # module 名称对应其 formatter 结构事实
-        for _, dict_module, _, _ in iter_trusted_modules(facts)  # 遍历可信 module 生成接口索引
-    }  # 本轮扫描可见的 module 接口
-
-    # findings 收集所有确定的实例端口位宽冲突。
-    list_findings: list[VgFinding] = []  # 实例端口位宽冲突证据
-
-    # applicable 区分“没有实例”与“实例已被实际检查”。
-    bool_applicable = False  # 是否发现模块实例
-
-    # unknown 防止外部接口或复杂表达式被错误报告为通过。
-    bool_unknown = False  # 是否存在外部接口或复杂连接表达式
-
-    # 父模块声明表用于解析连接表达式位宽。
-    for source_facts, dict_parent, _, _ in iter_trusted_modules(facts):
-
-        # 建立当前父模块中可静态求值的信号位宽表。
-        dict_parent_widths = module_widths(dict_parent)  # 父模块信号位宽表
-
-        # formatter AST 保留每个实例的模块名、原文和行号。
-        for dict_instance in dict_parent.get("instances", []) or []:
-
-            # 发现实例后，本规则对当前扫描目标具有适用性。
-            bool_applicable = True  # 发现实例即进入连接检查
-
-            # 读取实例引用的子模块名称，以查询本轮接口事实。
-            str_child_name = str(dict_instance.get("module_name") or "")  # 被例化模块名
-
-            # 缺失的子模块定义必须进入未知分支，不能猜测端口宽度。
-            dict_child = dict_modules.get(str_child_name)  # 本轮可见的子模块接口
-
-            # 外部 IP 或缺失模块接口无法静态比较。
-            if dict_child is None:
-
-                # 标记外部模块接口不足，最终返回不确定结论。
-                bool_unknown = True  # 当前实例缺少可解析的子模块定义
-
-                # 该实例没有可靠接口事实，跳过其连接比较。
-                continue
-
-            # 保留实例原文用于结构化分离参数区和端口区。
-            str_instance_text = str(dict_instance.get("text") or "")  # formatter 保留的实例原文
-
-            # 配对括号解析确保参数关联不会进入端口连接比较。
-            tuple_sections = _parse_instance_sections(str_instance_text, str_child_name)  # 参数区与端口区解析结果
-
-            # 无法稳定分区的实例不能继续比较连接位宽。
-            if tuple_sections is None:
-
-                # 标记当前实例结构事实不足。
-                bool_unknown = True  # 当前实例参数区或端口区无法可靠分离
-
-                # 跳过缺少可靠实例分区的当前实例。
-                continue
-
-            # 参数覆盖和端口项来自互不重叠的实例文本区间。
-            list_parameter_items, list_port_items = tuple_sections  # 当前实例参数项与端口项
-
-            # 当前受限求值器无法安全处理的参数关联必须 fail-closed。
-            dict_parameter_overrides = _instance_parameter_overrides(dict_child, list_parameter_items)  # 当前实例参数覆盖
-
-            # 未知名称、表达式或对应关系使当前实例参数环境未知。
-            if dict_parameter_overrides is None:
-
-                # 禁止在参数解析失败后继续使用子模块默认值。
-                bool_unknown = True  # 当前实例参数覆盖无法安全解析
-
-                # 跳过没有可靠参数环境的当前实例。
-                continue
-
-            # 子模块端口宽度使用默认参数叠加当前实例已验证覆盖。
-            dict_child_widths = module_widths(  # 当前实例参数环境下的子模块端口位宽表
-                dict_child,  # 子模块 formatter AST 声明事实
-                parameter_overrides=dict_parameter_overrides,  # 替换声明默认值的整数映射
-            )
-
-            # 只解析真正端口区中的完整命名连接。
-            list_connections = _named_port_connections(list_port_items)  # 端口名与连接表达式列表
-
-            # 位置连接或无法提取的连接列表保持未知。
-            if list_connections is None or not list_connections:
-
-                # 无命名连接事实时保留不确定状态。
-                bool_unknown = True  # 当前实例的连接形式无法可靠解析
-
-                # 不能安全对应端口名，停止检查当前实例。
-                continue
-
-            # 每个命名端口连接独立比较。
-            for str_port_name, str_expression in list_connections:
-
-                # 去除外围空白，避免空连接被误当成普通表达式。
-                str_expression = str_expression.strip()  # 去除连接表达式外围空白
-
-                # 显式空连接不携带可比较位宽。
-                if not str_expression:
-
-                    # 空连接没有驱动表达式，无需执行宽度比较。
-                    continue
-
-                # 查询子模块声明中该命名端口的静态宽度。
-                int_port_width = dict_child_widths.get(str_port_name)  # 子模块端口位宽
-
-                # 使用父模块信号表计算实际连接表达式的静态宽度。
-                int_signal_width = expression_width(str_expression, dict_parent_widths)  # 父模块连接位宽
-
-                # 参数关联、未知端口或复杂表达式都必须保留不确定状态。
-                if int_port_width is None or int_signal_width is None:
-
-                    # 任一侧宽度不可知时禁止形成确定通过结论。
-                    bool_unknown = True  # 当前命名连接缺少完整静态位宽事实
-
-                    # 跳过无法可靠比较的当前连接。
-                    continue
-
-                # 两侧宽度一致时继续检查其他连接。
-                if int_port_width == int_signal_width:
-
-                    # 当前连接已确认同宽，继续检查其余端口。
-                    continue
-
-                # 实例 AST span 提供稳定的一基定位。
-                int_line = int(dict_instance.get("line_start") or dict_parent.get("line_start") or 1)  # 位宽冲突实例的一基行号
-
-                # 记录确定的两侧位宽冲突及其连接原文。
-                list_findings.append(
-                    VgFinding(
-                        source_facts.relative_path,
-                        int_line,
-                        "模块端口与实例连接信号位宽不一致。",
-                        f".{str_port_name}({str_expression})",
-                    )
-                )
-
-    # 确定冲突优先于同一目标中的未知连接。
-    if list_findings:
-
-        # 返回全部已确认的端口连接位宽冲突。
-        return failed(*list_findings)
-
-    # 存在未解析接口或表达式时不得报告确定通过。
-    if bool_unknown:
-
-        # 保留静态事实不足状态，避免把未知连接误判为同宽。
-        return inconclusive("存在无法静态确定的模块接口或连接表达式位宽。")
-
-    # 全部可见命名连接均同宽，或目标没有实例。
-    return passed(applicable=bool_applicable)
 
 # _synth_no_full_case_attr 禁止以 full_case 指令替代 RTL 默认分支。
 def _synth_no_full_case_attr(facts: VgFacts) -> VgEvaluation:
