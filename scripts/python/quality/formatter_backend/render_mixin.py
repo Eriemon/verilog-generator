@@ -1043,11 +1043,17 @@ class RenderMixin:
                 # 新区域追加到输出顺序中。
                 list_regions.append(region)
 
-        # 旧版输出要求 initial_block 在 instance_block 前，缺省时主动补齐。
+        # 初始块保持在实例区和参数检查区之前，确保参数检查区可以固定收敛到模块末尾。
         if "initial_block" not in list_regions:
 
+            # 参数检查区存在时，initial 必须插在参数检查区之前。
+            if "parameter_check" in list_regions:
+
+                # 参数检查区需要保持模块内部最后一区。
+                list_regions.insert(list_regions.index("parameter_check"), "initial_block")
+
             # instance 区域存在时，initial 应插入到实例化之前。
-            if "instance_block" in list_regions:
+            elif "instance_block" in list_regions:
 
                 # 保持旧 formatter 对 initial 和 instance 的相对顺序。
                 list_regions.insert(list_regions.index("instance_block"), "initial_block")
@@ -2241,14 +2247,38 @@ class RenderMixin:
             # 空字符串表示不改变当前标签 cluster。
             return ""
 
+        # group 与 subgroup 需要先合并成输出镜像真正使用的一级标签。
+        str_group_text = layout.group  # 输出镜像标签的一级分组文本
+
+        # subgroup-first 的协议槽位优先复用端口区同一套横幅标题推导逻辑。
+        if layout.subgroup_mode == "subgroup_first" and layout.subgroup:
+
+            # 例如把 `用户接口` + `M_AXIS接口` 还原为 `用户接口m`。
+            str_slot_banner_title = self._derive_protocol_slot_banner_title(  # 协议槽位横幅标题
+                layout.group,  # 当前输出标签的一级分组文本
+                layout.subgroup,  # 当前输出标签的子分组文本
+            )
+
+            # 命中协议槽位横幅格式时直接使用端口区一致的一级标签。
+            if str_slot_banner_title:
+
+                # 输出镜像区沿用端口区已经验证过的槽位标题文本。
+                str_group_text = str_slot_banner_title  # 槽位归一后的一级标签文本
+
+        # 子分组存在且尚未并入 group 时，把二者拼成和端口区一致的槽位标签。
+        elif layout.subgroup and not str_group_text.endswith(layout.subgroup):
+
+            # 例如把 `用户接口` 与 `m` 组合成 `用户接口m`。
+            str_group_text = f"{str_group_text}{layout.subgroup}"  # group 与 subgroup 拼接后的槽位标签
+
         # group 和 section 同时存在时使用双段结构标签。
-        if layout.group and layout.section:
+        if str_group_text and layout.section:
 
             # 双段标签保持现有 `--` 分隔协议。
-            return f"{layout.group}--{layout.section}"
+            return f"{str_group_text}--{layout.section}"
 
         # 只存在一个维度时直接使用该维度标签。
-        return layout.group or layout.section
+        return str_group_text or layout.section
 
     # 实例亲和性标签组合 module、group 和 section 三个可选层级。
     def _format_signal_affinity_label(self, layout: InstanceSignalLayout | None) -> str:

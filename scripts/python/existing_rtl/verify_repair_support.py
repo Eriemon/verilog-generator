@@ -514,7 +514,7 @@ def diagnostic_inputs(
     if bool_executed and obj_validation_report.ok():
 
         # 保持旧测试依赖的完成标签。
-        list_simulation_lines.append("[TB_INFO] Simulation Finished!")
+        list_simulation_lines.append(" > INFO: [Verilog] [TB_INFO] Simulation Finished!")
 
         # 保持机器可读 PASS 结果。
         list_simulation_lines.append('VERILOG-GEN-RESULT {"case_id":"nominal","status":"PASS","outputs":{}}')

@@ -30,7 +30,7 @@ module comb_parity_mux_tb;	//模块声明，定义当前 mock 设计单元。
 		if (o_parity !== ^o_y) begin	//条件判断语句，区分复位或运行路径。
 			$fatal(1, "FAIL: parity output mismatch when selector is 1");	//普通语句，保持 mock 示例的结构可审查。
 		end	//结束当前 begin-end 代码块。
-		$display("PASS: self-checking mock testbench completed");	//成功摘要输出，向仿真日志报告结果。
+		$display(" > INFO: [Verilog] self-checking mock testbench completed.");	//成功摘要输出，向仿真日志报告结果。
 		$finish;	//普通语句，保持 mock 示例的结构可审查。
 	end	//结束当前 begin-end 代码块。
 endmodule	//结束当前模块，收束当前 mock 设计单元。

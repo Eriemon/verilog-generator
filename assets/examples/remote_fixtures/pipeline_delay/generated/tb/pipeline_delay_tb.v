@@ -30,7 +30,7 @@ module pipeline_delay_tb;	//模块: mock生成模块 - 承载Verilog工作流样
 		if (value !== EXPECTED_VALUE) begin	//条件分支: mock条件 - 选择复位或运行路径
 			$fatal(1, "FAIL: value checkpoint mismatch");	//语义说明: mock代码 - 保持样例可审查
 		end	//结束代码块: mock流程
-		$display("PASS: self-checking mock testbench completed");	//结果输出: mock测试 - 打印PASS或FAIL
+		$display(" > INFO: [Verilog] self-checking mock testbench completed.");	//结果输出: mock测试 - 打印PASS或FAIL
 		$finish;	//语义说明: mock代码 - 保持样例可审查
 	end	//结束代码块: mock流程
 endmodule	//结束模块: mock生成模块

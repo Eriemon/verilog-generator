@@ -385,7 +385,7 @@ def _mock_common_tb_tail_lines() -> list[str]:
     list_lines.append("\t\tend")
 
     # 自检全部通过时打印 PASS 摘要。
-    list_lines.append('\t\t$display("PASS: self-checking mock testbench completed");')
+    list_lines.append('\t\t$display(" > INFO: [Verilog] self-checking mock testbench completed.");')
 
     # 主动结束仿真。
     list_lines.append("\t\t$finish;")
@@ -810,7 +810,7 @@ def _mock_comb_tb_tail_lines() -> list[str]:
     """
 
     # list_lines 只保存组合路径全部断言通过后的退出脚本。
-    list_lines = ['\t\t$display("PASS: self-checking mock testbench completed");']  # 组合自检通过日志
+    list_lines = ['\t\t$display(" > INFO: [Verilog] self-checking mock testbench completed.");']  # 组合自检通过日志
 
     # 组合检查没有时钟收尾，PASS 后立即结束仿真。
     list_lines.append("\t\t$finish;")

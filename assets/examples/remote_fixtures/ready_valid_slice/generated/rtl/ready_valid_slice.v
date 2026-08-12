@@ -86,6 +86,7 @@ module ready_valid_slice
 	assign o_out_data = out_data_o;             // 输出数据总线桥接
 
 	//-------------输出信号处理区域-------------//
+	//用户接口
 	//输出有效标志寄存器更新逻辑
 	always@(posedge i_clk or negedge i_rstn)begin
 		if(i_rstn == 1'b0)begin

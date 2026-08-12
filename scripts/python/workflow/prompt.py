@@ -857,8 +857,9 @@ def _rtl_stage_guidance(
         "Honor the confirmed pipeline requirement.",  # 流水线承诺不能在 RTL 阶段丢失
         "If pipeline_required is true, do not emit a non-pipelined design.",  # 强制流水线需求优先于简化实现
         (
-            "Generate a self-checking Verilog testbench with explicit PASS/FAIL behavior "
-            "that mirrors the Python semantic model's verification vectors."
+            "Generate a self-checking Verilog testbench with explicit success/failure behavior "
+            "and unified human-readable `$display` prefixes that mirror the Python "
+            "semantic model's verification vectors."
         ),
         (
             f"The testbench must emit one machine-readable transcript line per case using "
@@ -1168,12 +1169,29 @@ def _rtl_style_rules(dict_spec: dict[str, Any], str_comment_language: str) -> li
         "Split sequential logic so that each `always` block assigns exactly one reg signal.",
         "Do not use `wire xxx = ...;`; declare the wire first and use a separate `assign` statement.",
         (
-            "Follow the exact 18-region source order: parameters, state parameters, instantiation signals, "
+            "Follow the fixed region order: parameters, state parameters, instantiation signals, "
             "counters, state signals, regs, flags, encoders, decoders, other signals, output signals, "
             "other assigns, output assigns, output processing, FSM, state transition processing, "
-            "main datapath processing, module instantiation."
+            "main datapath processing, generate blocks, initialization, module instantiation, "
+            "and finally parameter check when it exists."
         ),
-        "Place all module instantiations in the final source region, after every assign and always block.",
+        "Place the `参数检查区域` as the final internal region before `endmodule`.",
+        "Only emit `参数检查区域` when the spec or validated constraints provide "
+        "concrete parameter checks; never emit an empty shell block.",
+        "Human-readable Verilog `$display` text must use ` > INFO: [Verilog]`, "
+        "` > WARNING: [Verilog]`, or ` > ERR: [Verilog]`.",
+        "Machine-readable transcript tags such as `VERILOG-GEN-RESULT` stay "
+        "exempt from the human-readable prefix rule.",
+        "Treat AXI, AXIS, APB, AHB, UART, SPI, and I2C as first-class standardized bus families.",
+        (
+            "For repeated or grouped interfaces, treat explicit group comments as the truth source, "
+            "keep one explanatory comment immediately above each group, and leave exactly one blank line "
+            "between adjacent groups."
+        ),
+        (
+            "`输出信号`, `输出信号连线`, and `输出信号处理区域` must mirror the module interface "
+            "group labels and output signal order exactly."
+        ),
         "Prefer module instance names ending with `_Inst` and named `generate` labels beginning with `gen_`.",
         (
             "Preserve a header that includes version/revision/history fields, including version, "

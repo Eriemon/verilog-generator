@@ -834,7 +834,7 @@ def _append_start_monitor_lines(list_lines: list[str]) -> None:
         list_lines,
         (
             "    initial begin",
-            '        $display("[TB_MONITOR] Time: %0t | Starting tb_generator scaffold.", $time);',
+            '        $display(" > INFO: [Verilog] [TB_MONITOR] Time: %0t | Starting tb_generator scaffold.", $time);',
             "    end",
             "",
         ),
@@ -1048,7 +1048,7 @@ def _append_nominal_case_lines(
         # 写入输出观察 display。
         list_lines.append(
             (
-                f'        $display("[TB_DATA] Time: %0t | Observed '
+                f'        $display(" > INFO: [Verilog] [TB_DATA] Time: %0t | Observed '
                 f'{str_observed_output}=%0h", $time, {str_observed_output});'
             )
         )
@@ -1058,12 +1058,12 @@ def _append_nominal_case_lines(
         list_lines,
         (
             (
-                '        $display("[TB_DATA] Time: %0t | Scaffold observed nominal '
+                '        $display(" > INFO: [Verilog] [TB_DATA] Time: %0t | Scaffold observed nominal '
                 'output; add module-specific expected values before using as '
                 'self-checking evidence.", $time);'
             ),
             (
-                '        $fatal(1, "[TB_ERROR] Scaffold requires module-specific '
+                '        $fatal(1, "[TB_ERROR] FAIL: Scaffold requires module-specific '
                 'expected comparisons before PASS can be claimed.");'
             ),
             "",
@@ -1111,12 +1111,12 @@ def _append_boundary_case_lines(
         (
             "        #(CLK_PERIOD * 2);",
             (
-                '        $display("[TB_DATA] Time: %0t | Scaffold observed boundary '
+                '        $display(" > INFO: [Verilog] [TB_DATA] Time: %0t | Scaffold observed boundary '
                 'output; expected-value checks are still required.", $time);'
             ),
             "",
             "        #(CLK_PERIOD * 4);",
-            '        $display("[TB_INFO] Simulation Finished!");',
+            '        $display(" > INFO: [Verilog] [TB_INFO] Simulation Finished!");',
             "        $finish;",
             "    end",
             "",
@@ -1139,7 +1139,7 @@ def _append_timeout_lines(list_lines: list[str], tb_name: str) -> None:
         (
             "    initial begin",
             "        #(CLK_PERIOD * 200);",
-            '        $display("FAIL: simulation timeout");',
+            '        $display(" > ERR: [Verilog] simulation timeout");',
             "        $finish;",
             "    end",
             "",

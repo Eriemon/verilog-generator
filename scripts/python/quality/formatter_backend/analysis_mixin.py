@@ -2002,8 +2002,8 @@ class AnalysisMixin:
         :raises VerilogFormatterError: 遇到非参数检查系统任务语句时抛出。
         """
 
-        # tuple_allowed_tasks 限定 example-compat 可接受的参数检查系统任务。
-        tuple_allowed_tasks = ("$display", "$error", "$fatal", "$warning")  # 参数检查 initial 白名单任务
+        # tuple_allowed_tasks 限定 example-compat 可接受的参数检查与终止系统任务。
+        tuple_allowed_tasks = ("$display", "$error", "$fatal", "$warning", "$finish", "$stop")  # 参数检查 initial 白名单任务
 
         # 递归扫描参数检查控制树中的所有语句。
         for node in nodes:
@@ -2023,8 +2023,8 @@ class AnalysisMixin:
         # str_joined_text 用换行保留原始 initial 语句边界。
         str_joined_text = "\n".join(lines)  # initial 块合并文本
 
-        # 没有系统任务时不应按参数检查 initial 处理。
-        if not re.search(r"\$(display|error|fatal|warning)\b", str_joined_text):
+        # 没有参数检查或终止系统任务时不应按参数检查 initial 处理。
+        if not re.search(r"\$(display|error|fatal|warning|finish|stop)\b", str_joined_text):
 
             # 缺少可见参数检查任务，保持普通 initial 校验路径。
             return False
@@ -2328,6 +2328,8 @@ class AnalysisMixin:
 
                 # 接口分组字段决定内部信号渲染靠近哪个用户接口区域。
                 group=port.group,  # 用户接口分组用于内部信号继承
+                subgroup=port.subgroup,  # 更细的接口槽位标签也要继续传给内部输出区
+                subgroup_mode=port.subgroup_mode,  # 输出镜像区也要沿用端口的槽位展示策略
                 section=port.section,  # 后续渲染区域跟随端口原始 section
 
                 # 声明形态字段让合成内部信号保持端口宽度和维度语义。

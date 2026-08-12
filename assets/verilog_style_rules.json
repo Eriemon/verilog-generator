@@ -84,9 +84,9 @@
     "state_task",
     "main_task",
     "generate_block",
-    "parameter_check",
     "initial_block",
-    "instance_block"
+    "instance_block",
+    "parameter_check"
   ],
   "comments": {
     "line_comments_only": true,
@@ -170,6 +170,34 @@
       "verify comment-only"
     ]
   },
+  "runtime_messages": {
+    "human_readable_display_prefixes": [
+      " > INFO: [Verilog]",
+      " > WARNING: [Verilog]",
+      " > ERR: [Verilog]"
+    ],
+    "machine_transcript_prefixes": [
+      "VERILOG-GEN-RESULT"
+    ],
+    "parameter_check_final_internal_region": true,
+    "emit_parameter_check_only_with_provable_constraints": true
+  },
+  "generic_repeated_endpoints": {
+    "group_comment_truth_source": true,
+    "require_group_explanation_comment": true,
+    "exactly_one_blank_line_between_groups": true,
+    "low_confidence_classification": "error"
+  },
+  "output_mirror": {
+    "source_of_truth": "module_interface_output_groups",
+    "regions": [
+      "输出信号",
+      "输出信号连线",
+      "输出信号处理区域"
+    ],
+    "require_exact_group_label_match": true,
+    "require_exact_order_match": true
+  },
   "statements": {
     "port_kind_keywords_in_header": "forbidden in final style",
     "inline_wire_assign": "forbidden; split into wire declaration plus assign",
@@ -179,9 +207,19 @@
     "fsm_next_state_hold": "Default `state_next <= state_current;` before branch overrides; legacy `state_next = state_current;` remains gate-compatible during migration.",
     "fsm_next_state_branch_closure": "Every if / else if chain in next-state combinational logic must end with an explicit else branch.",
     "fsm_next_state_operator_style": "Prefer `state_next <= ...;` for newly generated next-state combinational logic; do not mass-rewrite legacy `=` solely for gate compatibility.",
-    "instances_last": true
+    "instances_last": true,
+    "parameter_check_overrides_instances_last": true
   },
   "protocols": {
+    "standard_bus_families": [
+      "axi",
+      "axis",
+      "apb",
+      "ahb",
+      "uart",
+      "spi",
+      "i2c"
+    ],
     "axi_sections": [
       "clock_reset",
       "aw",
@@ -204,10 +242,28 @@
       "request",
       "response"
     ],
+    "ahb_sections": [
+      "clock_reset",
+      "request",
+      "response"
+    ],
+    "axis_repeated_endpoint_contract": {
+      "global_groups": [
+        "时钟信号",
+        "复位信号"
+      ],
+      "slave_endpoint_pattern": "AXI-Stream Slave接口N",
+      "master_endpoint_pattern": "AXI-Stream Master接口",
+      "endpoint_subgroups": [
+        "控制通道",
+        "数据通道"
+      ]
+    },
     "known_protocols": [
       "axi",
       "axis",
       "apb",
+      "ahb",
       "wishbone",
       "uart",
       "spi",

@@ -15,6 +15,7 @@ The comment gate checks placement and basic usefulness at the code-entity level.
 - Leading comments for `always`, `function`, `task`, `generate`, `initial`, `case(state_current)` branches (`ST_*:begin` and `default:begin`), definition groups, and instances sit immediately above the target, align with the target start column, and have exactly one blank line above unless they directly follow a region banner.
 - If a pure comment introduces an `assign` subgroup, it is optional, but once written it must follow the same one-blank-line rule above the comment unless it directly follows a region banner or a stacked pure-comment group.
 - Parameter and signal definition sections require a pure group comment above each group. A region banner is only an anchor and does not satisfy the group-comment requirement. Module instances require a pure function comment above the instance.
+- When a `parameter_check` region exists, place it as the final internal region before `endmodule`, and keep each parameter-check branch comment adjacent to the concrete constraint it explains.
 - Entity comments must be unique to the hardware object they describe. Reusing the same sentence, a numbered variant, or a lightly edited template across parameters, ports, signals, assigns, procedural assignments, or instance mappings fails `VG066` in strict mode.
 
 ## Gate Ownership
@@ -33,13 +34,13 @@ The comment gate checks placement and basic usefulness at the code-entity level.
 - Signal: each `reg`, `wire`, `integer`, and `genvar` declaration uses a same-line comment explaining driver, purpose, or clock domain.
 - Assign: each `assign` line uses a same-line comment explaining the left-hand output and source semantics. If a pure comment introduces an `assign` subgroup, it follows the `VG067` one-blank-line-or-region-banner rule.
 - Region banner: banners are navigation only and never replace same-line comments on code statements.
-- Always and initial: a pure leading block-purpose comment is required for non-trivial blocks; it should explain combinational/sequential intent, trigger, target register family, or test phase.
+- Always and initial: a pure leading block-purpose comment is required for non-trivial blocks; it should explain combinational/sequential intent, trigger, target register family, or test phase. Parameter-check `initial` blocks should state which constraint family they enforce.
 - FSM and case: each FSM block has a fixed block comment; `case` comments name the selector; every `ST_*:begin` and `default:begin` branch under `case(state_current)` has a pure leading comment immediately above it, aligned with the branch label, and explains the transition or output behavior when the branch is not self-evident.
 - If and else: branch comments explain reset, enable, exception, or default behavior when that intent is not already clear from the nearby entity comment. Do not comment every `end` line mechanically.
 - Instance: add a pure leading instance-purpose comment; instance, parameter mapping, and port mapping lines use same-line comments.
 - Generate: branches use `gen_` labels and same-line comments; `endgenerate` names the generated structure being closed.
 - Task and function: generated RTL forbids `task` and `function`. Testbenches may use helpers only with a pure leading purpose comment plus same-line comments on declaration, body, local signals, and end lines.
-- Testbench statements: stimulus, checks, PASS/FAIL reporting, timeout, waveform setup, and finish calls use same-line comments explaining verification purpose.
+- Testbench statements: stimulus, checks, PASS/FAIL reporting, timeout, waveform setup, and finish calls use same-line comments explaining verification purpose. Human-readable Verilog `$display` messages must start with ` > INFO: [Verilog]`, ` > WARNING: [Verilog]`, or ` > ERR: [Verilog]`; machine-readable transcript tags such as `VERILOG-GEN-RESULT` stay exempt.
 
 ## Rejected Comment Forms
 

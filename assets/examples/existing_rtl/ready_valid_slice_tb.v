@@ -29,7 +29,7 @@ module tb_ready_valid_slice;
         #10 i_in_valid = 1'b1;
         i_in_data = 8'h3C;
         #10 i_in_valid = 1'b0;
-        #40 $display("PASS: legacy tb finished");
+        #40 $display(" > INFO: [Verilog] PASS: legacy tb finished.");
         $finish;
     end
 endmodule

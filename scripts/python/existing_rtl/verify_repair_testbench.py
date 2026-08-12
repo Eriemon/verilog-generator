@@ -719,7 +719,9 @@ def _append_monitor_block(
     list_monitor_lines.append("    initial begin")
 
     # 写入进入增强验证路径的第一条 monitor 日志。
-    list_monitor_lines.append('        $display("[TB_MONITOR] Time: %0t | Augmented verification entry.", $time);')
+    list_monitor_lines.append(
+        '        $display(" > INFO: [Verilog] [TB_MONITOR] Time: %0t | Augmented verification entry.", $time);'
+    )
 
     # 每个 checkpoint 输出一条 monitor 日志。
     for dict_target in list_checkpoints:
@@ -732,7 +734,8 @@ def _append_monitor_block(
 
         # 追加 monitor 行。
         list_monitor_lines.append(
-            f'        $display("[TB_MONITOR] Time: %0t | {str_check_id} | signals={str_signals}", $time);'
+            f'        $display(" > INFO: [Verilog] [TB_MONITOR] Time: %0t | '
+            f'{str_check_id} | signals={str_signals}", $time);'
         )
 
     # 结束 monitor initial 块。
@@ -780,7 +783,7 @@ def _append_data_block(
 
     # 输出采样语句保持原有日志格式，只拆出文本以消除超长行。
     str_data_display_line = (
-        f'        $display("[TB_DATA] Time: %0t | Observed {str_output_signal}=%0h", '  # display 格式前半段
+        f'        $display(" > INFO: [Verilog] [TB_DATA] Time: %0t | Observed {str_output_signal}=%0h", '  # display 格式前半段
         f"$time, {str_output_signal});"  # display 参数保持原输出信号采样
     )  # TB_DATA 输出采样 display 语句
 
@@ -883,7 +886,7 @@ def _append_completion_block(
     list_injected_blocks.extend(
         [
             "    initial begin",
-            '        $display("[TB_INFO] Simulation Finished!");',
+            '        $display(" > INFO: [Verilog] [TB_INFO] Simulation Finished!");',
             "    end",
             "",
         ]
@@ -926,7 +929,7 @@ def _append_watchdog_block(
         [
             "    initial begin",
             "        #(CLK_PERIOD * 200);",
-            '        $display("FAIL: simulation timeout");',
+            '        $display(" > ERR: [Verilog] simulation timeout");',
             "        $finish;",
             "    end",
             "",

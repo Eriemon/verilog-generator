@@ -179,8 +179,9 @@
       "state_task",
       "main_task",
       "generate_block",
-      "parameter_check",
-      "instance_block"
+      "initial_block",
+      "instance_block",
+      "parameter_check"
     ]
   },
   "always_rules": {

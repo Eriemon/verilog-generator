@@ -134,6 +134,12 @@ class OutputSignalLayout:
     # 协议分组用于把派生 signal 放回对应区域。
     group: str = ""  # 输出端口协议分组
 
+    # 子分组保留 AXIS m/s、UART tx/rx 一类更细的接口槽位标签。
+    subgroup: str = ""  # 输出端口协议子分组
+
+    # 子分组模式决定 subgroup 是否需要先转换成协议槽位横幅标题。
+    subgroup_mode: str = "section_first"  # 输出端口子分组展示策略
+
     # 小节标签保持 output 信号与端口块的通道一致。
     section: str = ""  # 输出信号小节标签
 

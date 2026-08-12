@@ -358,7 +358,7 @@ assign o_done = done_o;                      // output bridge
 
 ### 7.1 交付代码区域顺序
 
-formatter 默认启用 `enforce_region_order = true`，实例放最后。综合 `defaults.json`、源码 banner 与历史模板，模块内部应按以下顺序组织：
+formatter 默认启用 `enforce_region_order = true`。综合 `defaults.json`、源码 banner 与历史模板，模块内部应按以下顺序组织；当存在 `参数检查区域` 时，它必须成为模块内部最后一区并紧贴 `endmodule` 之前：
 
 1. `函数定义区域`（function；若存在，formatter 会放在普通区域前）
 2. `任务定义区域`（task；若存在，formatter 会放在普通区域前）
@@ -380,11 +380,11 @@ formatter 默认启用 `enforce_region_order = true`，实例放最后。综合 
 18. `状态任务处理区域`
 19. `主要任务处理区域`
 20. `生成块区域`
-21. `参数检查区域`
-22. `初始化区域`
-23. `模块实例化区域`
+21. `初始化区域`
+22. `模块实例化区域`
+23. `参数检查区域`
 
-历史附件列出的 18 个核心区域是交付模板主干；formatter 额外支持 function、task、generate、parameter_check、initial 等区域。若这些结构存在，必须按上述扩展顺序放置。
+历史附件列出的 18 个核心区域是交付模板主干；formatter 额外支持 function、task、generate、parameter_check、initial 等区域。若这些结构存在，必须按上述扩展顺序放置。`参数检查区域` 只在存在可证明的参数约束时出现，禁止空壳检查区。
 
 ### 7.2 区域 banner 格式
 
@@ -408,7 +408,10 @@ formatter 默认启用 `enforce_region_order = true`，实例放最后。综合 
     //--------------状态机区域--------------//
     //-----------状态任务处理区域-----------//
     //-----------主要任务处理区域-----------//
+	//--------------生成块区域--------------//
+	//--------------初始化区域--------------//
     //------------模块实例化区域------------//
+	//-------------参数检查区域-------------//
 ```
 
 实际横线数量由 formatter 根据中文显示宽度自动生成，上例用于说明形式。不要手写风格不同的 banner。
@@ -419,7 +422,14 @@ formatter 默认启用 `enforce_region_order = true`，实例放最后。综合 
 - 信号区：按命名/用途归类。`cnt_` 进入计数信号，`state_` 进入状态机信号，`reg_` 进入寄存器信号，`flag_` 进入标志信号，`enc_`/`dec_` 分别进入编码/译码信号，`*_o` 进入输出信号，其余进入其他信号。
 - 连线区：非 output bridge 进入其他信号连线，output port 连接进入输出信号连线。
 - always 区：输出内部信号目标进入输出信号处理区域，状态寄存器/next-state 进入状态机区域，引用 state 的任务处理进入状态任务处理区域，其他进入主要任务处理区域。
-- 实例化必须位于模块末尾；例外仅限 generate 内部实例或必要的参数检查/initial 结构，仍按对应区域规则组织。
+- 常规情况下实例化位于模块尾部；若存在 `参数检查区域`，则实例化区域位于其前，`参数检查区域` 作为最终内部区域收尾。
+
+### 7.4 参数检查与运行时消息合同
+
+- `参数检查区域` 统一使用 `initial begin ... end` 承载参数合法性检查，并放在 `endmodule` 前的最后一个模块内部区域。
+- 仅当规格或已验证约束能给出明确检查条件时才生成 `参数检查区域`；禁止为了模板完整性输出空壳检查块。
+- 使用 `$display` 输出人类可读参数检查信息时，前缀必须是 ` > INFO: [Verilog]`、` > WARNING: [Verilog]` 或 ` > ERR: [Verilog]`。
+- 机器可读 transcript（如 `VERILOG-GEN-RESULT ...`）不受上述人类可读前缀限制。
 
 ---
 
@@ -817,17 +827,17 @@ assign o_done = done_o;                     // 输出完成标志
 // Design Name:     module_name
 // Module Name:     module_name
 // Description:     Description/module_name_Design.pdf
-// Simulations:        TestBench/Vivado/2021.1/module_name
+// Simulations:     TestBench/Vivado/2021.1/module_name
 // 
-// References:        None
+// References:      None
 //
 // Dependencies:    None
 //
-// Version:            V1.0
-// Revision Date:    YYYY/MM/DD HH:MM:SS
+// Version:         V1.0
+// Revision Date:   YYYY/MM/DD HH:MM:SS
 // History:
-//    Time               Version       Revised by            Contents
-// YYYY/MM/DD            V1.0         Erie        Create file.
+// Time             Version      Revised by            Contents
+// YYYY/MM/DD       V1.0         Erie                  Create file.
 ///////////////////////////////////Chinese////////////////////////////////////////
 // 版权归属:        Erie
 // 开发人员:        Erie
@@ -845,8 +855,8 @@ assign o_done = done_o;                     // 输出完成标志
 // 当前版本:        V1.0
 // 修订日期:        YYYY年MM月DD日
 // 修订历史:
-//    时间                版本        修订人                修订内容    
-// YYYY年MM月DD日        V1.0         Erie        创建文件
+// 时间             版本        修订人                 修订内容    
+// YYYY年MM月DD日   V1.0        Erie                   创建文件
 
 //xxx模块
 module module_name
@@ -906,6 +916,7 @@ module module_name
     //-----------状态任务处理区域-----------//
     
     //-----------主要任务处理区域-----------//
+	//完成标志寄存器
     always@(posedge i_clk or negedge i_rstn)begin
         if(i_rstn == 1'b0)begin
             flag_done <= 0;
@@ -956,7 +967,8 @@ endmodule
 - [ ] 端口区无 `wire/reg/logic`。
 - [ ] 区域 banner 完整，顺序正确。
 - [ ] 参数、信号、assign、always、instance 位于正确区域。
-- [ ] instance 在模块末尾。
+- [ ] 无参数检查区时 instance 位于模块末尾；有参数检查区时 `参数检查区域` 为最终内部区域。
+- [ ] 人类可读 `$display` 使用 ` > INFO/WARNING/ERR: [Verilog]` 前缀；机器 transcript 单独豁免。
 - [ ] inline wire assign 已拆分。
 - [ ] output bridge 在输出信号连线区域。
 

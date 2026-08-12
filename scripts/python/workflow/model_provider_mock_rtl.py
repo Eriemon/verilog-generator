@@ -116,11 +116,8 @@ class MockSequentialRtlParts:
     # 输入有效缓存标志的 Verilog 声明行。
     valid_register_decl: str  # flag_valid_hold 锁存有效状态的声明文本
 
-    # 独立 valid 输出 always 块文本。
-    valid_output_block: str  # valid 输出寄存器的时序更新区域
-
-    # 数据输出保持赋值语句。
-    data_hold_assignment: str  # 数据输出保持分支赋值
+    # 输出处理区完整文本。
+    output_processing_block: str  # 按接口顺序渲染的输出处理区域
 
     # 输入数据采样表达式。
     data_sample_expr: str  # 数据缓存寄存器采样源
@@ -170,9 +167,6 @@ def _mock_rtl_parts(layout: MockPortLayout) -> MockSequentialRtlParts:
     # assign 区域把内部保持寄存器桥接回用户输出口。
     str_assign_block = _mock_output_assign_block(layout)  # 用户输出口桥接 assign 文本
 
-    # valid 输出块只在 data/valid 分离时产生独立 always。
-    str_valid_output_block = _mock_valid_output_block(layout)  # 独立 valid 输出时序块文本
-
     # str_data_register_decl 是输入数据缓存的完整声明行。
     str_data_register_decl = (  # 输入数据缓存寄存器 RTL 声明
         f"\treg {str_data_register_width}{layout.data_register_name} = DATA_RESET_VALUE;"
@@ -191,6 +185,12 @@ def _mock_rtl_parts(layout: MockPortLayout) -> MockSequentialRtlParts:
         f"{layout.data_output_internal};\t//无有效输入时保持输出数据"
     )
 
+    # 输出处理区要按外部接口顺序和分组标签统一渲染。
+    str_output_processing_block = _mock_output_processing_block(  # 输出处理区域完整文本
+        layout,  # 当前 mock 端口布局
+        str_data_output_hold_assignment,  # 数据输出保持分支赋值语句
+    )
+
     # 返回模板插值所需的派生文本集合。
     return MockSequentialRtlParts(
         # 模块声明和参数默认值。
@@ -200,12 +200,11 @@ def _mock_rtl_parts(layout: MockPortLayout) -> MockSequentialRtlParts:
         # 输出端口保持逻辑。
         output_decl_block=str_output_decl_block,
         assign_block=str_assign_block,
-        valid_output_block=str_valid_output_block,
+        output_processing_block=str_output_processing_block,
 
         # 输入缓存声明和采样表达式。
         data_register_decl=str_data_register_decl,
         valid_register_decl=str_valid_register_decl,
-        data_hold_assignment=str_data_output_hold_assignment,
         data_sample_expr=str_data_sample_expr,
         valid_sample_expr=str_valid_sample_expr,
     )
@@ -319,23 +318,11 @@ module {mock_port_layout_snapshot.top}
 {mock_rtl_parts.valid_register_decl}
 
 \t//-----------------输出信号-----------------//
-\t//用户接口
 {mock_rtl_parts.output_decl_block}
 
 \t//---------------输出信号连线---------------//
-\t//用户接口
 {mock_rtl_parts.assign_block}
-{mock_rtl_parts.valid_output_block}
-\t//输出数据寄存器更新逻辑
-\talways@(posedge {mock_port_layout_snapshot.clock_name} or negedge {mock_port_layout_snapshot.reset_name})begin
-\t\tif({mock_port_layout_snapshot.reset_name} == 1'b0)begin
-\t\t\t{mock_port_layout_snapshot.data_output_internal} <= DATA_RESET_VALUE;\t//复位时输出数据清零
-\t\tend else if({mock_port_layout_snapshot.valid_register_name} == 1'b1)begin
-\t\t\t{mock_port_layout_snapshot.data_output_internal} <= {mock_port_layout_snapshot.data_register_name};\t//缓存有效时更新输出数据
-\t\tend else begin
-{mock_rtl_parts.data_hold_assignment}
-\t\tend
-\tend
+{mock_rtl_parts.output_processing_block}
 
 \t//-------------主要任务处理区域-------------//
 \t//输入数据缓存寄存器更新逻辑
@@ -390,6 +377,9 @@ def _build_mock_port_layout(spec: dict[str, Any]) -> MockPortLayout:
 
             # 当前路径只读取 MockPortSpec 里约定的最小字段集合。
             list_ports.append(cast(MockPortSpec, item))
+
+    # 先把端口顺序与 group/section 对齐到 formatter 归一化后的接口真源。
+    list_ports = _normalized_mock_layout_ports(str_top, list_ports)  # 对齐模块接口后的 mock 端口集合
 
     # 筛出普通输入端口。
     list_inputs: list[MockPortSpec] = []  # 用户输入端口
@@ -463,6 +453,148 @@ def _build_mock_port_layout(spec: dict[str, Any]) -> MockPortLayout:
         valid_output_name=valid_output_name,
         has_distinct_valid_output=bool_has_distinct_valid_output,
     )
+
+# 生成用于端口布局推断的最小 module 骨架文本。
+def _mock_layout_probe_source(str_top: str, list_ports: list[MockPortSpec]) -> str:
+    """
+    构造只包含 module 端口声明的最小探针源码。
+
+    参数:
+        str_top: 当前 mock 模块名。
+        list_ports: 需要参与布局推断的端口列表。
+    返回:
+        供 formatter 归一化与 AST 提取使用的最小 Verilog 源码。
+    """
+
+    # 端口顺序先沿用 mock module 当前真实渲染前的展示次序。
+    list_ordered_ports = _ordered_mock_ports(list_ports)  # 端口布局探针使用的显示顺序
+
+    # 探针源码复用与真实 module 相同的端口块渲染逻辑。
+    str_port_block = _mock_port_block(list_ordered_ports)  # 端口布局探针的端口声明块
+
+    # 返回只包含端口声明的最小 module 骨架，避免引入无关 body 噪声。
+    return f"""module {str_top}
+(
+{str_port_block}
+);
+
+endmodule
+"""
+
+# 用 formatter 归一化结果回填 mock 端口的顺序与分组元数据。
+def _normalized_mock_layout_ports(str_top: str, list_ports: list[MockPortSpec]) -> list[MockPortSpec]:
+    """
+    返回与 formatter 归一化接口顺序一致的 mock 端口列表。
+
+    参数:
+        str_top: 当前 mock 模块名。
+        list_ports: 原始 mock 端口列表。
+    返回:
+        端口顺序、group 与 section 已对齐 formatter 真源的端口列表。
+    """
+
+    # 空端口列表无需进入 formatter 探针路径。
+    if not list_ports:
+
+        # 没有端口时直接返回原始空列表。
+        return list_ports
+
+    # 探针默认沿用按全局口优先排序后的当前展示顺序。
+    list_fallback_ports = _ordered_mock_ports(list_ports)  # formatter 探针失败时回退使用的端口顺序
+
+    # 尝试让 formatter 输出当前端口布局的归一化真源。
+    try:
+
+        # 延迟导入 formatter AST，避免普通 helper 路径承担额外导入成本。
+        from scripts.python.quality.formatter_ast import normalize_text_with_formatter_ast
+
+        # 构造仅用于端口布局推断的最小 module 源码。
+        str_probe_source = _mock_layout_probe_source(str_top, list_ports)  # 当前端口布局探针源码
+
+        # 伪 source_path 只用于 formatter 报告展示，不影响布局语义。
+        path_probe_source = Path(f"{str_top}.v")  # 端口布局探针使用的伪源码路径
+
+        # 归一化探针源码，并提取 formatter 二次 AST 报告。
+        _, dict_probe_report = normalize_text_with_formatter_ast(  # 当前端口布局探针的 AST 报告
+            str_probe_source,  # 当前端口布局探针源码正文
+            source_path=path_probe_source,  # 只用于 formatter 报告展示的伪路径
+        )
+
+    # 探针失败时保留现有顺序，避免 mock provider 直接失效。
+    except Exception:
+
+        # formatter 探针不可用时回退到当前最小稳定顺序。
+        return list_fallback_ports
+
+    # modules 缺失时无法提取端口真源，继续使用当前顺序。
+    list_modules = dict_probe_report.get("modules") or []  # formatter AST 报告中的 module 列表
+
+    # 没有 module AST 时只能回退到当前端口顺序。
+    if not list_modules:
+
+        # 缺少 AST module 结果时不强行猜测端口布局。
+        return list_fallback_ports
+
+    # 读取首个 module 的端口 AST，作为后续输出镜像的真实顺序来源。
+    list_probe_ports = list_modules[0].get("ports") or []  # formatter AST 暴露的端口条目列表
+
+    # 原始端口名到端口字典的映射用于回填 role、width 等业务字段。
+    dict_ports_by_name = {  # 当前探针端口名到原始端口载荷的映射
+        str(dict_port.get("name") or ""): dict(dict_port)  # 端口名到原始端口副本的映射项
+        for dict_port in list_fallback_ports  # 顺序沿用探针失败时的稳定回退端口表
+        if dict_port.get("name")  # 只保留具名端口，避免空键污染映射
+    }
+
+    # 记录已经被 formatter AST 回放过的端口名，避免重复追加。
+    set_seen_port_names: set[str] = set()  # 已经完成真源回填的端口名集合
+
+    # list_normalized_ports 承接回填好顺序与分组元数据的端口列表。
+    list_normalized_ports: list[MockPortSpec] = []  # formatter 归一化后的 mock 端口列表
+
+    # 按 formatter AST 的最终接口顺序回放端口。
+    for dict_probe_port in list_probe_ports:
+
+        # 端口名是回填原始业务字段与布局字段的唯一稳定键。
+        str_port_name = str(dict_probe_port.get("name") or "")  # 当前 formatter AST 端口名
+
+        # 当前 AST 端口不在原始端口集中时跳过，避免引入合成端口。
+        if str_port_name not in dict_ports_by_name:
+
+            # 只接收当前 mock 规格真实声明过的端口。
+            continue
+
+        # 复制原始端口载荷，再叠加 formatter 推断出的布局字段。
+        dict_port_payload = dict(dict_ports_by_name[str_port_name])  # 当前端口的原始业务字段副本
+
+        # group 字段决定输出镜像区的一级标签。
+        dict_port_payload["group"] = str(dict_probe_port.get("group") or "")  # formatter 推断出的 group 标签
+
+        # 这里补齐 section，避免后续声明区和桥接区丢失二级分组语义。
+        dict_port_payload["section"] = str(dict_probe_port.get("section") or "")  # formatter 推断出的输出小节标签
+
+        # 当前端口完成回填后追加到最终布局列表。
+        list_normalized_ports.append(cast(MockPortSpec, dict_port_payload))
+
+        # 标记当前端口已经按 formatter 顺序回放完成。
+        set_seen_port_names.add(str_port_name)
+
+    # formatter 未覆盖到的端口继续按回退顺序补到末尾，避免漏端口。
+    for dict_port in list_fallback_ports:
+
+        # 端口名用于判断当前原始端口是否已经被回放。
+        str_port_name = str(dict_port.get("name") or "")  # 当前原始端口名
+
+        # 已经按 formatter 顺序回放过的端口不再重复追加。
+        if str_port_name in set_seen_port_names:
+
+            # 当前端口已经存在于归一化列表中。
+            continue
+
+        # 保留未被 AST 覆盖端口的原始载荷，避免探针边界丢端口。
+        list_normalized_ports.append(dict_port)
+
+    # 返回与 formatter 真源顺序对齐后的 mock 端口列表。
+    return list_normalized_ports
 
 # 判断当前 mock 端口布局是否具备完整时序控制口。
 def _layout_has_sequential_controls(layout: MockPortLayout) -> bool:
@@ -848,7 +980,7 @@ def _ordered_mock_ports(ports: list[MockPortSpec]) -> list[MockPortSpec]:
 # 统一规范 mock RTL 的文本收尾与注释对齐
 def _normalize_mock_erie_rtl(raw: str, module_name: str) -> str:
     """
-    优先走 formatter AST，对失败场景回退原始文本。
+    优先走 formatter AST，对失败场景回退最后一次成功文本或原始文本。
 
     :param raw: 尚未规范化的 Verilog 文本。
     :param module_name: 仅用于构造伪 source_path 的模块名。
@@ -856,7 +988,7 @@ def _normalize_mock_erie_rtl(raw: str, module_name: str) -> str:
     """
 
     # 默认保留原始 RTL 作为保底结果。
-    str_formatted_rtl = raw  # formatter 失败时的回退文本
+    str_last_successful_rtl = raw  # formatter 失败时的回退文本
 
     # 尝试调用本地 formatter AST。
     try:
@@ -866,23 +998,47 @@ def _normalize_mock_erie_rtl(raw: str, module_name: str) -> str:
         # 先构造 formatter 使用的伪 source_path，便于报告里显示模块名。
         path_formatter_source = Path(f"{module_name}.v")  # formatter 用来标识当前模块的伪路径
 
-        # 调用 formatter 规范化当前 RTL 文本。
-        str_formatted_rtl, dict_report = normalize_text_with_formatter_ast(raw, source_path=path_formatter_source)  # formatter 返回的文本与执行报告
+        # 首次 formatter 归一化曾出现过 group/section 标签非幂等收敛。
+        int_max_formatter_passes = 3  # 限制 formatter 收敛轮数，避免异常路径无限重试
 
-        # formatter 成功时优先采用规范化结果。
-        if dict_report.get("ok"):
+        # 当前待送入 formatter 的文本从原始 RTL 起步。
+        str_candidate_rtl = raw  # 当前归一化候选文本
 
-            # 返回格式化后的去尾空白版本。
-            return _align_mock_region_comments(str_formatted_rtl)
+        # 在有界次数内重跑 formatter，直到文本收敛或遇到失败。
+        for _ in range(int_max_formatter_passes):
+
+            # 调用 formatter 规范化当前 RTL 文本。
+            str_formatted_rtl, dict_report = normalize_text_with_formatter_ast(  # formatter 返回的文本与执行报告
+                str_candidate_rtl,  # 当前轮待收敛的 RTL 文本
+                source_path=path_formatter_source,  # 让归一化报告继续绑定当前模块伪路径
+            )
+
+            # 失败结果不再继续传播，保留上一轮成功文本。
+            if not dict_report.get("ok"):
+
+                # formatter 未成功时直接终止收敛循环。
+                break
+
+            # 当前轮次成功时更新最后一次成功文本。
+            str_last_successful_rtl = str_formatted_rtl  # 当前最新的成功收敛文本
+
+            # 文本已经稳定时结束额外归一化。
+            if str_formatted_rtl == str_candidate_rtl:
+
+                # 当前 formatter 输出已经达到稳定收敛。
+                break
+
+            # 尚未收敛时继续以上一轮结果作为下一轮输入。
+            str_candidate_rtl = str_formatted_rtl  # 把当前成功结果作为下一轮 formatter 输入
 
     # formatter 抛异常时继续使用原始文本。
     except Exception:
 
-        # 出错后回退到传入的原始 RTL。
-        str_formatted_rtl = raw  # formatter 抛异常时继续保留原始 RTL
+        # formatter 异常时直接回退到最近一次成功文本的对齐结果。
+        return _align_mock_region_comments(str_last_successful_rtl)
 
-    # formatter 未成功给出可用结果时，使用原始 RTL 的区域注释对齐版本。
-    return _align_mock_region_comments(str_formatted_rtl)
+    # formatter 未成功给出更好结果时，使用最后一次成功文本的区域注释对齐版本。
+    return _align_mock_region_comments(str_last_successful_rtl)
 
 # _align_mock_region_comments 按区域横幅锚点对齐 mock RTL 行尾注释。
 def _align_mock_region_comments(text: str) -> str:
@@ -929,8 +1085,128 @@ def _align_mock_region_comments(text: str) -> str:
     # list_compact_lines 在对齐后恢复 mock 模块体的既有 `//注释` 合同风格。
     list_compact_lines = [_compact_mock_semantic_comment_spacing(str_line) for str_line in list_aligned_lines]  # 恢复 mock 语义注释紧凑前缀后的文本行
 
-    # 统一补末尾换行。
-    return "\n".join(list_compact_lines) + "\n"
+    # 统一补末尾换行后，再修正输出连线区分组注释的空行合同。
+    return _normalize_mock_assign_group_comment_spacing("\n".join(list_compact_lines) + "\n")
+
+# _normalize_mock_assign_group_comment_spacing 修正输出信号连线区分组注释的空行布局。
+def _normalize_mock_assign_group_comment_spacing(text: str) -> str:
+    """
+    收敛输出信号连线区域纯分组注释的空行布局。
+
+    :param text: 已完成注释对齐的 mock RTL 文本。
+    :return: 满足 assign 分组注释空行合同的 RTL 文本。
+    """
+
+    # list_normalized_lines 保存逐行收敛后的 RTL 文本。
+    list_normalized_lines: list[str] = []  # 输出连线区空行布局修正后的文本行
+
+    # bool_in_output_assign_region 只在输出信号连线区域内启用空行修正。
+    bool_in_output_assign_region = False  # 当前是否处于输出信号连线区域
+
+    # 逐行扫描已对齐文本，只在目标区域内做最小空行修正。
+    for str_line in text.splitlines():
+
+        # 区域横幅会决定输出信号连线区域的进入和退出。
+        int_banner_anchor = _mock_region_banner_anchor_column(str_line)  # 当前行是否为区域横幅
+
+        # 先处理区域横幅，避免普通纯注释误改主区域状态。
+        if int_banner_anchor is not None:
+
+            # str_banner_text 只保留横幅正文，便于识别主区域边界。
+            str_banner_text = str_line.strip()  # 当前横幅的去缩进文本
+
+            # 输出信号连线横幅开启局部空行修正。
+            if "输出信号连线" in str_banner_text:
+
+                # 后续纯分组注释按 assign 子分组规则收敛。
+                bool_in_output_assign_region = True  # 进入输出信号连线区域
+
+            # 输出信号处理和主任务区域会结束 assign 分组注释修正。
+            elif (
+                "输出信号处理区域" in str_banner_text
+                or "主要任务处理区域" in str_banner_text
+            ):
+
+                # 当前横幅之后不再属于 assign 子分组区域。
+                bool_in_output_assign_region = False  # 退出输出信号连线区域
+
+            # 横幅自身只去尾空白，不改写正文。
+            list_normalized_lines.append(str_line.rstrip())
+
+            # 当前横幅行已经完成区域状态更新，可以直接读取下一条源码行。
+            continue
+
+        # 只有输出信号连线区域内的纯分组注释才需要额外修正。
+        if bool_in_output_assign_region and _is_mock_pure_comment_line(str_line):
+
+            # 多行纯注释栈的后续行直接跟随首行，不额外插空行。
+            if list_normalized_lines and _is_mock_pure_comment_line(list_normalized_lines[-1]):
+
+                # 连续纯注释属于同一注释栈，保持原有紧邻关系。
+                list_normalized_lines.append(str_line.rstrip())
+
+                # 当前注释已经并入同一注释栈，无需再重复做空行修正。
+                continue
+
+            # 先清理注释栈前多余空行，保证横幅后零空行、普通代码后最多一空行。
+            while list_normalized_lines and not list_normalized_lines[-1].strip():
+
+                # 单独残留的空行没有更多上下文时停止回溯。
+                if len(list_normalized_lines) < 2:
+
+                    # 缺少更早上下文时保留当前唯一空行。
+                    break
+
+                # 这里取到空行前的真实上下文，用来区分横幅后空行和普通代码后空行。
+                str_previous_context = list_normalized_lines[-2]  # 当前空行之前最近的有效上下文行
+
+                # 区域横幅后不允许空行，多余空行要移除。
+                if _mock_region_banner_anchor_column(str_previous_context) is not None:
+
+                    # 删除横幅和纯分组注释之间的空行。
+                    list_normalized_lines.pop()
+
+                    # 删除横幅后的空行后，要重新检查新的上方上下文是否已经收敛。
+                    continue
+
+                # 连续多个空行只保留最后一个。
+                if not str_previous_context.strip():
+
+                    # 删除多余的上方空行，继续直到收敛到唯一空行。
+                    list_normalized_lines.pop()
+
+                    # 多余空行删掉后继续回看上方上下文，直到只剩唯一空行。
+                    continue
+
+                # 已经收敛到“普通代码后一空行”的目标形态。
+                break
+
+            # 当前纯分组注释如果前一行是普通代码，需要补齐唯一空行。
+            if list_normalized_lines:
+
+                # str_previous_line 用于判断注释栈前是否需要补空行。
+                str_previous_line = list_normalized_lines[-1]  # 当前注释栈上一行文本
+
+                # 区域横幅后不补空行，普通代码后补一个空行。
+                if (
+                    _mock_region_banner_anchor_column(str_previous_line) is None
+                    and str_previous_line.strip()
+                ):
+
+                    # 让当前分组注释满足“普通代码后恰好一空行”的质量门合同。
+                    list_normalized_lines.append("")
+
+            # 追加当前纯分组注释行。
+            list_normalized_lines.append(str_line.rstrip())
+
+            # 当前纯分组注释已经完成布局修正，可以进入下一条源码行。
+            continue
+
+        # 其他行只去尾空白并按原顺序保留。
+        list_normalized_lines.append(str_line.rstrip())
+
+    # 修正后的文本继续保持单个结尾换行。
+    return "\n".join(list_normalized_lines) + "\n"
 
 # _compact_mock_semantic_comment_spacing 恢复 mock 模块体语义注释的既有 `//注释` 风格。
 def _compact_mock_semantic_comment_spacing(str_line: str) -> str:
@@ -1098,6 +1374,36 @@ def _mock_line_comment_start(str_line: str) -> int:
     # 没有真实注释。
     return -1
 
+# _is_mock_pure_comment_line 判断当前行是否为只含缩进和注释的纯注释行。
+def _is_mock_pure_comment_line(str_line: str) -> bool:
+    """
+    判断当前 RTL 行是否为纯注释行。
+
+    :param str_line: 当前 RTL 行。
+    :return: 只含缩进和注释时返回 True。
+    """
+
+    # 先剔除首尾空白，空行不属于纯注释。
+    str_stripped = str_line.strip()  # 去掉首尾空白后的注释候选
+
+    # 空行或非 `//` 起始行都不属于纯注释。
+    if not str_stripped or not str_stripped.startswith("//"):
+
+        # 只有 `//` 注释行才参与纯注释判断。
+        return False
+
+    # int_comment_index 指向当前行真实 `//` 注释起点。
+    int_comment_index = _mock_line_comment_start(str_line)  # 当前行的真实注释起点
+
+    # 没有注释起点或注释前存在非空白代码时，都不是纯注释。
+    if int_comment_index < 0 or str_line[:int_comment_index].strip():
+
+        # 代码行尾注释不能按纯分组注释处理。
+        return False
+
+    # 当前行只由缩进和纯注释组成。
+    return True
+
 # _mock_display_width_with_tabs 计算 mock RTL 显示宽度。
 def _mock_display_width_with_tabs(str_text: str) -> int:
     """
@@ -1208,31 +1514,63 @@ def _mock_output_decl_block(
     :return: 输出寄存器声明块文本。
     """
 
-    # 先写数据输出寄存器的默认声明。
-    str_data_decl_line = (
-        f"\treg {data_register_width}{layout.data_output_internal} = DATA_RESET_VALUE;\t//"
-        f"{_mock_internal_output_comment(layout.data_output_name)}"
-    )  # 数据输出寄存器声明
+    # dict_output_decl_lines 按外部输出口名缓存内部寄存器声明。
+    dict_output_decl_lines: dict[str, str] = {  # 输出口到内部寄存器声明的映射
+        layout.data_output_name: (  # 以主数据输出口名作为默认寄存器声明的索引键
+            f"\treg {data_register_width}{layout.data_output_internal} = DATA_RESET_VALUE;\t//"
+            f"{_mock_internal_output_comment(layout.data_output_name)}"
+        )
+    }
 
-    # 初始化输出寄存器声明列表。
-    list_output_lines = [str_data_decl_line]  # 输出寄存器声明行
-
-    # valid 输出独立时把它插到声明块最前面。
+    # 独立 valid 输出要沿外部接口名单独缓存一条寄存器声明。
     if layout.has_distinct_valid_output:
 
-        # 生成独立 valid 输出的寄存器声明。
-        str_valid_decl_line = (
+        # 记录独立 valid 输出寄存器声明，后续按接口顺序取出。
+        dict_output_decl_lines[layout.valid_output_name] = (
             f"\treg {valid_register_width}{layout.valid_output_internal} = 1'b0;\t//"
             f"{_mock_internal_output_comment(layout.valid_output_name)}"
-        )  # valid 输出寄存器声明
-
-        # 补充 valid 输出寄存器声明。
-        list_output_lines.insert(
-            0,
-            str_valid_decl_line,
         )
 
-    # 返回输出寄存器声明块文本。
+    # list_output_lines 负责按接口顺序和分组标签拼接声明区。
+    list_output_lines: list[str] = []  # 输出寄存器声明文本行
+
+    # str_current_group_label 防止相同 group/section 标签重复写入。
+    str_current_group_label = ""  # 当前声明区已经输出的 group/section 标签
+
+    # 按外部接口输出顺序回放内部寄存器声明。
+    for output_port in layout.outputs:
+
+        # 取出当前输出口名，作为声明映射的稳定键。
+        str_output_name = str(output_port.get("name") or "")  # 处理区查表使用的输出键
+
+        # 当前输出口没有内部寄存器声明时跳过。
+        if str_output_name not in dict_output_decl_lines:
+
+            # 未落内部寄存器的输出口不会出现在输出声明区。
+            continue
+
+        # 从当前声明输出口推导输出声明区的镜像标签。
+        str_group_label = _mock_output_group_label(output_port)  # 输出声明区分组标签
+
+        # group/section 标签变化时补齐新的分组注释。
+        if str_group_label != str_current_group_label:
+
+            # 分组切换前插入空行，保持输出区块可读。
+            if list_output_lines:
+
+                # 声明区内分组切换时保留视觉间隔。
+                list_output_lines.append("")
+
+            # 写入当前输出寄存器所属的 group/section 标签。
+            list_output_lines.append(f"\t//{str_group_label}")
+
+            # 记住声明区最新的小节标签，避免下一条重复落同标题。
+            str_current_group_label = str_group_label  # 声明区最新分组标签
+
+        # 追加当前输出口对应的内部寄存器声明。
+        list_output_lines.append(dict_output_decl_lines[str_output_name])
+
+    # 返回按接口顺序整理后的输出声明块文本。
     return "\n".join(list_output_lines)
 
 # 构造输出 assign 块文本
@@ -1244,46 +1582,58 @@ def _mock_output_assign_block(layout: MockPortLayout) -> str:
     :return: 输出 assign 文本块。
     """
 
-    # 先写数据输出的桥接语句。
-    str_data_assign_line = (
-        f"\tassign {layout.data_output_name} = {layout.data_output_internal};\t//"
-        f"{_mock_output_bridge_comment(layout.data_output_name)}"
-    )  # 数据输出桥接语句
+    # list_assign_lines 负责按接口顺序和分组标签拼接输出桥接区。
+    list_assign_lines: list[str] = []  # 输出桥接语句文本行
 
-    # 初始化输出桥接语句列表。
-    list_assign_lines = [str_data_assign_line]  # 输出桥接语句行
+    # str_current_group_label 防止同一分组标题重复输出。
+    str_current_group_label = ""  # 当前桥接区的 group/section 标签
 
-    # 记录已经完成桥接的输出端口。
-    set_handled_outputs = {layout.data_output_name}  # 已经处理的输出集合
-
-    # valid 输出独立时把它桥接到最前面。
-    if layout.has_distinct_valid_output:
-
-        # 生成独立 valid 输出的桥接语句。
-        str_valid_assign_line = (
-            f"\tassign {layout.valid_output_name} = {layout.valid_output_internal};\t//"
-            f"{_mock_output_bridge_comment(layout.valid_output_name)}"
-        )  # valid 输出桥接语句
-
-        # 追加 valid 输出桥接语句。
-        list_assign_lines.insert(
-            0,
-            str_valid_assign_line,
-        )
-
-        # 把 valid 输出加入已处理集合。
-        set_handled_outputs.add(layout.valid_output_name)
-
-    # 对剩余输出补齐固定零值桥接。
+    # 按外部输出顺序生成桥接语句。
     for output_port in layout.outputs:
 
-        # 先抽取输出口名字，便于判断该端口是否已经完成桥接。
-        str_output_name = str(output_port.get("name"))  # 剩余输出的名字快照
+        # 先抽取输出口名字，便于判断该端口的桥接来源。
+        str_output_name = str(output_port.get("name") or "")  # 当前输出口名
 
-        # 未处理的输出统一补零。
-        if str_output_name and str_output_name not in set_handled_outputs:
+        # 根据外部输出口归类 assign 区所在的小节。
+        str_group_label = _mock_output_group_label(output_port)  # 输出桥接区分组标签
 
-            # 计算当前未使用输出对应的零值字面量。
+        # 分组标签变化时补一行新的 group/section 注释。
+        if str_group_label != str_current_group_label:
+
+            # 不同输出分组之间保留一个空行。
+            if list_assign_lines:
+
+                # 分组切换时增加视觉间隔。
+                list_assign_lines.append("")
+
+            # 写入当前 assign 所属的 group/section 标签。
+            list_assign_lines.append(f"\t//{str_group_label}")
+
+            # 把 assign 区游标推进到当前输出所属的小节。
+            str_current_group_label = str_group_label  # assign 区最新分组标签
+
+        # 数据输出口使用内部保持寄存器桥接。
+        if str_output_name == layout.data_output_name:
+
+            # 生成数据输出口的桥接语句。
+            str_assign_line = (
+                f"\tassign {layout.data_output_name} = {layout.data_output_internal};\t//"
+                f"{_mock_output_bridge_comment(layout.data_output_name)}"
+            )
+
+        # 独立 valid 输出口使用各自的保持寄存器桥接。
+        elif layout.has_distinct_valid_output and str_output_name == layout.valid_output_name:
+
+            # 生成独立 valid 输出的桥接语句。
+            str_assign_line = (
+                f"\tassign {layout.valid_output_name} = {layout.valid_output_internal};\t//"
+                f"{_mock_output_bridge_comment(layout.valid_output_name)}"
+            )
+
+        # 其余输出统一拉到固定零值，保持 mock 交付闭合。
+        else:
+
+            # 计算当前未直接建模输出对应的零值字面量。
             str_zero_literal = _zero_literal(int(output_port.get("width", 1) or 1))  # 未使用输出复位值
 
             # 缓存当前输出位宽，供补零注释复用。
@@ -1292,36 +1642,73 @@ def _mock_output_assign_block(layout: MockPortLayout) -> str:
             # 生成包含端口职责的补零说明，避免多路输出复用模板注释。
             str_unused_output_comment = _mock_unused_output_comment(str_output_name, int_output_width)  # 当前补零输出的行尾说明
 
-            # 追加当前输出的补零桥接语句。
-            list_assign_lines.append(
-                f"\tassign {str_output_name} = {str_zero_literal};\t//{str_unused_output_comment}"
+            # 生成当前输出的补零桥接语句。
+            str_assign_line = (  # 当前补零输出的桥接语句
+                f"\tassign {str_output_name} = {str_zero_literal};\t//{str_unused_output_comment}"  # 当前输出的固定桥接源码行
             )
 
-            # 记录该输出已经处理完成。
-            set_handled_outputs.add(str_output_name)
+        # 追加当前输出口对应的桥接语句。
+        list_assign_lines.append(str_assign_line)
 
-    # 返回输出桥接块文本。
+    # 返回按接口顺序整理后的输出桥接块文本。
     return "\n".join(list_assign_lines)
 
-# 构造输出处理区域前缀
-def _mock_valid_output_block(layout: MockPortLayout) -> str:
+# 生成输出口在输出区内应使用的 group/section 标签。
+def _mock_output_group_label(output_port: MockPortSpec) -> str:
     """
-    生成输出处理区域横幅，并在需要时插入独立 valid 输出时序块。
+    从外部输出口提取输出区复用的 group/section 标签。
+
+    :param output_port: 当前外部输出口定义。
+    :return: `group--section` 或仅 `group` 的输出区标签。
+    """
+
+    # group 为空时回退到统一的用户接口标签，避免生成未知标题。
+    str_group = str(output_port.get("group") or "用户接口")  # 当前输出口的一级分组
+
+    # section 为空时只保留一级 group 标签。
+    str_section = str(output_port.get("section") or "")  # 当前输出口的小节标签
+
+    # 同时存在 group 和 section 时拼接成稳定的镜像标签。
+    if str_section:
+
+        # 使用质量门要求的 group--section 标签格式。
+        return f"{str_group}--{str_section}"
+
+    # 缺少 section 时仅返回 group 标签。
+    return str_group
+
+# 构造按接口顺序回放的输出处理区。
+def _mock_output_processing_block(layout: MockPortLayout, data_hold_assignment: str) -> str:
+    """
+    按接口输出顺序生成输出处理区的 always 块。
 
     :param layout: 端口布局对象。
-    :return: 可嵌入 RTL 的输出处理区域前缀。
+    :param data_hold_assignment: 数据输出保持分支赋值语句。
+    :return: 完整的输出处理区域文本。
     """
 
-    # valid 不独立时，数据输出 always 的说明由主模板紧贴横幅写出。
-    if not layout.has_distinct_valid_output:
+    # str_data_output_block 固定描述数据输出的寄存器更新逻辑。
+    str_data_output_block = f"""\t//输出数据寄存器更新逻辑
+\talways@(posedge {layout.clock_name} or negedge {layout.reset_name})begin
+\t\tif({layout.reset_name} == 1'b0)begin
+\t\t\t{layout.data_output_internal} <= DATA_RESET_VALUE;\t//复位时输出数据清零
+\t\tend else if({layout.valid_register_name} == 1'b1)begin
+\t\t\t{layout.data_output_internal} <= {layout.data_register_name};\t//缓存有效时更新输出数据
+\t\tend else begin
+{data_hold_assignment}
+\t\tend
+\tend"""
 
-        # 返回无尾随空行的输出处理区横幅。
-        return "\n\t//-------------输出信号处理区域-------------//"
+    # dict_output_blocks_by_name 让 always 块顺序跟外部接口输出顺序对齐。
+    dict_output_blocks_by_name = {  # 输出口到处理区文本的映射
+        layout.data_output_name: str_data_output_block,  # 先登记主数据输出对应的 always 文本
+    }
 
-    # 返回完整的 valid 输出时序块，并给下一段 always 说明留出一个空行。
-    return f"""
-\t//-------------输出信号处理区域-------------//
-\t//输出有效标志寄存器更新逻辑
+    # 独立 valid 输出时再补一条对应的输出处理逻辑。
+    if layout.has_distinct_valid_output:
+
+        # 按外部 valid 输出口名注册对应的时序更新逻辑。
+        dict_output_blocks_by_name[layout.valid_output_name] = f"""\t//输出有效标志寄存器更新逻辑
 \talways@(posedge {layout.clock_name} or negedge {layout.reset_name})begin
 \t\tif({layout.reset_name} == 1'b0)begin
 \t\t\t{layout.valid_output_internal} <= 1'b0;\t//复位时清除输出有效标志
@@ -1330,5 +1717,54 @@ def _mock_valid_output_block(layout: MockPortLayout) -> str:
 \t\tend else begin
 \t\t\t{layout.valid_output_internal} <= 1'b0;\t//无有效输入时拉低输出有效
 \t\tend
-\tend
-"""
+\tend"""
+
+    # list_processing_lines 负责按接口顺序和分组标签拼接输出处理区。
+    list_processing_lines = [  # 输出处理区域文本行
+        "\t//-------------输出信号处理区域-------------//",  # 输出处理区域横幅
+    ]
+
+    # str_current_group_label 防止连续 always 块重复写同一 group/section 标签。
+    str_current_group_label = ""  # 当前输出处理区分组标签
+
+    # bool_rendered_block 标记是否已经输出过至少一个 always 块。
+    bool_rendered_block = False  # 输出处理区是否已有业务 always
+
+    # 按外部接口输出顺序回放内部输出 always 块。
+    for output_port in layout.outputs:
+
+        # 当前循环专门匹配 data/valid 输出的 always 文本表，这里先抽出查表键。
+        str_output_name = str(output_port.get("name") or "")  # 当前外部输出口名
+
+        # 不是内部寄存器驱动的输出口无需输出 always 块。
+        if str_output_name not in dict_output_blocks_by_name:
+
+            # 固定拉零或纯桥接输出不进入输出处理区域。
+            continue
+
+        # 第二个及之后的 always 块前补一个空行，避免块间粘连。
+        if bool_rendered_block:
+
+            # 输出处理区多个 always 块之间保留可读间隔。
+            list_processing_lines.append("")
+
+        # 计算当前 always 块所属的 group/section 标签。
+        str_group_label = _mock_output_group_label(output_port)  # 输出处理区分组标签
+
+        # 把当前 always 块归到对应的输出镜像分组。
+        if str_group_label != str_current_group_label:
+
+            # 写入当前 always 块所属的 group/section 标签。
+            list_processing_lines.append(f"\t//{str_group_label}")
+
+            # 记录处理区刚刚输出的小节标签，供后续 always 复用。
+            str_current_group_label = str_group_label  # 输出处理区最新分组标签
+
+        # 追加当前输出口对应的 always 块正文。
+        list_processing_lines.extend(dict_output_blocks_by_name[str_output_name].splitlines())
+
+        # 标记输出处理区已经写入业务 always。
+        bool_rendered_block = True  # 输出处理区已写入至少一个 always
+
+    # 返回输出处理区域的完整文本。
+    return "\n".join(list_processing_lines)

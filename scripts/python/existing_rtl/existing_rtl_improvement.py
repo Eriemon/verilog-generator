@@ -1196,7 +1196,10 @@ def _tb_startup_banner_lines() -> list[str]:
     return [
         "",
         "    initial begin",
-        '        $display("[TB_MONITOR] Time: %0t | Starting analysis-derived verification.", $time);',
+        (
+            '        $display(" > INFO: [Verilog] [TB_MONITOR] Time: %0t | '
+            'Starting analysis-derived verification.", $time);'
+        ),
         "    end",
         "",
     ]
@@ -1260,7 +1263,7 @@ def _tb_verilog_placeholder_lines() -> list[str]:
             '            $error("[TB_ERROR] Time: %0t | Replace scaffold checks with '
             'module-specific expectations.", $time);'
         ),
-        '            $display("FAIL: replace scaffold checks with module-specific expectations");',
+        '            $display(" > ERR: [Verilog] replace scaffold checks with module-specific expectations.");',
         "        end",
     ]
 
@@ -1337,7 +1340,8 @@ def _tb_initial_sequence_lines(
 
         # 把当前 checkpoint 的监视日志追加到 initial 序列。
         list_lines.append(
-            f'        $display("[TB_MONITOR] Time: %0t | {str_check_id} | signals={str_signal_list}", $time);'
+            f'        $display(" > INFO: [Verilog] [TB_MONITOR] Time: %0t | '
+            f'{str_check_id} | signals={str_signal_list}", $time);'
         )
 
     # 抽取一个输出端口，供观测日志与未知态检查共用。
@@ -1350,7 +1354,8 @@ def _tb_initial_sequence_lines(
 
         # 输出当前默认观测信号的运行时数值。
         list_lines.append(
-            f'        $display("[TB_DATA] Time: %0t | Observed {str_output_signal}=%0h", $time, {str_output_signal});'
+            f'        $display(" > INFO: [Verilog] [TB_DATA] Time: %0t | '
+            f'Observed {str_output_signal}=%0h", $time, {str_output_signal});'
         )
 
     # 固定输出脚手架执行结果。
@@ -1360,7 +1365,7 @@ def _tb_initial_sequence_lines(
     )
 
     # 先输出一条简洁 PASS 日志，提示脚手架主序列已跑通。
-    list_lines.append('        $display("PASS: analysis-derived scaffold executed");')
+    list_lines.append('        $display(" > INFO: [Verilog] analysis-derived scaffold executed.");')
 
     # 再输出机器可解析的 VERILOG-GEN-RESULT 横幅。
     list_lines.append(str_result_banner)
@@ -1372,7 +1377,7 @@ def _tb_initial_sequence_lines(
     list_lines.extend(
         [
             "        #(CLK_PERIOD * 4);",
-            '        $display("[TB_INFO] Simulation Finished!");',
+            '        $display(" > INFO: [Verilog] [TB_INFO] Simulation Finished!");',
             "        $finish;",
             "    end",
             "endmodule",
