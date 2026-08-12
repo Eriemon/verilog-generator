@@ -1,23 +1,24 @@
 {
-  "version": 6,
+  "version": 7,
   "name": "verilog_quality_gate_catalog",
   "description": "Unified VG catalog for readable Verilog RTL generation, review, and semantic validation.",
-  "total_rules": 128,
-  "active_rules": 128,
+  "total_rules": 133,
+  "active_rules": 133,
   "reserved_rules": 0,
   "status_counts": {
-    "active": 128
+    "active": 133
   },
   "active_level_counts": {
-    "BLOCKER": 57,
-    "WARNING": 71
+    "BLOCKER": 61,
+    "WARNING": 72
   },
   "policy": {
     "active": "Every catalog rule executes through the unified Verilog quality gate.",
     "strict": "Any non-pass BLOCKER blocks delivery; WARNING findings also block strict delivery."
   },
   "config": {
-    "max_combinational_operations_per_target": 3
+    "max_combinational_operations_per_target": 3,
+    "packed_dynamic_lookup_block_bits": 1024
   },
   "rules": [
     {
@@ -1043,6 +1044,46 @@
       "status": "active",
       "topic": "注释",
       "summary": "实体 RTL 注释不得承载图谱、测试、验证或评审流程证据，也不得通过固定长度、周期重复的无关中文尾串填充注释；证据应保留在门禁报告中。"
+    },
+    {
+      "gate_id": "VG151",
+      "rule_key": "parameter_contract_coverage",
+      "level": "BLOCKER",
+      "status": "active",
+      "topic": "参数合同",
+      "summary": "设计需求中的参数合同按表达式引用的公开参数集合自动适用，不绑定模块名；每个可观察 parameter 必须有可求值且满足的合同。"
+    },
+    {
+      "gate_id": "VG152",
+      "rule_key": "packed_dynamic_lookup_resource",
+      "level": "BLOCKER",
+      "status": "active",
+      "topic": "资源结构",
+      "summary": "超过目录阈值的大型 packed 参数不得直接承担运行时动态查表；必须提供可识别的译码、memory/ROM 或目标器件原语结构。"
+    },
+    {
+      "gate_id": "VG153",
+      "rule_key": "read_without_driver",
+      "level": "BLOCKER",
+      "status": "active",
+      "topic": "信号生存性",
+      "summary": "被 RTL 逻辑读取的内部信号和输出端口必须存在可确认的驱动源，不能依靠未初始化或隐式网络状态。"
+    },
+    {
+      "gate_id": "VG154",
+      "rule_key": "unused_declaration",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "信号生存性",
+      "summary": "内部声明必须参与当前模块的可观察逻辑；未使用的 parameter、localparam、net 或变量应删除或接入真实功能。"
+    },
+    {
+      "gate_id": "VG155",
+      "rule_key": "ready_valid_transfer_integrity",
+      "level": "BLOCKER",
+      "status": "active",
+      "topic": "接口握手",
+      "summary": "可确认的 ready-valid 通道消费行为必须同时受同一通道 valid 与 ready 控制，角色来自接口事实而非固定模块或目标名称。"
     }
   ]
 }

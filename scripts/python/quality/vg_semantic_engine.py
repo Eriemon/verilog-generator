@@ -10,7 +10,11 @@ from pathlib import Path
 from typing import Any
 
 # catalog loader 是固定编号、等级和激活状态的唯一来源。
-from scripts.python.workflow.verilog_gate_catalog import COMB_OPERATION_LIMIT_KEY, load_verilog_quality_gates
+from scripts.python.workflow.verilog_gate_catalog import (
+    COMB_OPERATION_LIMIT_KEY,
+    PACKED_LOOKUP_LIMIT_KEY,
+    load_verilog_quality_gates,
+)
 
 # 各规则模块按语义域执行固定编号。
 from .vg_branch_rules import evaluate_branch_gate
@@ -24,6 +28,14 @@ from .vg_comb_cone import build_comb_target_cones, evaluate_comb_operation_gate
 
 # vg_comment_integrity 只消费 formatter AST 注释候选并执行 VG150。
 from .vg_comment_integrity import evaluate_comment_integrity_gate
+
+# 参数合同、资源结构、生存性和 ready-valid 规则共享同一份 formatter 事实。
+from .vg_contract_rules import (
+    evaluate_handshake_gate,
+    evaluate_liveness_gate,
+    evaluate_parameter_gate,
+    evaluate_resource_gate,
+)
 
 # 状态机、复位和结构模块承载本轮新增的语义域。
 from .vg_fsm_rules import evaluate_fsm_gate
@@ -82,6 +94,18 @@ STRUCTURE_GATES = frozenset({"VG104", "VG130", "VG136", "VG145"})  # 组合结�
 # 组合预算规则共享一次分析合同，但按是否包含 for 克隆节点分配所有权。
 COMB_OPERATION_GATES = frozenset({"VG146", "VG147"})  # 普通与循环组合操作预算编号
 
+# 新增结构合同规则保持独立路由，避免名称或模块层级硬编码进入引擎。
+PARAMETER_GATES = frozenset({"VG151"})  # 参数集合自动适用规则
+
+# VG152 负责大型 packed 动态资源的结构事实。
+RESOURCE_GATES = frozenset({"VG152"})  # packed 动态资源结构规则
+
+# VG153/VG154 负责信号生存性和声明使用关系。
+LIVENESS_GATES = frozenset({"VG153", "VG154"})  # 读取无驱动和未使用声明规则
+
+# VG155 负责 ready-valid 消费条件的角色完整性。
+HANDSHAKE_GATES = frozenset({"VG155"})  # ready-valid 完整性规则
+
 # 文件命名规则独立于 formatter AST 来源与解析状态执行。
 FILE_NAMING_GATES = frozenset({"VG148", "VG149"})  # .v/.sv 文件级预检编号
 
@@ -98,7 +122,7 @@ def run_vg_semantic_gate(
     external_interface_sources: tuple[Path, ...] = (),
     **dict_options: Any,
 ) -> dict[str, Any]:
-    """运行 VG072 至 VG150 语义门禁并返回 fail-closed 报告。
+    """运行 VG072 至 VG155 语义门禁并返回 fail-closed 报告。
 
     参数:
         root: 待检查的 Verilog 文件或目录。
@@ -149,6 +173,9 @@ def run_vg_semantic_gate(
     # loader 已严格校验配置类型和正整数范围，此处只读取一次共享阈值。
     int_comb_operation_limit = int(dict_catalog["config"][COMB_OPERATION_LIMIT_KEY])  # 每目标组合操作预算
 
+    # packed 查表阈值同样由已校验目录提供，规则实现不内置业务数值。
+    int_packed_lookup_limit = int(dict_catalog["config"][PACKED_LOOKUP_LIMIT_KEY])  # packed 动态查表位宽阈值
+
     # 单次事实构建避免每条规则重复解析 RTL。
     vg_facts_vg_facts: VgFacts = facts or build_vg_facts(  # 当前目标的可信 VG 扫描事实
         path_root,  # 待分析的规范 RTL 入口
@@ -174,14 +201,16 @@ def run_vg_semantic_gate(
             continue
 
         # 预留规则也通过统一入口生成 reserved 结果。
-        list_results.append(
-            _evaluate_catalog_rule(
-                dict_rule,
-                vg_facts_vg_facts,
-                int_comb_operation_limit,
-                tuple_comb_cones,
-            )
+        dict_evaluation = _evaluate_catalog_rule(  # 当前目录项的语义评估
+            dict_rule,  # 当前 VG 规则定义
+            vg_facts_vg_facts,  # 当前源码和 spec 事实
+            int_comb_operation_limit,  # 组合操作预算
+            int_packed_lookup_limit,  # packed 查表阈值
+            tuple_comb_cones,  # 已构建的组合锥事实
         )
+
+        # 按 catalog 顺序保存当前规则结果。
+        list_results.append(dict_evaluation)
 
     # 状态摘要用于快速核对固定目录的完整覆盖。
     dict_summary = _summarize_results(list_results)  # 固定 VG 状态与目录计数
@@ -285,6 +314,7 @@ def _evaluate_catalog_rule(
     dict_rule: dict[str, Any],
     facts: VgFacts,
     int_comb_operation_limit: int,
+    int_packed_lookup_limit: int,
     tuple_comb_cones: tuple[Any, ...],
 ) -> dict[str, Any]:
     """执行单条 catalog 规则或生成 reserved 状态。
@@ -293,6 +323,7 @@ def _evaluate_catalog_rule(
         dict_rule: 当前固定 VG 规则的 catalog 元数据。
         facts: 当前 RTL 目标的共享解析事实。
         int_comb_operation_limit: 已校验的每目标组合操作预算。
+        int_packed_lookup_limit: VG152 使用的 packed 动态查表位宽阈值。
         tuple_comb_cones: VG146/VG147 共享的不可变组合锥快照。
     返回:
         合并 catalog 元数据与执行结论的公开结果字典。
@@ -327,6 +358,7 @@ def _evaluate_catalog_rule(
         str_gate_id,  # 当前激活 VG 编号
         facts,  # 共享解析事实
         int_comb_operation_limit,  # 目录拥有的组合操作预算
+        int_packed_lookup_limit,  # 目录拥有的 packed 动态查表阈值
         tuple_comb_cones,  # 两条组合预算规则共用一次分析结果
     )
 
@@ -374,6 +406,7 @@ def _run_active_evaluator(
     str_gate_id: str,
     facts: VgFacts,
     int_comb_operation_limit: int,
+    int_packed_lookup_limit: int,
     tuple_comb_cones: tuple[Any, ...],
 ) -> VgEvaluation:
     """把激活门禁路由到对应的规则模块。
@@ -382,6 +415,7 @@ def _run_active_evaluator(
         str_gate_id: 已确认激活的固定 VG 编号。
         facts: 当前 RTL 目标的共享解析事实。
         int_comb_operation_limit: 已校验的每目标组合操作预算。
+        int_packed_lookup_limit: 已校验的 packed 动态查表位宽阈值。
         tuple_comb_cones: 单次运行预构建的组合锥快照。
     返回:
         对应语义模块生成的逐门禁结论。
@@ -403,6 +437,30 @@ def _run_active_evaluator(
             int_comb_operation_limit,
             cones=tuple_comb_cones,
         )
+
+    # 参数合同按引用的公开参数集合自动适用，不读取模块名作用域。
+    if str_gate_id in PARAMETER_GATES:
+
+        # VG151 只消费设计需求中的参数合同与 formatter 参数事实。
+        return evaluate_parameter_gate(facts)
+
+    # packed 动态查表规则只把阈值交给资源形态分析器。
+    if str_gate_id in RESOURCE_GATES:
+
+        # VG152 不强制某一个 ROM 原语，只阻断不可识别的超大 packed 存储。
+        return evaluate_resource_gate(facts, int_packed_lookup_limit)
+
+    # 生存性规则共享一次结构化 driver/read 事实构建。
+    if str_gate_id in LIVENESS_GATES:
+
+        # VG153/VG154 均不依赖特定信号名或模块名。
+        return evaluate_liveness_gate(facts, str_gate_id)
+
+    # ready-valid 规则只消费 profile 角色和控制表达式事实。
+    if str_gate_id in HANDSHAKE_GATES:
+
+        # VG155 要求同一通道的 valid 与 ready 同时控制消费行为。
+        return evaluate_handshake_gate(facts)
 
     # 其余模块 evaluator 具有统一的 gate_id、facts 参数形状。
     tuple_evaluator_groups = (  # 固定 gate 集合到普通 evaluator 的一一映射

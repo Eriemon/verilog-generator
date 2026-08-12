@@ -35,7 +35,7 @@
       "expectations": {
         "failed_gate_ids": ["VG078", "VG079", "VG090", "VG101", "VG109", "VG111", "VG117", "VG124", "VG142", "VG146", "VG147", "VG149"],
         "clean_all_active_passed": true,
-        "catalog_total_rules": 128,
+        "catalog_total_rules": 133,
         "file_naming_case_count": 7,
         "file_naming_cases_ok": true,
         "prompt_mentions_all_rules": true,

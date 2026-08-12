@@ -10,7 +10,14 @@
     "interface_family": "native",
     "interface_profile": {},
     "confirmed_by_user": true,
-    "confirmation_notes": "Use the JESD DAC family template for a TX waveform playback bridge."
+    "confirmation_notes": "Use the JESD DAC family template for a TX waveform playback bridge.",
+    "parameter_constraints": [
+      {
+        "id": "c_data_width_positive",
+        "expression": "C_DATA_WIDTH >= 1",
+        "message": "C_DATA_WIDTH must be positive."
+      }
+    ]
   },
   "streamability": "streamable",
   "interface_family": "native",

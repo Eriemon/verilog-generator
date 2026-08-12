@@ -173,6 +173,9 @@ def check_verilog_quality(
         abi_wrapper=bool_abi_wrapper,  # 告诉下游是否保留 ABI 兼容端口豁免
     )
 
+    # 质量门 facade 同样必须把可选规格合同传给 VG 语义运行时。
+    dict_gate_kwargs["spec"] = _load_optional_json(dict_options.get("spec"))  # 当前质量门使用的归一化规格
+
     # 执行 runtime 质量门并收集结构化报告对象。
     report = run_verilog_quality_gate(  # 质量门运行结果对象
         path_artifacts,  # 本次要检查的 RTL 或工件目录

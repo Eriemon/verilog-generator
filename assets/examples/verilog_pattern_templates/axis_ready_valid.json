@@ -31,7 +31,14 @@
       }
     },
     "confirmed_by_user": true,
-    "confirmation_notes": "Preserve ready valid backpressure semantics."
+    "confirmation_notes": "Preserve ready valid backpressure semantics.",
+    "parameter_constraints": [
+      {
+        "id": "c_data_width_positive",
+        "expression": "C_DATA_WIDTH >= 1",
+        "message": "C_DATA_WIDTH must be positive."
+      }
+    ]
   },
   "interfaces": {
     "ports": [

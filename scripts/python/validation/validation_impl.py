@@ -144,6 +144,7 @@ def validate_generated(request: ValidationRequest) -> ValidationReport:
         path_root,
         str_comment_language,
         strict_generated_comments=request.strict_generated_comments,
+        spec=dict_normalized_spec,
     )
 
     # 最终交付门禁聚合 formatter AST、VG、static lint、comment gate 和 rulebook。

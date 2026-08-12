@@ -33,7 +33,14 @@
       }
     },
     "confirmed_by_user": true,
-    "confirmation_notes": "Use an AXI4-Lite slave CSR shell."
+    "confirmation_notes": "Use an AXI4-Lite slave CSR shell.",
+    "parameter_constraints": [
+      {
+        "id": "c_data_width_positive",
+        "expression": "C_DATA_WIDTH >= 1",
+        "message": "C_DATA_WIDTH must be positive."
+      }
+    ]
   },
   "interfaces": {
     "ports": [

@@ -41,7 +41,14 @@
       }
     },
     "confirmed_by_user": true,
-    "confirmation_notes": "Keep AXI4 channel grouping explicit for DMA style bursts."
+    "confirmation_notes": "Keep AXI4 channel grouping explicit for DMA style bursts.",
+    "parameter_constraints": [
+      {
+        "id": "c_data_width_positive",
+        "expression": "C_DATA_WIDTH >= 1",
+        "message": "C_DATA_WIDTH must be positive."
+      }
+    ]
   },
   "interfaces": {
     "ports": [

@@ -1,7 +1,7 @@
 {
   "documents": [
     {
-      "content_sha256": "17fd9dec97df7da581cf8f6eb2087f2df3ded5e44430c41bec3866e5ab159b3d",
+      "content_sha256": "2f1e210a5dc96dbf203bfcb86704c26e39be8db7a87f1585b05bed554d96eefe",
       "id": "document.skill",
       "keywords": [
         "route",
@@ -13,11 +13,18 @@
         "instance path",
         "VG148",
         "VG149",
+        "VG151",
+        "VG152",
+        "VG153",
+        "VG154",
+        "VG155",
         "filename",
-        "testbench"
+        "testbench",
+        "parameter constraints",
+        "ready-valid"
       ],
       "path": "SKILL.md",
-      "responsibility": "定义技能触发、外层任务路由、强制质量链、Verilog 文件名角色合同、跨实例组合锥合同、停止边界与渐进披露入口。",
+      "responsibility": "定义技能触发、外层任务路由、强制质量链、VG151–VG155 模块无关参数/资源/生存性/握手合同、Verilog 文件名角色合同、跨实例组合锥合同、停止边界与渐进披露入口。",
       "source_anchor": "",
       "status": "current",
       "summary": "readable-verilog-generator 的最外层执行合同。",
@@ -236,7 +243,7 @@
       "title": "Verilog Pattern Templates"
     },
     {
-      "content_sha256": "4357318dcb73e81f1d43a1430dcd000c6701b72ee5fe7bb8948c2bcb5662e9e4",
+      "content_sha256": "f256111d807d65888147337179cb02e68ae125dadfe03c4ce5edb5211a86355b",
       "id": "document.references-rules-verilog-quality-gates",
       "keywords": [
         "VG",
@@ -245,10 +252,22 @@
         "VG147",
         "VG148",
         "VG149",
+        "VG151",
+        "VG152",
+        "VG153",
+        "VG154",
+        "VG155",
         "file_role_confirmations",
         "tb_",
         "catalog",
         "combinational operations",
+        "parameter constraints",
+        "specialization fingerprint",
+        "packed dynamic lookup",
+        "read without driver",
+        "unused declaration",
+        "ready-valid",
+        "handshake channels",
         "source closure",
         "structured associations",
         "parameter specialization",
@@ -264,7 +283,7 @@
         "quality"
       ],
       "path": "references/rules/verilog-quality-gates.md",
-      "responsibility": "定义 VG 规则目录、严重度、结果状态、文件名角色与确认语义、跨实例 source-closure 计数、loop unknown 双 gate 语义、统一执行和报告 schema。",
+      "responsibility": "定义 VG 规则目录、严重度、结果状态、VG151–VG155 的模块无关参数/资源/生存性/握手合同、文件名角色与确认语义、跨实例 source-closure 计数、loop unknown 双 gate 语义、统一执行和报告 schema。",
       "source_anchor": "",
       "status": "current",
       "summary": "统一 Verilog VG 质量门禁合同。",

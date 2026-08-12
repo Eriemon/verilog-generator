@@ -184,17 +184,24 @@ def _downgrade_comment_diagnostics(list_issues: list[ValidationIssue]) -> list[V
 def _validate_formatter_ast_quality_gate(
     root: Path,
     comment_language: str,
+    spec: dict[str, Any] | None = None,
 ) -> tuple[list[ValidationIssue], dict[str, Any]]:
     """
     返回 formatter AST quality gate 的诊断和 metrics。
 
     :param root: 生成 artifact 根目录。
     :param comment_language: 注释语言策略，传递给 formatter AST 检查器。
+    :param spec: 已归一化的 Verilog 规格合同，供语义质量门复用。
     :return: formatter AST 诊断列表和结构化质量度量。
     """
 
     # quality_report 是 formatter 后端生成的结构化质量报告。
-    quality_report = run_verilog_quality_gate(root, strict=True, comment_language=comment_language)  # formatter AST 质量报告
+    quality_report = run_verilog_quality_gate(  # formatter AST 质量报告
+        root,  # formatter AST 检查的 artifact 根目录
+        strict=True,  # formatter AST 质量门严格阻断问题
+        comment_language=comment_language,  # formatter AST 使用的注释语言策略
+        spec=spec,  # formatter AST 复用的归一化规格合同
+    )
 
     # list_issues 保存 formatter 后端问题转换后的 validation 诊断。
     list_issues: list[ValidationIssue] = []  # 格式化抽象语法树诊断集合
@@ -245,24 +252,39 @@ def _validate_formatter_ast_quality_gate(
 def _append_formatter_ast_quality_result(
     list_issues: list[ValidationIssue],
     dict_metrics: dict[str, Any],
+
+    # root 和 comment_language 定位本轮 formatter 检查输入。
     root: Path,
     comment_language: str,
+
+    # strict_generated_comments 和 spec 控制报告合并合同。
     *,
     strict_generated_comments: bool,
+    spec: dict[str, Any] | None = None,
 ) -> None:
     """
     把 formatter AST quality gate 结果合并进 validation 报告。
-    
+
     :param list_issues: validation 主报告正在累计的诊断列表。
     :param dict_metrics: validation 主报告正在累计的 metrics 字典。
     :param root: 生成 artifact 根目录。
     :param comment_language: 注释语言策略。
+    :param spec: 已归一化的 Verilog 规格合同，供 formatter-AST 质量门复用。
     :param strict_generated_comments: 是否按新生成 RTL 严格阻断注释。
     :return: 本函数原地合并 formatter 诊断和 metrics，不返回业务值。
     """
 
     # formatter 后端产出 VG 诊断和 AST 解析统计。
-    tuple_quality = _validate_formatter_ast_quality_gate(root, comment_language)  # formatter AST 诊断和度量
+    if spec is None:
+
+        # 旧的私有调用仍使用无规格的静态质量门。
+        tuple_quality = _validate_formatter_ast_quality_gate(root, comment_language)  # 无规格兼容质量门结果
+
+    # spec 已提供时沿用同一份归一化合同。
+    else:
+
+        # validation 主流程把归一化规格继续传给 formatter-AST 质量门。
+        tuple_quality = _validate_formatter_ast_quality_gate(root, comment_language, spec)  # 带规格质量门结果
 
     # list_quality_issues 在 diagnostic 模式下可降级注释类问题。
     list_quality_issues = tuple_quality[0]  # formatter AST 发现的 RTL 质量诊断

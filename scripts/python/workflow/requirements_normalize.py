@@ -5,6 +5,7 @@ from __future__ import annotations
 
 # 导入 requirements 规范化阶段需要的标准库能力。
 import copy
+import re
 from typing import Any, Callable
 
 # 导入接口模板解析相关的本地辅助能力。
@@ -32,6 +33,12 @@ from .requirements_extract import (
 
 # 导入 requirements 启发式推断辅助入口。
 from .requirements_extract import detect_interface_family, detect_streamability
+
+# 参数合同 id 需要稳定进入报告索引，但不携带模块层级语义。
+PARAMETER_CONSTRAINT_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")  # 参数合同 id 格式
+
+# 模块、实例和层级字段会重新引入歧义作用域，统一禁止。
+FORBIDDEN_CONSTRAINT_SCOPE_FIELDS = frozenset({"module", "instance", "hierarchy", "scope"})  # 禁止的隐式作用域字段
 
 # 把调用侧 requirements 参数合并回统一 spec 结构。
 def apply_requirement_defaults(
@@ -175,6 +182,15 @@ def apply_requirement_defaults(
         "confirmed_by_user": bool_resolved_confirmed,  # 用户是否已完成 requirements 确认
         "confirmation_notes": str_resolved_notes,  # 最终保留的确认说明文本
     }  # 标准化后的 design_requirements 快照
+
+    # 保留参数合同和握手角色，不把公共约束静默丢在 defaults 阶段。
+    for str_contract_key in ("parameter_constraints", "handshake_channels"):
+
+        # 只有调用侧或原始规格显式提供时才写回可选合同字段。
+        if str_contract_key in dict_base_requirements:
+
+            # 深拷贝避免后续 prompt 或 evaluator 修改调用侧对象。
+            dict_design_requirements[str_contract_key] = copy.deepcopy(dict_base_requirements[str_contract_key])  # 保留的公共合同字段
 
     # 把标准化后的 design_requirements 写回规格顶层。
     dict_spec["design_requirements"] = dict_design_requirements  # 顶层 design_requirements 标准化快照
@@ -594,6 +610,9 @@ def _requirement_contract_issues(
     # 初始化合同问题列表。
     list_issues: list[str] = []  # requirements 合同问题列表
 
+    # 先校验不绑定模块名的参数与握手合同结构。
+    list_issues.extend(_parameter_contract_issues(requirements))
+
     # 读取 staged flow 是否显式启用了 codegen plan。
     bool_codegen_plan_enabled = bool(spec.get("codegen_plan_required"))  # 是否满足显式开启 codegen plan 的要求
 
@@ -686,6 +705,206 @@ def _requirement_contract_issues(
     list_issues.extend(_clock_reset_domain_issues(spec))
 
     # 返回汇总后的合同问题列表。
+    return list_issues
+
+# _parameter_constraint_item_issues 校验单条参数合同。
+def _parameter_constraint_item_issues(
+    int_index: int,
+    obj_constraint: object,
+    set_ids: set[str],
+) -> list[str]:
+    """返回单条 parameter constraint 的结构问题。
+
+    参数:
+        int_index: 合同在 parameter_constraints 数组中的索引。
+        obj_constraint: 当前数组项的原始值。
+        set_ids: 已登记的合法合同 id 集合。
+    返回:
+        当前数组项的结构问题列表。
+    """
+
+    # 非对象项没有可读取的公开字段。
+    if not isinstance(obj_constraint, dict):
+
+        # 保留索引以便调用方精确修复规格。
+        return [f"parameter_constraints[{int_index}] must be an object."]
+
+    # 读取 id、表达式和失败消息三个核心字段。
+    str_id = str(obj_constraint.get("id") or "")  # 当前合同稳定 id
+
+    # 读取合同表达式文本供字段完整性判断。
+    str_expression = str(obj_constraint.get("expression") or "")  # 当前合同表达式
+
+    # 读取合同失败消息文本供字段完整性判断。
+    str_message = str(obj_constraint.get("message") or "")  # 当前合同失败消息
+
+    # 初始化当前数组项的问题集合。
+    list_issues: list[str] = []  # 当前参数合同问题
+
+    # 禁止任何模块、实例或层级作用域字段。
+    set_forbidden_fields = FORBIDDEN_CONSTRAINT_SCOPE_FIELDS & set(obj_constraint)  # 当前合同作用域字段
+
+    # 作用域字段会造成模块绑定歧义，必须直接阻断。
+    if set_forbidden_fields:
+
+        # 排序字段名以保持报告确定性。
+        list_issues.append(
+            f"parameter_constraints[{int_index}] forbids scope fields: {', '.join(sorted(set_forbidden_fields))}."
+        )
+
+    # id 必须是稳定的小写标识符。
+    if not PARAMETER_CONSTRAINT_ID_PATTERN.fullmatch(str_id):
+
+        # 非法 id 不能成为报告或索引主键。
+        list_issues.append(f"parameter_constraints[{int_index}].id is invalid.")
+
+    # 合法 id 的重复项会覆盖跨模块证据。
+    elif str_id in set_ids:
+
+        # 明确指出重复合同编号。
+        list_issues.append(f"parameter_constraints[{int_index}].id is duplicated.")
+
+    # 仅记录合法 id，避免空串进入去重集合。
+    else:
+
+        # 保存当前合法合同编号。
+        set_ids.add(str_id)
+
+    # 表达式和消息需要同时存在，语法由 VG151 evaluator 负责。
+    if not str_expression or not str_message:
+
+        # 需求规范化阶段先阻断字段缺失。
+        list_issues.append(f"parameter_constraints[{int_index}] requires expression and message.")
+
+    # 返回当前数组项全部问题。
+    return list_issues
+
+# _parameter_constraint_issues 校验公共参数合同数组。
+def _parameter_constraint_issues(obj_constraints: object) -> list[str]:
+    """返回 parameter_constraints 的结构问题。
+
+    参数:
+        obj_constraints: requirements 中 parameter_constraints 的原始值。
+    返回:
+        参数合同结构问题列表。
+    """
+
+    # 缺失字段使用空列表，其他非列表形态都属于结构错误。
+    if obj_constraints is None or not isinstance(obj_constraints, list):
+
+        # null 和标量都不能进入参数合同 evaluator。
+        return ["design_requirements.parameter_constraints must be a list."]
+
+    # 记录已出现的合法合同 id。
+    set_ids: set[str] = set()  # 参数合同 id 去重集合
+
+    # 累积每个数组项的精确结构问题。
+    list_issues: list[str] = []  # 参数合同数组问题
+
+    # 逐项委托给单条合同校验器。
+    for int_index, obj_constraint in enumerate(obj_constraints):
+
+        # 当前索引的字段问题保持独立证据。
+        list_issues.extend(_parameter_constraint_item_issues(int_index, obj_constraint, set_ids))
+
+    # 返回参数合同数组问题。
+    return list_issues
+
+# _handshake_channel_item_issues 校验单条握手通道。
+def _handshake_channel_item_issues(int_index: int, obj_channel: object) -> list[str]:
+    """返回单条 handshake channel 的结构问题。
+
+    参数:
+        int_index: 通道在 handshake_channels 数组中的索引。
+        obj_channel: 当前通道的原始值。
+    返回:
+        当前通道结构问题列表。
+    """
+
+    # 每条握手通道必须是对象。
+    if not isinstance(obj_channel, dict):
+
+        # 保留索引定位错误项。
+        return [f"handshake_channels[{int_index}] must be an object."]
+
+    # 初始化当前握手通道的问题集合。
+    list_issues: list[str] = []  # 当前握手通道问题
+
+    # valid 与 ready 是最小公共角色字段。
+    str_valid = str(obj_channel.get("valid") or "")  # 当前 valid 角色
+
+    # ready 是消费完成所需的第二个公共握手角色。
+    str_ready = str(obj_channel.get("ready") or "")  # 通道消费完成依赖的 ready 控制信号名称
+
+    # 缺少任一角色时不能安全执行握手门禁。
+    if not str_valid or not str_ready:
+
+        # 明确指出 ready-valid 最小角色缺口。
+        list_issues.append(f"handshake_channels[{int_index}] requires valid and ready.")
+
+    # 握手角色禁止通过模块名或实例名重新限定作用域。
+    set_forbidden_fields = FORBIDDEN_CONSTRAINT_SCOPE_FIELDS & set(obj_channel)  # 当前通道作用域字段
+
+    # 作用域字段会使通道角色绑定到不明确的模块层级。
+    if set_forbidden_fields:
+
+        # 统一报告禁止字段。
+        list_issues.append(
+            f"handshake_channels[{int_index}] forbids scope fields: {', '.join(sorted(set_forbidden_fields))}."
+        )
+
+    # 返回当前通道全部问题。
+    return list_issues
+
+# _handshake_channel_issues 校验公共握手通道数组。
+def _handshake_channel_issues(obj_channels: object) -> list[str]:
+    """返回 handshake_channels 的结构问题。
+
+    参数:
+        obj_channels: requirements 中 handshake_channels 的原始值。
+    返回:
+        握手通道结构问题列表。
+    """
+
+    # 缺失字段使用空列表，其他形态都属于结构错误。
+    if obj_channels is None or not isinstance(obj_channels, list):
+
+        # 非数组通道无法建立 ready-valid 角色事实。
+        return ["design_requirements.handshake_channels must be a list."]
+
+    # 累积每个通道的精确结构问题。
+    list_issues: list[str] = []  # 握手通道数组问题
+
+    # 逐项委托给单条握手通道校验器。
+    for int_index, obj_channel in enumerate(obj_channels):
+
+        # 当前索引的角色问题保持独立证据。
+        list_issues.extend(_handshake_channel_item_issues(int_index, obj_channel))
+
+    # 返回握手通道数组问题。
+    return list_issues
+
+# _parameter_contract_issues 校验公共参数和握手字段的最小结构。
+def _parameter_contract_issues(requirements: dict[str, Any]) -> list[str]:
+    """返回 parameter_constraints 与 handshake_channels 的结构问题。
+
+    参数:
+        requirements: 已规范化的 design_requirements 对象。
+    返回:
+        参数合同与握手通道的结构问题列表。
+    """
+
+    # 参数合同和握手通道分别使用各自的结构校验器。
+    list_issues = _parameter_constraint_issues(  # 规范化参数合同数组
+        requirements.get("parameter_constraints", [])  # requirements 参数合同原始值
+    )  # 参数合同问题
+
+    # 合并顶层握手通道的无模块名角色校验结果。
+    list_issues.extend(
+        _handshake_channel_issues(requirements.get("handshake_channels", []))
+    )
+
+    # 返回完整的公共合同结构问题。
     return list_issues
 
 # 汇总接口家族与 interface_profile 之间的语义一致性问题。

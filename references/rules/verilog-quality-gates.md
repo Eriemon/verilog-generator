@@ -12,8 +12,9 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 - Public entry: `run_verilog_quality_gate(...)`
 - Report schema: v2
 - Report fields: `vg_catalog_version`, `vg_rule_summary`, and `vg_rule_results`
-- Catalog size: 128 active rules and 0 reserved rules
+- Catalog size: 133 active rules and 0 reserved rules
 - Combinational operation budget: `config.max_combinational_operations_per_target` is a required positive integer; the shipped value is `3`
+- Packed dynamic lookup budget: `config.packed_dynamic_lookup_block_bits` is a required positive integer; the shipped value is `1024`
 - Severity policy: BLOCKER non-pass results always block; WARNING non-pass results block strict runs
 
 ## Catalog
@@ -148,6 +149,11 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 | VG148 | BLOCKER | functional_verilog_filename | active |
 | VG149 | BLOCKER | testbench_filename_prefix | active |
 | VG150 | WARNING | comments.semantic_integrity | active |
+| VG151 | BLOCKER | parameter_contract_coverage | active |
+| VG152 | BLOCKER | packed_dynamic_lookup_resource | active |
+| VG153 | BLOCKER | read_without_driver | active |
+| VG154 | WARNING | unused_declaration | active |
+| VG155 | BLOCKER | ready_valid_transfer_integrity | active |
 
 ## Recognition Scope Contracts
 
@@ -172,6 +178,11 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 - The VG149 content evidence groups are `initial_process`, `simulation_task`, `clock_stimulus`, and `dut_self_check`. Comments and strings are masked before evidence detection. An ordinary filename with at least two groups remains `inconclusive` and sets `confirmation_required` until `file_role_confirmations` resolves it. A `design` confirmation makes VG149 not applicable; a `testbench` confirmation still fails until the file is renamed with `tb_`.
 - VG150 evaluates only formatter-bound entity comments. Configured workflow evidence markers such as graph, test, verification, review, and evidence-chain phrases fail closed on the entity line; evidence belongs in the gate report rather than RTL comments. It also rejects a high-confidence rotation family only when one entity label has at least eight candidates, four distinct fixed tails of length four to eight, at least four Chinese prefix characters, three changing positions, and two complete repeated cycles. A learned shorter tail is checked only after that family is established. Ordinary Chinese descriptions and isolated words do not fail solely because they contain a Chinese word.
 - Unreadable `.v`/`.sv` input fails closed. VG148 and VG149 return `error`, and the aggregate public report preserves the same stable relative-path read error through `VG000/file.encoding` without duplicating the `.v` diagnostic.
+- VG151 reads `design_requirements.parameter_constraints` as a top-level, module-independent contract list. Each expression is parsed in a restricted integer environment; its referenced parameter identifiers determine automatic applicability. `module`, `instance`, `hierarchy`, and `scope` fields are forbidden. A finding includes `constraint_id`, `required_parameters`, only the referenced `parameter_values`, `specialization_fingerprint`, `expression`, and a machine-readable `reason`.
+- VG152 applies when a packed parameter, localparam-derived packed declaration, or packed signal is dynamically selected. Width is evaluated from the declaration and localparam environment; static slices, unpacked memories, and recognized memory/primitive structures remain outside the blocker. A dynamic packed store at or above `packed_dynamic_lookup_block_bits` fails with `width`, `threshold`, `selector`, `selector_expression`, `resource_class`, and remediation alternatives. The rule recommends a structured case/FSM, inferred memory, or vendor memory primitive rather than prescribing one ROM primitive.
+- VG153 checks only read signals and output ports that lack a confirmable driver. It does not treat an unread, undriven declaration as a read-without-driver violation, and input/inout ports are boundary-driven facts.
+- VG154 is a WARNING-level declaration liveness check covering parameters, localparams, reg/wire declarations, functions, and tasks. Subprogram bodies are not counted as top-level observable use; structured function-call facts and top-level references are the use evidence. Findings expose `symbol`, `declaration_kind`, and `use_state=unused`.
+- VG155 consumes top-level `handshake_channels` or `interface_profile.handshake_channels` role facts without a module-name field. A channel must expose valid and ready ports (payload is optional evidence); each observed transfer consumer must be controlled by both roles. Findings retain the channel id plus valid, ready, payload, controls, and missing-role evidence.
 
 ## Formerly Reserved Rules
 
