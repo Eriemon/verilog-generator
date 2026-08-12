@@ -5,7 +5,7 @@ from __future__ import annotations
 
 # 导入 requirements 规范化阶段需要的标准库能力。
 import copy
-from typing import Any
+from typing import Any, Callable
 
 # 导入接口模板解析相关的本地辅助能力。
 from .interface_templates import InterfaceTemplateError, resolve_interface_template
@@ -311,41 +311,29 @@ def _apply_interface_defaults(interface_family: str, profile: dict[str, Any]) ->
     # 深拷贝 profile，避免默认值写回调用侧对象。
     dict_payload = copy.deepcopy(profile)  # 补齐中的接口 profile 副本
 
-    # 为 AXI Stream 场景补齐默认时钟复位域。
-    if interface_family == "axi_stream":
+    # 标准总线的默认时钟复位域集中声明，避免条件链掩盖字段差异。
+    dict_clock_reset_domains = {  # 为缺省 profile 选择可直接生成的标准时钟复位命名
+        "axi_stream": {"clock": "i_axis_aclk", "reset": "i_axis_arstn"},  # 对齐流握手端口命名
+        "axi4": {"clock": "i_axi_aclk", "reset": "i_axi_arstn"},  # 对齐存储映射事务端口命名
+        "axi4_lite": {"clock": "i_axi_aclk", "reset": "i_axi_arstn"},  # 对齐轻量控制通道端口命名
+        "ahb": {"clock": "i_ahb_hclk", "reset": "i_ahb_hrstn"},  # 对齐 HCLK 和 HRSTN 信号约定
+        "apb": {"clock": "i_apb_pclk", "reset": "i_apb_prstn"},  # 生成外设侧 PCLK 与低有效复位端口
+    }
 
-        # 把 AXI Stream 默认握手时钟域补进 profile，省去下游再次猜测端口名。
-        dict_payload.setdefault("clock_reset_domain", {"clock": "i_axis_aclk", "reset": "i_axis_arstn"})
+    # 仅标准总线家族具备可安全推导的默认时钟复位域。
+    if interface_family in dict_clock_reset_domains:
 
-    # 为 AXI4 memory-mapped 场景补齐统一的 ACLK/ARESETN 命名域。
-    elif interface_family == "axi4":
+        # setdefault 保留调用方显式给出的时钟复位字段。
+        dict_payload.setdefault("clock_reset_domain", dict_clock_reset_domains[interface_family])
 
-        # 把 AXI4 memory-mapped 默认时钟域补进 profile，保持总线命名和模板一致。
-        dict_payload.setdefault("clock_reset_domain", {"clock": "i_axi_aclk", "reset": "i_axi_arstn"})
-
-    # 为 AXI4-Lite 场景补齐变体和时钟复位域。
-    elif interface_family == "axi4_lite":
+    # AXI4-Lite 还需要补齐专属变体和 burst 能力。
+    if interface_family == "axi4_lite":
 
         # 保底写入 AXI4-Lite 变体标识。
         dict_payload.setdefault("axi4_variant", "axi4_lite")
 
         # AXI4-Lite 默认不支持 burst。
         dict_payload.setdefault("burst_support", False)
-
-        # 把 AXI4-Lite 控制总线默认时钟域补进 profile，便于后续模板解析。
-        dict_payload.setdefault("clock_reset_domain", {"clock": "i_axi_aclk", "reset": "i_axi_arstn"})
-
-    # 为 AHB 场景写入总线常见的 HCLK/HRSTN 默认时钟域。
-    elif interface_family == "ahb":
-
-        # 把 AHB 总线常用的 HCLK/HRSTN 组合补进 profile。
-        dict_payload.setdefault("clock_reset_domain", {"clock": "i_ahb_hclk", "reset": "i_ahb_hrstn"})
-
-    # 为 APB 外设场景写入常见的 PCLK/PRSTN 默认时钟域。
-    elif interface_family == "apb":
-
-        # 把 APB 外设常用的 PCLK/PRSTN 组合补进 profile。
-        dict_payload.setdefault("clock_reset_domain", {"clock": "i_apb_pclk", "reset": "i_apb_prstn"})
 
     # 返回补齐默认值后的 profile 副本。
     return dict_payload
@@ -740,80 +728,11 @@ def _interface_family_semantic_issues(
                 + "."
             )
 
-    # 严格模式下先校验 AXI Stream profile 自身是否完整。
-    if strict_profile_validation and interface_family == "axi_stream":
+    # 严格模式把 family-specific 校验和模板解析统一收敛到单一 helper。
+    if strict_profile_validation:
 
-        # 用 try/except 把底层校验失败转成问题条目。
-        try:
-
-            # 执行 AXI Stream profile 的必填字段与类型校验。
-            _validate_axi_stream_profile(profile)
-
-        # 直接透传 AXI Stream 校验器抛出的原始错误消息。
-        except ValueError as exc:
-
-            # AXI Stream profile 一旦缺字段或字段类型不合法，就把原始阻断原因直接带回上层。
-            list_issues.append(str(exc))
-
-    # 严格模式下继续校验 AXI4 profile 的结构完整性。
-    if strict_profile_validation and interface_family == "axi4":
-
-        # 用 try/except 把 AXI4 校验异常折叠成问题条目。
-        try:
-
-            # 执行 AXI4 profile 的必填字段与组合约束校验。
-            _validate_axi4_profile(profile)
-
-        # 原样保留 AXI4 校验器产生的异常文本。
-        except ValueError as exc:
-
-            # AXI4 profile 若缺少关键字段或字段组合冲突，直接透传底层阻断原因。
-            list_issues.append(str(exc))
-
-    # 严格模式下继续校验 AXI4-Lite profile 的关键字段。
-    if strict_profile_validation and interface_family == "axi4_lite":
-
-        # 用 try/except 承接 AXI4-Lite 校验异常。
-        try:
-
-            # 逐项核对 AXI4-Lite profile 是否补齐了角色、位宽等生成必需字段。
-            _validate_axi4_lite_profile(profile)
-
-        # 原样保留 AXI4-Lite 校验器返回的异常文本。
-        except ValueError as exc:
-
-            # AXI4-Lite profile 若缺少角色或位宽约束，直接透传底层阻断原因。
-            list_issues.append(str(exc))
-
-    # 严格模式下对 AHB/APB 这类简化总线做字段校验。
-    if strict_profile_validation and interface_family in {"ahb", "apb"}:
-
-        # 用 try/except 把简化总线校验异常转成问题条目。
-        try:
-
-            # 执行 AHB/APB profile 的角色与位宽校验。
-            _validate_simple_bus_profile(profile, str(interface_family))
-
-        # 原样保留简化总线校验器生成的异常文本。
-        except ValueError as exc:
-
-            # 简化总线 profile 一旦缺角色或位宽，就把原始阻断原因直接带回上层。
-            list_issues.append(str(exc))
-
-    # 严格模式下还要验证接口家族能否映射到合法模板。
-    if strict_profile_validation and interface_family in {"axi_stream", "axi4", "axi4_lite", "ahb", "apb"}:
-
-        # 用 try/except 捕获模板解析阶段的配置错误。
-        try:
-
-            # 执行接口模板解析，确认当前 profile 可以落到标准模板。
-            resolve_interface_template(str(interface_family), profile)
-
-        # 透传模板解析阶段返回的异常文本。
-        except InterfaceTemplateError as exc:
-
-            # 模板解析阶段如果无法映射标准接口模板，就把解析错误原样透传给上层。
-            list_issues.append(str(exc))
+        # helper 保留原校验顺序：先 profile，再模板解析。
+        list_issues.extend(_strict_interface_profile_issues(interface_family, profile))
 
     # 返回汇总后的接口语义问题列表。
     return list_issues
@@ -1027,4 +946,64 @@ def _clock_reset_domain_alignment_issues(
         list_issues.append("interface_profile.clock_reset_domain.reset must match spec.reset.name.")
 
     # 输出汇总后的顶层时钟复位命名对齐问题列表。
+    return list_issues
+
+# 严格接口 helper 统一执行 profile 校验和模板解析。
+def _strict_interface_profile_issues(interface_family: Any, profile: dict[str, Any]) -> list[str]:
+    """执行标准接口家族的严格 profile 与模板校验。
+
+    参数:
+        interface_family: 已确认的接口家族。
+        profile: 与接口家族关联的 interface_profile。
+
+    返回:
+        按 profile、模板顺序排列的严格校验问题。
+    """
+
+    # 每个标准接口只绑定一个 profile 校验入口。
+    dict_validators: dict[str, Callable[[dict[str, Any]], None]] = {  # 把标准 family 路由到唯一严格校验入口
+        "axi_stream": _validate_axi_stream_profile,  # 核对流角色、位宽和握手字段
+        "axi4": _validate_axi4_profile,  # 核对存储映射模式与通道组合
+        "axi4_lite": _validate_axi4_lite_profile,  # 核对轻量控制角色和数据宽度
+        "ahb": lambda dict_profile: _validate_simple_bus_profile(dict_profile, "ahb"),  # 复用简单总线规则并绑定 AHB 家族
+        "apb": lambda dict_profile: _validate_simple_bus_profile(dict_profile, "apb"),  # 将外设 profile 交给 APB 约束分支
+    }
+
+    # 非标准家族没有内置 profile 或模板校验器。
+    func_validator = dict_validators.get(str(interface_family))  # 当前接口家族的严格校验器
+
+    # 缺少校验器时保持原行为，不额外生成问题。
+    if func_validator is None:
+
+        # custom 和 native 由调用方的独立语义规则负责。
+        return []
+
+    # 严格校验问题按执行顺序累积。
+    list_issues: list[str] = []  # 当前标准接口的严格校验问题
+
+    # profile 校验异常需要转换成调用方可聚合的问题文本。
+    try:
+
+        # 执行当前家族的必填字段与组合约束校验。
+        func_validator(profile)
+
+    # 原样保留 profile 校验器产生的异常消息。
+    except ValueError as exc:
+
+        # profile 问题保持原有错误文本和排序位置。
+        list_issues.append(str(exc))
+
+    # 模板解析继续验证当前 profile 是否能映射到标准接口模板。
+    try:
+
+        # family 已由路由表确认是标准接口，允许直接解析模板。
+        resolve_interface_template(str(interface_family), profile)
+
+    # 模板错误同样作为独立问题附在 profile 问题之后。
+    except InterfaceTemplateError as exc:
+
+        # 保留模板解析阶段返回的原始阻断原因。
+        list_issues.append(str(exc))
+
+    # 返回当前标准接口的完整严格问题列表。
     return list_issues

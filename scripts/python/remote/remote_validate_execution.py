@@ -24,6 +24,12 @@ PATH_SKILL_ROOT = Path(__file__).resolve().parents[3]  # 包含 runtime、script
 # 仓库根目录用于复制 smoke harness。
 PATH_PROJECT_ROOT = PATH_SKILL_ROOT.parents[1]  # 当前 skill 仓库根目录
 
+# 新布局的每轮运行目录统一位于固定远端根的 runs 子目录。
+REMOTE_RUNS_DIRECTORY = "runs"  # 新 retained run 的远端容器目录
+
+# 旧根只用于 --run-id run-* 的只读兼容查询，不参与新运行写入。
+LEGACY_REMOTE_ROOT = ".readable-verilog-generator-validation"  # 历史 retained 根目录
+
 # ensure_local_prerequisites 校验本地 helper、settings 和 server list。
 def ensure_local_prerequisites(remote_context: Any) -> None:
     """校验 erie-remote-ssh 本地调用文件是否齐备。
@@ -401,8 +407,8 @@ def cleanup_package(path_package_root: Path) -> None:
     # 删除前解析绝对路径，避免相对路径绕过 tmp 限制。
     path_resolved = path_package_root.resolve()  # 待删除 staging 目录绝对路径
 
-    # 只允许删除 reports/tmp/readable-verilog-generator-run-* 形态目录。
-    if path_resolved.parent.name != "tmp" or not path_resolved.name.startswith("readable-verilog-generator-run-"):
+    # 只允许删除 reports/tmp 下由本流程生成的 readable-verilog-generator-* staging 目录。
+    if path_resolved.parent.name != "tmp" or not path_resolved.name.startswith("readable-verilog-generator-"):
 
         # 路径异常时拒绝递归删除。
         raise AssertionError(f"> ERR: [Python] Refusing to remove unexpected package path: {path_package_root}")
@@ -517,8 +523,9 @@ def helper_base(remote_context: Any) -> list[str]:
     :return: 包含 settings 和 server list 的参数列表。
     """
 
-    # 参数顺序保持旧脚本行为。
+    # --no-project 固定关闭 erie-remote-ssh 的隐式项目自动发现，保持所有子命令语义一致。
     return [
+        "--no-project",
         "--settings",
         str(remote_context.path_remote_settings),
         "--config",
@@ -733,23 +740,35 @@ def report_remote_runs_with_context_impl(
     # 自动化 exact 模式不枚举远端根，避免并发运行改变“最新”目录含义。
     if exact_run_id is not None:
 
+        # 新 run 使用 validation_ 前缀；旧 run-* 仅允许进入固定历史根的只读查询。
+        bool_new_run = re.fullmatch(r"validation_[A-Za-z0-9_-]+", exact_run_id) is not None  # 新布局身份是否安全
+
+        # 旧 run-* 只允许读取历史根，不参与新运行写入。
+        bool_legacy_run = re.fullmatch(r"run-[A-Za-z0-9_-]+", exact_run_id) is not None  # 历史身份是否安全
+
         # outer run 名称只能是单个安全目录片段，禁止路径穿越和任意路径读取。
-        if re.fullmatch(r"run-[A-Za-z0-9_-]+", exact_run_id) is None:
+        if not bool_new_run and not bool_legacy_run:
 
             # 不安全标识必须在构造任何远端读取路径前失败关闭。
-            raise ValueError("> ERR: [Python] --run-id must be one safe run-* directory name.")
+            raise ValueError("> ERR: [Python] --run-id must be a safe validation_* or legacy run-* directory name.")
+
+        # 旧身份只从明确的历史根读取，不把历史目录迁移或写入新根。
+        str_effective_root = LEGACY_REMOTE_ROOT if bool_legacy_run else str_remote_root  # 精确查询使用的远端根
 
         # 保持稳定返回协议，同时只汇总调用方明确绑定的一轮证据。
         return {
-            "remote_root": str_remote_root,
-            "runs": [dict_dependencies["summarize_remote_run"](remote_context, str_remote_root, exact_run_id)],
+            "remote_root": str_effective_root,
+            "runs": [dict_dependencies["summarize_remote_run"](remote_context, str_effective_root, exact_run_id)],
             "status": "ok",
         }
 
-    # file-list 只依赖 helper 基础参数和目标服务器。
+    # 新布局只枚举固定根下的 runs 子目录，历史根不参与默认“最新”选择。
     list_base = dict_dependencies["helper_base"](remote_context)  # retained root 列表查询参数
 
-    # 查询模式会先读取 run-* 目录，再按时间倒序筛出最新证据。
+    # file-list 只读取新布局的 runs 容器，不会触碰旧历史根。
+    str_remote_runs_root = dict_dependencies["remote_join"](str_remote_root, REMOTE_RUNS_DIRECTORY)  # 新布局 runs 容器路径
+
+    # 查询模式会先读取 validation_* 目录，再按时间倒序筛出最新证据。
     completed_process_listing = dict_dependencies["run_helper"](  # file-list 目录枚举的 helper 执行结果
         remote_context.path_helper,  # 远端 helper 可执行入口
         [  # file-list 子命令参数序列
@@ -758,7 +777,7 @@ def report_remote_runs_with_context_impl(
             "--server",  # 指定目录枚举目标服务器
             remote_context.str_server,  # retained 根目录所在服务器名
             "--path",  # 指定待查询 retained 根目录
-            str_remote_root,  # retained run 根目录地址
+            str_remote_runs_root,  # 新 retained run 容器地址
         ],
         allow_failure=True,  # 允许目录缺失时返回非零并由上层转义
         quiet_on_failure=True,  # 缺失 retained 根目录时压低 helper 噪声
@@ -776,7 +795,7 @@ def report_remote_runs_with_context_impl(
     # entries 字段承载远端目录项，没有字典时按空列表处理。
     if isinstance(dict_listing, dict):
 
-        # 字典型目录列表直接暴露 entries 字段，供后续 run-* 过滤逻辑复用。
+        # 字典型目录列表直接暴露 entries 字段，供后续 validation_* 过滤逻辑复用。
         list_entries = dict_listing.get("entries", [])  # retained root 下的原始目录项列表
 
     # 非字典结果说明 helper 输出不满足目录列表协议，下面退化为空目录列表。
@@ -791,7 +810,7 @@ def report_remote_runs_with_context_impl(
         for dict_item in list_entries  # 逐个检查 retained 根目录返回的目录项
         if isinstance(dict_item, dict)  # 只接收字典型目录项
         and dict_item.get("type") == "dir"  # 排除文件和其他非目录项
-        and str(dict_item.get("name", "")).startswith("run-")  # 仅保留 run-* 目录
+        and str(dict_item.get("name", "")).startswith("validation_")  # 仅保留新 validation_* 目录
     )
 
     # 取最近 N 条 run，再转换成从新到旧的呈现顺序。
@@ -854,16 +873,24 @@ def _discover_remote_smoke_run(
     str_remote_reports: str,
     *,
     dict_dependencies: dict[str, Any],
+    bool_direct_reports: bool = False,
 ) -> str:
     """枚举远程 reports 并返回最新的 smoke 运行目录。
 
     :param remote_context: erie-remote-ssh helper 调用上下文。
     :param str_remote_reports: 当前 retained skill 的 reports 根目录。
     :param dict_dependencies: 文件枚举、JSON 解析与路径组合回调。
+    :param bool_direct_reports: 新布局下 reports 本身就是唯一证据根。
     :return: 最新 timestamped smoke 目录的远程路径。
     """
 
-    # file-list 只读取 reports 直接子项，不扫描或修改远程证据。
+    # 新布局不再创建 reports/smoke_runs_*，直接把 reports 作为本轮唯一证据根。
+    if bool_direct_reports:
+
+        # 返回 canonical reports 路径，所有证据文件都直接落在该目录内。
+        return str_remote_reports
+
+    # 兼容旧 retained run 的只读摘要，仍然读取 reports 直接子项。
     list_helper_arguments = [  # reports 直接子项枚举参数
         "file-list",  # 只读文件列表子命令
         *dict_dependencies["helper_base"](remote_context),  # 当前连接基础参数
@@ -930,13 +957,15 @@ def _build_remote_run_summary(
     str_remote_skill: str,
     str_remote_smoke_run: str,
     dict_evidence: dict[str, dict[str, Any]],
+    dict_agent_review: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """组合 outer run 定位和三类远程证据摘要。
 
     :param str_run_name: outer retained run 名称。
     :param str_remote_skill: 远程上传 skill 根目录。
     :param str_remote_smoke_run: 本轮 timestamped smoke 证据根。
-    :param dict_evidence: completion、pytest、execute 和 fixture 的具名证据摘要。
+    :param dict_evidence: completion、pytest、execute、fixture 和测试证据摘要。
+    :param dict_agent_review: Agent 自动审核摘要；旧 retained run 缺失时为 None。
     :return: report-runs 对外输出的单轮摘要。
     """
 
@@ -945,11 +974,308 @@ def _build_remote_run_summary(
         "run": str_run_name,
         "remote_skill": str_remote_skill,
         "smoke_run": str_remote_smoke_run,
+        "agent_review": dict_agent_review,
     } | {
         "completion": dict_evidence["completion"],
         "pytest": dict_evidence["pytest"],
         "remote_execute": dict_evidence["remote_execute"],
         "fixtures": dict_evidence["fixtures"],
+        "test_evidence": dict_evidence["test_evidence"],
+    }
+
+# _map_retained_paths 固化新旧 retained run 的读取路径。
+def _map_retained_paths(
+    remote_context: Any,
+    str_remote_root: str,
+    str_run_name: str,
+    *,
+    dict_dependencies: dict[str, Any],
+    dict_remote_paths: dict[str, str],
+) -> dict[str, str]:
+    """解析 retained run 的 outer、workspace、reports 和证据路径。
+
+    :param remote_context: erie-remote-ssh helper 调用上下文。
+    :param str_remote_root: 当前读取的远端 retained 根目录。
+    :param str_run_name: 当前 retained run 名称。
+    :param dict_dependencies: report-runs 使用的路径与下载回调。
+    :param dict_remote_paths: 远端证据相对路径映射。
+    :return: 新旧布局统一的 retained 路径映射。
+    """
+
+    # 新 validation_* 运行采用 runs/<id>/{workspace,reports}；旧 run-* 保持历史布局只读读取。
+    bool_new_layout = str_run_name.startswith("validation_")  # 当前 run 是否采用新 workspace/reports 布局
+
+    # 新布局的 outer run 根位于固定 remote_root/runs 下，旧布局直接位于历史根下。
+    str_remote_parent = (  # 新旧布局的 outer run 绝对路径
+        dict_dependencies["remote_join"](str_remote_root, REMOTE_RUNS_DIRECTORY, str_run_name)  # 新布局 outer 路径
+        if bool_new_layout  # 新布局条件
+        else dict_dependencies["remote_join"](str_remote_root, str_run_name)  # 旧布局兼容路径
+    )
+
+    # 上传 skill 在新布局的 workspace 子目录，旧 retained run 保持原始直接目录。
+    str_remote_skill = (  # 上传源码的 workspace 路径
+        dict_dependencies["remote_join"](str_remote_parent, "workspace", "readable-verilog-generator")  # 新 workspace 源码路径
+        if bool_new_layout  # 新布局源码条件
+        else dict_dependencies["remote_join"](str_remote_parent, "readable-verilog-generator")  # 旧 skill 源码路径
+    )
+
+    # 新布局的报告目录直接位于 outer run 根；旧布局沿用 skill/reports。
+    str_remote_reports = (  # 当前 run 的直接报告目录
+        dict_dependencies["remote_join"](str_remote_parent, "reports")  # 新布局直接报告路径
+        if bool_new_layout  # 新布局报告条件
+        else dict_dependencies["remote_join"](str_remote_skill, "reports")  # 旧布局报告路径
+    )
+
+    # 选中最新 timestamped 目录，供 execution、fixture 和 pytest 共用。
+    str_remote_smoke_run = _discover_remote_smoke_run(  # 选择本轮最新时间序列目录，供所有证据复用
+        remote_context,  # 使用已验证服务器的远程会话上下文
+        str_remote_reports,  # 从 outer run 的报告容器开始发现结果
+        dict_dependencies=dict_dependencies,  # 注入 report-runs 的路径与下载契约
+        bool_direct_reports=bool_new_layout,  # 新布局直接读取 reports 子项而不套 smoke_runs
+    )
+
+    # execution、RTL 和 testbench 路径全部从同一 smoke 根展开。
+    str_execute_validation_json = dict_dependencies["remote_join"](  # 记录执行校验文件位置，便于回看原始状态
+        str_remote_smoke_run,  # 将校验文件挂到选定时间序列根下
+        dict_remote_paths["execute_validation_json"],  # 使用注册表声明的 validation JSON 相对位置
+    )
+
+    # readable RTL 产物路径需要独立保留，供 execution 摘要追溯。
+    str_execute_rtl_path = dict_dependencies["remote_join"](  # 保留 readable RTL 地址，支撑远程工件追溯
+        str_remote_smoke_run,  # 沿用同一时间序列目录保证工件成套
+        dict_remote_paths["execute_rtl_path"],  # 读取 execute 证据注册的 RTL 相对位置
+    )
+
+    # 仿真激励入口路径需要独立保留，供失败回放定位。
+    str_execute_testbench_path = dict_dependencies["remote_join"](  # 保存 testbench 地址，供失败复跑直接取用
+        str_remote_smoke_run,  # 让激励文件与 execution JSON 保持同一证据根
+        dict_remote_paths["execute_testbench_path"],  # 使用验证入口注册的激励相对位置
+    )
+
+    # 返回 report-runs 下游下载器共用的路径合同。
+    return {
+        "remote_parent": str_remote_parent,
+        "remote_skill": str_remote_skill,
+        "remote_reports": str_remote_reports,
+        "remote_smoke_run": str_remote_smoke_run,
+        "execute_validation_json": str_execute_validation_json,
+        "execute_rtl_path": str_execute_rtl_path,
+        "execute_testbench_path": str_execute_testbench_path,
+        "new_layout": "1" if bool_new_layout else "0",
+    }
+
+# _download_phase_summaries 读取 targeted、regression、full 阶段摘要。
+def _download_phase_summaries(
+    remote_context: Any,
+    str_run_name: str,
+    *,
+    dict_dependencies: dict[str, Any],
+    dict_remote_paths: dict[str, str],
+    dict_paths: dict[str, str],
+) -> dict[str, Any]:
+    """下载三阶段 pytest 原始摘要。
+
+    :param remote_context: erie-remote-ssh helper 调用上下文。
+    :param str_run_name: 当前 retained run 名称。
+    :param dict_dependencies: report-runs 使用的下载回调。
+    :param dict_remote_paths: 远端阶段摘要相对路径映射。
+    :param dict_paths: 已解析的 retained 路径映射。
+    :return: targeted、regression、full 三阶段原始摘要。
+    """
+
+    # 阶段容器按固定顺序保存三类独立 pytest 事实。
+    dict_phase_summaries: dict[str, Any] = {}  # 三阶段 pytest 原始载荷
+
+    # 每个阶段绑定自己的远程 JSON，避免 aggregate 冒充阶段结果。
+    for str_phase, str_path_key in (
+        ("targeted", "pytest_targeted_summary_json"),
+        ("regression", "pytest_regression_summary_json"),
+        ("full", "pytest_full_summary_json"),
+    ):
+
+        # 循环每次下载一个阶段文件，随后由映射承载通过数、跳过数和退出码。
+        dict_phase_summaries[str_phase] = _download_retained_summary(  # 该项收集当前阶段的通过数、跳过数与退出码，供一致性门禁逐项比较
+            remote_context,  # 当前阶段下载会话
+            dict_paths["remote_smoke_run"],  # 时间序列证据根
+            str_run_name,  # 当前 outer run 的阶段归档标识
+            dict_dependencies=dict_dependencies,  # 阶段下载回调
+            dict_remote_paths=dict_remote_paths,  # 阶段路径注册表
+            str_remote_path_key=str_path_key,  # 当前阶段的注册键
+            str_local_filename=f"remote_pytest_{str_phase}_summary.json",  # 本地阶段文件名
+        )
+
+    # 返回三阶段具名映射，供 aggregate 摘要器统一读取。
+    return dict_phase_summaries
+
+# _download_core_payloads 读取 execution、fixture 和 aggregate pytest 证据。
+def _download_core_payloads(
+    remote_context: Any,
+    str_run_name: str,
+    *,
+    dict_dependencies: dict[str, Any],
+    dict_remote_paths: dict[str, str],
+    dict_paths: dict[str, str],
+) -> dict[str, Any]:
+    """下载 retained run 的核心验证载荷。
+
+    :param remote_context: erie-remote-ssh helper 调用上下文。
+    :param str_run_name: 当前 retained run 名称。
+    :param dict_dependencies: report-runs 使用的下载回调。
+    :param dict_remote_paths: 远端证据相对路径映射。
+    :param dict_paths: 已解析的 retained 路径映射。
+    :return: execution、fixture 和 aggregate pytest 原始载荷。
+    """
+
+    # execution JSON 保留模拟执行的原始状态与工件索引。
+    dict_execute_report = dict_dependencies["download_json_optional"](  # 载入执行 JSON 供门禁摘要读取
+        remote_context,  # 复用当前远程会话完成文件传输
+        dict_paths["execute_validation_json"],  # 读取已映射的远端校验文件
+        dict_dependencies["remote_join"](  # 计算本地执行证据保存位置
+            "readable-verilog-generator-report",  # 本地 retained 报告容器
+            str_run_name,  # 以本轮 outer 名称划分证据
+            "remote_execute_validation.json",  # 本地 execution JSON 文件名
+        ),
+    )
+
+    # fixture 摘要单独保存，保持固定样例回归的证据边界。
+    dict_fixture_summary = _download_retained_summary(  # 下载固定 fixture 汇总文件
+        remote_context,  # 当前远程文件下载上下文
+        dict_paths["remote_smoke_run"],  # fixture 所在的时间序列证据根
+        str_run_name,  # fixture 结果对应的 outer run
+        dict_dependencies=dict_dependencies,  # fixture 下载所需回调
+        dict_remote_paths=dict_remote_paths,  # fixture 注册路径集合
+        str_remote_path_key="fixture_summary_json",  # fixture JSON 的注册键
+        str_local_filename="remote_fixture_summary.json",  # 本地 fixture 归档文件名
+    )
+
+    # aggregate pytest 摘要提供总计数，阶段摘要另行下载。
+    dict_pytest_summary = _download_retained_summary(  # 取得 aggregate pytest 总结文件
+        remote_context,  # 沿用当前报告查询的连接
+        dict_paths["remote_smoke_run"],  # aggregate 文件的时间序列根
+        str_run_name,  # 将总计数挂到 outer run
+        dict_dependencies=dict_dependencies,  # aggregate 下载依赖集合
+        dict_remote_paths=dict_remote_paths,  # 让 aggregate 下载与阶段注册表保持同一来源
+        str_remote_path_key="pytest_summary_json",  # 通过注册键定位 aggregate JSON
+        str_local_filename="remote_pytest_summary.json",  # 将 aggregate 副本写入本地归档
+    )
+
+    # 返回核心三类原始载荷，供外层编排器继续组合。
+    return {
+        "execute": dict_execute_report,
+        "fixture": dict_fixture_summary,
+        "pytest": dict_pytest_summary,
+    }
+
+# _download_identity_payloads 读取测试总表、completion 和 Agent 审核文件。
+def _download_identity_payloads(
+    remote_context: Any,
+    str_run_name: str,
+    *,
+    dict_dependencies: dict[str, Any],
+    dict_remote_paths: dict[str, str],
+    dict_paths: dict[str, str],
+) -> dict[str, Any]:
+    """下载 retained run 的身份与终止状态载荷。
+
+    :param remote_context: erie-remote-ssh helper 调用上下文。
+    :param str_run_name: 当前 retained run 名称。
+    :param dict_dependencies: report-runs 使用的下载回调。
+    :param dict_remote_paths: 远端证据相对路径映射。
+    :param dict_paths: 已解析的 retained 路径映射。
+    :return: test_evidence、completion 和 agent_review 原始载荷。
+    """
+
+    # 测试总表记录环境、哈希和阶段身份，缺失时由上层标记不可用。
+    dict_test_evidence = _download_retained_summary(  # 读取测试身份总表
+        remote_context,  # 使用当前服务器会话下载总表
+        dict_paths["remote_smoke_run"],  # 总表所在时间序列目录
+        str_run_name,  # 当前 outer run 归档键
+        dict_dependencies=dict_dependencies,  # 总表下载回调
+        dict_remote_paths=dict_remote_paths,  # 总表注册路径
+        str_remote_path_key="test_evidence_json",  # 身份总表键
+        str_local_filename="remote_test_evidence.json",  # 本地身份总表文件名
+    )
+
+    # completion 文件用于核对运行标识和最终终止状态。
+    dict_completion = _download_retained_summary(  # 该对象保存本轮运行标识、终止状态和成功标记，供状态门禁比较
+        remote_context,  # 复用 retained 查询连接
+        dict_paths["remote_smoke_run"],  # completion 所在时间序列目录
+        str_run_name,  # 将终止状态绑定 outer run
+        dict_dependencies=dict_dependencies,  # completion 下载回调
+        dict_remote_paths=dict_remote_paths,  # completion 注册路径
+        str_remote_path_key="completion_json",  # completion 清单注册键名
+        str_local_filename="remote_completion.json",  # 将终止清单落到本地 retained 证据区
+    )
+
+    # Agent 审核文件位于 outer 根，旧 retained run 缺失时返回 None。
+    dict_agent_review = dict_dependencies["download_json_optional"](  # 读取 Agent 自动审核结果
+        remote_context,  # 当前审核文件下载上下文
+        dict_dependencies["remote_join"](dict_paths["remote_parent"], "agent_review.json"),  # outer 根审核文件
+        dict_dependencies["remote_join"](  # 本地审核归档位置
+            "readable-verilog-generator-report",  # 把审核副本写入本地报告索引根
+            str_run_name,  # 以 outer run 区分审核副本
+            "agent_review.json",  # 保持审核文件名稳定
+        ),
+    )
+
+    # 返回身份、终止和审核三类载荷，供对外摘要携带。
+    return {
+        "test_evidence": dict_test_evidence,
+        "completion": dict_completion,
+        "agent_review": dict_agent_review,
+    }
+
+# _download_retained_payloads 读取 retained run 的原始 JSON 证据。
+def _download_retained_payloads(
+    remote_context: Any,
+    str_run_name: str,
+    *,
+    dict_dependencies: dict[str, Any],
+    dict_remote_paths: dict[str, str],
+    dict_paths: dict[str, str],
+) -> dict[str, Any]:
+    """下载 retained run 的全部原始 JSON 载荷。
+
+    :param remote_context: erie-remote-ssh helper 调用上下文。
+    :param str_run_name: 当前 retained run 名称。
+    :param dict_dependencies: report-runs 使用的下载回调。
+    :param dict_remote_paths: 远端证据相对路径映射。
+    :param dict_paths: 已解析的 retained 路径映射。
+    :return: 核心、阶段和身份载荷的统一映射。
+    """
+
+    # 核心 execution、fixture 和 aggregate 证据先单独下载。
+    dict_core_payloads = _download_core_payloads(  # 取得 execution、fixture、aggregate 三类核心载荷
+        remote_context,  # 核心文件下载共用的远程会话
+        str_run_name,  # 用 outer 标识隔离核心证据副本
+        dict_dependencies=dict_dependencies,  # 核心下载依赖
+        dict_remote_paths=dict_remote_paths,  # 核心路径配置
+        dict_paths=dict_paths,  # 已解析路径映射
+    )
+
+    # targeted、regression、full 摘要保持独立文件读取。
+    dict_phase_summaries = _download_phase_summaries(  # 读取三个阶段的独立 pytest 文件
+        remote_context,  # 阶段文件读取所需的远程会话
+        str_run_name,  # 将阶段副本绑定到同一 outer 标识
+        dict_dependencies=dict_dependencies,  # 阶段下载依赖
+        dict_remote_paths=dict_remote_paths,  # 阶段路径配置
+        dict_paths=dict_paths,  # 阶段路径根
+    )
+
+    # 测试身份、completion 和 Agent 审核载荷最后归档。
+    dict_identity_payloads = _download_identity_payloads(  # 身份与审核载荷
+        remote_context,  # 身份下载上下文
+        str_run_name,  # 身份归档键
+        dict_dependencies=dict_dependencies,  # 身份下载依赖
+        dict_remote_paths=dict_remote_paths,  # 身份路径配置
+        dict_paths=dict_paths,  # 身份路径根
+    )
+
+    # 合并三类具名载荷，保持 report-runs 的既有字段协议。
+    return {
+        **dict_core_payloads,
+        "phases": dict_phase_summaries,
+        **dict_identity_payloads,
     }
 
 # 汇总单个 retained run 的执行、pytest 和 fixture 证据。
@@ -971,113 +1297,63 @@ def summarize_remote_run_impl(
     :return: 包含 remote_execute 和 fixtures 摘要的字典。
     """
 
-    # 先确定上传 skill 在当前 retained run 里的远端基目录，后续所有证据路径都从这里展开。
-    str_remote_skill = dict_dependencies["remote_join"](  # 当前 retained run 的上传 skill 根目录，用来展开执行校验 JSON、可读 RTL、激励文件和夹具汇总的远端位置
-        str_remote_root,  # settings.remote.remote_root 对应的 retained 根目录
-        str_run_name,  # 当前这次 retained 记录的 run-* 子目录名
-        "readable-verilog-generator",  # 远端 staging 后保留下来的 skill 目录名
+    # 统一解析新旧布局，避免主汇总函数重复维护远程目录语义。
+    dict_paths = _map_retained_paths(  # retained 路径映射
+        remote_context,  # 当前远程 helper 上下文
+        str_remote_root,  # 固定根或旧根
+        str_run_name,  # 当前 retained run 名称
+        dict_dependencies=dict_dependencies,  # 路径回调集合
+        dict_remote_paths=dict_remote_paths,  # 远端证据相对路径
     )
 
-    # 报告列表与下载拆分，这里只保留当前 outer run 的证据根。
-    str_remote_reports = dict_dependencies["remote_join"](str_remote_skill, "reports")  # timestamped 证据的枚举起点
-
-    # 选中最新 timestamped 目录，供 execution、fixture 和 pytest 共用。
-    str_remote_smoke_run = _discover_remote_smoke_run(  # 当前 outer run 的 smoke 证据根
-        remote_context,  # 使用当前服务器与 helper 路由
-        str_remote_reports,  # 从 outer run 的 reports 直接子项选择
-        dict_dependencies=dict_dependencies,  # 沿用 report-runs 注入的只读回调
+    # 统一下载 retained run 的原始载荷，保留旧 run-* 的只读兼容性。
+    dict_payloads = _download_retained_payloads(  # retained 原始证据映射
+        remote_context,  # 载入 retained 证据所需的复用连接对象
+        str_run_name,  # 以 outer 标识选择本地下载分区
+        dict_dependencies=dict_dependencies,  # 下载回调集合
+        dict_remote_paths=dict_remote_paths,  # 向下载器传递执行文件注册表
+        dict_paths=dict_paths,  # 已解析的 retained 路径
     )
 
-    # 先拼出 validation.json 的 retained 地址，后面据此下载执行证据。
-    str_execute_validation_json = dict_dependencies["remote_join"](  # 下载 execution 校验 JSON 的来源地址
-        str_remote_smoke_run,  # 作为 validation.json 拼接起点的 timestamped smoke 目录
-        dict_remote_paths["execute_validation_json"],  # validation.json 的相对证据路径
+    # pytest 摘要同时携带 targeted、regression、full 三阶段原始结果。
+    dict_pytest_report = dict_dependencies["summarize_pytest_report"](  # 该对象保存总通过数、跳过数和阶段状态，供 report-runs 输出
+        dict_payloads["pytest"],  # aggregate pytest 原始载荷
+        dict_phase_summaries=dict_payloads["phases"],  # targeted、regression、full 阶段原始载荷
     )
 
-    # 再给可读 RTL 产物保留 retained 定位，方便人工追查输出内容。
-    str_execute_rtl_path = dict_dependencies["remote_join"](  # 人工回看 RTL 结果时使用的 retained 定位
-        str_remote_smoke_run,  # 把 readable RTL 的相对路径挂到 timestamped smoke 目录下面
-        dict_remote_paths["execute_rtl_path"],  # readable RTL 产物的相对路径
+    # execution 摘要保留 RTL、testbench 和 validation JSON 的远程定位。
+    dict_validation_report = dict_dependencies["summarize_validation_report"](  # 该对象保存执行成功标记、后端和工件定位，供远程门禁核验
+        dict_payloads["execute"],  # 交给摘要器读取模拟执行原始 JSON
+        rtl_path=dict_paths["execute_rtl_path"],  # RTL 远程路径
+        testbench_path=dict_paths["execute_testbench_path"],  # 失败回放所需的激励入口
+        validation_json=dict_paths["execute_validation_json"],  # validation JSON 原始证据位置
     )
 
-    # 最后把 testbench 的 retained 定位单独留下，失败时可以直接回看激励。
-    str_execute_testbench_path = dict_dependencies["remote_join"](  # 失败复盘激励文件时使用的 retained 定位
-        str_remote_smoke_run,  # 沿着 timestamped smoke 目录定位失败回放所需的激励文件
-        dict_remote_paths["execute_testbench_path"],  # remote_execute testbench 的相对路径
+    # fixture 摘要维持固定最小案例的独立回归边界。
+    dict_fixtures_report = dict_dependencies["summarize_fixture_report"](  # 提炼固定样例回归结果，供远程门禁检查
+        dict_payloads["fixture"],  # 输入已下载的最小案例汇总文件
     )
 
-    # 先下载 execution JSON 原始证据，供摘要函数抽取状态和工件信息。
-    dict_execute_report = dict_dependencies["download_json_optional"](  # remote_execute 原始 JSON 证据
-        remote_context,  # 当前 helper 调用上下文
-        str_execute_validation_json,  # validation.json 的远端下载来源
-        dict_dependencies["remote_join"](  # 组装 execution JSON 的本地落盘相对路径
-            "readable-verilog-generator-report",  # execution 证据写入的本地报告根目录
-            str_run_name,  # execution 证据归档到当前 run 的子目录
-            "remote_execute_validation.json",  # execution JSON 在本地保存时使用的文件名
-        ),
-    )
-
-    # fixture 汇总与 execution 证据分开下载，保留最小案例回归的独立事实边界。
-    dict_fixture_summary = _download_retained_summary(  # remote_fixtures 汇总 JSON 证据
-        remote_context,  # 下载 fixture 回归汇总时使用的远程 helper 上下文
-        str_remote_smoke_run,  # fixture 证据所在的 timestamped smoke 根目录
-        str_run_name,  # fixture 下载结果对应的 retained run 名称
-        dict_dependencies=dict_dependencies,  # fixture 下载复用的路径与 JSON 回调
-        dict_remote_paths=dict_remote_paths,  # fixture 汇总在远端 skill 内的路径配置
-        str_remote_path_key="fixture_summary_json",  # fixture 汇总路径对应的配置键
-        str_local_filename="remote_fixture_summary.json",  # fixture 本地归档文件名
-    )
-
-    # pytest 摘要独立下载，保证 retained run 能复核权威回归的精确计数和耗时。
-    dict_pytest_summary = _download_retained_summary(  # 远程 pytest 结构化 JSON 证据
-        remote_context,  # 下载 pytest 摘要时使用的远程 helper 上下文
-        str_remote_smoke_run,  # 作为权威回归摘要定位起点的 timestamped smoke 目录
-        str_run_name,  # 把权威回归计数隔离到本次 run 的本地证据分区
-        dict_dependencies=dict_dependencies,  # 注入 pytest 证据下载与路径组合能力
-        dict_remote_paths=dict_remote_paths,  # pytest 摘要在远端 skill 内的路径配置
-        str_remote_path_key="pytest_summary_json",  # pytest 摘要路径对应的配置键
-        str_local_filename="remote_pytest_summary.json",  # 供 require-remote 消费的本地 JSON 名称
-    )
-
-    # 先把三类证据分别压缩为对外摘要，避免返回结构内嵌副作用。
-    dict_pytest_report = dict_dependencies["summarize_pytest_report"](dict_pytest_summary)  # 权威 pytest 计数摘要
-
-    # completion 位于同一 timestamped smoke 根，缺失时 optional 下载器返回空字典并由评估层失败关闭。
-    dict_completion = _download_retained_summary(  # 远程效果评估用于核对运行标识、源码摘要和最终状态的原子完成清单
-        remote_context,  # 当前服务器上执行下载操作所需的帮助器调用上下文
-        str_remote_smoke_run,  # 本轮完成清单所在的时间戳证据目录
-        str_run_name,  # 当前完成清单绑定的外层保留运行名称
-        dict_dependencies=dict_dependencies,  # 负责远程下载与 JSON 解析的依赖回调映射
-        dict_remote_paths=dict_remote_paths,  # 定位完成清单所需的远端相对路径配置
-        str_remote_path_key="completion_json",  # 从路径配置读取完成清单位置的稳定键名
-        str_local_filename="remote_completion.json",  # 下载完成清单时使用的本地临时文件名称
-    )
-
-    # execution 摘要额外保留 RTL、testbench 和 validation JSON 远程定位。
-    dict_validation_report = dict_dependencies["summarize_validation_report"](  # 含可追溯工件定位的 execute 摘要
-        dict_execute_report,  # 下载的 execution 原始载荷
-        rtl_path=str_execute_rtl_path,  # 人工复核时的 RTL 入口
-        testbench_path=str_execute_testbench_path,  # 失败回放时的激励入口
-        validation_json=str_execute_validation_json,  # 机器消费的原始校验证据
-    )
-
-    # fixture 摘要保留固定最小案例的独立回归边界。
-    dict_fixtures_report = dict_dependencies["summarize_fixture_report"](dict_fixture_summary)  # 夹具合同通过情况摘要
-
-    # 具名证据分组缩短最终协议调用，同时避免位置参数次序误配。
-    dict_remote_evidence = {  # 最终报告按稳定键名汇总完成状态、测试计数、工具链结果和夹具结果的证据映射
-        "completion": dict_completion,  # 绑定运行身份、源码摘要和最终状态的完成证据
-        "pytest": dict_pytest_report,  # 记录权威远程测试计数与耗时的测试证据
-        "remote_execute": dict_validation_report,  # 记录模拟器选择和执行就绪状态的工具链证据
-        "fixtures": dict_fixtures_report,  # 记录固定远程样例通过情况的夹具证据
+    # 对外协议按稳定键名汇总完成、pytest、execute、fixture 和测试总表证据。
+    dict_remote_evidence = {  # 组装 report-runs 对外需要的完整证据分组
+        "completion": dict_payloads["completion"],  # 记录完成清单中的最终状态
+        "pytest": dict_pytest_report,  # 携带各阶段 pytest 的压缩计数
+        "remote_execute": dict_validation_report,  # 保留模拟执行的工具链摘要
+        "fixtures": dict_fixtures_report,  # 保留固定 fixture 的独立结论
+        "test_evidence": {  # 测试总表分组
+            "available": isinstance(dict_payloads["test_evidence"], dict),  # 总表可用性
+            "remote": dict_payloads["test_evidence"],  # 远程总表载荷
+            "phase_summaries": dict_payloads["phases"],  # 阶段原始映射
+        },
     }
 
-    # 统一协议函数保证 report-runs 继续输出稳定键名。
+    # 统一协议函数保证 report-runs 输出新旧布局共有的键名。
     return _build_remote_run_summary(
-        str_run_name,  # outer retained run 名称
-        str_remote_skill,  # 上传 skill 远程根目录
-        str_remote_smoke_run,  # 本轮 timestamped 证据根
-        dict_remote_evidence,  # 已按稳定键名分组的完整证据
+        str_run_name,
+        dict_paths["remote_skill"],
+        dict_paths["remote_smoke_run"],
+        dict_remote_evidence,
+        dict_payloads["agent_review"],
     )
 
 # download_json_optional_impl 下载远端 JSON 文件，失败时返回 None。
@@ -1205,10 +1481,15 @@ def summarize_validation_report(
     return dict_summary
 
 # summarize_pytest_report 把 retained pytest JSON 收敛为稳定的 report-runs 契约。
-def summarize_pytest_report(dict_report: dict[str, Any] | None) -> dict[str, Any]:
+def summarize_pytest_report(
+    dict_report: dict[str, Any] | None,
+    *,
+    dict_phase_summaries: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """汇总权威远程 pytest 的精确计数和耗时。
 
     :param dict_report: 下载得到的 pytest JSON；旧 retained run 缺失时为 None。
+    :param dict_phase_summaries: targeted、regression 和 full 阶段 JSON 映射。
     :return: 包含 available、ok、计数和耗时的稳定摘要。
     """
 
@@ -1220,6 +1501,7 @@ def summarize_pytest_report(dict_report: dict[str, Any] | None) -> dict[str, Any
             "available": False,
             "ok": False,
             "reason": "remote pytest summary is unavailable",
+            "phases": {},
         }
 
     # 计数统一转为整数，避免下载 JSON 中的宽松类型进入发布证据。
@@ -1231,7 +1513,50 @@ def summarize_pytest_report(dict_report: dict[str, Any] | None) -> dict[str, Any
     # 只有明确 passed 且至少执行一个用例时，结构化 pytest 证据才算通过。
     bool_ok = dict_report.get("status") == "passed" and int_passed > 0  # pytest 摘要是否满足通过契约
 
-    # 保留精确计数、耗时和原始摘要行，便于机器门禁与人工复核使用同一事实源。
+    # 阶段摘要只暴露机器所需字段，原始 evidence 仍由 test_evidence 分组保留。
+    dict_phase_report: dict[str, Any] = {}  # 面向 report-runs 的阶段摘要映射
+
+    # 优先使用调用方单独下载的阶段摘要，兼容旧嵌入式 phases 字段。
+    dict_phase_inputs: dict[str, Any] | None = dict_phase_summaries  # 阶段摘要输入
+
+    # 没有独立阶段文件时才回退到旧 aggregate 内嵌字段。
+    if dict_phase_inputs is None:
+
+        # 旧 retained report 可能把阶段摘要嵌在 aggregate JSON 内。
+        obj_embedded_phases: object = dict_report.get("phases", {})  # 旧报告中的嵌入式阶段对象
+
+        # 只有字典结构才能安全进入阶段循环。
+        dict_phase_inputs = obj_embedded_phases if isinstance(obj_embedded_phases, dict) else {}  # 规范阶段输入
+
+    # 每个阶段独立收敛 status、count、命令摘要和时间戳。
+    for str_phase, dict_phase in dict_phase_inputs.items():
+
+        # 正常阶段对象进入可用摘要分支。
+        if isinstance(dict_phase, dict):
+
+            # 可用字段保持稳定，原始 test_evidence 分组另保留完整载荷。
+            dict_phase_report[str_phase] = {  # 当前阶段对外摘要
+                "available": True,  # 阶段 JSON 已成功读取
+                "ok": dict_phase.get("status") == "passed" and dict_phase.get("exit_code") == 0,  # 阶段是否通过
+                "status": str(dict_phase.get("status", "")),  # 阶段状态文本
+                "passed": int(dict_phase.get("passed", 0)),  # 当前阶段已通过的测试数量
+                "skipped": int(dict_phase.get("skipped", 0)),  # 当前阶段被 pytest 跳过的测试数量
+                "count": int(dict_phase.get("count", 0)),  # 阶段覆盖合计数
+                "exit_code": int(dict_phase.get("exit_code", 0)),  # 阶段退出码
+                "command_hash": str(dict_phase.get("command_hash", "")),  # 阶段命令摘要
+                "timestamp": str(dict_phase.get("timestamp", "")),  # 阶段完成时间
+            }
+
+        # 非对象阶段必须显式标记不可用，不能猜测状态。
+        else:
+
+            # 缺失结构的阶段仍保留名称，供调用方精确定位缺口。
+            dict_phase_report[str_phase] = {  # 当前阶段结构不可用摘要
+                "available": False,  # 阶段结构缺失
+                "ok": False,  # 不可用阶段不能通过
+            }
+
+    # 保留精确计数、耗时、阶段和原始摘要行，便于机器门禁与人工复核使用同一事实源。
     return {
         "available": True,
         "ok": bool_ok,
@@ -1243,6 +1568,8 @@ def summarize_pytest_report(dict_report: dict[str, Any] | None) -> dict[str, Any
         "deselected": int(dict_report.get("deselected", 0)),
         "duration_seconds": float(dict_report.get("duration_seconds", 0.0)),
         "summary_line": str(dict_report.get("summary_line", "")),
+        "phases": dict_phase_report,
+        "remote_test_evidence": dict_report.get("remote_test_evidence", {}),
     }
 
 # summarize_fixture_report 压缩 remote fixture summary。

@@ -89,7 +89,7 @@
       "title": "Verilog Style Observations"
     },
     {
-      "content_sha256": "8d8caf8d5c6c0857cda636733a23d8494e36b005e848401117cfc69c4246ac14",
+      "content_sha256": "8f66f925f89a43e2e32f53433eaccdabade7822f69d9eb61112eeb3071947977",
       "id": "document.references-integration-configuration",
       "keywords": [
         "settings",
@@ -112,7 +112,7 @@
       "title": "Configuration"
     },
     {
-      "content_sha256": "e1a70ebdde7232ac6aeef725a563290a7fc98162362e8b36aa077a09e6b21194",
+      "content_sha256": "2327b9300850aae5342a5b91030e76cac13153963797f01f43944295389dd8bd",
       "id": "document.references-integration-host-integration",
       "keywords": [
         "facade",

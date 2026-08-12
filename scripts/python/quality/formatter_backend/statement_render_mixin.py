@@ -94,53 +94,110 @@ def _matching_paren(text: str, int_open: int) -> int:
         # 当前字符决定字符串状态或括号深度变化。
         str_char = text[int_index]  # 圆括号配对扫描字符
 
-        # 字符串内部只维护引号和转义，不读取括号语义。
-        if bool_in_string:
+        # 状态 helper 统一推进字符串、转义和括号深度。
+        tuple_scan_state = _advance_paren_scan_state(  # 当前字符处理后的完整括号扫描状态
+            str_char,  # 本轮括号状态迁移输入字符
+            int_depth,  # 当前圆括号深度
+            bool_in_string,  # 当前字符串范围状态
+            bool_escaped,  # 当前转义状态
+        )
 
-            # 未转义双引号结束当前字符串范围。
-            if str_char == '"' and not bool_escaped:
+        # 拆出下一字符使用的括号深度。
+        int_depth = tuple_scan_state[0]  # 当前字符处理后的圆括号深度
 
-                # 后续字符恢复普通括号扫描语义。
-                bool_in_string = False  # 当前字符串在此引号闭合
+        # 拆出下一字符使用的字符串范围状态。
+        bool_in_string = tuple_scan_state[1]  # 当前字符处理后的字符串内标记
 
-            # 反斜杠奇偶状态决定下一枚引号是否可闭合字符串。
-            bool_escaped = str_char == "\\" and not bool_escaped  # 当前转义状态
+        # 拆出下一字符使用的转义状态。
+        bool_escaped = tuple_scan_state[2]  # 当前字符处理后的反斜杠转义标记
 
-            # 普通字符会消费掉上一字符设置的转义状态。
-            if str_char != "\\":
+        # 第四项只在目标左括号已经闭合时为真。
+        if tuple_scan_state[3]:
 
-                # 当前字符不是连续反斜杠，清除转义标志。
-                bool_escaped = False  # 下一字符默认未转义
-
-            # 字符串内容不参与下方括号分支。
-            continue
-
-        # 双引号打开字符串，后续括号暂时失去结构作用。
-        if str_char == '"':
-
-            # 标记进入字符串范围。
-            bool_in_string = True  # 后续字符按字符串语义扫描
-
-        # 左括号增加一层待闭合深度。
-        elif str_char == "(":
-
-            # 嵌套参数或 actual 分组都必须成对闭合。
-            int_depth += 1  # 进入一层圆括号
-
-        # 右括号抵消最近一层左括号。
-        elif str_char == ")":
-
-            # 消费当前右括号后的深度用于判断目标是否闭合。
-            int_depth -= 1  # 当前圆括号剩余深度
-
-            # 回到零说明命中了调用方目标左括号的配对位置。
-            if int_depth == 0:
-
-                # 返回真实字符下标供关联区切片。
-                return int_index
+            # 返回真实字符下标供关联区切片。
+            return int_index
 
     # 扫描耗尽仍未回到零表示实例括号不完整。
     return -1
+
+# 括号扫描 helper 在单个字符边界更新全部结构状态。
+def _advance_paren_scan_state(
+    str_char: str,
+    int_depth: int,
+    bool_in_string: bool,
+    bool_escaped: bool,
+) -> tuple[int, bool, bool, bool]:
+    """推进一枚字符对应的括号匹配状态。
+
+    参数:
+        str_char: 当前扫描字符。
+        int_depth: 当前圆括号深度。
+        bool_in_string: 当前是否位于双引号字符串。
+        bool_escaped: 前一字符是否转义当前字符。
+
+    返回:
+        更新后的深度、字符串状态、转义状态和目标闭合标记。
+    """
+
+    # 字符串内部只维护引号和转义，不读取括号语义。
+    if bool_in_string:
+
+        # 复用引号 helper 保持连续反斜杠的既有处理方式。
+        tuple_string_state = _advance_quoted_text_state(str_char, bool_escaped)  # 当前字符串字符处理后的双状态
+
+        # 字符串内容不会闭合调用方目标括号。
+        return int_depth, tuple_string_state[0], tuple_string_state[1], False
+
+    # 双引号打开字符串，后续括号暂时失去结构作用。
+    if str_char == '"':
+
+        # 新字符串从未转义状态开始。
+        return int_depth, True, False, False
+
+    # 左括号增加一层待闭合深度。
+    if str_char == "(":
+
+        # 嵌套参数或 actual 分组都必须成对闭合。
+        return int_depth + 1, False, False, False
+
+    # 普通字符不改变括号扫描状态。
+    if str_char != ")":
+
+        # 非结构字符直接沿用当前深度。
+        return int_depth, False, False, False
+
+    # 右括号抵消最近一层左括号。
+    int_next_depth = int_depth - 1  # 当前右括号消费后的剩余深度
+
+    # 深度回到零表示命中调用方目标左括号。
+    return int_next_depth, False, False, int_next_depth == 0
+
+# 引号状态 helper 只处理字符串内部的闭合与反斜杠奇偶关系。
+def _advance_quoted_text_state(str_char: str, bool_escaped: bool) -> tuple[bool, bool]:
+    """推进双引号字符串内部的扫描状态。
+
+    参数:
+        str_char: 当前字符串字符。
+        bool_escaped: 前一字符是否转义当前字符。
+
+    返回:
+        更新后的字符串内状态和下一字符转义状态。
+    """
+
+    # 未转义双引号结束当前字符串范围。
+    if str_char == '"' and not bool_escaped:
+
+        # 闭合引号不会把转义状态传播到下一字符。
+        return False, False
+
+    # 反斜杠奇偶关系决定下一枚引号是否仍处于字符串内。
+    if str_char == "\\":
+
+        # 连续两个反斜杠会相互抵消转义状态。
+        return True, not bool_escaped
+
+    # 普通字符消费上一字符留下的转义状态。
+    return True, False
 
 # 顶层关联切分 helper 只在所有嵌套结构之外识别逗号。
 def _split_association_ranges(text: str, int_start: int, int_end: int) -> list[tuple[int, int]]:

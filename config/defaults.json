@@ -341,7 +341,7 @@
       "remote_runtime_config": ".settings/verilog.remote.json"
     },
     "python": "python3",
-    "remote_root": ".readable-verilog-generator-validation",
+    "remote_root": ".readable-verilog-generator",
     "timeout_s": 600
   }
 }

@@ -604,32 +604,38 @@ def _collect_drift_keys(dict_semantic: dict[str, Any]) -> list[str]:
         # 再逐个检查语义条目是否包含 drift_keys。
         for semantic_item in list_semantic_items:
 
-            # 仅处理字典结构的语义条目。
-            if isinstance(semantic_item, dict):
-
-                # 当前条目中的 drift_keys 可能为空列表。
-                list_item_drift_keys = semantic_item.get(  # 当前语义条目附带的 drift_keys 列表
-                    "drift_keys",  # 语义条目里记录的漂移键信息
-                    [],
-                ) or []  # 当前语义条目携带的 drift_keys
-
-                # 逐个把 drift key 收入集合去重。
-                for raw_drift_key in list_item_drift_keys:
-
-                    # 漂移键统一转成字符串，便于稳定比较和排序。
-                    str_drift_key = str(raw_drift_key)  # 当前漂移键的字符串形式
-
-                    # 把非空漂移键加入去重集合。
-                    if str_drift_key:
-
-                        # 记录当前漂移键，供后续排序输出。
-                        set_drift_keys.add(str_drift_key)
+            # 条目 helper 隔离类型判断和键规范化，主流程只负责跨来源聚合。
+            set_drift_keys.update(_semantic_item_drift_keys(semantic_item))
 
     # 对去重后的漂移键排序，保证输出稳定。
     list_drift_keys = sorted(set_drift_keys)  # 已去重且按字典序稳定输出的漂移键列表
 
     # 返回排序后的漂移键列表。
     return list_drift_keys
+
+# 单条语义记录 helper 负责规范化并去重漂移键。
+def _semantic_item_drift_keys(semantic_item: Any) -> set[str]:
+    """规范化单个语义条目携带的 drift_keys。
+
+    参数:
+        semantic_item: mismatched_cases 或 checkpoint_drift 中的单个条目。
+
+    返回:
+        已转成字符串并移除空值的漂移键集合。
+    """
+
+    # 非字典条目没有约定的 drift_keys 字段。
+    if not isinstance(semantic_item, dict):
+
+        # 空集合允许调用方直接执行 set.update。
+        return set()
+
+    # 集合推导同时完成字符串规范化、空值过滤和条目内去重。
+    return {
+        str(raw_drift_key)
+        for raw_drift_key in semantic_item.get("drift_keys", []) or []
+        if str(raw_drift_key)
+    }
 
 # 计算诊断结果中应该聚焦的可疑目标列表。
 def _diagnosis_targets(

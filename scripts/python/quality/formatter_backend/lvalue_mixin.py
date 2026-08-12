@@ -322,11 +322,8 @@ class LValueMixin:
         # 逐段消费 suffix，任何非方括号内容都会让解析失败。
         while int_index < len(suffix):
 
-            # 后缀片段之间允许空白。
-            while int_index < len(suffix) and suffix[int_index].isspace():
-
-                # 向前跳过两个后缀片段之间的空白。
-                int_index += 1  # 下一个待检查后缀字符位置。
+            # 空白跳过 helper 把相邻片段间隔从结构解析中隔离出去。
+            int_index = self._skip_lvalue_suffix_whitespace(suffix, int_index)  # 下一个待检查后缀字符位置
 
             # 消费完全部文本后结束拆分。
             if int_index >= len(suffix):
@@ -334,62 +331,98 @@ class LValueMixin:
                 # suffix 已完整拆分，无需继续外层循环。
                 break
 
-            # 后缀必须以 [ 开始，避免把函数调用或属性访问误收为索引。
-            if suffix[int_index] != "[":
+            # 单片段 helper 负责定位当前左括号对应的闭合位置。
+            tuple_part = self._consume_lvalue_suffix_part(suffix, int_index)  # 当前完整后缀片段和消费后位置
 
-                # 空列表表示调用方应走严格错误路径。
+            # 非方括号起点或未闭合片段都会触发严格失败路径。
+            if tuple_part is None:
+
+                # 空列表表示调用方应把后缀整体判为非法。
                 return []
 
-            # 记录当前片段起点，用于保留原始括号文本。
-            int_part_start = int_index  # 当前 [] 片段起始位置。
+            # 拆出保留原始括号文本的完整片段。
+            str_part = tuple_part[0]  # 当前完整方括号后缀片段
 
-            # 当前片段内部允许嵌套方括号表达式。
-            int_depth = 0  # 当前片段内部嵌套深度。
-
-            # 扫描到当前片段的匹配右括号。
-            while int_index < len(suffix):
-
-                # 后缀扫描字符只关心方括号层级。
-                str_char = suffix[int_index]  # 后缀片段当前字符。
-
-                # 左括号增加嵌套深度。
-                if str_char == "[":
-
-                    # 嵌套左括号说明后缀内部还有一层索引表达式。
-                    int_depth += 1  # 嵌套索引进入后的片段深度。
-
-                # 右括号降低嵌套深度。
-                elif str_char == "]":
-
-                    # 右括号结束当前后缀表达式的一层嵌套。
-                    int_depth -= 1  # 右括号关闭后的片段深度。
-
-                    # 当前片段闭合后，把扫描位置推进到右括号之后。
-                    if int_depth == 0:
-
-                        # 跳过当前右括号，使外层循环检查下一个后缀。
-                        int_index += 1  # 当前片段结束后的扫描位置。
-
-                        # 当前 [] 片段已经完整收集。
-                        break
-
-                # 未闭合当前片段时继续推进扫描。
-                int_index += 1  # 当前片段内部的下一字符位置。
-
-            # 非零深度表示 suffix 中存在未闭合方括号。
-            if int_depth != 0:
-
-                # 未闭合方括号会让上层把后缀整体判为非法。
-                return []
-
-            # 当前片段包含左右方括号，后续类型判断还要检查内部顶层 token。
-            str_part = suffix[int_part_start:int_index].strip()  # 当前完整 [] 后缀片段。
+            # 下一轮从当前右括号之后继续消费。
+            int_index = tuple_part[1]  # 当前片段结束后的扫描位置
 
             # 保留原始括号片段，避免重新构造表达式文本。
             list_parts.append(str_part)
 
         # 返回按原始顺序拆出的全部后缀片段。
         return list_parts
+
+    # 后缀空白 helper 返回下一枚结构字符的位置。
+    def _skip_lvalue_suffix_whitespace(self, suffix: str, int_start: int) -> int:
+        """跳过两个左值后缀片段之间的空白。
+
+        :param suffix: base 之后的完整后缀文本。
+        :param int_start: 当前尚未消费的位置。
+        :return: 下一枚非空白字符或文本结尾的位置。
+        """
+
+        # 游标从调用方给出的未消费位置开始。
+        int_index = int_start  # 当前空白扫描位置
+
+        # 后缀片段之间允许任意连续空白。
+        while int_index < len(suffix) and suffix[int_index].isspace():
+
+            # 逐字符推进以保持原始偏移语义。
+            int_index += 1  # 下一枚待检查字符位置
+
+        # 返回第一个非空白字符或 suffix 结尾。
+        return int_index
+
+    # 单片段消费 helper 保留完整方括号文本并验证闭合关系。
+    def _consume_lvalue_suffix_part(self, suffix: str, int_start: int) -> tuple[str, int] | None:
+        """消费一段允许嵌套的方括号左值后缀。
+
+        :param suffix: base 之后的完整后缀文本。
+        :param int_start: 已确认片段应开始的位置。
+        :return: 完整片段和下一位置；非法或未闭合时返回 None。
+        """
+
+        # 后缀必须以左方括号开始，避免误收函数调用或属性访问。
+        if int_start >= len(suffix) or suffix[int_start] != "[":
+
+            # 调用方据此进入严格错误路径。
+            return None
+
+        # 当前片段内部允许嵌套方括号表达式。
+        int_depth = 0  # 当前片段内部嵌套深度
+
+        # 从当前左括号开始查找匹配右括号。
+        for int_index in range(int_start, len(suffix)):
+
+            # 当前字符只参与方括号深度更新。
+            str_char = suffix[int_index]  # 后缀片段扫描字符
+
+            # 左方括号打开一层索引表达式。
+            if str_char == "[":
+
+                # 记录新增的待闭合层级。
+                int_depth += 1  # 左方括号处理后的嵌套深度
+
+            # 非右方括号不会关闭当前片段。
+            elif str_char != "]":
+
+                # 继续扫描当前方括号范围。
+                continue
+
+            # 右方括号关闭最近一层索引表达式。
+            else:
+
+                # 更新当前片段剩余待闭合层级。
+                int_depth -= 1  # 右方括号处理后的嵌套深度
+
+            # 深度归零说明当前片段完整闭合。
+            if int_depth == 0:
+
+                # 返回原始片段文本和右括号后的下一位置。
+                return suffix[int_start : int_index + 1].strip(), int_index + 1
+
+        # 扫描耗尽仍未闭合时返回非法结果。
+        return None
 
     # _has_top_level_token 判断切片符号是否位于表达式顶层。
     def _has_top_level_token(self, text: str, token: str) -> bool:
@@ -575,32 +608,14 @@ class LValueMixin:
         # 拼接左值以 } 结尾，需要反向找到匹配的 {。
         if str_prefix.endswith("}"):
 
-            # 花括号深度用于定位顶层拼接起点。
-            int_depth = 0  # 反向扫描花括号深度。
+            # 拼接起点 helper 隔离反向花括号配对扫描。
+            int_concat_start = self._find_concatenation_lvalue_start(str_prefix)  # 拼接左值起始位置
 
-            # 从末尾开始寻找顶层拼接左值起点。
-            for int_index in range(len(str_prefix) - 1, -1, -1):
+            # 命中匹配左花括号时返回完整拼接左值。
+            if int_concat_start is not None:
 
-                # 拼接候选从右向左扫描，当前字符决定花括号深度。
-                str_char = str_prefix[int_index]  # 拼接左值反向扫描字符。
-
-                # 反向遇到 } 表示进入一层拼接。
-                if str_char == "}":
-
-                    # 记录还有一个待匹配的左花括号。
-                    int_depth += 1  # 更新后的花括号深度。
-
-                # 反向遇到 { 表示退出一层拼接。
-                elif str_char == "{":
-
-                    # 当前左花括号匹配一个右花括号层级。
-                    int_depth -= 1  # 左花括号匹配后的剩余深度。
-
-                    # 深度归零时，当前 { 就是拼接左值起点。
-                    if int_depth == 0:
-
-                        # 返回包含花括号的完整拼接左值。
-                        return str_prefix[int_index:].strip()
+                # 保留原始花括号和内部表达式文本。
+                return str_prefix[int_concat_start:].strip()
 
             # 找不到匹配左花括号，说明拼接左值不完整。
             self._raise_lvalue_error(category, fragment, suggestion)
@@ -616,6 +631,50 @@ class LValueMixin:
 
         # 返回从 base 起点到运算符前的完整左值文本。
         return str_prefix[int_start:].strip()
+
+    # 拼接起点 helper 从右向左匹配完整花括号左值。
+    def _find_concatenation_lvalue_start(self, str_prefix: str) -> int | None:
+        """定位以右花括号结尾的拼接左值起点。
+
+        :param str_prefix: 赋值运算符左侧的完整文本。
+        :return: 匹配左花括号下标；未闭合时返回 None。
+        """
+
+        # 花括号深度用于定位最外层拼接起点。
+        int_depth = 0  # 反向扫描花括号深度
+
+        # 从末尾开始寻找顶层拼接左值起点。
+        for int_index in range(len(str_prefix) - 1, -1, -1):
+
+            # 拼接候选从右向左扫描，当前字符决定花括号深度。
+            str_char = str_prefix[int_index]  # 拼接左值反向扫描字符
+
+            # 反向遇到右花括号表示进入一层拼接。
+            if str_char == "}":
+
+                # 记录还有一个待匹配的左花括号。
+                int_depth += 1  # 右花括号处理后的待闭合层级
+
+            # 其它非左花括号字符不会关闭当前层级。
+            elif str_char != "{":
+
+                # 继续向左寻找匹配花括号。
+                continue
+
+            # 当前左花括号匹配一个右花括号层级。
+            else:
+
+                # 回退一层拼接深度。
+                int_depth -= 1  # 左花括号处理后的剩余深度
+
+            # 深度归零时，当前左花括号就是拼接起点。
+            if int_depth == 0:
+
+                # 返回调用方切片所需的真实字符下标。
+                return int_index
+
+        # 找不到匹配左花括号表示拼接左值不完整。
+        return None
 
     # _extract_procedural_lvalues 从过程语句块中收集所有赋值左值。
     def _extract_procedural_lvalues(self, text: str, category: str, suggestion: str) -> list[LValueRef]:

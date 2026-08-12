@@ -880,23 +880,22 @@ def line_contains_any(str_line: str, tuple_markers: tuple[str, ...]) -> bool:
     # 把包含关系判定收束到单一 helper，避免各路径规则重复写 `any(...)`。
     return any(str_marker in str_line for str_marker in tuple_markers)
 
-# _allowed_dependency_term_line 根据路径语义判断 legacy 词是否属于允许说明文本。
-def _allowed_dependency_term_line(str_relative_path: str, str_line: str) -> bool:
-    """
-    根据相对路径判断 legacy 术语是否落在允许的说明文本里。
+# 文档白名单只处理 defaults、SKILL 与两份 integration 契约。
+def _allowed_document_dependency_line(
+    str_relative_path: str,
+    str_line: str,
+) -> bool | None:
+    """判断文档或默认配置中的 legacy 依赖术语是否允许。
 
     :param str_relative_path: 当前文件的 skill 相对路径。
     :param str_line: 当前待检查的单行文本。
-    :return: 返回布尔值；True 表示当前路径和文本组合属于允许场景。
+    :return: 命中文档路径时返回判定结果；非文档路径返回 None。
     """
 
-    # str_lower_line 统一小写后，用于大小写无关的说明文本匹配。
-    str_lower_line = str_line.lower()  # 当前行的小写文本
-
-    # defaults 配置允许保留依赖声明与开发者路由说明里的 legacy 词。
+    # defaults 配置只接受既有依赖名与开发者路由标记。
     if str_relative_path == "config/defaults.json":
 
-        # defaults 命中依赖或路由白名单标记时，允许保留该 legacy 说明文本。
+        # 保留原有大小写敏感的 defaults 白名单。
         return line_contains_any(
             str_line,
             (
@@ -909,10 +908,13 @@ def _allowed_dependency_term_line(str_relative_path: str, str_line: str) -> bool
             ),
         )
 
-    # SKILL.md 允许保留 dependency 与 developer routing 说明文本。
+    # 文档路径的部分术语按原契约使用大小写无关匹配。
+    str_lower_line = str_line.lower()  # 文档说明文本的小写副本
+
+    # SKILL.md 允许 dependency、developer routing 与 testbench 路由说明。
     if str_relative_path == "SKILL.md":
 
-        # SKILL.md 命中 dependency 或 developer routing 说明时允许保留。
+        # 大小写策略保持与原白名单完全一致。
         return (
             "dependency" in str_lower_line
             or "route to the installed FPGA" in str_line
@@ -920,16 +922,16 @@ def _allowed_dependency_term_line(str_relative_path: str, str_line: str) -> bool
             or "tb_language" in str_line
         )
 
-    # host integration 文档允许保留验证 testbench 与 tb_language 说明。
+    # host integration 仅允许验证 testbench 与 tb_language 说明。
     if str_relative_path == "references/integration/host-integration.md":
 
-        # host integration 文档命中 testbench 说明时允许保留。
+        # 其他 legacy 词不能借 host integration 文档越过审计。
         return "verification testbench" in str_lower_line or "tb_language" in str_line
 
-    # integration configuration 文档允许保留依赖、分组和路由相关说明文本。
+    # configuration 文档允许既有依赖、分组和开发者路由术语。
     if str_relative_path == "references/integration/configuration.md":
 
-        # integration configuration 命中依赖或分组说明时允许保留。
+        # 标记集合沿用原有大小写敏感比较。
         return line_contains_any(
             str_line,
             (
@@ -945,10 +947,25 @@ def _allowed_dependency_term_line(str_relative_path: str, str_line: str) -> bool
             ),
         )
 
-    # validate facade 允许保留 FPGA 依赖、工具链和 wrapper 相关说明文本。
+    # 非文档路径交给运行时和测试路径 helper 继续判断。
+    return None
+
+# 运行时白名单限制在 facade、依赖管理、CLI、远程与 verify-repair 文件。
+def _allowed_runtime_dependency_line(
+    str_relative_path: str,
+    str_line: str,
+) -> bool | None:
+    """判断运行时 Python 文件中的 legacy 依赖术语是否允许。
+
+    :param str_relative_path: 当前文件的 skill 相对路径。
+    :param str_line: 当前待检查的单行文本。
+    :return: 命中运行时路径时返回判定结果；其他路径返回 None。
+    """
+
+    # validate facade 保留外部 FPGA 工具链和 wrapper 契约用词。
     if str_relative_path == "scripts/python/validation/validate_verilog_skill.py":
 
-        # validate facade 命中依赖、工具链或 wrapper 说明时允许保留。
+        # 仅原有精确标记可在 facade 中通过审计。
         return line_contains_any(
             str_line,
             (
@@ -969,10 +986,10 @@ def _allowed_dependency_term_line(str_relative_path: str, str_line: str) -> bool
             ),
         )
 
-    # 依赖管理脚本允许保留 FPGA-Agent 与 Vivado/Vitis 依赖说明。
+    # 依赖管理脚本允许 FPGA-Agent 与 Vivado/Vitis 路由说明。
     if str_relative_path == "scripts/python/toolchain/manage_skill_dependencies.py":
 
-        # 依赖管理脚本命中 FPGA 依赖说明时允许保留。
+        # vendor 与 skill 名称仍按原大小写敏感规则匹配。
         return line_contains_any(
             str_line,
             (
@@ -984,28 +1001,28 @@ def _allowed_dependency_term_line(str_relative_path: str, str_line: str) -> bool
             ),
         )
 
-    # testbench 生成脚本允许保留 `tb-language` 参数说明。
+    # testbench 生成脚本允许大小写无关的 tb-language 参数说明。
     if str_relative_path == "scripts/python/generation/tb_generator.py":
 
-        # testbench 生成脚本命中 tb-language 说明时允许保留。
-        return "tb-language" in str_lower_line
+        # 小写副本仅服务该参数名称判断。
+        return "tb-language" in str_line.lower()
 
-    # CLI generation commands 允许保留 vitis wrapper 参数绑定。
+    # generation commands 只允许 vitis wrapper 参数绑定表达式。
     if str_relative_path == "scripts/python/workflow/cli_generation_commands.py":
 
-        # CLI generation commands 命中 vitis wrapper 参数绑定时允许保留。
+        # 其他 Vitis 术语不能借此路径自动放行。
         return "args.vitis_wrapper" in str_line
 
-    # CLI parser 允许保留 vitis wrapper 选项文本。
+    # CLI parser 只允许公开的 vitis wrapper 选项文本。
     if str_relative_path == "scripts/python/workflow/cli_parser.py":
 
-        # CLI parser 命中 vitis wrapper 选项文本时允许保留。
+        # 保持选项字符串的大小写敏感匹配。
         return "--vitis-wrapper" in str_line
 
-    # 远程验证脚本允许保留工具链路径模式和 simulator backend 说明。
+    # 远程验证脚本允许既有工具链路径和 backend 状态字段。
     if str_relative_path == "scripts/python/remote/remote_validate_verilog_skill.py":
 
-        # 远程验证脚本命中工具链路径或 simulator backend 说明时允许保留。
+        # 仅远程运行契约实际消费的标记可通过。
         return line_contains_any(
             str_line,
             (
@@ -1015,10 +1032,31 @@ def _allowed_dependency_term_line(str_relative_path: str, str_line: str) -> bool
             ),
         )
 
-    # run_smoke 允许保留工具链选择和 settings64.sh 诊断文本。
+    # verify-repair 仅允许 testbench 语言字段说明。
+    if str_relative_path == "scripts/python/existing_rtl/verify_repair.py":
+
+        # 两个字段沿用原有不同的大小写策略。
+        return "tb_languages" in str_line.lower() or "tb_language" in str_line
+
+    # 非运行时白名单路径交给测试路径 helper。
+    return None
+
+# 测试白名单保留烟测诊断和其他测试中的 FPGA backend 说明。
+def _allowed_test_dependency_line(
+    str_relative_path: str,
+    str_line: str,
+) -> bool | None:
+    """判断测试或烟测文件中的 legacy 依赖术语是否允许。
+
+    :param str_relative_path: 当前文件的 skill 相对路径。
+    :param str_line: 当前待检查的单行文本。
+    :return: 命中 tests 路径时返回判定结果；其他路径返回 None。
+    """
+
+    # run_smoke 保留工具链选择和 settings64.sh 诊断文本。
     if str_relative_path == "tests/smoke/run_smoke.py":
 
-        # run_smoke 命中工具链选择诊断文本时允许保留。
+        # 原有烟测工具链标记保持精确匹配。
         return line_contains_any(
             str_line,
             (
@@ -1032,10 +1070,10 @@ def _allowed_dependency_term_line(str_relative_path: str, str_line: str) -> bool
             ),
         )
 
-    # dependency_gates 允许保留 FPGA 依赖与厂商路由诊断文本。
+    # dependency_gates 保留 FPGA 依赖与厂商路由诊断文本。
     if str_relative_path == "tests/smoke/dependency_gates.py":
 
-        # dependency_gates 命中 FPGA 依赖或厂商路由诊断时允许保留。
+        # 只接受原有依赖和 vendor 标记。
         return line_contains_any(
             str_line,
             (
@@ -1049,10 +1087,10 @@ def _allowed_dependency_term_line(str_relative_path: str, str_line: str) -> bool
             ),
         )
 
-    # toolchain_gates 允许保留工具链路径与 simulator backend 诊断文本。
+    # toolchain_gates 保留工具路径与 simulator backend 诊断文本。
     if str_relative_path == "tests/smoke/toolchain_gates.py":
 
-        # toolchain_gates 命中工具链路径或 simulator backend 诊断时允许保留。
+        # 工具链 gate 的允许标记集合不扩展。
         return line_contains_any(
             str_line,
             (
@@ -1067,16 +1105,10 @@ def _allowed_dependency_term_line(str_relative_path: str, str_line: str) -> bool
             ),
         )
 
-    # verify_repair 允许保留 testbench 语言相关说明文本。
-    if str_relative_path == "scripts/python/existing_rtl/verify_repair.py":
-
-        # verify_repair 命中 testbench 语言说明时允许保留。
-        return "tb_languages" in str_lower_line or "tb_language" in str_line
-
-    # 其他 tests/ 文件允许保留 FPGA 工具链与 simulator backend 诊断文本。
+    # 其他 tests 文件只允许 FPGA 工具链与 simulator backend 诊断。
     if str_relative_path.startswith("tests/"):
 
-        # 其余 tests/ 文件命中 FPGA 诊断文本时允许保留。
+        # 泛测试路径仍使用原有最小标记集合。
         return line_contains_any(
             str_line,
             (
@@ -1087,8 +1119,35 @@ def _allowed_dependency_term_line(str_relative_path: str, str_line: str) -> bool
             ),
         )
 
-    # 其余路径一律不允许保留 legacy 说明文本。
-    # 其余路径没有白名单理由，统一返回不允许。
+    # 非 tests 路径不属于本 helper 的判断范围。
+    return None
+
+# _allowed_dependency_term_line 按文档、运行时和测试顺序组合原有白名单。
+def _allowed_dependency_term_line(str_relative_path: str, str_line: str) -> bool:
+    """根据相对路径判断 legacy 术语是否落在允许说明文本里。
+
+    :param str_relative_path: 当前文件的 skill 相对路径。
+    :param str_line: 当前待检查的单行文本。
+    :return: 返回布尔值；True 表示当前路径和文本组合属于允许场景。
+    """
+
+    # 三类 helper 返回 None 时表示当前路径不归该类负责。
+    for func_checker in (
+        _allowed_document_dependency_line,
+        _allowed_runtime_dependency_line,
+        _allowed_test_dependency_line,
+    ):
+
+        # 只采用首个明确识别当前路径的白名单判定。
+        optional_allowed = func_checker(str_relative_path, str_line)  # 当前职责域判定
+
+        # False 也是明确拒绝结果，不能继续落入更宽的路径规则。
+        if optional_allowed is not None:
+
+            # 返回该路径所属职责域的精确白名单结论。
+            return optional_allowed
+
+    # 未归属任何白名单路径时统一拒绝 legacy 术语。
     return False
 
 # allowed_ref_dependency_path 定义允许保留 ref 临时目录说明文本的极小白名单。

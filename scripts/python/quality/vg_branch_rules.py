@@ -206,8 +206,8 @@ def _case_item_in_range_width(facts: VgFacts) -> VgEvaluation:
         # 常量原文表用于解析 case item 符号。
         dict_constants = module_constant_values(dict_module)  # 当前 module 的常量符号表
 
-        # 每个 formatter case 节点独立比较自己的控制项与标签。
-        for dict_case in _iter_module_nodes(dict_module, "case"):
+        # case label helper 把节点、item 和并列标签遍历收敛成单层事实流。
+        for dict_case, str_label in _iter_case_labels(dict_module):
 
             # 出现 case 即表明规则具有适用结构。
             bool_applicable = True  # 当前 module 包含待求宽 case
@@ -224,44 +224,38 @@ def _case_item_in_range_width(facts: VgFacts) -> VgEvaluation:
                 # 其他 case 仍可能形成确定违规。
                 bool_unknown = True  # 当前控制项位宽未知
 
-            # default 之外的每个标签都必须与控制项同宽。
-            for dict_item in dict_case.get("items", []) or []:
+            # default 没有常量位宽比较语义。
+            if str_label.lower() == "default":
 
-                # 支持单个 case item 携带多个并列标签。
-                for str_label in _split_case_labels(str(dict_item.get("label") or "")):
+                # 继续检查同一 case 的显式标签。
+                continue
 
-                    # default 没有常量位宽比较语义。
-                    if str_label.lower() == "default":
+            # 标签解析结果同时给出显式宽度和规范比特模式。
+            constant_bits: ConstantBits | None = resolve_constant_bits(str_label, dict_constants)  # 当前标签的位宽与比特事实
 
-                        # 继续检查同一 case 的显式标签。
-                        continue
+            # 任一侧未知时不能伪造位宽一致结论。
+            if int_selector_width is None or constant_bits is None:
 
-                    # 标签解析结果同时给出显式宽度和规范比特模式。
-                    constant_bits: ConstantBits | None = resolve_constant_bits(str_label, dict_constants)  # 当前标签的位宽与比特事实
+                # 没有确定违规时规则将返回 inconclusive。
+                bool_unknown = True  # 当前标签比较事实不完整
 
-                    # 任一侧未知时不能伪造位宽一致结论。
-                    if int_selector_width is None or constant_bits is None:
+                # 跳过缺少可靠宽度的当前标签。
+                continue
 
-                        # 没有确定违规时规则将返回 inconclusive。
-                        bool_unknown = True  # 当前标签比较事实不完整
+            # 已知宽度不同即形成确定违规。
+            if constant_bits.width != int_selector_width:
 
-                        # 跳过缺少可靠宽度的当前标签。
-                        continue
-
-                    # 已知宽度不同即形成确定违规。
-                    if constant_bits.width != int_selector_width:
-
-                        # 证据同时给出控制项和标签的静态宽度。
-                        list_findings.append(
-                            _finding(
-                                source_facts.relative_path,
-                                str_module_text,
-                                int_base_line,
-                                str_label,
-                                "case 分支标签与控制表达式位宽不一致。",
-                                f"selector={int_selector_width}, item={constant_bits.width}: {str_label}",
-                            )
-                        )
+                # 证据同时给出控制项和标签的静态宽度。
+                list_findings.append(
+                    _finding(
+                        source_facts.relative_path,
+                        str_module_text,
+                        int_base_line,
+                        str_label,
+                        "case 分支标签与控制表达式位宽不一致。",
+                        f"selector={int_selector_width}, item={constant_bits.width}: {str_label}",
+                    )
+                )
 
     # 确定冲突优先，不完整事实只在无冲突时形成不确定结论。
     return _finish(list_findings, bool_applicable, bool_unknown, "存在无法静态确定的 case 控制项或标签位宽。")
@@ -486,50 +480,67 @@ def _case_item_constant_only(facts: VgFacts) -> VgEvaluation:
         # constants 提供 parameter 与 localparam 的可解析原文。
         dict_constants = module_constant_values(dict_module)  # 当前 module 的常量声明表
 
-        # 递归遍历所有 always 内的 case 控制节点。
-        for dict_case in _iter_module_nodes(dict_module, "case"):
+        # case label helper 把嵌套节点和并列标签展开成单层事实流。
+        for _dict_case, str_label in _iter_case_labels(dict_module):
 
             # 任一 case 都使标签常量规则适用。
             bool_applicable = True  # 当前 module 包含待检查标签
 
-            # 每个 item 的标签列表独立分类。
-            for dict_item in dict_case.get("items", []) or []:
+            # default 和可解析常量都满足当前规则。
+            if str_label.lower() == "default" or resolve_constant_bits(str_label, dict_constants) is not None:
 
-                # 并列标签按顶层逗号展开。
-                for str_label in _split_case_labels(str(dict_item.get("label") or "")):
+                # 继续处理同一 case 的其余标签。
+                continue
 
-                    # default 和可解析常量都满足当前规则。
-                    if str_label.lower() == "default" or resolve_constant_bits(str_label, dict_constants) is not None:
+            # 未解析标签中的标识符用于区分变量和未知符号。
+            set_identifiers = set(re.findall(r"\b[A-Za-z_]\w*\b", str_label))  # 当前标签引用的标识符
 
-                        # 继续处理同一 case 的其余标签。
-                        continue
+            # 声明信号或明确运算符都证明标签不是纯常量。
+            if set_identifiers & set(dict_widths) or re.search(r"[(){}+*/%&|^~<>]", str_label):
 
-                    # 未解析标签中的标识符用于区分变量和未知符号。
-                    set_identifiers = set(re.findall(r"\b[A-Za-z_]\w*\b", str_label))  # 当前标签引用的标识符
+                # finding 保留完整标签表达式。
+                list_findings.append(
+                    _finding(
+                        source_facts.relative_path,
+                        str_module_text,
+                        int_base_line,
+                        str_label,
+                        "case 分支标签使用了变量或逻辑表达式。",
+                        str_label,
+                    )
+                )
 
-                    # 声明信号或明确运算符都证明标签不是纯常量。
-                    if set_identifiers & set(dict_widths) or re.search(r"[(){}+*/%&|^~<>]", str_label):
+            # 未声明名称不应被误报为确定变量违规。
+            else:
 
-                        # finding 保留完整标签表达式。
-                        list_findings.append(
-                            _finding(
-                                source_facts.relative_path,
-                                str_module_text,
-                                int_base_line,
-                                str_label,
-                                "case 分支标签使用了变量或逻辑表达式。",
-                                str_label,
-                            )
-                        )
-
-                    # 未声明名称不应被误报为确定变量违规。
-                    else:
-
-                        # 无确定违规时返回 inconclusive。
-                        bool_unknown = True  # 当前标签符号来源未知
+                # 无确定违规时返回 inconclusive。
+                bool_unknown = True  # 当前标签符号来源未知
 
     # 非常量表达式失败，未声明符号保持不确定。
     return _finish(list_findings, bool_applicable, bool_unknown, "存在无法静态解析的 case 分支标签。")
+
+# case 标签迭代器把嵌套节点结构展开成规则可消费的单层事实流。
+def _iter_case_labels(dict_module: dict[str, Any]) -> Iterator[tuple[dict[str, Any], str]]:
+    """按 formatter 节点顺序展开 case 标签。
+
+    参数:
+        dict_module: formatter AST 确认的单个 module 节点。
+
+    返回:
+        逐项产出所属 case 节点和拆分后的标签文本。
+    """
+
+    # 节点、item 和并列标签的顺序必须与 formatter AST 保持一致。
+    for dict_case in _iter_module_nodes(dict_module, "case"):
+
+        # 每个 item 的标签列表独立展开。
+        for dict_item in dict_case.get("items", []) or []:
+
+            # 并列标签按顶层逗号拆开后逐项交给规则实现。
+            for str_label in _split_case_labels(str(dict_item.get("label") or "")):
+
+                # 携带所属 case 节点，供位宽规则读取控制表达式。
+                yield dict_case, str_label
 
 # _combinational_if_has_else 检查组合过程内每条 if 链的终止分支。
 def _combinational_if_has_else(facts: VgFacts) -> VgEvaluation:

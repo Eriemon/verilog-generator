@@ -1581,35 +1581,22 @@ class ControlParseMixin(ControlNodeParseMixin):
         # 逐字符扫描保持每条声明的原始文本顺序。
         for int_index, str_char in enumerate(text):
 
-            # 未转义引号切换字符串扫描状态。
-            if str_char == '"' and (int_index == 0 or text[int_index - 1] != "\\"):
+            # 扫描状态 helper 统一处理引号范围和圆括号深度。
+            tuple_declaration_state = self._advance_declaration_scan_state(  # 当前字符处理后的声明扫描状态
+                text,  # 待切分的完整声明文本
+                int_index,  # 本轮字符位置
+                int_depth,  # 本轮处理前的圆括号深度
+                bool_in_string,  # 本轮处理前的字符串范围状态
+            )
 
-                # 后续字符是否忽略结构符号由新状态决定。
-                bool_in_string = not bool_in_string  # 当前双引号范围状态
+            # 更新分号边界判断使用的圆括号深度。
+            int_depth = tuple_declaration_state[0]  # 当前字符处理后的圆括号深度
 
-                # 引号本身不参与括号或分号判断。
-                continue
+            # 更新后续字符使用的字符串范围状态。
+            bool_in_string = tuple_declaration_state[1]  # 当前字符处理后的双引号范围状态
 
-            # 字符串内部保持原文，但跳过结构扫描。
-            if bool_in_string:
-
-                # 当前字符不能关闭声明或改变括号深度。
-                continue
-
-            # 左括号打开实际参数或函数调用范围。
-            if str_char == "(":
-
-                # 嵌套深度阻止内部内容被误拆成新声明。
-                int_depth += 1  # 进入一层圆括号
-
-            # 右括号关闭最近一层表达式范围。
-            elif str_char == ")":
-
-                # 回到零后下一个分号才可以闭合声明。
-                int_depth -= 1  # 离开一层圆括号
-
-            # 只有括号外分号才是声明边界。
-            elif str_char == ";" and int_depth == 0:
+            # 只有字符串外、括号外的分号才是声明边界。
+            if str_char == ";" and int_depth == 0 and not bool_in_string:
 
                 # 当前片段包含终止分号，去除声明外围空白。
                 str_item = text[int_start : int_index + 1].strip()  # 当前完整声明文本
@@ -1634,6 +1621,56 @@ class ControlParseMixin(ControlNodeParseMixin):
 
         # 没有切出条目时保留调用方原文本以维持 legacy 行为。
         return list_items or [text]
+
+    # 声明扫描 helper 隔离字符串状态和圆括号深度更新。
+    def _advance_declaration_scan_state(
+        self,
+        text: str,
+        int_index: int,
+        int_depth: int,
+        bool_in_string: bool,
+    ) -> tuple[int, bool]:
+        """推进同行声明切分器的结构扫描状态。
+
+        参数:
+            text: 当前完整声明文本。
+            int_index: 当前字符下标。
+            int_depth: 当前圆括号深度。
+            bool_in_string: 当前是否位于双引号字符串。
+
+        返回:
+            更新后的圆括号深度和字符串状态。
+        """
+
+        # 当前字符用于判断引号边界或括号变化。
+        str_char = text[int_index]  # 声明扫描状态字符
+
+        # 未转义引号切换字符串扫描状态。
+        if str_char == '"' and (int_index == 0 or text[int_index - 1] != "\\"):
+
+            # 引号本身不改变圆括号深度。
+            return int_depth, not bool_in_string
+
+        # 字符串内部的括号保持普通文本语义。
+        if bool_in_string:
+
+            # 当前结构状态保持不变。
+            return int_depth, bool_in_string
+
+        # 字符串外只根据圆括号更新嵌套深度。
+        if str_char == "(":
+
+            # 左括号打开实际参数或函数调用范围。
+            return int_depth + 1, bool_in_string
+
+        # 右括号关闭最近一层表达式范围。
+        if str_char == ")":
+
+            # 保留既有行为，不对异常负深度做额外修正。
+            return int_depth - 1, bool_in_string
+
+        # 其它字符不改变声明扫描状态。
+        return int_depth, bool_in_string
 
     # 实例识别前先排除明显属于控制流或声明的 Verilog 行。
     def _is_disallowed_instance_start(self, stripped: str) -> bool:

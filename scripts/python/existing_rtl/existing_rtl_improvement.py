@@ -66,6 +66,52 @@ class ImproveExistingRtlOptions:
     # tb_scaffold 默认生成 Verilog 版本 testbench。
     tb_language: str = "verilog"  # testbench 生成默认采用的语言
 
+# OptimizePreparedArtifacts 保存 optimize_assist 无条件生成的计划和工件索引。
+@dataclass(slots=True)
+class OptimizePreparedArtifacts:
+    """承载 optimize_assist 固定生成的计划路径和工件索引。
+
+    参数:
+        path_transform_plan: 统一变换计划 JSON 路径。
+        dict_artifacts: 优化建议、wrapper 与分区映射工件索引。
+
+    返回:
+        None。该对象只在 optimize_assist 内部传递已准备工件。
+    """
+
+    # path_transform_plan 指向调度器消费的统一变换计划。
+    path_transform_plan: Path  # optimize 阶段变换计划路径
+
+    # dict_artifacts 汇集调用方可访问的 optimize 工件路径。
+    dict_artifacts: dict[str, str]  # optimize 阶段工件索引
+
+# OptimizeEvidenceState 统一 compare 与 advisory 分支的验证证据形状。
+@dataclass(slots=True)
+class OptimizeEvidenceState:
+    """承载 optimize_assist 的工件增量、问题和验证摘要。
+
+    参数:
+        dict_artifacts: compare 或 advisory 分支新增的工件路径。
+        list_issues: 当前分支发现的问题列表。
+        dict_verification_summary: 接口、检查点和 testbench 验证摘要。
+        dict_qor_summary: QoR 可比性与工具状态摘要。
+
+    返回:
+        None。该对象只在 optimize_assist 内部传递分支证据。
+    """
+
+    # dict_artifacts 记录 equivalence 或 QoR 报告路径。
+    dict_artifacts: dict[str, str]  # 分支新增工件索引
+
+    # list_issues 保留 compare 阶段识别的阻断与提示问题。
+    list_issues: list[dict[str, Any]]  # optimize 问题列表
+
+    # dict_verification_summary 提供接口与 testbench 一致性结论。
+    dict_verification_summary: dict[str, Any]  # optimize 验证摘要
+
+    # dict_qor_summary 提供 QoR 可比性和 yosys 状态。
+    dict_qor_summary: dict[str, Any]  # 决定可比性与工具状态的 QoR 字段
+
 # 规范化并校验 improve_goal 参数，避免后续主流程分支走偏。
 def require_improve_goal(goal: str) -> str:
     """校验并返回规范化后的精修目标名。
@@ -610,6 +656,293 @@ def _selected_backend_name(dict_equivalence: dict[str, Any]) -> str | None:
     # 返回首个命中的 selected 后端；完全未命中时返回 None。
     return list_selected_names[0] if list_selected_names else None
 
+# 基线优先读取工件目录，候选仅在目录含 RTL 时参与 compare。
+def _resolve_optimize_sources(
+    source_path: Path,
+    candidate_artifacts_dir: Path | None,
+    baseline_artifacts_dir: Path | None,
+) -> tuple[Path, Path | None]:
+    """解析 optimize_assist 实际使用的基线和候选 RTL。
+
+    参数:
+        source_path: 缺少基线工件时使用的默认 RTL 路径。
+        candidate_artifacts_dir: 可选候选 RTL 工件目录。
+        baseline_artifacts_dir: 可选基线 RTL 工件目录。
+
+    返回:
+        基线 RTL 路径和可选候选 RTL 路径。
+    """
+
+    # 基线目录缺少 RTL 时退回调用方提供的原始源码。
+    list_baseline_sources = _artifact_sources(baseline_artifacts_dir)  # 基线目录中的 RTL 路径
+
+    # 空基线目录不能阻断 optimize 辅助计划生成。
+    if not list_baseline_sources:
+
+        # 原始输入作为唯一基线，保持旧流程的回退行为。
+        list_baseline_sources = [source_path]  # 回退后的基线 RTL 列表
+
+    # 候选目录为空或不含 RTL 时保持 planned/advisory 分支。
+    list_candidate_sources = _artifact_sources(candidate_artifacts_dir)  # 候选目录中的 RTL 路径
+
+    # 首个候选 RTL 是 compare 复用链路的稳定输入。
+    path_candidate_source = list_candidate_sources[0] if list_candidate_sources else None  # 可选候选 RTL
+
+    # 基线同样固定取工件目录解析出的首个 RTL。
+    return list_baseline_sources[0], path_candidate_source
+
+# 固定工件准备阶段写出建议、wrapper、分区映射和统一变换计划。
+def _prepare_optimize_artifacts(
+    out_dir: Path,
+    analysis: dict[str, Any],
+) -> OptimizePreparedArtifacts:
+    """生成 optimize_assist 无条件产出的计划和辅助工件。
+
+    参数:
+        out_dir: optimize_assist 工件输出目录。
+        analysis: 当前参考 RTL 的结构分析结果。
+
+    返回:
+        固定变换计划路径与主工件索引。
+    """
+
+    # 三类人工辅助工件沿用既有文件名和落盘顺序。
+    path_optimization_plan = out_dir / "optimization_plan.md"  # 优化建议文档路径
+
+    # wrapper 为后续人工分区重组提供稳定骨架。
+    path_candidate_wrapper = out_dir / "candidate_wrapper.v"  # 候选 wrapper 路径
+
+    # 分区映射固化分析阶段识别的 decomposition 候选。
+    path_partition_map = out_dir / "candidate_partition_map.json"  # 分区映射路径
+
+    # 先写优化建议，再写 wrapper 和分区映射，保持原有副作用顺序。
+    _write_optimization_plan(analysis, path_optimization_plan)
+
+    # wrapper 必须在分区映射前生成，保持历史工件写入顺序。
+    _write_partition_wrapper(analysis, path_candidate_wrapper)
+
+    # 分区候选最后写成 JSON，供 wrapper 人工细化时交叉核对。
+    write_json(
+        path_partition_map,
+        {
+            "version": 1,
+            "decomposition_candidates": analysis["decomposition_candidates"],
+        },
+    )
+
+    # transform plan 的 expected_outputs 继续引用三类固定工件。
+    list_expected_outputs = _optimize_expected_outputs(  # transform plan 登记的固定输出清单
+        out_dir,  # 解析每项工件相对路径的输出根目录
+        path_optimization_plan=path_optimization_plan,  # 登记人工优化建议文档
+        path_candidate_wrapper=path_candidate_wrapper,  # 登记候选重组 wrapper
+        path_partition_map=path_partition_map,  # 登记候选分区映射 JSON
+    )
+
+    # 基础 transform plan 仍由共享 builder 生成。
+    dict_transform_plan = build_transform_plan(  # optimize 统一变换计划
+        analysis,  # 当前参考 RTL 分析结果
+        transform_goal="optimize_assist",  # 固定优化辅助目标
+        expected_outputs=list_expected_outputs,  # 固定工件描述
+    )
+
+    # optimize 专属约束保持接口、检查点、testbench 和 QoR 可比性要求。
+    dict_transform_plan.update(
+        {
+            "optimization_targets": _optimization_targets(analysis),
+            "qor_objectives": _qor_objectives(analysis),
+            "equivalence_requirements": {
+                "interface_consistent": True,
+                "checkpoint_consistent": True,
+                "testbench_consistent": True,
+                "qor_comparable": True,
+            },
+            "allowed_mutation_scope": "assist_only_no_default_rtl_rewrite",
+        }
+    )
+
+    # 统一变换计划是调度器消费 optimize 工件的入口。
+    path_transform_plan = write_json(  # 调度器后续读取的 transform plan 路径
+        out_dir / "rtl_transform_plan.json",  # 固定为 optimize 统一计划文件名
+        dict_transform_plan,  # 写入 QoR 目标与等价约束正文
+    )
+
+    # 主工件索引只登记无条件生成的三个辅助文件。
+    dict_artifacts = dict(  # optimize 固定工件索引
+        optimization_plan=str(path_optimization_plan),  # 人工评审优化建议
+        candidate_wrapper=str(path_candidate_wrapper),  # 人工补线 wrapper
+        candidate_partition_map=str(path_partition_map),  # 人工核对分区边界
+    )
+
+    # 返回固定计划和主工件，compare/advisory 分支稍后追加证据。
+    return OptimizePreparedArtifacts(path_transform_plan, dict_artifacts)
+
+# 候选 RTL 存在时复用 compare_semantics 生成等价性和 QoR 证据。
+def _candidate_optimize_evidence(
+    path_baseline_source: Path,
+    path_candidate_source: Path,
+    out_dir: Path,
+    readiness: str,
+) -> OptimizeEvidenceState:
+    """生成候选 RTL 的 compare、验证与 QoR 摘要。
+
+    参数:
+        path_baseline_source: compare 使用的基线 RTL。
+        path_candidate_source: compare 使用的候选 RTL。
+        out_dir: optimize_assist 工件输出目录。
+        readiness: 当前验证准备度级别。
+
+    返回:
+        compare 分支新增工件、问题和验证摘要。
+    """
+
+    # compare 主流程继续负责接口、检查点、testbench 和 QoR 证据。
+    dict_compare_result = compare_semantics(  # 后续回读 equivalence 与 QoR 的路径集合
+        path_baseline_source,  # 作为语义和资源对比参考的 RTL
+        path_candidate_source,  # 接受等价性与 QoR 检查的候选 RTL
+        out_dir=out_dir / "optimize_compare",  # 隔离 compare 子流程的工件目录
+        run_external=readiness != "static",  # 控制是否调用真实外部仿真工具
+        readiness=readiness,  # 传递 compile 或 execute 验证深度
+    )
+
+    # 两份 compare JSON 分别提供语义等价和 QoR 正文。
+    dict_equivalence = _read_json_artifact(dict_compare_result["equivalence_path"])  # 等价性摘要
+
+    # QoR 报告裁剪后供 transform_validation 使用。
+    dict_qor_report = _read_json_artifact(dict_compare_result["qor_report_path"])  # QoR 报告正文
+
+    # compare 新增 equivalence 与 QoR 两项公开工件。
+    dict_artifacts = dict(  # compare 分支工件索引
+        equivalence=dict_compare_result["equivalence_path"],  # 语义等价报告
+        qor_report=dict_compare_result["qor_report_path"],  # QoR 对比报告
+    )
+
+    # 验证摘要字段和 selected backend 选择逻辑保持不变。
+    dict_verification_summary = dict(  # transform_validation 继承的 compare 一致性摘要
+        interface_consistent=dict_equivalence["interface_consistent"],  # 公共端口契约是否保持一致
+        checkpoint_consistent=dict_equivalence["checkpoint_consistent"],  # 检查点可观测性是否保持一致
+        testbench_consistent=dict_equivalence["testbench_consistent"],  # 验证 testbench 是否保持一致
+        selected_backend=_selected_backend_name(dict_equivalence),  # compare 最终采用的仿真后端名称
+    )
+
+    # QoR 摘要只保留 gating 消费的三个状态字段。
+    dict_qor_summary = dict(  # transform_validation 继承的候选 QoR 摘要
+        qor_comparable=dict_qor_report["qor_comparable"],  # 参考与候选资源结果是否可比
+        status=dict_qor_report["status"],  # 当前 QoR 对比流程的主状态
+        yosys_stat=dict_qor_report.get("yosys_stat", {}).get("status"),  # yosys 统计工具的执行状态
+    )
+
+    # compare 识别的问题原样交给 optimize ready 判定。
+    list_issues = dict_equivalence.get("issues", [])  # 决定 optimize ready 的 compare 问题
+
+    # 分支证据形状与 advisory 保持一致，主流程无需了解细节。
+    return OptimizeEvidenceState(
+        dict_artifacts,
+        list_issues,
+        dict_verification_summary,
+        dict_qor_summary,
+    )
+
+# 无候选 RTL 时只生成参考设计一侧的 advisory QoR 报告。
+def _advisory_optimize_evidence(
+    analysis: dict[str, Any],
+    path_baseline_source: Path,
+    out_dir: Path,
+) -> OptimizeEvidenceState:
+    """生成无候选 RTL 场景的 advisory QoR 证据。
+
+    参数:
+        analysis: 当前参考 RTL 的结构分析结果。
+        path_baseline_source: advisory QoR 使用的基线 RTL。
+        out_dir: optimize_assist 工件输出目录。
+
+    返回:
+        advisory QoR 工件和默认验证摘要。
+    """
+
+    # 单参考场景禁止外部工具，只生成不可比的 advisory QoR 正文。
+    dict_qor_report = _qor_report(  # 单边 advisory QoR 报告
+        analysis,  # 参考 RTL 分析结果
+        None,  # 当前没有候选 RTL 分析
+        run_external=False,  # advisory 不调用外部工具链
+        reference_path=path_baseline_source,  # 当前基线 RTL
+        candidate_path=None,  # 当前没有候选 RTL 路径
+    )
+
+    # 报告文件名保持与旧 planned 分支一致。
+    path_qor = write_json(out_dir / "qor_report.json", dict_qor_report)  # planned 分支公开的单边 QoR 报告
+
+    # 默认验证摘要仍表示尚未比较接口、检查点和 testbench。
+    dict_verification_summary = _default_optimize_verification_summary()  # 尚未比较候选时的三项验证占位
+
+    # 单边 QoR 摘要沿用报告中的可比性、主状态和 yosys 状态。
+    dict_qor_summary = dict(  # planned 分支写入 validation 的单边 QoR 摘要
+        qor_comparable=dict_qor_report["qor_comparable"],  # 没有候选时资源结果不可比较
+        status=dict_qor_report["status"],  # 单边 advisory 报告的主状态
+        yosys_stat=dict_qor_report.get("yosys_stat", {}).get("status"),  # 单边报告记录的 yosys 状态
+    )
+
+    # advisory 没有 compare 问题，也不会生成 equivalence 工件。
+    return OptimizeEvidenceState(
+        {"qor_report": str(path_qor)},
+        [],
+        dict_verification_summary,
+        dict_qor_summary,
+    )
+
+# transform_validation 汇总候选存在性、错误问题和下一步动作。
+def _write_optimize_validation(
+    out_dir: Path,
+    evidence: OptimizeEvidenceState,
+    *,
+    bool_candidate_provided: bool,
+) -> Path:
+    """写出 optimize_assist 的 transform_validation 摘要。
+
+    参数:
+        out_dir: optimize_assist 工件输出目录。
+        evidence: compare 或 advisory 分支证据。
+        bool_candidate_provided: 当前是否存在候选 RTL。
+
+    返回:
+        transform_validation JSON 路径。
+    """
+
+    # 任一 error 级问题都会阻断 ready。
+    bool_has_error_issue = any(  # 是否存在阻断 optimize ready 的错误问题
+        dict_issue["severity"] == "error"  # 只把 error 级问题视为阻断项
+        for dict_issue in evidence.list_issues  # 扫描当前 compare 或 advisory 问题
+    )  # 当前证据是否含阻断问题
+
+    # ready 必须同时具备候选 RTL 且不存在 error。
+    bool_ready = bool_candidate_provided and not bool_has_error_issue  # 候选存在且无错误才允许继续
+
+    # 推荐动作只读取四个原有状态字段。
+    dict_next_action_state = dict(  # 决定补候选或继续验证的四项状态
+        interface_consistent=evidence.dict_verification_summary["interface_consistent"],  # 接口是否允许继续优化
+        checkpoint_consistent=evidence.dict_verification_summary["checkpoint_consistent"],  # 检查点是否允许继续优化
+        testbench_consistent=evidence.dict_verification_summary["testbench_consistent"],  # testbench 是否允许继续优化
+        qor_comparable=evidence.dict_qor_summary["qor_comparable"],  # 资源结果是否具备比较条件
+    )
+
+    # 下一步建议继续由共享 helper 按候选状态生成。
+    str_next_action = _recommended_next_action(  # optimize 推荐动作
+        dict_next_action_state,  # 四项聚合状态
+        candidate_provided=bool_candidate_provided,  # 候选 RTL 存在性
+    )
+
+    # transform_validation 的键和值保持公开 JSON 契约不变。
+    dict_transform_validation = {  # 调度器读取的 optimize 验证正文
+        "version": 1,  # 固定 transform_validation schema 版本
+        "ready": bool_ready,  # 候选与错误问题共同决定的门禁结论
+        "issues": evidence.list_issues,  # compare 分支继承的问题清单
+        "verification_summary": evidence.dict_verification_summary,  # 三项一致性与后端摘要
+        "qor_summary": evidence.dict_qor_summary,  # QoR 可比性和工具状态摘要
+        "recommended_next_action": str_next_action,  # 调用方下一步动作建议
+    }
+
+    # 固定文件名允许调用方按原路径读取验证摘要。
+    return write_json(out_dir / "transform_validation.json", dict_transform_validation)
+
 # 生成 optimize_assist 模式下的辅助工件，并在候选 RTL 存在时补充比对结果。
 def _optimize_assist(
     source_path: Path,
@@ -632,231 +965,68 @@ def _optimize_assist(
         包含 transform_plan、transform_validation 与辅助工件路径的结果字典。
     """
 
-    # 优先从基线工件目录取源文件，缺失时退回原始输入 RTL。
-    list_baseline_sources = _artifact_sources(baseline_artifacts_dir)  # 基线工件目录解析出的 RTL 路径列表
-
-    # 缺少基线工件时，退回 source_path 作为唯一基线 RTL。
-    if not list_baseline_sources:
-
-        # 当前轮次没有基线工件目录内容时，退回到原始 RTL。
-        list_baseline_sources = [source_path]  # 回退后的基线 RTL 路径列表
-
-    # 选出 optimize 流程实际使用的基线 RTL。
-    path_baseline_source = list_baseline_sources[0]  # optimize 流程使用的基线 RTL 路径
-
-    # 先声明候选 RTL 路径，后续再按工件目录情况补齐。
-    path_candidate_source: Path | None = None  # optimize 流程使用的候选 RTL 路径
-
-    # 候选工件目录存在时，提取其中首个 RTL 作为比较对象。
-    if candidate_artifacts_dir is not None:
-
-        # 先从候选工件目录里收集可比较的 RTL 文件。
-        list_candidate_sources = _artifact_sources(candidate_artifacts_dir)  # 候选工件目录解析出的 RTL 路径列表
-
-        # 仅取首个候选 RTL 参与 compare 复用链路。
-        if list_candidate_sources:
-
-            # 多个候选并存时，先固定取第一份 RTL 作为 optimize 比对基线。
-            path_candidate_source = list_candidate_sources[0]  # 候选目录中首个参与 compare 复用的 RTL 路径
-
-    # 先产出优化建议、包装模板和分解映射，方便后续人工细化 RTL。
-    path_optimization_plan = out_dir / "optimization_plan.md"  # 优化建议文档输出路径
-
-    # 候选 wrapper 用于承载后续分区重组尝试。
-    path_candidate_wrapper = out_dir / "candidate_wrapper.v"  # 候选 wrapper 模板输出路径
-
-    # 分区映射负责固化分析阶段发现的 decomposition 候选。
-    path_partition_map = out_dir / "candidate_partition_map.json"  # 分区映射 JSON 输出路径
-
-    # 写出优化建议文档，供人工决定精修优先级。
-    _write_optimization_plan(analysis, path_optimization_plan)
-
-    # 写出分区 wrapper 模板，帮助后续拆分实现。
-    _write_partition_wrapper(analysis, path_candidate_wrapper)
-
-    # 记录分析阶段推断出的分解候选，便于 wrapper 细化。
-    write_json(
-        path_partition_map,
-        {
-            "version": 1,
-            "decomposition_candidates": analysis["decomposition_candidates"],
-        },
+    # 源路径 helper 保留基线回退和首个候选选择策略。
+    tuple_optimize_sources = _resolve_optimize_sources(  # 确定 compare 或 advisory 使用的两侧 RTL
+        source_path,  # 基线目录为空时使用的原始 RTL
+        candidate_artifacts_dir,  # 搜索首个候选 RTL 的工件目录
+        baseline_artifacts_dir,  # 搜索首个基线 RTL 的工件目录
     )
 
-    # 先把 optimize_assist 阶段固定会落盘的工件整理成输出清单。
-    list_expected_outputs = _optimize_expected_outputs(  # optimize 阶段固定输出项描述
-        out_dir,  # optimize_assist 阶段的输出根目录
-        path_optimization_plan=path_optimization_plan,  # 优化建议文档路径
-        path_candidate_wrapper=path_candidate_wrapper,  # 候选 wrapper 模板路径
-        path_partition_map=path_partition_map,  # 分区映射 JSON 路径
+    # 基线路径始终存在，供 compare 或 advisory QoR 使用。
+    path_baseline_source = tuple_optimize_sources[0]  # optimize 实际基线 RTL
+
+    # 候选路径为空时保持 planned/advisory 行为。
+    path_candidate_source = tuple_optimize_sources[1]  # 非空时触发 compare_semantics
+
+    # 固定工件 helper 保持优化建议、wrapper、分区映射和计划的落盘顺序。
+    optimize_prepared_artifacts_prepared_artifacts = _prepare_optimize_artifacts(  # 固定计划与工件状态
+        out_dir,  # 写入建议、wrapper 和计划的目录
+        analysis,  # 生成优化目标与分区映射的分析结果
     )
 
-    # 把优化目标和允许的变更边界写入统一 transform plan。
-    dict_transform_plan = build_transform_plan(  # optimize 阶段的统一变更计划
-        analysis,  # 当前参考 RTL 的结构分析结果
-        transform_goal="optimize_assist",  # 固定写入 optimize_assist 目标名
-        expected_outputs=list_expected_outputs,  # 会出现在变换计划里的工件清单
-    )
-
-    # 补充优化场景特有的 QoR 目标与等价性约束。
-    dict_optimization_requirements = {  # optimize 模式要求保持的等价性条件
-        "interface_consistent": True,  # 要求候选设计保持接口一致
-        "checkpoint_consistent": True,  # 要求候选设计保持检查点一致
-        "testbench_consistent": True,  # 要求候选设计保持 testbench 一致
-        "qor_comparable": True,  # 要求候选设计具备 QoR 可比性
-    }
-
-    # 把 optimize 专属的目标、QoR 约束和改写边界补进变换计划。
-    dict_transform_plan.update(
-        {
-            "optimization_targets": _optimization_targets(analysis),
-            "qor_objectives": _qor_objectives(analysis),
-            "equivalence_requirements": dict_optimization_requirements,
-            "allowed_mutation_scope": "assist_only_no_default_rtl_rewrite",
-        }
-    )
-
-    # optimize 的统一 transform plan 是调度器消费的主入口文件。
-    path_transform_plan = write_json(out_dir / "rtl_transform_plan.json", dict_transform_plan)  # optimize 阶段 transform plan 输出路径
-
-    # 先登记 optimize 阶段无条件会产出的三类主工件路径。
-    dict_artifacts = dict(  # 返回给调用方的 optimize 主工件索引
-        optimization_plan=str(path_optimization_plan),  # 供人工评审优化建议的文档输出路径
-        candidate_wrapper=str(path_candidate_wrapper),  # 供人工补线和替换实例的 wrapper 骨架路径
-        candidate_partition_map=str(path_partition_map),  # 供人工核对分区边界的映射 JSON 路径
-    )
-
-    # compare 可能被跳过，因此这里维护的是 optimize 阶段自有的问题聚合容器。
-    list_issues: list[dict[str, Any]] = []  # optimize 阶段自有或继承的问题列表
-
-    # 候选 RTL 缺失时，先使用默认验证摘要占位。
-    dict_verification_summary = _default_optimize_verification_summary()  # optimize 阶段接口与 testbench 默认验证摘要
-
-    # 候选 RTL 缺失时，QoR 摘要也先停留在 advisory 默认值。
-    dict_qor_summary = _default_optimize_qor_summary()  # optimize 阶段默认 QoR 摘要
-
-    # 候选 RTL 存在时，继续补充语义等价与 QoR 对比。
+    # 候选存在时运行 compare；否则保持单参考 advisory 行为。
     if path_candidate_source is not None:
 
-        # 启动 compare 主流程，补齐接口、一致性和 QoR 证据。
-        dict_compare_result = compare_semantics(  # compare 阶段产出的路径集合
-            path_baseline_source,  # compare 使用的基线 RTL 路径
-            path_candidate_source,  # compare 使用的候选 RTL 路径
-            out_dir=out_dir / "optimize_compare",  # compare 阶段输出目录
-            run_external=readiness != "static",  # 非 static 模式才允许外部工具链
-            readiness=readiness,  # 当前验证准备度级别
+        # compare 分支生成 equivalence、QoR 与问题摘要。
+        optimize_evidence_state_evidence = _candidate_optimize_evidence(  # 候选 compare 证据
+            path_baseline_source,  # 提供语义对比参考的基线 RTL
+            path_candidate_source,  # 接受一致性检查的候选 RTL
+            out_dir,  # 保存 compare 子工件的输出目录
+            readiness,  # 决定是否调用外部工具的验证深度
         )
 
-        # 读取 compare 阶段生成的语义等价摘要。
-        dict_equivalence = _read_json_artifact(dict_compare_result["equivalence_path"])  # compare 阶段 equivalence JSON 内容
-
-        # 从 compare 目录读取资源与时序对比结果，供 optimize 摘要复用。
-        dict_qor_report = _read_json_artifact(dict_compare_result["qor_report_path"])  # 从 compare 工件回读的 QoR 报告正文
-
-        # 把 compare 生成的语义等价证据挂回 optimize 工件索引。
-        dict_artifacts["equivalence"] = dict_compare_result["equivalence_path"]  # compare 阶段 equivalence 工件路径
-
-        # 把 compare 生成的 QoR 报告路径挂回 optimize 工件索引。
-        dict_artifacts["qor_report"] = dict_compare_result["qor_report_path"]  # compare 阶段 QoR 报告工件路径
-
-        # 把 compare 产出的接口、checkpoint 与 testbench 结论压缩成验证摘要。
-        dict_verification_summary = dict(  # optimize 继承 compare 结论后的验证摘要
-            interface_consistent=dict_equivalence["interface_consistent"],  # compare 后接口一致性结论
-            checkpoint_consistent=dict_equivalence["checkpoint_consistent"],  # compare 后检查点一致性结论
-            testbench_consistent=dict_equivalence["testbench_consistent"],  # compare 后 testbench 一致性结论
-            selected_backend=_selected_backend_name(dict_equivalence),  # compare 后最终选中的仿真后端
-        )
-
-        # 把 compare 阶段的 QoR 结论裁剪成 gating 真正关心的状态字段。
-        dict_qor_summary = dict(  # optimize 继承 compare 结论后的 QoR 摘要
-            qor_comparable=dict_qor_report["qor_comparable"],  # optimize 当前是否仍保留参考/候选 QoR 可比性
-            status=dict_qor_report["status"],  # optimize 当前继承到的 QoR 主状态
-            yosys_stat=dict_qor_report.get("yosys_stat", {}).get("status"),  # optimize 当前继承到的 yosys 统计状态
-        )
-
-        # 沿用 compare 阶段已识别的问题列表。
-        list_issues = dict_equivalence.get("issues", [])  # compare 阶段输出的问题列表
-
-    # 没有候选 RTL 时，仅保留参考设计上的 advisory 级 QoR 信息。
+    # 空候选目录必须继续生成 planned 状态和 advisory QoR。
     else:
 
-        # 没有候选设计时，只生成参考 RTL 一侧的 QoR 建议摘要。
-        dict_qor_report = _qor_report(  # 无候选 RTL 时退回生成的单边 advisory QoR 报告正文
-            analysis,  # 当前 advisory QoR 报告唯一依赖的参考 RTL 结构分析结果
-            None,  # 单参考 advisory 场景没有候选 RTL 分析结果
-            run_external=False,  # 当前 advisory QoR 只允许走本地静态摘要，不调用外部工具链
-            reference_path=path_baseline_source,  # 单基线 advisory 场景使用的基线 RTL 路径
-            candidate_path=None,  # 单参考 advisory 场景没有候选 RTL 路径
+        # advisory 分支不生成 equivalence，也不调用外部工具链。
+        optimize_evidence_state_evidence = _advisory_optimize_evidence(  # 单参考 advisory 证据
+            analysis,  # 生成单边 QoR 的参考分析结果
+            path_baseline_source,  # 作为 advisory 报告来源的基线 RTL
+            out_dir,  # 保存单边 QoR 报告的输出目录
         )
 
-        # 输出仅含参考设计的 QoR 报告。
-        path_qor = write_json(out_dir / "qor_report.json", dict_qor_report)  # advisory QoR 报告输出路径
+    # 候选存在性同时决定 ready 和推荐动作。
+    bool_candidate_provided = path_candidate_source is not None  # optimize 是否拿到候选 RTL
 
-        # 把 advisory QoR 报告纳入本阶段工件清单。
-        dict_artifacts["qor_report"] = str(path_qor)  # advisory QoR 报告工件路径
-
-        # 把单参考设计场景下仍可计算的 QoR 状态裁剪成摘要。
-        dict_qor_summary = dict(  # 没有候选 RTL 时，调用方只能依赖这份单边 QoR 状态切片判断是否还值得继续补候选设计
-            qor_comparable=dict_qor_report["qor_comparable"],  # 单参考设计场景下自然会是不可比的 QoR 标记
-            status=dict_qor_report["status"],  # 单参考 advisory 场景下的 QoR 主状态结论
-            yosys_stat=dict_qor_report.get("yosys_stat", {}).get("status"),  # 单参考 advisory 场景下的 yosys stat 子状态结论
-        )
-
-    # 把 ready 结论拆出来，避免在结果字典里堆叠过长布尔表达式。
-    bool_has_error_issue = False  # optimize 阶段是否存在 error 级问题
-
-    # 逐项扫描问题列表，只要出现 error 就阻断继续推进。
-    for dict_issue in list_issues:
-
-        # 非 error 级问题不影响 ready 判定。
-        if dict_issue["severity"] != "error":
-
-            # 当前问题不是阻断项时继续检查下一条。
-            continue
-
-        # 命中 error 级问题后立即标记阻断状态。
-        bool_has_error_issue = True  # optimize 阶段已经发现 error 级问题
-
-        # 首个 error 已足够决定 ready 结论。
-        break
-
-    # 先把是否已有候选 RTL 抽出来，供 ready 与下一步动作共用。
-    bool_candidate_provided = path_candidate_source is not None  # optimize 阶段是否已经拿到候选 RTL
-
-    # 只有具备候选 RTL 且不存在阻断问题时，ready 才会向下游开放后续步骤。
-    bool_ready = bool_candidate_provided and not bool_has_error_issue  # 写入 optimize transform_validation.ready 的 gating 结论
-
-    # 为推荐动作整理一份扁平化状态摘要，避免内联字典过长。
-    dict_next_action_state = dict(  # 驱动 optimize 推荐动作的聚合状态
-        interface_consistent=dict_verification_summary["interface_consistent"],  # optimize 当前接口一致性
-        checkpoint_consistent=dict_verification_summary["checkpoint_consistent"],  # optimize 当前检查点一致性
-        testbench_consistent=dict_verification_summary["testbench_consistent"],  # optimize 当前 testbench 一致性
-        qor_comparable=dict_qor_summary["qor_comparable"],  # optimize 当前 QoR 可比性
+    # 验证 helper 统一处理 error 问题、ready 和推荐动作。
+    path_validation = _write_optimize_validation(  # 调度器读取的 validation JSON 路径
+        out_dir,  # 固定 transform_validation 的写入目录
+        optimize_evidence_state_evidence,  # 当前分支问题和一致性摘要
+        bool_candidate_provided=bool_candidate_provided,  # 决定 ready 的候选存在状态
     )
 
-    # 这里产出的动作建议会直接展示给调用方或上层调度器。
-    str_optimize_next_action = _recommended_next_action(  # 返回给调用方的 optimize 下一步建议动作
-        dict_next_action_state,  # 推荐动作所依据的聚合状态
-        candidate_provided=bool_candidate_provided,  # 推荐动作需要知道本轮是否真的拿到了候选 RTL
+    # 固定工件与分支证据合并后保持原有 artifacts 键集合。
+    dict_artifacts = dict(  # 返回值中的完整 optimize 工件索引
+        optimize_prepared_artifacts_prepared_artifacts.dict_artifacts  # 复制固定工件避免修改状态对象
     )
 
-    # 把 optimize 场景的 gating 结论写成 transform_validation 摘要。
-    dict_transform_validation = {
-        "version": 1,  # 标记 optimize transform_validation 的 schema 版本
-        "ready": bool_ready,  # 只有具备候选 RTL 且无 error 时才允许继续推进
-        "issues": list_issues,  # 调用方后续排查时要看的 optimize 问题清单
-        "verification_summary": dict_verification_summary,  # 接口和 testbench 方向的验证结论摘要
-        "qor_summary": dict_qor_summary,  # 供 gating 读取的 QoR 结果切片
-        "recommended_next_action": str_optimize_next_action,  # 直接指导下一步动作的推荐字符串
-    }
-
-    # 把 transform_validation 写回输出目录。
-    path_validation = write_json(out_dir / "transform_validation.json", dict_transform_validation)  # 供调用方读取的 optimize validation JSON 文件路径
+    # compare 或 advisory 新增的报告最后并入公开 artifacts。
+    dict_artifacts.update(optimize_evidence_state_evidence.dict_artifacts)
 
     # 返回 optimize_assist 阶段的核心工件与分析结果。
     return {
         "status": "planned",
-        "transform_plan_path": str(path_transform_plan),
+        "transform_plan_path": str(optimize_prepared_artifacts_prepared_artifacts.path_transform_plan),
         "transform_validation_path": str(path_validation),
         "artifacts": dict_artifacts,
         "analysis": analysis,

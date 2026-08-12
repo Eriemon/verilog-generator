@@ -254,85 +254,8 @@ class ParseMixin:
         # 缺省时使用空宏映射，避免后续分支反复判空。
         dict_macro_expansions = macro_expansions or {}  # 参数解析使用的宏展开映射
 
-        # 优先按逐行参数声明收集结构化参数。
-        list_params: list[ParamDecl] = []  # 参数声明列表
-
-        # 逐行解析参数块，优先保留注释和宏行的局部结构。
-        for str_raw_line in text.splitlines():
-
-            # 去掉每行两端空白，便于识别空行、注释和宏调用。
-            str_stripped_line = str_raw_line.strip()  # 当前参数行的规范化文本
-
-            # 空行和纯注释行不产生参数声明。
-            if not str_stripped_line or str_stripped_line.startswith("//"):
-
-                # 当前物理行不承载参数声明，直接切到下一行。
-                continue
-
-            # 宏调用行先保留 raw 参数，再尝试展开为合成参数。
-            if str_stripped_line.startswith("`"):
-
-                # 原样保留宏调用行，避免丢失用户显式写下的参数宏文本。
-                list_params.append(ParamDecl("raw", "", "", raw_text=str_stripped_line))
-
-                # 提取宏名，用来在源码级宏映射里查找展开文本。
-                str_macro_name = str_stripped_line.lstrip("`").split(None, 1)[0]  # 当前参数行引用的宏名
-
-                # 读取宏展开文本，缺省时保持空串。
-                str_expansion = dict_macro_expansions.get(str_macro_name, "")  # 当前宏调用对应的展开文本
-
-                # 命中展开文本时，把展开结果继续递归解析成合成参数。
-                if str_expansion:
-
-                    # 先把宏展开文本递归还原成候选参数列表。
-                    list_expanded_params = self._parse_params(str_expansion, {})  # 宏展开后得到的候选参数列表
-
-                    # 顺序处理每个展开候选，过滤掉 raw 宏占位节点。
-                    for parsed_param in list_expanded_params:
-
-                        # raw 宏占位节点只为保留原文，不应再次转成合成参数。
-                        if parsed_param.raw_text:
-
-                            # 当前候选只用于保留 raw 宏原文，不参与合成参数生成。
-                            continue
-
-                        # 先复制当前展开候选的 leading_comments，避免后续共享可变列表。
-                        list_synthetic_leading_comments = list(parsed_param.leading_comments)  # 合成参数声明使用的注释副本
-
-                        # 再把当前展开候选重建成可落地的合成参数声明。
-                        param_decl_synthetic_param: ParamDecl = ParamDecl(  # 当前展开候选对应的合成参数声明
-                            parsed_param.keyword,  # 展开候选里的参数关键字
-                            parsed_param.name,  # 展开候选里的参数名称
-                            parsed_param.value,  # 展开候选里的参数默认值表达式
-
-                            # 下面三项继续沿用这条展开参数原本的规格文本和注释内容。
-                            parsed_param.decl_spec,  # 展开候选里的声明规格
-                            parsed_param.comment,  # 展开候选继承的行尾注释文本
-                            list_synthetic_leading_comments,  # 展开候选继承的前置注释副本
-                            synthetic=True,  # 当前参数节点来自宏展开后的合成结果
-                        )
-
-                        # 再把这条合成参数声明并入最终参数结果列表。
-                        list_params.append(param_decl_synthetic_param)
-
-                # 宏调用行的解析和展开都已结束，继续处理下一条参数行。
-                continue
-
-            # 拆出参数行尾部注释，交给单条参数解析器复用。
-            str_raw_decl, str_comment = self._split_comment(str_stripped_line)  # 参数声明文本与行尾注释
-
-            # 优先按逐行参数声明形态解析当前参数行。
-            if (
-                parsed_param_decl := self._parse_param_decl(
-                    str_raw_decl,
-                    str_comment,
-                    allow_trailing_comma=True,
-                    allow_trailing_semicolon=False,
-                )
-            ) is not None:
-
-                # 当前参数行已经被还原成结构化参数声明。
-                list_params.append(parsed_param_decl)  # 当前参数行解析出的结构化参数声明
+        # 逐行 helper 优先保留注释和宏调用的局部结构。
+        list_params = self._parse_param_lines(text, dict_macro_expansions)  # 逐行模式解析出的参数声明
 
         # 逐行模式已经命中过参数时，直接返回逐行解析结果。
         if list_params:
@@ -341,28 +264,171 @@ class ParseMixin:
             return list_params
 
         # 逐行模式未命中时，回退到顶层逗号切分方案。
-        list_entries = self._split_top_level(text, ",")  # 顶层逗号切分得到的参数片段
+        return self._parse_param_entries(self._split_top_level(text, ","))
 
-        # 对每个顶层参数片段继续执行单条参数解析。
+    # 参数行 helper 负责逐行路由普通声明和宏调用。
+    def _parse_param_lines(self, text: str, dict_macro_expansions: dict[str, str]) -> list[ParamDecl]:
+        """按物理行解析参数声明并保留宏调用原文。
+
+        参数:
+            text: 参数块原始文本。
+            dict_macro_expansions: 参数宏引用对应的展开文本。
+        返回:
+            逐行模式解析得到的参数声明列表。
+        """
+
+        # 逐行结果保持源码中的参数和宏调用顺序。
+        list_params: list[ParamDecl] = []  # 逐行参数声明列表
+
+        # 每个物理行独立路由到宏或普通参数解析器。
+        for str_raw_line in text.splitlines():
+
+            # 去掉外围空白，便于识别空行、注释和宏调用。
+            str_stripped_line = str_raw_line.strip()  # 当前参数行的规范化文本
+
+            # 空行和纯注释行不产生参数声明。
+            if not str_stripped_line or str_stripped_line.startswith("//"):
+
+                # 当前物理行不承载参数声明。
+                continue
+
+            # 宏调用需要同时保留 raw 节点和可用的合成展开参数。
+            if str_stripped_line.startswith("`"):
+
+                # 宏 helper 返回按 raw、synthetic 顺序排列的参数节点。
+                list_params.extend(self._parse_param_macro_line(str_stripped_line, dict_macro_expansions))
+
+                # 当前宏行已经完整消费。
+                continue
+
+            # 普通参数行通过单条声明解析器恢复结构。
+            parsed_param_decl = self._parse_param_line(str_stripped_line, allow_trailing_comma=True)  # 当前物理行解析结果
+
+            # 只收集可稳定识别的参数声明。
+            if parsed_param_decl is not None:
+
+                # 保留逐行参数的源码顺序。
+                list_params.append(parsed_param_decl)
+
+        # 返回逐行模式命中的全部参数节点。
+        return list_params
+
+    # 参数宏 helper 保留调用原文并把展开项重建为 synthetic 节点。
+    def _parse_param_macro_line(
+        self,
+        str_macro_line: str,
+        dict_macro_expansions: dict[str, str],
+    ) -> list[ParamDecl]:
+        """解析一行参数宏调用及其可用展开文本。
+
+        参数:
+            str_macro_line: 以反引号开头的参数宏调用行。
+            dict_macro_expansions: 宏名到展开文本的映射。
+        返回:
+            raw 宏节点以及随后可生成的 synthetic 参数节点。
+        """
+
+        # raw 节点始终保留用户显式写下的宏调用文本。
+        list_params = [ParamDecl("raw", "", "", raw_text=str_macro_line)]  # 当前宏行产生的参数节点
+
+        # 宏名用于从源码级映射中查找展开文本。
+        str_macro_name = str_macro_line.lstrip("`").split(None, 1)[0]  # 当前参数行引用的宏名
+
+        # 缺少展开文本时只返回 raw 节点。
+        str_expansion = dict_macro_expansions.get(str_macro_name, "")  # 当前宏调用对应的展开文本
+
+        # 空展开不产生 synthetic 参数。
+        if not str_expansion:
+
+            # 调用方仍可依赖 raw 节点保留原文。
+            return list_params
+
+        # 展开文本递归复用参数解析入口，但禁用二次宏展开。
+        list_expanded_params = self._parse_params(str_expansion, {})  # 宏展开后得到的候选参数列表
+
+        # 顺序处理每个展开候选，过滤 raw 宏占位节点。
+        for parsed_param in list_expanded_params:
+
+            # raw 节点只负责保留展开文本中的宏调用，不重复合成。
+            if parsed_param.raw_text:
+
+                # 跳过无法落成结构声明的宏占位节点。
+                continue
+
+            # 重建节点时复制前置注释，避免共享可变列表。
+            list_comments = list(parsed_param.leading_comments)  # synthetic 参数使用的注释副本
+
+            # synthetic 节点继承展开参数的声明规格和注释。
+            list_params.append(
+                ParamDecl(
+                    parsed_param.keyword,  # 展开参数关键字
+                    parsed_param.name,  # 展开参数名称
+                    parsed_param.value,  # 展开参数默认值
+
+                    # 声明规格和注释继续继承原展开参数，但前置注释使用隔离副本。
+                    parsed_param.decl_spec,  # 展开参数声明规格
+                    parsed_param.comment,  # 展开参数行尾注释
+                    list_comments,  # 隔离后的前置注释副本
+
+                    # synthetic 标记让 renderer 区分宏原文与可落地声明。
+                    synthetic=True,  # 标记节点来自宏展开
+                )
+            )
+
+        # 返回 raw 节点和全部可落地的 synthetic 参数。
+        return list_params
+
+    # 单参数行 helper 统一拆分行尾注释和调用声明解析器。
+    def _parse_param_line(self, str_entry: str, *, allow_trailing_comma: bool) -> ParamDecl | None:
+        """解析一条普通参数声明文本。
+
+        参数:
+            str_entry: 单条参数声明或顶层逗号片段。
+            allow_trailing_comma: 是否允许声明末尾保留逗号。
+        返回:
+            可稳定解析的参数声明；无法识别时返回 None。
+        """
+
+        # 行尾注释与声明主体分别交给既有单条解析器。
+        str_raw_decl, str_comment = self._split_comment(str_entry)  # 参数声明文本与行尾注释
+
+        # 统一禁用参数分号，逗号策略由调用路径决定。
+        return self._parse_param_decl(
+            str_raw_decl,
+            str_comment,
+            allow_trailing_comma=allow_trailing_comma,
+            allow_trailing_semicolon=False,
+        )
+
+    # 顶层参数片段 helper 承担逐行模式未命中时的保守回退。
+    def _parse_param_entries(self, list_entries: list[str]) -> list[ParamDecl]:
+        """解析顶层逗号切分得到的参数片段。
+
+        参数:
+            list_entries: 保留原始顺序的顶层参数片段。
+        返回:
+            回退路径识别出的结构化参数声明列表。
+        """
+
+        # 回退结果继续保持顶层片段顺序。
+        list_params: list[ParamDecl] = []  # 顶层片段解析结果
+
+        # 每个片段独立执行单参数解析。
         for str_entry in list_entries:
 
-            # 为每个参数片段拆出行尾注释并复用单条参数解析器。
-            str_raw_decl, str_comment = self._split_comment(str_entry)  # 顶层参数片段文本与行尾注释
+            # 回退片段已经由顶层逗号 splitter 去除分隔符。
+            parsed_param_decl = self._parse_param_line(str_entry, allow_trailing_comma=False)  # 当前回退片段解析结果
 
-            # 在回退路径里按单条参数声明再解析一次。
-            if (
-                parsed_param_decl := self._parse_param_decl(
-                    str_raw_decl,
-                    str_comment,
-                    allow_trailing_comma=False,
-                    allow_trailing_semicolon=False,
-                )
-            ) is not None:
+            # 无法识别的片段保持既有忽略行为。
+            if parsed_param_decl is None:
 
-                # 回退路径解析出的参数声明也需要并入统一结果列表。
-                list_params.append(parsed_param_decl)  # 回退路径解析出的结构化参数声明
+                # 继续处理其它顶层参数片段。
+                continue
 
-        # 返回参数块解析得到的全部参数声明。
+            # 结构化声明按原始片段顺序加入结果。
+            list_params.append(parsed_param_decl)
+
+        # 返回回退路径解析出的全部参数。
         return list_params
 
     # 解析单条 parameter/localparam 声明。
@@ -1275,23 +1341,14 @@ class ParseMixin:
                 # 把当前有效片段并入 case 收集结果。
                 list_collected.append(str_normalized)
 
-                # 命中新的 case 起始时，需要增加 case 嵌套层级。
-                if re.match(r"^(?:case|casez|casex)\b", str_normalized):
+                # 深度 helper 根据 case 起点或 endcase 更新嵌套层级。
+                int_depth += self._raw_case_depth_delta(str_normalized)  # 当前片段处理后的 case 嵌套深度
 
-                    # 进入更深一层 case 嵌套结构。
-                    int_depth += 1  # 进入更深一层 case 嵌套深度
+                # 回到最外层时，说明整个 case 块已经闭合。
+                if int_depth == 0:
 
-                # 命中 endcase 时，需要关闭一层 case 结构。
-                elif str_normalized.startswith("endcase"):
-
-                    # 当前 endcase 让 case 嵌套层级回退一层。
-                    int_depth -= 1  # 当前 endcase 关闭一层 case 嵌套
-
-                    # 回到最外层时，说明整个 case 块已经闭合。
-                    if int_depth == 0:
-
-                        # 返回完整的 case 片段列表和下一条起始下标。
-                        return list_collected, int_index + 1
+                    # 返回完整的 case 片段列表和下一条起始下标。
+                    return list_collected, int_index + 1
 
             # 当前片段处理完成后继续向后扫描。
             int_index += 1  # 继续扫描下一个 case 片段
@@ -1302,6 +1359,31 @@ class ParseMixin:
             fragments[start].strip(),
             "Close each case block with endcase before formatting.",
         )
+
+    # raw case 深度 helper 只识别 case 家族起点和 endcase 终点。
+    def _raw_case_depth_delta(self, str_normalized: str) -> int:
+        """返回规范化片段对 case 嵌套深度的影响。
+
+        参数:
+            str_normalized: 当前规范化后的语句片段。
+        返回:
+            case 起点返回 1，endcase 返回 -1，其它片段返回 0。
+        """
+
+        # case、casez 和 casex 都打开一层 raw case 结构。
+        if re.match(r"^(?:case|casez|casex)\b", str_normalized):
+
+            # 调用方据此增加嵌套深度。
+            return 1
+
+        # endcase 关闭最近一层 raw case 结构。
+        if str_normalized.startswith("endcase"):
+
+            # 调用方据此减少嵌套深度。
+            return -1
+
+        # 普通片段不影响 case 层级。
+        return 0
 
     # 按顶层分号把声明区域拆成独立语句。
     def _split_declaration_statements(self, text: str) -> list[str]:

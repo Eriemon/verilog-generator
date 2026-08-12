@@ -149,6 +149,49 @@ class ModuleRenderContext:
     # output_target_layouts 描述输出端口目标区域布局。
     output_target_layouts: dict[str, OutputSignalLayout]  # 输出目标布局表
 
+# Assign 标签状态集中保存跨语句延续的布局信息，避免 helper 参数失控。
+@dataclass
+class AssignLabelRenderState:
+    """保存 assign 区域的标签输入和跨语句渲染状态。
+
+    :param list_lines: 当前 assign 区域已经渲染的文本行。
+    :param output_target_layouts: 可选输出端口布局。
+    :param signal_layouts: 可选普通信号亲缘布局。
+    :param list_signal_labels: 普通 assign 主标签序列。
+    :param list_source_section_labels: 普通 assign 来源标签序列。
+    :param str_current_label: 当前主标签状态。
+    :param str_current_source_section: 当前来源标签状态。
+    :param bool_rendered_assign: 当前区域是否已有 assign。
+    :param bool_rendered_assign_in_primary_cluster: 当前主组是否已有 assign。
+    """
+
+    # list_lines 由标签 helper 原位追加 cluster 标题和分隔行。
+    list_lines: list[str]  # 当前 assign 区域输出行
+
+    # output_target_layouts 存在时按输出端口类别生成主标签。
+    output_target_layouts: dict[str, OutputSignalLayout] | None  # 目标端口分类输入
+
+    # signal_layouts 存在时按实例亲缘关系组织普通连线。
+    signal_layouts: dict[str, InstanceSignalLayout] | None  # 普通信号亲缘布局
+
+    # list_signal_labels 与稳定排序后的 assign 列表逐项对应。
+    list_signal_labels: list[str]  # 普通 assign 主标签序列
+
+    # list_source_section_labels 在每个主组内提供二级来源标签。
+    list_source_section_labels: list[str]  # 普通 assign 来源标签序列
+
+    # str_current_label 防止连续语句重复输出同一个主标签。
+    str_current_label: str = "__start__"  # 当前主标签状态
+
+    # str_current_source_section 防止主组内重复输出来源标签。
+    str_current_source_section: str = "__start__"  # 当前来源标签状态
+
+    # bool_rendered_assign 决定新标签前是否需要插入空行。
+    bool_rendered_assign: bool = False  # 当前区域 assign 输出状态
+
+    # bool_rendered_assign_in_primary_cluster 控制二级标签的组内分隔。
+    bool_rendered_assign_in_primary_cluster: bool = False  # 当前主组输出状态
+
 # RenderMixin 只负责把 parser 产物拼回既有 formatter 输出协议。
 class RenderMixin:
     """渲染 module 外壳、参数声明、主体区域和连续赋值区域。"""
@@ -3021,12 +3064,6 @@ class RenderMixin:
         # list_lines 以当前 assign 区域横幅开头。
         list_lines = [f"{self._indent(1)}{self.REGION_TITLES[region]}"]  # assign 区域输出行
 
-        # str_current_label 记录主标签，避免同组重复写入横幅说明。
-        str_current_label = "__start__"  # 当前 assign 主标签状态
-
-        # str_current_source_section 记录普通连线的次级来源标签。
-        str_current_source_section = "__start__"  # 当前来源区段标签
-
         # bool_rendered_assign 控制标签组之间是否需要空行。
         bool_rendered_assign = False  # 当前区域是否已有 assign 输出
 
@@ -3044,117 +3081,27 @@ class RenderMixin:
             source_layouts,  # 普通连线右值来源布局
         )  # 每条 assign 的来源标签
 
-        # 二级来源标签只在同一个主标签组内去重。
-        bool_rendered_assign_in_primary_cluster = False  # 当前主标签组内是否已有 assign
+        # 标签状态对象同时承载固定布局输入和跨 assign 延续的分组状态。
+        assign_label_state = AssignLabelRenderState(  # assign 标签渲染状态
+            list_lines=list_lines,  # 当前区域已渲染行
+            output_target_layouts=output_target_layouts,  # 输出分类布局
+            signal_layouts=signal_layouts,  # 判定左值实例归属
+            list_signal_labels=list_signal_labels,  # 索引读取左值亲缘说明
+            list_source_section_labels=list_source_section_labels,  # 索引读取右值来源说明
+        )
 
         # 逐条 assign 输出标签、前导注释和规范化后的 assign 语句。
         for index, assign in enumerate(list_assigns):
 
-            # str_label 保存当前 assign 的主分组标签。
-            str_label = ""  # 当前 assign 主分组标签
+            # 标签 helper 负责输出/普通布局的注释过滤和 cluster 状态迁移。
+            assign_label_state.bool_rendered_assign = bool_rendered_assign  # 同步区域输出状态
 
-            # str_source_section 保存当前 assign 的来源分组标签。
-            str_source_section = ""  # 当前 assign 右值来源标签
-
-            # 前导注释会过滤掉与自动标签重复的内容。
-            list_leading_comments = list(assign.leading_comments)  # 当前 assign 前导注释
-
-            # 输出端口 assign 使用输出布局标签。
-            if output_target_layouts is not None:
-
-                # 输出布局标签来自目标端口分组。
-                str_label = self._format_output_layout_label(  # 输出 assign 主标签
-                    self._resolve_output_assign_layout(assign, output_target_layouts)  # 当前输出 assign 布局
-                )
-
-                # 去掉与自动主标签重复的前导注释。
-                list_leading_comments = self._filter_assign_leading_comments(  # 输出 assign 保留的前导注释
-                    list_leading_comments,  # 输出 assign 原始前导注释
-                    primary_label=str_label,  # 输出端口分组标签
-                )
-
-                # 标签变化时输出新的主标签注释。
-                str_current_label = self._begin_output_label_cluster(  # 输出 assign 当前主标签状态
-                    list_lines,  # 输出标签写入的 assign 行缓存
-                    str_label,  # 输出端口主标签
-                    list_leading_comments,  # 过滤后的输出注释
-                    str_current_label,  # 上一条输出主标签
-                    bool_rendered_assign,  # 输出区域是否已有 assign
-                )
-
-            # 普通 assign 使用实例亲缘标签和来源端口区段标签。
-            elif signal_layouts is not None:
-
-                # 主标签按左值信号亲缘预先计算。
-                str_label = list_signal_labels[index]  # 当前普通 assign 主标签
-
-                # 次级标签按右值来源端口区段预先计算。
-                str_source_section = list_source_section_labels[index]  # 当前普通 assign 来源标签
-
-                # 删除与自动主/次标签重复的手写注释。
-                list_leading_comments = self._filter_assign_leading_comments(  # 普通 assign 保留的前导注释
-                    list_leading_comments,  # 普通 assign 原始前导注释
-                    primary_label=str_label,  # 实例亲缘主标签
-                    secondary_label=str_source_section,  # 端口来源二级标签
-                )
-
-                # 手写结构化标签可作为人工主分组边界。
-                bool_manual_primary_boundary = not str_label and any(  # 手写主分组边界判定
-                    self._comment_looks_like_structured_label(self._comment_body(comment))  # 手写标签形态检查
-                    and self._comment_body(comment) != str_source_section  # 排除自动来源标签重复项
-                    for comment in list_leading_comments  # 过滤后的前导注释
-                )  # 是否由手写结构化注释触发主分组
-
-                # bool_label_changed 表示自动主标签是否真的切换。
-                bool_label_changed = bool(str_label) and str_label != str_current_label  # 自动主标签是否切换
-
-                # 主标签变化会重置二级来源标签状态。
-                bool_primary_changed = bool_label_changed or bool_manual_primary_boundary  # 是否开启新的主分组
-
-                # 人工主边界前保留空行，避免贴到上一组 assign。
-                if bool_manual_primary_boundary:
-
-                    # 手写结构化注释作为分组边界时，需要先隔开上一组。
-                    self._ensure_single_blank_line_before_cluster(list_lines, bool_rendered_assign)
-
-                # 自动标签或人工边界存在时，尝试输出主标签。
-                if str_label or bool_manual_primary_boundary:
-
-                    # 主标签 helper 会避免重复输出已有手写标签。
-                    str_current_label = self._begin_label_cluster(  # 普通 assign 当前主标签状态
-                        list_lines,  # 主标签写入的 assign 行缓存
-                        str_label,  # 普通 assign 主标签
-                        list_leading_comments,  # 过滤后的普通注释
-                        str_current_label,  # 上一条普通主标签
-                        bool_rendered_assign,  # 区域内是否已有 assign
-                    )
-
-                # 主标签切换后，二级来源标签需要从头判断。
-                if bool_primary_changed:
-
-                    # 新主组内尚未输出任何来源区段。
-                    str_current_source_section = "__start__"  # 新主组的来源标签起点
-
-                    # 新主组内尚无 assign，因此二级标签前不需要空行。
-                    bool_rendered_assign_in_primary_cluster = False  # 新主组内 assign 状态
-
-                # 来源区段存在时输出二级标签。
-                if str_source_section:
-
-                    # 来源标签按主组内部状态去重。
-                    str_current_source_section = self._begin_label_cluster(  # 普通 assign 当前来源标签
-                        list_lines,  # 来源标签写入的 assign 行缓存
-                        str_source_section,  # 普通 assign 来源区段
-                        list_leading_comments,  # 来源标签去重后的注释
-                        str_current_source_section,  # 上一条来源区段
-                        bool_rendered_assign_in_primary_cluster,  # 主组内是否已有 assign
-                    )
-
-                # 没有来源标签时清空当前二级标签状态。
-                else:
-
-                    # 清空状态能让下一条来源标签重新输出 cluster。
-                    str_current_source_section = ""  # 当前 assign 没有来源区段
+            # 当前语句只保留未被自动标签覆盖的用户注释。
+            list_leading_comments = self._prepare_assign_label_state(  # 当前 assign 保留注释
+                assign,  # 用于解析输出端口左值
+                index,  # 稳定排序下标
+                assign_label_state,  # 跨语句标签状态
+            )
 
             # 同一自动标签内的新语义注释组必须与上一条 assign 保持一个空行。
             if (
@@ -3192,7 +3139,7 @@ class RenderMixin:
             if signal_layouts is not None:
 
                 # 当前主组已经输出 assign，后续来源标签前需要可读分隔。
-                bool_rendered_assign_in_primary_cluster = True  # 当前主组内已有 assign 输出
+                assign_label_state.bool_rendered_assign_in_primary_cluster = True  # 标记主组已有输出
 
         # 防御性检查：理论上空列表已提前返回。
         if not bool_rendered_assign:
@@ -3205,3 +3152,133 @@ class RenderMixin:
 
         # 返回 assign 区域完整文本行。
         return list_lines
+
+    # assign 标签 helper 统一维护输出布局和普通连线的分组状态。
+    def _prepare_assign_label_state(
+        self,
+        assign: AssignStmt,
+        index: int,
+        state: AssignLabelRenderState,
+    ) -> list[str]:
+        """准备一条 assign 的标签、注释和 cluster 状态。
+
+        :param assign: 当前待渲染连续赋值。
+        :param index: 当前 assign 在稳定排序列表中的下标。
+        :param state: 固定布局输入和跨语句延续的标签状态。
+        :return: 过滤自动标签后的前导注释。
+        """
+
+        # 默认保留用户写下的全部前导注释。
+        list_comments = list(assign.leading_comments)  # 当前 assign 的可变前导注释副本
+
+        # 输出端口 assign 只使用目标端口主标签。
+        if state.output_target_layouts is not None:
+
+            # 输出布局标签来自目标端口分组。
+            output_layout = self._resolve_output_assign_layout(  # 当前 assign 目标布局
+                assign,  # 当前连续赋值
+                state.output_target_layouts,  # 限定输出目标查找范围
+            )
+
+            # 输出布局标签决定当前语句所属的自动主组。
+            str_label = self._format_output_layout_label(output_layout)  # 输出 assign 主标签
+
+            # 自动主标签重复的手写注释不再输出。
+            list_comments = self._filter_assign_leading_comments(  # 输出 assign 保留注释
+                list_comments,  # 原始前导注释
+                primary_label=str_label,  # 自动输出主标签
+            )
+
+            # 标签变化时写入新的输出 cluster。
+            state.str_current_label = self._begin_output_label_cluster(  # 输出主标签状态
+                state.list_lines,  # 写入输出端口分类标题
+                str_label,  # 当前输出主标签
+                list_comments,  # 过滤后的用户注释
+                state.str_current_label,  # 上一个输出主标签
+                state.bool_rendered_assign,  # 区域输出状态
+            )
+
+            # 输出布局没有二级来源标签状态。
+            return list_comments
+
+        # 没有普通信号布局时不生成自动分组标签。
+        if state.signal_layouts is None:
+
+            # 保留调用方已有标签状态和原始注释。
+            return list_comments
+
+        # 普通 assign 的主标签和来源标签来自预计算序列。
+        str_label = state.list_signal_labels[index]  # 当前普通 assign 主标签
+
+        # 来源标签用于同一信号亲缘组内的二级聚类。
+        str_source_section = state.list_source_section_labels[index]  # 当前普通 assign 来源标签
+
+        # 删除与自动主、次标签重复的手写注释。
+        list_comments = self._filter_assign_leading_comments(  # 普通 assign 保留注释
+            list_comments,  # 剔除自动分组的重复说明
+            primary_label=str_label,  # 自动主标签
+            secondary_label=str_source_section,  # 自动来源标签
+        )
+
+        # 手写结构化标签可作为人工主分组边界。
+        bool_manual_boundary = not str_label and any(  # 人工主分组边界状态
+            self._comment_looks_like_structured_label(self._comment_body(comment))  # 结构化标签判断
+            and self._comment_body(comment) != str_source_section  # 排除当前来源标题
+            for comment in list_comments  # 遍历保留的人工注释
+        )
+
+        # 自动主标签切换或人工边界都会重置来源标签状态。
+        bool_primary_changed = (  # 新主组开启状态
+            bool(str_label) and str_label != state.str_current_label  # 自动主标签是否变化
+        ) or bool_manual_boundary
+
+        # 人工主边界前需要隔开上一组 assign。
+        if bool_manual_boundary:
+
+            # 空行 helper 保证最多保留一个分组间隔。
+            self._ensure_single_blank_line_before_cluster(
+                state.list_lines,
+                state.bool_rendered_assign,
+            )
+
+        # 自动标签或人工边界存在时尝试写入主标签。
+        if str_label or bool_manual_boundary:
+
+            # cluster helper 会避免重复输出已有手写标签。
+            state.str_current_label = self._begin_label_cluster(  # 普通 assign 主标签状态
+                state.list_lines,  # 写入普通连线亲缘标题
+                str_label,  # 选择左值亲缘分类
+                list_comments,  # 保留非结构化人工说明
+                state.str_current_label,  # 上一个普通主标签
+                state.bool_rendered_assign,  # 判断标签前是否需要留白
+            )
+
+        # 新主组需要清空来源标签和组内 assign 状态。
+        if bool_primary_changed:
+
+            # 下一枚来源标签需要重新输出。
+            state.str_current_source_section = "__start__"  # 重置来源标签起点
+
+            # 当前主组尚未渲染 assign。
+            state.bool_rendered_assign_in_primary_cluster = False  # 清空主组输出状态
+
+        # 来源标签存在时按主组内部状态去重输出。
+        if str_source_section:
+
+            # 更新当前来源区段标签状态。
+            state.str_current_source_section = self._begin_label_cluster(  # 来源标签状态
+                state.list_lines,  # 写入右值来源子标题
+                str_source_section,  # 当前来源标签
+                list_comments,  # 避免重复保留来源说明
+                state.str_current_source_section,  # 上一个来源标签
+                state.bool_rendered_assign_in_primary_cluster,  # 主组输出状态
+            )
+
+        # 没有来源标签时清空二级状态，让下一条可重新开启来源组。
+        else:
+
+            # 空字符串表示当前 assign 不属于自动来源区段。
+            state.str_current_source_section = ""  # 标记当前语句没有来源标签
+
+        # 返回过滤后的注释，标签状态已原位更新。
+        return list_comments

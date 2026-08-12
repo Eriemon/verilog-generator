@@ -181,77 +181,20 @@ class RenameMixin:
         # set_used_names 汇总端口名和已分配代理名，避免新名冲突。
         set_used_names = set(set_output_ports) | set(output_internal_names.values())  # 已占用信号名集合
 
-        # dict_decl_by_name 按规范化后的声明名查找原始声明。
-        dict_decl_by_name: dict[str, SignalDecl | None] = {}  # 规范名到声明对象的映射
+        # 声明索引 helper 同时把规范化后的名称登记到占用集合。
+        dict_decl_by_name = self._index_output_proxy_declarations(decls, rename_map, set_used_names)  # 规范名到唯一声明的索引
 
-        # 先扫描声明，建立可用于右值代理识别的名称索引。
-        for decl in decls:
+        # 桥接 helper 统一收集输出到右值、右值到输出和歧义输出三类关系。
+        tuple_bridge_relations = self._collect_output_bridge_relations(assigns, set_output_ports)  # 输出代理桥接关系集合
 
-            # 虚拟 assign 声明不代表真实可改名线网。
-            if decl.kind == "__assign__":
+        # 输出端口到裸右值名称用于逐项生成代理目标。
+        dict_output_to_rhs = tuple_bridge_relations[0]  # 输出端口到驱动信号的映射
 
-                # 跳过 parser 为统一处理生成的占位声明。
-                continue
+        # 反向关系用于阻断一个右值被多个输出复用的情况。
+        dict_rhs_to_outputs = tuple_bridge_relations[1]  # 驱动信号到输出端口集合的映射
 
-            # str_new_name 是已有改名规则作用后的声明名。
-            str_new_name = rename_map.get(decl.name, decl.name)  # 声明当前可见名称
-
-            # 规范化后的名称也需要视为已占用。
-            set_used_names.add(str_new_name)
-
-            # 同一规范名出现多次时不能再安全反查到唯一声明。
-            if str_new_name in dict_decl_by_name:
-
-                # None 标记该规范名存在歧义，后续不用于输出代理改名。
-                dict_decl_by_name[str_new_name] = None  # 歧义声明名称
-
-                # 当前声明已登记为歧义，不再覆盖。
-                continue
-
-            # 唯一规范名可以反查到原始声明。
-            dict_decl_by_name[str_new_name] = decl  # 唯一声明名称
-
-        # dict_output_to_rhs 记录每个输出端口由哪个裸信号驱动。
-        dict_output_to_rhs: dict[str, str] = {}  # 输出端口到驱动信号的映射
-
-        # dict_rhs_to_outputs 反向识别一个右值是否驱动多个输出。
-        dict_rhs_to_outputs: dict[str, set[str]] = {}  # 驱动信号到输出端口集合的映射
-
-        # set_ambiguous_outputs 收集同一输出被多个右值赋值的情况。
-        set_ambiguous_outputs: set[str] = set()  # 右值不唯一的输出端口集合
-
-        # 遍历连续赋值，筛选形如 output = internal_signal 的桥接关系。
-        for assign in assigns:
-
-            # str_lhs_name 只在赋值左侧是裸信号时有值。
-            str_lhs_name = self._extract_exact_simple_signal_name(assign.lhs)  # 赋值左侧裸信号名
-
-            # 右侧裸名用于定位可被输出端口代理化的内部信号。
-            str_rhs_name = self._extract_exact_simple_signal_name(assign.rhs)  # 赋值右侧裸信号名
-
-            # 只处理输出端口由单个内部信号驱动的桥接。
-            if str_lhs_name not in set_output_ports or not str_rhs_name:
-
-                # 非输出桥接或复杂表达式不参与内部代理改名。
-                continue
-
-            # str_previous_rhs 用于发现同一输出端口的多驱动歧义。
-            str_previous_rhs = dict_output_to_rhs.get(str_lhs_name)  # 当前输出已记录的右值名
-
-            # 一个输出端口对应多个不同右值时不能安全推断代理名。
-            if str_previous_rhs is not None and str_previous_rhs != str_rhs_name:
-
-                # 记录歧义输出，后续跳过该端口。
-                set_ambiguous_outputs.add(str_lhs_name)
-
-                # 当前赋值不再进入一对一映射。
-                continue
-
-            # 输出端口与右值的单向关系用于后续生成目标名。
-            dict_output_to_rhs[str_lhs_name] = str_rhs_name  # 输出端口到右值裸名的映射
-
-            # 反向集合用于检测右值被多个输出复用。
-            dict_rhs_to_outputs.setdefault(str_rhs_name, set()).add(str_lhs_name)
+        # 歧义集合阻断同一输出由多个不同右值驱动的情况。
+        set_ambiguous_outputs = tuple_bridge_relations[2]  # 右值不唯一的输出端口集合
 
         # dict_mapping 是最终可合并到声明改名表的安全子集。
         dict_mapping: dict[str, str] = {}  # 原始声明名到输出代理名的映射
@@ -339,6 +282,112 @@ class RenameMixin:
         # 返回只包含安全改名项的输出代理映射。
         return dict_mapping
 
+    # 声明索引 helper 建立规范名到唯一原始声明的安全反查表。
+    def _index_output_proxy_declarations(
+        self,
+        decls: list[SignalDecl],
+        rename_map: dict[str, str],
+        set_used_names: set[str],
+    ) -> dict[str, SignalDecl | None]:
+        """索引输出代理候选声明并标记名称歧义。
+
+        :param decls: body 中解析出的信号声明列表。
+        :param rename_map: 已有声明改名映射。
+        :param set_used_names: 调用方维护的已占用名称集合。
+        :return: 规范名到唯一声明的映射；重复名称映射为 None。
+        """
+
+        # 索引值为 None 时表示同一规范名无法唯一反查。
+        dict_decl_by_name: dict[str, SignalDecl | None] = {}  # 规范名到声明对象的映射
+
+        # 顺序扫描声明，保持重复名称判定与原实现一致。
+        for decl in decls:
+
+            # 虚拟 assign 声明不代表真实可改名线网。
+            if decl.kind == "__assign__":
+
+                # parser 占位声明不进入代理候选索引。
+                continue
+
+            # 已有改名规则作用后的名称才是当前可见名称。
+            str_new_name = rename_map.get(decl.name, decl.name)  # 声明当前可见名称
+
+            # 所有规范化声明名都需要占用目标命名空间。
+            set_used_names.add(str_new_name)
+
+            # 重复规范名不能再安全反查到唯一声明。
+            if str_new_name in dict_decl_by_name:
+
+                # None 标记歧义，阻断后续自动代理改名。
+                dict_decl_by_name[str_new_name] = None  # 歧义声明名称
+
+                # 保留歧义标记，不让后续声明覆盖。
+                continue
+
+            # 首次出现的规范名可以反查到原始声明。
+            dict_decl_by_name[str_new_name] = decl  # 唯一声明名称
+
+        # 返回完整声明索引。
+        return dict_decl_by_name
+
+    # 输出桥接 helper 只收集裸信号连续赋值形成的一对一候选关系。
+    def _collect_output_bridge_relations(
+        self,
+        assigns: list[AssignStmt],
+        set_output_ports: set[str],
+    ) -> tuple[dict[str, str], dict[str, set[str]], set[str]]:
+        """收集输出端口与内部裸信号之间的桥接关系。
+
+        :param assigns: body 中解析出的连续赋值列表。
+        :param set_output_ports: 当前 module 的输出端口名称集合。
+        :return: 输出到右值、右值到输出和歧义输出三类关系。
+        """
+
+        # 单向关系记录每个输出端口当前观察到的裸右值。
+        dict_output_to_rhs: dict[str, str] = {}  # 按 formal 保存首次观察到的内部裸信号
+
+        # 反向关系用于检测一个内部信号驱动多个输出。
+        dict_rhs_to_outputs: dict[str, set[str]] = {}  # 按内部裸信号登记其服务的 formal 集合
+
+        # 同一输出出现多个不同右值时进入歧义集合。
+        set_ambiguous_outputs: set[str] = set()  # 必须放弃自动代理化的冲突 formal 集合
+
+        # 只采集 output = internal_signal 形态的连续赋值。
+        for assign in assigns:
+
+            # 左右两侧都必须是可精确提取的裸信号名。
+            str_lhs_name = self._extract_exact_simple_signal_name(assign.lhs)  # 赋值左侧裸信号名
+
+            # 右值裸名决定能否反查到唯一内部声明。
+            str_rhs_name = self._extract_exact_simple_signal_name(assign.rhs)  # 赋值右侧裸信号名
+
+            # 非输出桥接或复杂右值不参与代理推断。
+            if str_lhs_name not in set_output_ports or not str_rhs_name:
+
+                # 保持复杂表达式和内部赋值原状。
+                continue
+
+            # 已记录的不同右值会让当前输出关系变得歧义。
+            str_previous_rhs = dict_output_to_rhs.get(str_lhs_name)  # 当前输出已记录的右值名
+
+            # 多个不同右值不能安全归属到单一代理名。
+            if str_previous_rhs is not None and str_previous_rhs != str_rhs_name:
+
+                # 后续映射阶段会整体跳过该输出端口。
+                set_ambiguous_outputs.add(str_lhs_name)
+
+                # 当前冲突赋值不覆盖首次观察到的右值。
+                continue
+
+            # 记录稳定的一对一候选关系。
+            dict_output_to_rhs[str_lhs_name] = str_rhs_name  # 输出端口到右值裸名的映射
+
+            # 反向集合用于在下一阶段阻断一对多桥接。
+            dict_rhs_to_outputs.setdefault(str_rhs_name, set()).add(str_lhs_name)
+
+        # 返回代理推断所需的三类桥接关系。
+        return dict_output_to_rhs, dict_rhs_to_outputs, set_ambiguous_outputs
+
     # 链式改名需要压平，避免 a->b、b->c 这类中间名泄露到渲染输出。
     def _resolve_rename_map_chains(
         self, rename_map: dict[str, str], terminal_names: set[str] | None = None
@@ -420,53 +469,64 @@ class RenameMixin:
                 # 保留更高优先级的状态机映射。
                 continue
 
-            # str_lowered_name 用于大小写无关的状态关键词判定。
-            str_lowered_name = str_original_name.lower()  # 小写声明名称
+            # 单声明 helper 按后缀、状态、受控前缀和寄存器顺序推导目标名。
+            str_target_name = self._decl_rename_target(decl)  # 当前声明的基础规范名
 
-            # str_base_name 去除已有已知前缀，避免叠加重复前缀。
-            str_base_name = self._strip_known_prefixes(str_original_name)  # 去前缀后的声明基础名
+            # None 表示当前声明应保留原名。
+            if str_target_name is None:
 
-            # str_normalized_category_name 由 counter/flag 等后缀规则推导。
-            str_normalized_category_name = self._normalize_suffix_driven_signal_name(str_original_name)  # 后缀规则规范名
-
-            # 后缀语义明确时优先使用对应类别前缀。
-            if str_normalized_category_name is not None:
-
-                # 后缀驱动的命名结果写入声明映射。
-                dict_mapping[str_original_name] = str_normalized_category_name  # 后缀语义规范名
-
-            # 名称中含 state 的声明按状态信号前缀处理。
-            elif "state" in str_lowered_name:
-
-                # str_state_prefix 是项目配置的状态信号前缀。
-                str_state_prefix = self.config["naming"]["state_signal_prefix"]  # 状态信号前缀
-
-                # str_state_name 是按状态前缀规范化后的声明名。
-                str_state_name = self._apply_prefix(str_base_name, str_state_prefix)  # 状态信号规范名
-
-                # 状态类声明映射到统一前缀，便于 renderer 汇总状态机区域。
-                dict_mapping[str_original_name] = str_state_name  # 状态类声明目标名
-
-            # 已有受控类别前缀的声明不再重写。
-            elif self._has_managed_signal_category_prefix(str_original_name):
-
-                # 保留用户已经采用的 counter/flag 等规范前缀。
+                # 已有规范前缀或普通 wire 不需要写入映射。
                 continue
 
-            # 普通 reg/logic 声明默认补寄存器前缀。
-            elif decl.kind in {"reg", "logic"}:
-
-                # str_register_prefix 是项目配置的寄存器信号前缀。
-                str_register_prefix = self.config["naming"]["register_prefix"]  # 寄存器信号前缀
-
-                # str_register_name 是按寄存器前缀规范化后的声明名。
-                str_register_name = self._apply_prefix(str_base_name, str_register_prefix)  # 寄存器规范名
-
-                # 普通时序寄存器使用配置前缀，避免与 wire 代理命名混在一起。
-                dict_mapping[str_original_name] = str_register_name  # 时序寄存器目标名
+            # 把当前声明的安全目标名并入基础改名表。
+            dict_mapping[str_original_name] = str_target_name  # 当前声明原名到规范名的映射
 
         # 返回基础声明改名表。
         return dict_mapping
+
+    # 单声明命名 helper 按既有优先级推导基础目标名。
+    def _decl_rename_target(self, decl: SignalDecl) -> str | None:
+        """推导一个非状态机声明的基础规范名。
+
+        :param decl: parser 提取的单个信号声明。
+        :return: 需要改名时返回目标名；应保留原名时返回 None。
+        """
+
+        # 原始名称用于后缀、状态词和受控前缀判断。
+        str_original_name = decl.name  # 当前声明原始名称
+
+        # 后缀语义明确时优先使用 counter、flag 等类别前缀。
+        str_category_name = self._normalize_suffix_driven_signal_name(str_original_name)  # 后缀规则推导的规范名
+
+        # 命中后缀规则时直接采用其高优先级结果。
+        if str_category_name is not None:
+
+            # 后缀类别优先于普通状态词和寄存器规则。
+            return str_category_name
+
+        # 去除已知前缀后再应用新的类型前缀，避免重复叠加。
+        str_base_name = self._strip_known_prefixes(str_original_name)  # 去前缀后的声明基础名
+
+        # 名称中含 state 的声明按状态信号前缀处理。
+        if "state" in str_original_name.lower():
+
+            # 状态类声明统一使用项目配置的状态前缀。
+            return self._apply_prefix(str_base_name, self.config["naming"]["state_signal_prefix"])
+
+        # 已有受控类别前缀的声明不再重写。
+        if self._has_managed_signal_category_prefix(str_original_name):
+
+            # 保留用户已经采用的 counter、flag 等规范前缀。
+            return None
+
+        # 普通 reg/logic 声明默认补寄存器前缀。
+        if decl.kind in {"reg", "logic"}:
+
+            # 普通时序声明统一使用项目配置的寄存器前缀。
+            return self._apply_prefix(str_base_name, self.config["naming"]["register_prefix"])
+
+        # 普通 wire 或其它声明种类保持原名。
+        return None
 
     # 声明归一化仅把 logic 渲染为 reg，保持其它字段原样。
     def _normalize_decl(self, decl: SignalDecl) -> SignalDecl:

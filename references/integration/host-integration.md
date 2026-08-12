@@ -16,10 +16,16 @@ Use the Verilog-only facade:
 ```python
 from scripts.python.facade.verilog_api import (
     analyze_existing_verilog,
+    check_verilog_deliverable,
+    check_verilog_quality,
     compare_verilog_semantics,
     improve_existing_verilog,
+    load_default_workflow_config,
+    load_workflow_result,
     route_verilog_request,
     run_verilog_batch,
+    run_verilog_cases,
+    run_verilog_quality_gate,
     verify_existing_verilog,
     run_verilog_workflow,
     render_verilog_prompt,
@@ -30,6 +36,8 @@ from scripts.python.facade.verilog_api import (
 Use `run_verilog_workflow(...)` for full staged execution and resume. Use `run_verilog_batch(...)` when the caller has multiple generation specs and wants one aggregate summary while keeping each case in its own run directory. Use `render_verilog_prompt(...)` when the host already owns the model call. Use `validate_verilog_artifacts(...)` to gate generated `.v` files before downstream use. Use `analyze_existing_verilog(...)` to build `rtl_analysis.json`, `project_analysis.json`, and `design_explanation.md` from an existing design, `improve_existing_verilog(...)` to create `rtl_transform_plan.json` plus controlled helper artifacts, `compare_verilog_semantics(...)` to emit `equivalence.json`, `qor_report.json`, and `transform_validation.json`, and `verify_existing_verilog(...)` to run the log-driven verify-repair flow with stable run artifacts plus a diagnostics pack.
 
 Use `route_verilog_request(...)` before selecting a workflow when the host has mixed inputs. It is read-only and returns `route_decision` with `recommended_flow`, `entry_mode`, `required_inputs`, `missing_inputs`, `next_action`, `safe_recovery_hint`, `blocking_findings`, and `provenance_policy`. It must not generate RTL, run validation, mutate source files, create backups, or start remote actions.
+
+Use `check_verilog_quality(...)` for the stable dict-returning quality facade and `check_verilog_deliverable(...)` for the stricter final-delivery facade. `run_verilog_quality_gate(...)` is the lower-level entry that returns a `QualityGateReport`; hosts that need a JSON-compatible contract should prefer `check_verilog_quality(...)`. Use `run_verilog_cases(...)` only when representative-case artifacts are intentionally requested because it writes governed case outputs. `load_default_workflow_config()` reads the bundled defaults without starting a run, while `load_workflow_result(...)` reads an existing run directory's `workflow_result.json` without mutating that run.
 
 ## Generation Modes
 

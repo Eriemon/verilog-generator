@@ -293,30 +293,51 @@ def _keys_for(list_cases: list[Any], tuple_candidate_fields: tuple[str, ...]) ->
             # 非对象 case 无法提供字段名，直接跳过。
             continue
 
-        # 按候选字段优先级扫描，兼容 inputs/input 与 outputs/expected/output。
-        for field_name in tuple_candidate_fields:
+        # case helper 按候选字段优先级展开本条记录可见的全部字段名。
+        for str_key in _case_keys(vector_case, tuple_candidate_fields):
 
-            # 当前候选字段值决定是展开内部键，还是记录字段本身。
-            field_payload = vector_case.get(field_name)  # 当前候选字段负载
+            # 字段名在跨 case 结果中只保留第一次出现的位置。
+            if str_key not in list_keys:
 
-            # dict 形式的 inputs/outputs 暴露实际端口或信号名。
-            if isinstance(field_payload, dict):
-
-                # 嵌套键的出现顺序来自规范化后的 case 字典。
-                for nested_key in field_payload:
-
-                    # 字段名在结果中只保留第一次出现的位置。
-                    if str(nested_key) not in list_keys:
-
-                        # 转成字符串后记录，匹配 JSON contract 的键类型。
-                        list_keys.append(str(nested_key))
-
-            # 候选字段直接存在时记录字段名本身，提醒上层存在标量或序列负载。
-            elif field_name in vector_case and field_name not in list_keys:
-
-                # 非 dict 字段仍记录候选字段名，提示调用方存在该类值。
-                list_keys.append(field_name)
+                # 保留首次出现顺序，匹配既有 JSON contract。
+                list_keys.append(str_key)
 
     # 返回按首次发现顺序排列的字段名。
     return list_keys
+
+# 单 case 字段展开 helper 保留候选字段和嵌套键的原始顺序。
+def _case_keys(vector_case: dict[str, Any], tuple_candidate_fields: tuple[str, ...]) -> list[str]:
+    """展开单个 semantic vector case 的候选字段名。
+
+    参数:
+        vector_case: 当前对象形式的 semantic vector case。
+        tuple_candidate_fields: 按优先级检查的候选字段名。
+
+    返回:
+        保留当前 case 原始顺序的字段名列表。
+    """
+
+    # 当前 case 的字段顺序由候选字段优先级和嵌套字典顺序共同决定。
+    list_case_keys: list[str] = []  # 当前 case 展开的字段名
+
+    # 逐个候选字段决定展开嵌套键，还是保留标量字段名。
+    for field_name in tuple_candidate_fields:
+
+        # 当前候选字段值决定实际输出形状。
+        field_payload = vector_case.get(field_name)  # 当前候选字段负载
+
+        # dict 形式的 inputs/outputs 暴露实际端口或信号名。
+        if isinstance(field_payload, dict):
+
+            # 字典键统一转成字符串并保持原始插入顺序。
+            list_case_keys.extend(str(nested_key) for nested_key in field_payload)
+
+        # 标量或序列负载保留候选字段自身，提示调用方存在该类值。
+        elif field_name in vector_case:
+
+            # 非 dict 字段没有更细粒度的命名键。
+            list_case_keys.append(field_name)
+
+    # 返回单个 case 中可见的全部字段名。
+    return list_case_keys
 

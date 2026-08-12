@@ -368,53 +368,20 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
             VerilogFormatterError: for 头部括号、主体边界或单语句形态不稳定时抛出。
         """
 
-        # 规范化当前行，便于解析 for 头部文本。
-        str_statement = self._normalize_statement_line(lines[start].strip())  # 当前 for 头部文本
+        # 头部 helper 统一完成入口、括号和 remainder 验证。
+        tuple_loop_header = self._parse_loop_header(lines[start], context)  # 已验证的 loop 头部结构
 
-        # 入口必须真的是 for 语句。
-        if not str_statement.startswith("for"):
+        # 规范化后的完整逻辑行用于错误报告和 lookahead 节点头部。
+        str_statement = tuple_loop_header[0]  # 当前 for 头部完整文本
 
-            # 非 for 文本进入此解析器时视为调用方结构错误。
-            self._raise_control_error(
-                self._control_shape_category(context),
-                str_statement,
-                "Use a stable procedural for-loop form before formatting.",
-            )
+        # 闭括号之前的文本是 loop 节点规范头部。
+        str_header = tuple_loop_header[1]  # 当前 loop 条件头
 
-        # 找出 for 条件列表的起始左括号。
-        int_open_index = str_statement.find("(")  # for 头部左括号位置
+        # 闭括号之后的文本决定 begin、inline 或 lookahead 路径。
+        str_remainder = tuple_loop_header[2]  # for 头部之后的剩余文本
 
-        # 缺少左括号时无法切分循环头与循环体。
-        if int_open_index == -1:
-
-            # 当前循环头必须先补齐括号。
-            self._raise_control_error(
-                self._control_shape_category(context),
-                str_statement,
-                "Balance the for-loop parentheses before formatting.",
-            )
-
-        # 计算与首个左括号配对的右括号位置。
-        int_close_index = self._find_balanced_close_index(str_statement, int_open_index)  # for 头部右括号位置
-
-        # 找不到闭括号时说明循环头不完整。
-        if int_close_index == -1:
-
-            # 不完整的 for 头会让循环体边界无法可靠判断。
-            self._raise_control_error(
-                self._control_shape_category(context),
-                str_statement,
-                "Balance the for-loop parentheses before formatting.",
-            )
-
-        # 取出闭括号之前的规范化 for 头部。
-        str_header = str_statement[: int_close_index + 1].strip()  # loop 节点头部文本
-
-        # 剩余文本用于判断 begin、inline body 或 lookahead body。
-        str_remainder = str_statement[int_close_index + 1 :].strip()  # for 头部之后的剩余文本
-
-        # 内联 begin:label 头可以直接识别出命名块形式。
-        match_begin = re.match(r"^begin(?:\s*:\s*(\w+))?$", str_remainder)  # 单行 begin 头匹配结果
+        # 可选 begin 匹配结果保留命名块 label。
+        match_begin = tuple_loop_header[3]  # 内联 begin 头匹配结果
 
         # begin 形式的循环体需要递归解析直到 end。
         if match_begin:
@@ -565,20 +532,98 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
                 int_next_index,
             )
 
-        # generate 循环和 procedural 循环在缺少主体时使用不同建议。
-        if context == "generate":
-
-            # generate 域要求显式给出 begin:label 或单语句主体。
-            str_suggestion = "Use 'for(...) begin:label' or 'for(...) statement;' style generate loops."  # generate 循环缺失主体时的修复建议
-
-        # procedural 路径需要切换成普通过程块循环的修复提示。
-        else:
-
-            # procedural 域只要求给出稳定可解析的循环主体。
-            str_suggestion = "Provide a stable procedural for-loop body before formatting."  # 过程块循环缺失主体时的修复提示
+        # 缺失主体建议由上下文 helper 选择，主解析器只负责抛出既有分类错误。
+        str_suggestion = self._missing_loop_body_suggestion(context)  # 当前上下文的 loop 主体修复建议
 
         # 没有主体的 loop 无法安全格式化。
         self._raise_control_error(self._control_shape_category(context), str_statement, str_suggestion)
+
+    # loop 头部 helper 集中验证入口关键字和圆括号闭合关系。
+    def _parse_loop_header(
+        self,
+        str_source_line: str,
+        context: str,
+    ) -> tuple[str, str, str, re.Match[str] | None]:
+        """解析并验证一行 for-loop 头部。
+
+        参数:
+            str_source_line: for 头部所在的原始逻辑行。
+            context: 当前 procedural 或 generate 上下文。
+        返回:
+            完整文本、条件头、剩余文本和可选 begin 匹配结果。
+        异常:
+            VerilogFormatterError: 入口或圆括号结构不稳定时抛出。
+        """
+
+        # 规范化逻辑行后再执行关键字和括号验证。
+        str_statement = self._normalize_statement_line(str_source_line.strip())  # 当前 for 头部文本
+
+        # 非 for 文本进入此解析器时视为调用方结构错误。
+        if not str_statement.startswith("for"):
+
+            # 保留原入口错误分类和修复建议。
+            self._raise_control_error(
+                self._control_shape_category(context),
+                str_statement,
+                "Use a stable procedural for-loop form before formatting.",
+            )
+
+        # 首个左括号是循环条件列表起点。
+        int_open_index = str_statement.find("(")  # for 头部左括号位置
+
+        # 缺少左括号时无法切分循环头与循环体。
+        if int_open_index == -1:
+
+            # 当前循环头必须先补齐括号。
+            self._raise_control_error(
+                self._control_shape_category(context),
+                str_statement,
+                "Balance the for-loop parentheses before formatting.",
+            )
+
+        # 计算与首个左括号配对的右括号位置。
+        int_close_index = self._find_balanced_close_index(str_statement, int_open_index)  # for 头部右括号位置
+
+        # 找不到闭括号时说明循环头不完整。
+        if int_close_index == -1:
+
+            # 不完整头部无法建立可信 loop body 边界。
+            self._raise_control_error(
+                self._control_shape_category(context),
+                str_statement,
+                "Balance the for-loop parentheses before formatting.",
+            )
+
+        # 条件头保留到匹配右括号为止。
+        str_header = str_statement[: int_close_index + 1].strip()  # loop 节点头部文本
+
+        # 剩余文本决定 begin、inline 或 lookahead 主体路径。
+        str_remainder = str_statement[int_close_index + 1 :].strip()  # 已验证括号之后的 loop 主体候选文本
+
+        # 内联 begin 可以带可选命名块 label。
+        match_begin = re.match(r"^begin(?:\s*:\s*(\w+))?$", str_remainder)  # 单行 begin 头匹配结果
+
+        # 返回主解析器需要的完整头部事实。
+        return str_statement, str_header, str_remainder, match_begin
+
+    # loop 缺失主体建议 helper 保持 generate 与 procedural 文本差异。
+    def _missing_loop_body_suggestion(self, context: str) -> str:
+        """返回当前 loop 上下文的缺失主体修复建议。
+
+        参数:
+            context: 当前 procedural 或 generate 上下文。
+        返回:
+            保持既有错误合同的英文修复建议。
+        """
+
+        # generate 域要求显式给出命名块或单语句主体。
+        if context == "generate":
+
+            # 返回 generate loop 的稳定形态提示。
+            return "Use 'for(...) begin:label' or 'for(...) statement;' style generate loops."
+
+        # procedural 域只要求给出可稳定解析的循环主体。
+        return "Provide a stable procedural for-loop body before formatting."
 
     # 解析 if 节点及其主体。
     def _parse_if_node(self, lines: list[str], start: int, context: str) -> tuple[ControlNode, int]:
@@ -595,23 +640,11 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
             VerilogFormatterError: if 主体缺失、begin/end 不闭合或主体结构不稳定时抛出。
         """
 
-        # 声明 else 分支解析器别名的可调用类型。
-        func_parse_else: Callable[[list[str], int, str, str], tuple[list[ControlNode], int]]  # else 解析器类型
-
-        # 缓存 else 分支解析器，避免后续内联调用行过长。
-        func_parse_else = self._parse_else_branch  # else 分支解析器引用
-
         # 声明 if 内联主体解析器别名的可调用类型。
         func_parse_inline: Callable[[list[str], int, str, str], tuple[list[ControlNode], int]]  # if 内联解析器类型
 
         # 缓存内联主体解析器，避免条件头同行主体调用过长。
         func_parse_inline = self._parse_inline_control_remainder  # if 内联主体解析器引用
-
-        # 声明通用控制块解析器别名的可调用类型。
-        func_parse_nodes: Callable[[list[str], int, set[str], str], tuple[list[ControlNode], int]]  # if 块递归解析器类型
-
-        # 缓存通用控制块解析器，避免 begin 体递归调用过长。
-        func_parse_nodes = self._parse_control_nodes  # if begin 体递归解析器引用
 
         # 先收集跨多行书写的完整 if 头部。
         tuple_if_header = self._collect_if_header(lines, start)  # if 头部文本和主体起始位置
@@ -637,78 +670,15 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
         # remainder 以 begin 开头时，优先按 begin/end 主体解析。
         if str_remainder.startswith("begin"):
 
-            # 先抽取内联 begin 的可选 label。
-            str_label = self._extract_block_label(str_remainder)  # 内联 begin 标签
-
-            # 尝试解析单行 begin ... end 内联体。
-            list_inline_children = self._parse_inline_begin_body(str_remainder, context)  # 单行内联 begin 体节点
-
-            # 单行 begin/end 成功命中时，主体已在当前行内闭合。
-            if list_inline_children is not None:
-
-                # 先接住单行 begin/end 解析出来的主体节点列表，供当前 if 直接复用。
-                list_children = list_inline_children  # 单行 begin/end 解析得到的 if 主体节点列表
-
-                # 头部同行里的内联主体已经全部消费完毕，结束位置保持在当前 if 头之后。
-                int_next_index = int_body_start  # 单行 begin/end 主体消费后的下一行位置
-
-            # 非单行 begin/end 时退回普通 begin block 递归解析。
-            else:
-
-                # 递归解析显式 begin/end 包裹的完整 if 主体。
-                list_children, int_next_index = self._parse_control_nodes(lines, int_body_start, {"end"}, context)  # if begin 体节点和结束位置
-
-                # 跳过 end 之前可能留下的空白和注释。
-                int_next_index = self._skip_ignorable_control_lines(lines, int_next_index)  # end 候选位置
-
-                # 递归返回越过源码末尾时，说明 if 主体没有闭合。
-                if int_next_index >= len(lines):
-
-                    # begin 体必须先补齐 end 才能进入 formatter。
-                    self._raise_control_error(
-                        self._control_shape_category(context),
-                        str_if_header,
-                        "Close every if/else block with 'end' before formatting.",
-                    )
-
-                # 规范化 end 或 end else 所在的候选行。
-                str_terminator_line = self._normalize_statement_line(lines[int_next_index].strip())  # if 终止行文本
-
-                # end 与 else 写在同一逻辑行时，需要拆分出 else 部分单独处理。
-                if str_terminator_line.startswith("end else"):
-
-                    # 截出与 end 写在同一逻辑行里的 else 文本，供后续分支解析器直接复用。
-                    str_inline_else_line = str_terminator_line[len("end") :].strip()  # 与 end 同行的 else 文本
-
-                    # 构造命中 end else 组合行时的 if 主节点，后续只补挂 alternate。
-                    node_if = ControlNode(kind="if", header=str_header, label=str_label, children=list_children)  # 命中 end else 组合行时的 if 主节点
-
-                    # 解析与当前 end 同行拼接出现的 else 分支，并暂存其完整返回结果。
-                    tuple_inline_else_result = func_parse_else(lines, int_next_index, context, str_inline_else_line)  # end 同行 else 结果
-
-                    # 从同行 else 的解析结果里拆出 alternate 子节点和结束位置。
-                    node_if.alternate, int_next_index = tuple_inline_else_result  # 同行 else 分支节点与结束位置
-
-                    # 返回已挂好 alternate 的 if 节点。
-                    return node_if, int_next_index
-
-                # 正常 end 行需要前进到其后的下一行。
-                if self._matches_terminator(str_terminator_line, {"end"}):
-
-                    # 消费掉当前分支块对应的 end。
-                    int_next_index += 1  # 当前条件块结束后的下一行位置
-
-                # 既不是 end 也不是 else 时，说明 begin/end 配对形态不稳定。
-                elif not str_terminator_line.startswith(
-                    "else"
-                ):
-
-                    # 当前 if block 必须先闭合 end 才能继续处理。
-                    self._raise_control_error(
-                        self._control_shape_category(context),
-                        str_if_header,
-                        "Close every if/else block with 'end' before formatting.",
-                    )
+            # begin 主体 helper 完整处理内联体、显式块和同行 else。
+            return self._parse_if_begin_node(
+                lines,
+                int_body_start,
+                context,
+                str_if_header,
+                str_header,
+                str_remainder,
+            )
 
         # remainder 仍有内容时，说明主体紧跟在 if 条件头后面。
         elif str_remainder:
@@ -722,106 +692,8 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
         # 头部后没有剩余文本时，需要到下一条有效语句里找主体。
         else:
 
-            # 跳过空白和注释，定位真正的主体起点。
-            int_lookahead = self._skip_ignorable_control_lines(lines, int_body_start)  # if 主体实际起点
-
-            # lookahead 仍在源码范围内时，尝试识别不同主体形态。
-            if int_lookahead < len(lines):
-
-                # 规范化主体首行后再判断其结构。
-                str_next_statement = self._normalize_statement_line(lines[int_lookahead].strip())  # if 主体首行
-
-                # begin 头说明主体是显式 begin/end block。
-                if self._is_begin_header(str_next_statement):
-
-                    # 记录 lookahead begin 是否显式给出了标签。
-                    str_label = self._extract_block_label(str_next_statement)  # lookahead begin 头里的标签名
-
-                    # 递归解析 lookahead begin/end 对应的主体子树，并暂存返回结果。
-                    tuple_begin_body_result = func_parse_nodes(lines, int_lookahead + 1, {"end"}, context)  # lookahead begin 主体的递归解析结果
-
-                    # 取出 lookahead begin 体的子节点和对应闭合位置。
-                    list_children, int_next_index = tuple_begin_body_result  # lookahead begin 主体节点列表与返回位置
-
-                    # 跳过 begin 体尾部的空白与注释，把游标落到真正的 end 候选行。
-                    int_next_index = self._skip_ignorable_control_lines(lines, int_next_index)  # lookahead begin 对应的 end 候选行
-
-                    # 缺少 end 会让 lookahead begin 主体无法可靠闭合。
-                    if int_next_index >= len(lines) or not self._matches_terminator(
-                        self._normalize_statement_line(lines[int_next_index].strip()),
-                        {"end"},
-                    ):
-
-                        # 条件分支主体中的 begin block 必须先补齐 end。
-                        self._raise_control_error(
-                            self._control_shape_category(context),
-                            str_if_header,
-                            "Close every if/else block with 'end' before formatting.",
-                        )
-
-                    # 消费掉 lookahead begin 对应的 end 后，把游标推进到后续 else 检查起点。
-                    int_next_index += 1  # lookahead begin 对应 end 之后的下一行位置
-
-                    # 用显式 begin/end 主体构造一个完整的 if 节点。
-                    node_if = ControlNode(kind="if", header=str_header, label=str_label, children=list_children)  # 已绑定 lookahead begin 主体的 if 节点
-
-                    # 继续拼接这个 begin 主体后面可能跟随的 alternate 链。
-                    int_next_index = self._attach_if_alternate(node_if, lines, int_next_index, context)  # 挂接 alternate 后的 if 结束位置
-
-                    # 返回已经处理完 alternate 的 if 节点。
-                    return node_if, int_next_index
-
-                # case 作为 if 主体时，case 节点就是唯一子节点。
-                if str_next_statement.startswith("case"):
-
-                    # 解析当前条件分支主体中命中的 case 结构。
-                    node_case, int_next_index = self._parse_case_node(lines, int_lookahead, context)  # 当前条件分支主体中的 case 节点与结束位置
-
-                    # 用单个 case 节点作为当前 if 的主体。
-                    list_children = [node_case]  # 仅包含 case 子节点的 if 主体
-
-                    # 为 case 主体额外包一层 if，保持后续 alternate 挂接路径统一。
-                    node_if = ControlNode(kind="if", header=str_header, label=str_label, children=list_children)  # 以 case 为唯一主体的 if 节点
-
-                    # 沿统一 alternate 路径继续消费 case 主体后面的 else 或 else if。
-                    int_next_index = self._attach_if_alternate(node_if, lines, int_next_index, context)  # case 主体补挂 alternate 后的结束位置
-
-                    # 这一分支已经得到完整的 if/case/alternate 组合节点。
-                    return node_if, int_next_index
-
-                # lookahead 仍然是 if 时，说明主体是嵌套 if。
-                if str_next_statement.startswith("if ") or str_next_statement.startswith("if("):
-
-                    # 递归解析内嵌的 if 子节点。
-                    node_child_if, int_next_index = self._parse_if_node(lines, int_lookahead, context)  # if 主体嵌套 if
-
-                    # 把内嵌 if 作为当前 if 的唯一子节点。
-                    list_children = [node_child_if]  # 仅包含嵌套条件节点的 if 主体
-
-                    # 把嵌套条件分支收束为父层 if 节点，统一复用 alternate 挂接路径。
-                    node_if = ControlNode(kind="if", header=str_header, label=str_label, children=list_children)  # 以嵌套条件节点作为主体的父层 if 节点
-
-                    # 继续挂接嵌套条件主体后面的 alternate 分支。
-                    int_next_index = self._attach_if_alternate(node_if, lines, int_next_index, context)  # 嵌套条件主体挂接 alternate 后的结束位置
-
-                    # 返回父层 if 节点及其结束位置。
-                    return node_if, int_next_index
-
-            # 到文件末尾仍然没有找到主体时，应立即报错。
-            if int_body_start >= len(lines):
-
-                # 缺少主体的 if 不能靠 formatter 猜测补全。
-                self._raise_control_error(
-                    "unsupported_shape",
-                    str_if_header,
-                    "Provide a body for each if/else branch before formatting.",
-                )
-
-            # 把普通单语句主体收拢成叶子节点文本，供当前 if 的兜底路径使用。
-            str_single_statement, int_next_index = self._collect_statement_text(lines, int_body_start)  # 从 lookahead 起点收集到的 if 单语句主体
-
-            # 把普通单语句主体包装成统一的 statement 子节点。
-            list_children = [ControlNode(kind="statement", text=str_single_statement)]  # 单 statement 形式的 if 主体节点
+            # lookahead helper 完整处理显式块、case、嵌套条件和单语句主体。
+            return self._parse_if_lookahead_node(lines, int_body_start, context, str_if_header, str_header)
 
         # 在所有主体分支收束完成后统一构造通用 if 节点。
         node_if = ControlNode(kind="if", header=str_header, label=str_label, children=list_children)  # 等待挂接 alternate 的通用 if 节点
@@ -830,6 +702,269 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
         int_next_index = self._attach_if_alternate(node_if, lines, int_next_index, context)  # 完整 if 链挂接 alternate 后的结束位置
 
         # 返回完整 if 节点和消费后的下一行位置。
+        return node_if, int_next_index
+
+    # 条件 lookahead helper 隔离跨行主体形态选择和 alternate 挂接。
+    def _parse_if_lookahead_node(
+        self,
+        lines: list[str],
+        int_body_start: int,
+        context: str,
+        str_if_header: str,
+        str_header: str,
+    ) -> tuple[ControlNode, int]:
+        """解析条件头之后出现的跨行主体。
+
+        参数:
+            lines: 控制流源码行列表。
+            int_body_start: 条件头消费后的下一行位置。
+            context: 当前 procedural 或 generate 上下文。
+            str_if_header: 用于严格错误报告的完整条件头。
+            str_header: 当前规范化条件表达式头。
+        返回:
+            已挂接 alternate 的条件节点和消费后位置。
+        异常:
+            VerilogFormatterError: 主体缺失或显式块未闭合时抛出。
+        """
+
+        # 跳过空白和注释，定位真正的主体起点。
+        int_lookahead = self._skip_ignorable_control_lines(lines, int_body_start)  # 条件主体实际起点
+
+        # 源码耗尽时不能靠 formatter 猜测主体。
+        if int_lookahead >= len(lines):
+
+            # 保留既有 unsupported_shape 错误合同。
+            self._raise_control_error(
+                "unsupported_shape",
+                str_if_header,
+                "Provide a body for each if/else branch before formatting.",
+            )
+
+        # 规范化主体首行后再选择结构解析路径。
+        str_next_statement = self._normalize_statement_line(lines[int_lookahead].strip())  # 条件主体首行文本
+
+        # 显式 begin 主体交给专用 lookahead block helper。
+        if self._is_begin_header(str_next_statement):
+
+            # 该 helper 负责 end 闭合验证和 alternate 挂接。
+            return self._parse_if_lookahead_begin(
+                lines,
+                int_lookahead,
+                context,
+                str_if_header,
+                str_header,
+                str_next_statement,
+            )
+
+        # case 主体通过既有 case parser 构造唯一子节点。
+        if str_next_statement.startswith("case"):
+
+            # 解析 case 子树及其消费后位置。
+            tuple_case_result = self._parse_case_node(lines, int_lookahead, context)  # 条件主体 case 解析结果
+
+            # 用单个 case 节点构造父条件节点。
+            node_if = ControlNode(kind="if", header=str_header, children=[tuple_case_result[0]])  # case 主体条件节点
+
+            # 统一挂接 case 主体后的 alternate 链。
+            int_next_index = self._attach_if_alternate(node_if, lines, tuple_case_result[1], context)  # case 主体后的结束位置
+
+            # 返回完整 case 主体条件节点。
+            return node_if, int_next_index
+
+        # 嵌套条件主体递归复用主解析入口。
+        if str_next_statement.startswith("if ") or str_next_statement.startswith("if("):
+
+            # 递归结果作为父条件的唯一子节点。
+            tuple_child_result = self._parse_if_node(lines, int_lookahead, context)  # 嵌套条件主体解析结果
+
+            # 父条件节点保持嵌套条件的完整子树。
+            node_if = ControlNode(kind="if", header=str_header, children=[tuple_child_result[0]])  # 嵌套条件主体父节点
+
+            # 统一挂接嵌套条件主体后的 alternate 链。
+            int_next_index = self._attach_if_alternate(node_if, lines, tuple_child_result[1], context)  # 嵌套主体后的结束位置
+
+            # 返回完整嵌套条件节点。
+            return node_if, int_next_index
+
+        # 其它形态按普通单语句主体收集。
+        tuple_statement_result = self._collect_statement_text(lines, int_body_start)  # 条件单语句主体解析结果
+
+        # 单语句作为父条件的唯一叶子节点。
+        node_if = ControlNode(  # 以普通单语句作为唯一子节点的条件节点
+            kind="if",  # 当前节点类型固定为条件分支
+            header=str_header,  # 保留规范化条件表达式头
+            children=[ControlNode(kind="statement", text=tuple_statement_result[0])],  # 单语句叶子节点
+        )
+
+        # 单语句主体同样需要消费后续 alternate 链。
+        int_next_index = self._attach_if_alternate(node_if, lines, tuple_statement_result[1], context)  # 单语句主体后的结束位置
+
+        # 返回完整单语句条件节点。
+        return node_if, int_next_index
+
+    # 跨行条件块 helper 负责显式块的闭合验证。
+    def _parse_if_lookahead_begin(
+        self,
+        lines: list[str],  # 条件头同行块解析使用的完整源码
+        int_lookahead: int,  # begin 头所在位置
+        context: str,  # 控制错误分类所需的解析域
+
+        # 以下文本参数分别保留错误原文、规范头部和块标签来源。
+        str_if_header: str,  # 错误消息复现用的未裁剪条件头
+        str_header: str,  # 写入 ControlNode.header 的条件文本
+        str_begin_header: str,  # 已规范化 begin 头文本
+    ) -> tuple[ControlNode, int]:
+        """解析跨行显式 begin/end 条件主体。
+
+        参数:
+            lines: 控制流源码行列表。
+            int_lookahead: begin 头所在行下标。
+            context: 当前 procedural 或 generate 上下文。
+            str_if_header: 用于错误报告的完整条件头。
+            str_header: 当前规范化条件表达式头。
+            str_begin_header: 已规范化的 begin 头文本。
+        返回:
+            已挂接 alternate 的条件节点和消费后位置。
+        异常:
+            VerilogFormatterError: begin 主体缺少匹配 end 时抛出。
+        """
+
+        # 可选 label 来自 lookahead begin:label 头。
+        str_label = self._extract_block_label(str_begin_header)  # 跨行 begin 主体标签
+
+        # 递归解析 begin/end 内部控制节点。
+        tuple_body_result = self._parse_control_nodes(lines, int_lookahead + 1, {"end"}, context)  # 跨行 begin 主体解析结果
+
+        # 跳过主体尾部空白和注释后定位 end 候选。
+        int_next_index = self._skip_ignorable_control_lines(lines, tuple_body_result[1])  # begin 主体 end 候选位置
+
+        # 缺少 end 会让主体边界失去可信度。
+        if int_next_index >= len(lines) or not self._matches_terminator(
+            self._normalize_statement_line(lines[int_next_index].strip()),
+            {"end"},
+        ):
+
+            # 保留既有控制形态错误和建议文本。
+            self._raise_control_error(
+                self._control_shape_category(context),
+                str_if_header,
+                "Close every if/else block with 'end' before formatting.",
+            )
+
+        # 消费匹配 end 后构造完整条件节点。
+        node_if = ControlNode(kind="if", header=str_header, label=str_label, children=tuple_body_result[0])  # 跨行 begin 主体条件节点
+
+        # 从 end 后继续挂接 alternate 链。
+        int_next_index = self._attach_if_alternate(node_if, lines, int_next_index + 1, context)  # 跨行 begin 主体后的结束位置
+
+        # 返回完整显式块条件节点。
+        return node_if, int_next_index
+
+    # 条件块主体 helper 隔离显式块闭合和同行 alternate 处理。
+    def _parse_if_begin_node(
+        self,
+        lines: list[str],  # 条件头同行主体解析使用的源码序列
+        int_body_start: int,  # 条件头后的主体起点
+        context: str,  # 同行主体严格错误使用的解析域
+
+        # 以下文本参数分别保留错误原文、规范头部和同行主体。
+        str_if_header: str,  # 块闭合失败时回显的条件原文
+        str_header: str,  # 当前节点保存的条件表达式头
+        str_remainder: str,  # 以 begin 起始的同行剩余文本
+    ) -> tuple[ControlNode, int]:
+        """解析 if 条件头同行的 begin 主体。
+
+        参数:
+            lines: 控制流源码行列表。
+            int_body_start: if 头部消费后的下一行位置。
+            context: 当前 procedural 或 generate 上下文。
+            str_if_header: 用于错误报告的完整 if 头部。
+            str_header: 当前 if 条件头。
+            str_remainder: 以 begin 开头的同行剩余文本。
+        返回:
+            已挂接 alternate 的 if 节点和消费后位置。
+        异常:
+            VerilogFormatterError: begin/end 主体不闭合时抛出。
+        """
+
+        # 可选 label 只来自 begin:label 形态。
+        str_label = self._extract_block_label(str_remainder)  # 当前 if begin 主体标签
+
+        # 单行 begin...end 可直接得到完整主体节点。
+        list_inline_children = self._parse_inline_begin_body(str_remainder, context)  # 单行内联 begin 体节点
+
+        # 内联主体命中时不需要消费后续物理行。
+        if list_inline_children is not None:
+
+            # 构造节点后统一挂接后续 alternate 链。
+            node_if = ControlNode(kind="if", header=str_header, label=str_label, children=list_inline_children)  # 单行 begin 主体节点
+
+            # 同行主体之后的 else 从头部消费位置继续查找。
+            int_next_index = self._attach_if_alternate(node_if, lines, int_body_start, context)  # 单行 begin 主体后的结束位置
+
+            # 返回完整内联 if 节点。
+            return node_if, int_next_index
+
+        # 多行 begin 主体递归解析到对应 end 候选位置。
+        tuple_body_result = self._parse_control_nodes(lines, int_body_start, {"end"}, context)  # 多行 begin 主体解析结果
+
+        # 主体节点保持原源码顺序。
+        list_children = tuple_body_result[0]  # 多行 begin 主体节点列表
+
+        # 跳过主体尾部空白和注释后定位终止行。
+        int_next_index = self._skip_ignorable_control_lines(lines, tuple_body_result[1])  # begin 主体终止行位置
+
+        # 源码耗尽表示当前 begin 主体缺少 end。
+        if int_next_index >= len(lines):
+
+            # 保留既有控制形态错误和修复建议。
+            self._raise_control_error(
+                self._control_shape_category(context),
+                str_if_header,
+                "Close every if/else block with 'end' before formatting.",
+            )
+
+        # 规范化终止行以区分 end、end else 和异常结构。
+        str_terminator_line = self._normalize_statement_line(lines[int_next_index].strip())  # if begin 主体终止行文本
+
+        # 先构造主节点，后续分支只决定 alternate 和游标。
+        node_if = ControlNode(kind="if", header=str_header, label=str_label, children=list_children)  # 多行 begin 主体节点
+
+        # end 与 else 同行时直接复用 else 分支解析器。
+        if str_terminator_line.startswith("end else"):
+
+            # 截出 end 之后的 else 文本供同行解析。
+            str_inline_else = str_terminator_line[len("end") :].strip()  # 与 end 同行的 else 文本
+
+            # else 解析结果包含 alternate 节点列表和最终位置。
+            tuple_else_result = self._parse_else_branch(lines, int_next_index, context, str_inline_else)  # 同行 else 解析结果
+
+            # 挂接同行 alternate 子树。
+            node_if.alternate = tuple_else_result[0]  # 同行 else 解析得到的 alternate 节点
+
+            # 返回同行 else 消费后的最终位置。
+            return node_if, tuple_else_result[1]
+
+        # 普通 end 终止行需要消费当前物理行。
+        if self._matches_terminator(str_terminator_line, {"end"}):
+
+            # 从 end 后的位置继续查找 alternate。
+            int_next_index += 1  # 当前 begin 主体 end 后的位置
+
+        # 非 else 起点的其它文本表示块闭合不稳定。
+        elif not str_terminator_line.startswith("else"):
+
+            # 保留既有严格错误合同。
+            self._raise_control_error(
+                self._control_shape_category(context),
+                str_if_header,
+                "Close every if/else block with 'end' before formatting.",
+            )
+
+        # 普通 end 或独立 else 都沿统一 alternate 挂接路径处理。
+        int_next_index = self._attach_if_alternate(node_if, lines, int_next_index, context)  # 多行 begin 主体后的结束位置
+
+        # 返回完整多行 if 节点。
         return node_if, int_next_index
 
     # 解析 else 分支主体。

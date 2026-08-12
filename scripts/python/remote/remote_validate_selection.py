@@ -57,6 +57,7 @@ class RemoteValidationRunConfig:
     :param str_remote_runtime_config_path: 远端 runtime 配置相对路径。
     :param str_run_id: 本次 outer retained run 的唯一标识。
     :param str_source_digest: 上传 staging 内容的 SHA-256 摘要。
+    :param str_remote_server: 本次远端验证使用的服务器标识。
     """
 
     # staging 包是 request-upload 的本地源目录。
@@ -85,6 +86,12 @@ class RemoteValidationRunConfig:
 
     # staging 摘要用于阻止其他源码包复用本轮完成证据。
     str_source_digest: str  # 上传 staging 内容的 SHA-256 摘要
+
+    # 服务器标识进入远端环境指纹和测试收据，但不携带连接凭据。
+    str_remote_server: str  # 本轮远端验证目标服务器标识
+
+    # 新布局把 reports 固定放在 runs/<run-id>/ 下，避免嵌套 smoke_runs 目录。
+    str_remote_reports: str = ""  # 本次 run 的直接报告目录
 
 # _ensure_runtime_import_path 只在需要 runtime helper 时调整导入路径。
 def _ensure_runtime_import_path() -> None:

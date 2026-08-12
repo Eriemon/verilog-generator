@@ -1,6 +1,8 @@
 """远端验证 shell 片段、常量和 POSIX 路径辅助函数。"""
 
-# 标准库负责命令摘要和延迟导入 runtime 配置路径 helper。
+# 标准库负责命令摘要和远程传输正文的可逆压缩。
+import base64
+import gzip
 import hashlib
 import sys
 
@@ -40,8 +42,38 @@ REMOTE_FIXTURE_ROOT = PurePosixPath("remote_fixtures")  # smoke 运行目录内�
 # remote_pytest_summary.json 保存权威远程 pytest 的精确计数和耗时。
 REMOTE_PYTEST_SUMMARY_JSON = PurePosixPath("remote_pytest_summary.json")  # smoke 运行目录内的 pytest 结构化证据路径
 
+# targeted 阶段摘要保留定向回归的真实命令和计数。
+REMOTE_PYTEST_TARGETED_SUMMARY_JSON = PurePosixPath("remote_pytest_targeted_summary.json")  # targeted 阶段摘要路径
+
+# regression 阶段摘要保留行为族回归的真实命令和计数。
+REMOTE_PYTEST_REGRESSION_SUMMARY_JSON = PurePosixPath("remote_pytest_regression_summary.json")  # 行为族回归摘要的 retained 路径
+
+# full 阶段摘要保留完整测试树的真实命令和计数。
+REMOTE_PYTEST_FULL_SUMMARY_JSON = PurePosixPath("remote_pytest_full_summary.json")  # 全量测试树摘要的 retained 路径
+
+# 环境文件记录解释器、平台和工具解析事实。
+REMOTE_ENVIRONMENT_JSON = PurePosixPath("remote_environment.json")  # 远端环境原始事实路径
+
+# cwd 文件记录远程进程的实际工作目录和外层身份。
+REMOTE_CWD_JSON = PurePosixPath("remote_cwd.json")  # 远端工作目录原始事实路径
+
+# pressure 文件记录阶段、fixture 和 simulator 覆盖压力。
+REMOTE_PRESSURE_REPORT_JSON = PurePosixPath("skill_pressure_report.json")  # 实际检查压力报告路径
+
+# archive 文件记录 retained 工件的路径、大小和内容摘要。
+REMOTE_ARCHIVE_MANIFEST_JSON = PurePosixPath("validation_archive_manifest.json")  # retained 文件归档清单路径
+
+# evidence 文件汇总三阶段和远程身份哈希。
+REMOTE_TEST_EVIDENCE_JSON = PurePosixPath("remote_test_evidence.json")  # 本轮远端测试证据总表路径
+
 # completion.json 只在完整远程链到达末尾后原子生成。
 REMOTE_COMPLETION_JSON = PurePosixPath("completion.json")  # smoke 运行目录内的最终完成身份清单
+
+# agent_review.json 位于 runs/<run-id> 根，记录 Agent 对本轮证据的自动审核结论。
+REMOTE_AGENT_REVIEW_JSON = PurePosixPath("agent_review.json")  # outer run 根的 Agent 审核文件
+
+# 旧调用默认把 Agent 审核文件放在 reports 的上一级 outer run 根。
+REMOTE_DEFAULT_AGENT_REVIEW_PATH = str(PurePosixPath("..") / ".." / REMOTE_AGENT_REVIEW_JSON)  # 兼容旧调用的审核路径
 
 # validation.json 提供主流程 ok、metrics 和产物映射。
 REMOTE_EXECUTE_VALIDATION_JSON = REMOTE_EXECUTE_ROOT / "validation.json"  # 主流程 JSON 证据路径
@@ -97,85 +129,318 @@ def remote_runtime_settings_relpath() -> str:
     # 返回调用方用于提示用户持久化工具链选择的路径。
     return func_remote_runtime_settings_relpath()
 
+# _build_remote_pytest_commands 固化三阶段远程回归命令文本。
+def _build_remote_pytest_commands(str_py: str) -> dict[str, str]:
+    """返回 targeted、regression、full 三阶段命令。
+
+    :param str_py: 经过 shell quoting 的远端 Python 命令。
+    :return: 三阶段命令文本映射。
+    """
+
+    # targeted 只覆盖本轮直接变更模块，缩短局部反馈路径。
+    str_targeted = (
+        f"{str_py} -m pytest -q -p no:cacheprovider "
+        "tests/quality/test_formatter_gate.py "
+        "tests/quality/test_formatter_refactor.py "
+        "tests/quality/test_vg_comb_bindings.py "
+        "tests/remote/test_confidence_state.py "
+        "tests/workflow/test_checkpoint_closure.py "
+        "tests/workflow/test_optimize_assist_flow.py"
+    )
+
+    # regression 覆盖质量、验证、工作流和远程行为族。
+    str_regression = (
+        f"{str_py} -m pytest -q -p no:cacheprovider "
+        "tests/quality tests/validation tests/workflow tests/remote"
+    )  # 质量、验证、工作流和远程行为族 regression 命令
+
+    # full 复用整个 tests 树，形成最终覆盖基线。
+    str_full = f"{str_py} -m pytest -q -p no:cacheprovider"  # 完整测试树 full 命令
+
+    # 具名映射避免阶段命令位置参数错配。
+    return {"targeted": str_targeted, "regression": str_regression, "full": str_full}
+
+# _build_remote_phase_runner 生成写入阶段 JSON 摘要的 bash 函数。
+def _build_remote_phase_runner(str_py: str) -> str:
+    """返回保留 pytest 真实退出码的 bash 阶段函数。
+
+    :param str_py: 经过 shell quoting 的远端 Python 命令。
+    :return: 可嵌入主 bash 脚本的阶段执行函数文本。
+    """
+
+    # 阶段函数把 pytest 退出状态和 retained 文件绑定成一份可复核证据。
+    str_phase_runner = f"""
+# 远端阶段函数把 pytest 退出状态和 retained 文件绑定成一份可复核证据。
+run_pytest_phase() {{
+
+  # 阶段名称用于区分 targeted、regression 和 full 的 retained 证据。
+  local phase_name="$1"
+
+  # 原始命令文本同时用于执行和命令摘要绑定。
+  local command_text="$2"
+
+  # 日志路径固定在当前 retained smoke run 下，避免写出工作区边界。
+  local file_path_log="$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_pytest_${{phase_name}}.log"
+
+  # 摘要路径与日志共用阶段命名，供汇总器读取真实计数。
+  local path_summary="$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_pytest_${{phase_name}}_summary.json"
+
+  # 暂时关闭 errexit，让 pytest 的真实退出码进入结构化摘要。
+  set +e
+
+  # pytest 不能继承 outer run 身份，避免测试 fixture 把固定样例写回 retained 审核路径。
+  env \\
+    -u VERILOG_GENERATOR_REPORT_ROOT \\
+    -u VERILOG_GENERATOR_RUN_ROOT \\
+    -u VERILOG_GENERATOR_AGENT_REVIEW_PATH \\
+    -u VERILOG_GENERATOR_RUN_ID \\
+    -u VERILOG_GENERATOR_SOURCE_DIGEST \\
+    -u VERILOG_GENERATOR_REMOTE_SERVER_ID \\
+    -u VERILOG_GENERATOR_SMOKE_RUN_DIR \\
+    -u VERILOG_GENERATOR_STARTED_AT \\
+    bash -lc "$command_text" 2>&1 | tee "$file_path_log" | tee "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_pytest.log"
+
+  # PIPESTATUS[0] 是 pytest 子进程的真实退出码，而不是 tee 的状态。
+  local exit_code_phase="${{PIPESTATUS[0]}}"
+
+  # 后续 shell 步骤恢复严格失败传播。
+  set -e
+
+  # 对实际执行的命令文本计算稳定摘要，防止报告脱离执行内容。
+  local digest_phase="$(printf '%s' "$command_text" | sha256sum | awk '{{print $1}}')"
+
+  # 记录 UTC 时间戳，支持阶段顺序和远端证据时间线复核。
+  local str_timestamp_phase="$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
+
+  # 该模块把 pytest 日志、命令摘要和真实退出码固化到阶段 JSON，供 retained run 复核。
+  {str_py} -m scripts.python.remote.remote_pytest_summary \\
+    --phase "$phase_name" \\
+    --log-path "$file_path_log" \\
+    --output-path "$path_summary" \\
+    --command-hash "$digest_phase" \\
+    --exit-code "$exit_code_phase" \\
+    --timestamp "$str_timestamp_phase"
+
+  # 阶段失败必须阻断后续阶段，避免生成不完整的完成清单。
+  if [ "$exit_code_phase" -ne 0 ]; then
+
+    # 原样返回 pytest 退出码，供远端 request 记录失败原因。
+    return "$exit_code_phase"
+  fi
+}}
+""".strip()
+
+    # 返回可嵌入远端主命令体的阶段函数文本。
+    return str_phase_runner
+
+# _prepare_remote_validation_context 解析选项并生成远端命令片段。
+def _prepare_remote_validation_context(
+    str_remote_skill: str,
+    str_remote_python: str,
+    dict_options: dict[str, Any],
+) -> dict[str, Any]:
+    """准备远端 bash 主体所需的全部命令片段。
+
+    :param str_remote_skill: 远端上传后的 skill 工作区路径。
+    :param str_remote_python: 远端 Python 命令。
+    :param dict_options: 兼容旧关键词的远程执行选项。
+    :return: 可供主命令渲染器读取的具名上下文。
+    """
+
+    # 从兼容关键词映射中提取本轮 smoke 输出处置策略。
+    bool_cleanup_outputs = bool(dict_options.get("cleanup_outputs", False))  # 是否清理远端 smoke 输出
+
+    # 从兼容关键词映射中提取已确认的工具链选择。
+    dict_toolchain_selection = dict_options.get("toolchain_selection")  # 已确认的远端工具链选择
+
+    # 从兼容关键词映射中提取 runtime 配置相对路径。
+    str_remote_runtime_config_path = dict_options.get("remote_runtime_config_path")  # 失败提示中的配置路径
+
+    # 从兼容关键词映射中提取本轮 outer run 标识。
+    str_run_id = str(dict_options.get("run_id", ""))  # 当前 retained run 的唯一标识
+
+    # 从兼容关键词映射中提取上传包源码摘要。
+    str_source_digest = str(dict_options.get("source_digest", ""))  # 当前 staging 包的内容摘要
+
+    # 从兼容关键词映射中提取远程服务器标识。
+    str_remote_server_id = str(dict_options.get("remote_server_id", ""))  # 当前 SSH 目标 server 身份
+
+    # 新布局把报告目录作为 outer run 的直接子目录传入，旧调用默认 reports。
+    str_report_root = str(dict_options.get("report_root", "reports")) or "reports"  # 本轮直接报告目录
+
+    # Agent 审核文件位于 outer run 根，旧调用默认放在 reports 的上一级。
+    str_agent_review_path = str(dict_options.get("agent_review_path", REMOTE_DEFAULT_AGENT_REVIEW_PATH))  # Agent 审核文件路径
+
+    # Python 命令进入 shell 前必须单引号转义。
+    str_py = sh_quote(str_remote_python)  # 主远端 bash 脚本使用的 Python 命令
+
+    # 报告目录经过 shell quoting，避免路径片段被重新解释。
+    str_report_root_quoted = sh_quote(str_report_root)  # 直接报告目录的安全 shell 文本
+
+    # Agent 审核路径独立 quoting，保证 outer run 绑定不被 shell 改写。
+    str_agent_review_path_quoted = sh_quote(str_agent_review_path)  # Agent 审核路径的安全 shell 文本
+
+    # cleanup、fixture 和工具链片段均在本地生成后注入主命令。
+    str_cleanup_snippet = remote_output_cleanup_snippet(bool_cleanup_outputs, str_remote_python)  # smoke 输出处置脚本片段
+
+    # fixture 名称通过环境变量传给远端 Python 内联脚本。
+    str_fixture_names = " ".join(REMOTE_SIMULATION_FIXTURES)  # 合法仿真 fixture 名称串
+
+    # 缺省情况下由远端工具探测选择仿真后端。
+    str_selected_vivado = ""  # 未持久化选择时为空的 Vivado settings64.sh 路径
+
+    # 缺省后端为空，表示由远端优先级自动选择。
+    str_selected_backend = ""  # 未持久化选择时为空的仿真后端名称
+
+    # 已持久化工具链选择时提取后端和 Vivado 路径。
+    if dict_toolchain_selection:
+
+        # Vivado 路径只在 xsim 后端需要。
+        str_selected_vivado = str(dict_toolchain_selection.get("vivado_settings64") or "")  # 已确认的 Vivado 激活脚本路径
+
+        # 后端名称用于覆盖远端 simulator priority。
+        str_selected_backend = str(dict_toolchain_selection.get("simulator_backend") or "")  # 已确认的仿真后端名称
+
+    # 生成工具链、RTL、文件名和 bytecode 片段。
+    str_simulator_priority_snippet = simulator_priority_export_snippet(str_selected_backend)  # 按选定后端生成 simulator priority 导出语句
+
+    # Vivado 激活片段必须在工具探测之前执行。
+    str_vivado_snippet = vivado_activation_snippet(  # 工具探测前执行的 Vivado 激活片段
+        str_selected_vivado,  # xsim 使用的 settings64.sh 路径
+        str_selected_backend,  # 需要激活的 simulator backend 名称
+        str_remote_runtime_config_path,  # runtime 配置缺失时的诊断路径
+    )
+
+    # RTL Markdown 约束片段独立绑定远端 Python 命令。
+    str_rtl_md_snippet = rtl_md_constraint_remote_snippet(str_remote_python)  # RTL Markdown 约束回归脚本
+
+    # 文件名门禁片段独立验证无效文件不会进入 simulator。
+    str_filename_gate_snippet = filename_gate_remote_snippet(str_remote_python)  # VG148/VG149 远端回归脚本
+
+    # bytecode 清理片段保持 retained workspace，不删除远端缓存。
+    str_bytecode_cleanup = remote_bytecode_cleanup_snippet(str_remote_python)  # retained workspace 的 pycache 处置脚本
+
+    # 三阶段命令和阶段 runner 使用同一经过 quoting 的 Python 命令。
+    dict_pytest_commands = _build_remote_pytest_commands(str_py)  # 三阶段命令文本映射
+
+    # 阶段 runner 写出真实 pytest 退出码与摘要。
+    str_phase_runner = _build_remote_phase_runner(str_py)  # 阶段命令执行和摘要写入片段
+
+    # 返回主命令渲染器所需的稳定具名上下文。
+    return {
+        "str_remote_skill": str_remote_skill,
+        "str_py": str_py,
+        "str_report_root_quoted": str_report_root_quoted,
+        "str_agent_review_path_quoted": str_agent_review_path_quoted,
+        "str_run_id": str_run_id,
+        "str_source_digest": str_source_digest,
+        "str_remote_server_id": str_remote_server_id,
+        "str_vivado_snippet": str_vivado_snippet,
+        "str_simulator_priority_snippet": str_simulator_priority_snippet,
+        "str_phase_runner": str_phase_runner,
+        "str_targeted_pytest_command": dict_pytest_commands["targeted"],
+        "str_regression_pytest_command": dict_pytest_commands["regression"],
+        "str_full_pytest_command": dict_pytest_commands["full"],
+        "str_rtl_md_snippet": str_rtl_md_snippet,
+        "str_filename_gate_snippet": str_filename_gate_snippet,
+        "str_fixture_names": str_fixture_names,
+        "str_cleanup_snippet": str_cleanup_snippet,
+        "str_bytecode_cleanup": str_bytecode_cleanup,
+    }
+
 # remote_validation_command 拼装远端 bash 验证脚本。
 def remote_validation_command(
     str_remote_skill: str,
     str_remote_python: str,
-    *,
-    cleanup_outputs: bool = False,
-    toolchain_selection: dict[str, Any] | None = None,
-    remote_runtime_config_path: str | None = None,
-    run_id: str = "",
-    source_digest: str = "",
+    **dict_options: Any,
 ) -> str:
     """生成远端执行的 bash 信心门禁脚本。
 
     :param str_remote_skill: 远端上传后的 skill 工作区路径。
     :param str_remote_python: 远端 Python 命令。
-    :param cleanup_outputs: 是否清理远端 smoke 输出。
-    :param toolchain_selection: 已确认的远端工具链选择。
-    :param remote_runtime_config_path: 远端 runtime 配置相对路径。
-    :param run_id: 当前 outer retained run 的唯一标识。
-    :param source_digest: 本次上传源码包的 SHA-256 摘要。
+    :param dict_options: 兼容旧关键词的运行选项，包含 cleanup_outputs、toolchain_selection、
+        remote_runtime_config_path、run_id、source_digest 和 remote_server_id。
     :return: 可交给 `bash -lc` 执行的脚本文本。
     """
 
-    # Python 命令进入 shell 前必须单引号转义。
-    str_py = sh_quote(str_remote_python)  # 主远端 bash 脚本使用的 Python 命令
-
-    # cleanup 片段根据用户是否要求删除远端输出决定。
-    str_cleanup_snippet = remote_output_cleanup_snippet(cleanup_outputs, str_remote_python)  # smoke 输出处置脚本片段
-
-    # fixture 名称通过环境变量传给远端 Python 内联脚本。
-    str_fixture_names = " ".join(REMOTE_SIMULATION_FIXTURES)  # 只含合法仿真 fixture 的名称
-
-    # 缺省情况下由远端工具探测选择仿真后端。
-    str_selected_vivado = ""  # 未持久化选择时为空的 Vivado settings64.sh 路径
-
-    # 缺省后端为空，表示按 xsim/vcs_verdi/iverilog 优先级自动选择。
-    str_selected_backend = ""  # 未持久化选择时为空的仿真后端名称
-
-    # 已持久化工具链选择时提取后端和 Vivado 路径。
-    if toolchain_selection:
-
-        # Vivado 路径只在 xsim 后端需要。
-        str_selected_vivado = str(toolchain_selection.get("vivado_settings64") or "")  # 已确认的 Vivado 激活脚本路径
-
-        # 后端名称用于覆盖 VERILOG_GENERATOR_SIMULATOR_PRIORITY。
-        str_selected_backend = str(toolchain_selection.get("simulator_backend") or "")  # 已确认的仿真后端名称
-
-    # simulator priority 片段负责导出配置后端。
-    str_simulator_priority_snippet = simulator_priority_export_snippet(str_selected_backend)  # 导出 simulator priority 的 shell 片段
-
-    # Vivado 激活片段必须在工具探测之前执行。
-    str_vivado_snippet = vivado_activation_snippet(  # 工具探测前执行的 Vivado 激活片段
-        str_selected_vivado,  # 用户确认的 settings64.sh 路径
-        str_selected_backend,  # 用户确认的 simulator backend
-        remote_runtime_config_path,  # 多 Vivado 候选提示中的配置位置
+    # 统一解析选项并生成命令片段，主函数只负责拼装最终输出。
+    dict_context = _prepare_remote_validation_context(  # 解析选项并生成远端主命令上下文
+        str_remote_skill,  # 远端 skill workspace 路径
+        str_remote_python,  # 远端 Python 解释器命令
+        dict_options,  # cleanup、toolchain、run/source 和报告路径选项
     )
 
-    # RTL Markdown 约束远端回归独立生成片段。
-    str_rtl_md_snippet = rtl_md_constraint_remote_snippet(str_remote_python)  # RTL Markdown 约束回归脚本
-
-    # 文件名门禁 probe 独立验证无效文件不会进入 simulator。
-    str_filename_gate_snippet = filename_gate_remote_snippet(str_remote_python)  # VG148/VG149 远端回归脚本
-
-    # bytecode 清理当前保持 retained workspace，不删除远端缓存。
-    str_bytecode_cleanup = remote_bytecode_cleanup_snippet(str_remote_python)  # 远端执行结束后的 pycache 保留/清理片段
+    # 主命令正文仍使用本地 quoting 后的 Python 命令。
+    str_py = dict_context["str_py"]  # shell quoting 后的远端 Python 命令
 
     # 先生成不含完成清单的主命令体，命令摘要以此稳定文本为准。
     str_command_body = f"""
 set -eu
 set -o pipefail
-cd {sh_quote(str_remote_skill)}
-export HOME="$PWD/reports/.validation-home"
+cd {sh_quote(dict_context['str_remote_skill'])}
+export VERILOG_GENERATOR_REPORT_ROOT={dict_context['str_report_root_quoted']}
+export VERILOG_GENERATOR_RUN_ROOT="$(dirname "$VERILOG_GENERATOR_REPORT_ROOT")"
+export VERILOG_GENERATOR_AGENT_REVIEW_PATH={dict_context['str_agent_review_path_quoted']}
+export HOME="$VERILOG_GENERATOR_REPORT_ROOT/.validation-home"
 export PYTHONPATH="skills/readable-verilog-generator${{PYTHONPATH:+:$PYTHONPATH}}"
-export VERILOG_GENERATOR_SMOKE_RUN_DIR="reports/smoke_runs_$(date +%Y%m%d-%H%M%S-%6N)_$$"
+
+# outer run 身份用于把远端所有阶段证据绑定到同一 retained 目录。
+export VERILOG_GENERATOR_RUN_ID={sh_quote(dict_context['str_run_id'])}
+
+# 上传包源码摘要用于阻止不同候选复用本轮完成清单。
+export VERILOG_GENERATOR_SOURCE_DIGEST={sh_quote(dict_context['str_source_digest'])}
+
+# 服务器标识写入远端事实，便于区分多主机验证结果。
+export VERILOG_GENERATOR_REMOTE_SERVER_ID={sh_quote(dict_context['str_remote_server_id'])}
+
+# reports 目录直接承载日志、阶段摘要和后续结构化证据，不再嵌套 smoke_runs_*。
+export VERILOG_GENERATOR_SMOKE_RUN_DIR="$VERILOG_GENERATOR_REPORT_ROOT"
+
+# UTC 起始时间用于排序 completion 和 retained 工件的事件线。
 export VERILOG_GENERATOR_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR"
+
+# 当前 outer run 的审核文件只能由本轮命令生成，不能沿用上传包或预置目录中的旧身份。
+rm -f "$VERILOG_GENERATOR_AGENT_REVIEW_PATH"
+
+# 上传包把隔离 Codex 事实放在 skill 下，启动前复制到 outer reports 的 HOME 映射。
+validation_home_source="$PWD/reports/.validation-home"
+validation_home_target="$VERILOG_GENERATOR_REPORT_ROOT/.validation-home"
+mkdir -p "$validation_home_target"
+cp -R "$validation_home_source/." "$validation_home_target/"
+
+# 无论阶段在哪一步失败，都由 Agent 生成 retained 审核文件，避免失败证据只剩散落日志。
+write_agent_review_on_exit() {{
+  local exit_code="$?"
+  if [ ! -f "$VERILOG_GENERATOR_AGENT_REVIEW_PATH" ]; then
+    REVIEW_STATUS="failed" REVIEW_EXIT_CODE="$exit_code" {str_py} - <<'PY'
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+review_path = Path(os.environ["VERILOG_GENERATOR_AGENT_REVIEW_PATH"])
+payload = {{
+    "schema": 1,
+    "kind": "agent-review",
+    "status": os.environ.get("REVIEW_STATUS", "failed"),
+    "reviewed_by": "agent",
+    "exit_code": int(os.environ.get("REVIEW_EXIT_CODE", "1")),
+    "run_id": os.environ.get("VERILOG_GENERATOR_RUN_ID", ""),
+    "source_digest": os.environ.get("VERILOG_GENERATOR_SOURCE_DIGEST", ""),
+    "remote_server_id": os.environ.get("VERILOG_GENERATOR_REMOTE_SERVER_ID", ""),
+    "reviewed_at": datetime.now(timezone.utc).isoformat(),
+}}
+review_path.parent.mkdir(parents=True, exist_ok=True)
+review_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+PY
+  fi
+  exit "$exit_code"
+}}
+trap write_agent_review_on_exit EXIT
 {str_py} --version
-{str_vivado_snippet}
-{str_simulator_priority_snippet}
+{dict_context['str_vivado_snippet']}
+{dict_context['str_simulator_priority_snippet']}
 for tool in xvlog xelab xsim vcs verdi iverilog vvp yosys; do
   if command -v "$tool" >/dev/null 2>&1; then
     echo "$tool=present"
@@ -201,28 +466,55 @@ fi
 {str_py} -m compileall -q \
   skills/readable-verilog-generator/scripts \
   tests
-{str_py} -m pytest -q -p no:cacheprovider 2>&1 | tee "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_pytest.log"
-{str_py} -m scripts.python.remote.remote_pytest_summary
+
+{dict_context['str_phase_runner']}
+
+# targeted 阶段先验证本次证据链直接覆盖的入口，缩短局部回归反馈路径。
+run_pytest_phase targeted {sh_quote(dict_context['str_targeted_pytest_command'])}
+
+# regression 阶段复用同一命令摘要与退出码契约，覆盖质量、验证、工作流和远程行为族，阻断跨模块证据漂移。
+run_pytest_phase regression {sh_quote(dict_context['str_regression_pytest_command'])}
+
+# full 阶段覆盖完整测试树，形成与发行候选绑定的最终计数基线。
+run_pytest_phase full {sh_quote(dict_context['str_full_pytest_command'])}
+
+# 将 full 阶段原始控制台字节复制到旧聚合路径，保证旧消费者读取同一最终退出阶段。
+cp "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_pytest_full.log" \
+  "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_pytest.log"
+
+# 将 full 阶段 JSON 摘要复制到旧聚合路径，使旧解析器继续读取同一 phase、exit_code 和 summary_line 证据。
+cp "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_pytest_full_summary.json" \
+  "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_pytest_summary.json"
+
+# workflow CLI 的生成目录必须留在 staged skill workspace，完成后再复制到 outer reports 归档。
+workflow_workspace_root="$PWD/.smoke-scratch"
+workflow_execute_root="$workflow_workspace_root/remote_execute"
+workflow_implement_root="$workflow_workspace_root/remote_implement"
+mkdir -p "$workflow_workspace_root"
+
+# smoke runner 继续执行 fixture、工具链和 readiness 约束。
 {str_py} -m tests.smoke.run_smoke \
   --settings skills/readable-verilog-generator/config/defaults.json \
   --run-dir "$VERILOG_GENERATOR_SMOKE_RUN_DIR"
-{str_rtl_md_snippet}
-{str_filename_gate_snippet}
+{dict_context['str_rtl_md_snippet']}
+{dict_context['str_filename_gate_snippet']}
 if [ -n "$configured_simulator_backend" ]; then
   export VERILOG_GENERATOR_SIMULATOR_PRIORITY="$configured_simulator_backend"
   expected_sim_backend="$configured_simulator_backend"
 fi
 {str_py} -m {WORKFLOW_CLI_MODULE} run-workflow \
   --spec skills/readable-verilog-generator/assets/examples/rtl_erie_verilog_spec.json \
-  --out-dir "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_execute" \
+  --out-dir "$workflow_execute_root" \
   --model-provider mock \
   --readiness execute \
   --external-target local
 {str_py} -m {WORKFLOW_CLI_MODULE} validate \
   --spec skills/readable-verilog-generator/assets/examples/rtl_erie_verilog_spec.json \
-  --path "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_execute/attempt-001/rtl/generated" \
+  --path "$workflow_execute_root/attempt-001/rtl/generated" \
   --readiness execute \
   --external-target local
+mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_execute"
+cp -R "$workflow_execute_root/." "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_execute/"
 EXPECTED_SIM_BACKEND="$expected_sim_backend" {str_py} - <<'PY'
 import json
 import os
@@ -238,7 +530,7 @@ if expected == "iverilog":
     assert "vcs_verdi" in metrics["missing_preferred_backends"], metrics
 PY
 mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures"
-REMOTE_FIXTURES="{str_fixture_names}" EXPECTED_SIM_BACKEND="$expected_sim_backend" {str_py} - <<'PY'
+REMOTE_FIXTURES="{dict_context['str_fixture_names']}" EXPECTED_SIM_BACKEND="$expected_sim_backend" {str_py} - <<'PY'
 import json
 import os
 import shutil
@@ -251,13 +543,17 @@ WORKFLOW_CLI_MODULE = "scripts.python.workflow.cli"
 fixtures = os.environ["REMOTE_FIXTURES"].split()
 expected = os.environ["EXPECTED_SIM_BACKEND"]
 smoke_root = Path(os.environ["VERILOG_GENERATOR_SMOKE_RUN_DIR"])
+fixture_workspace_root = Path(".smoke-scratch/remote_fixtures")
+fixture_archive_root = smoke_root / "remote_fixtures"
+fixture_workspace_root.mkdir(parents=True, exist_ok=True)
+fixture_archive_root.mkdir(parents=True, exist_ok=True)
 summary = {{"fixtures": []}}
 bad_source = Path(
     "skills/readable-verilog-generator/assets/examples/remote_fixtures/"
     "comb_operation_budget/comb_operation_budget_bad.v"
 )
-bad_report = smoke_root / "remote_fixtures/comb_operation_budget/bad_quality_gate.json"
-bad_markdown = smoke_root / "remote_fixtures/comb_operation_budget/bad_quality_gate.md"
+bad_report = fixture_workspace_root / "comb_operation_budget/bad_quality_gate.json"
+bad_markdown = fixture_workspace_root / "comb_operation_budget/bad_quality_gate.md"
 bad_report.parent.mkdir(parents=True, exist_ok=True)
 bad_command = [
     sys.executable,
@@ -288,7 +584,7 @@ hierarchy_probes = (
 )
 for source_name, gate_id, expected_status, expected_count, expected_path in hierarchy_probes:
     source_path = hierarchy_root / source_name
-    probe_report = smoke_root / "remote_fixtures/comb_hierarchy_budget" / (
+    probe_report = fixture_workspace_root / "comb_hierarchy_budget" / (
         source_path.stem + "_quality_gate.json"
     )
     probe_markdown = probe_report.with_suffix(".md")
@@ -319,7 +615,7 @@ for source_name, gate_id, expected_status, expected_count, expected_path in hier
         assert expected_path in evidence, evidence
 for name in fixtures:
     source_root = Path("skills/readable-verilog-generator/assets/examples/remote_fixtures") / name
-    staged_root = smoke_root / "remote_fixtures" / name
+    staged_root = fixture_workspace_root / name
     generated = staged_root / "generated"
     shutil.copytree(source_root / "generated", generated, dirs_exist_ok=True)
     staged_testbench = generated / "tb" / ("tb_" + name + ".v")
@@ -329,7 +625,7 @@ for name in fixtures:
             output["path"] = "tb/" + staged_testbench.name
     spec = staged_root / "spec.json"
     spec.write_text(json.dumps(spec_payload, indent=2, sort_keys=True), encoding="utf-8")
-    report_json = smoke_root / "remote_fixtures" / name / "validation.json"
+    report_json = staged_root / "validation.json"
     report_json.parent.mkdir(parents=True, exist_ok=True)
     command = [
         sys.executable,
@@ -354,18 +650,22 @@ for name in fixtures:
     assert metrics["selected_simulator_backend"] == expected, metrics
     if expected == "xsim":
         assert set(["xvlog", "xelab", "xsim"]).issubset(metrics["executed_tools"]), metrics
+    archive_root = fixture_archive_root / name
+    archive_generated = archive_root / "generated"
+    archive_report_json = archive_root / "validation.json"
     outputs = report.get("spec_outputs", [])
     summary["fixtures"].append({{
         "name": name,
         "ok": report["ok"],
         "selected_simulator_backend": metrics["selected_simulator_backend"],
         "executed_tools": metrics["executed_tools"],
-        "rtl_path": str(generated / "rtl" / (name + ".v")),
-        "testbench_path": str(staged_testbench),
-        "validation_json": str(report_json),
+        "rtl_path": str(archive_generated / "rtl" / (name + ".v")),
+        "testbench_path": str(archive_generated / "tb" / ("tb_" + name + ".v")),
+        "validation_json": str(archive_report_json),
         "outputs": outputs,
     }})
-(smoke_root / "remote_fixtures/summary.json").write_text(
+shutil.copytree(fixture_workspace_root, fixture_archive_root, dirs_exist_ok=True)
+(fixture_archive_root / "summary.json").write_text(
     json.dumps(summary, indent=2, sort_keys=True),
     encoding="utf-8",
 )
@@ -373,10 +673,12 @@ PY
 if [ "$yosys_available" -eq 1 ]; then
   {str_py} -m {WORKFLOW_CLI_MODULE} run-workflow \
     --spec skills/readable-verilog-generator/assets/examples/rtl_erie_verilog_spec.json \
-    --out-dir "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_implement" \
+    --out-dir "$workflow_implement_root" \
     --model-provider mock \
     --readiness implement \
     --external-target local
+  mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_implement"
+  cp -R "$workflow_implement_root/." "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_implement/"
   {str_py} - <<'PY'
 import json
 import os
@@ -389,12 +691,14 @@ else
   set +e
   {str_py} -m {WORKFLOW_CLI_MODULE} run-workflow \
     --spec skills/readable-verilog-generator/assets/examples/rtl_erie_verilog_spec.json \
-    --out-dir "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_implement" \
+    --out-dir "$workflow_implement_root" \
     --model-provider mock \
     --readiness implement \
     --external-target local
   impl_status=$?
   set -e
+  mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_implement"
+  cp -R "$workflow_implement_root/." "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_implement/"
   if [ "$impl_status" -eq 0 ]; then
     echo "Expected implement readiness to block when yosys is missing." >&2
     exit 1
@@ -413,6 +717,9 @@ assert any(
 ), validation
 PY
 fi
+
+# runtime 模块汇总环境、cwd、压力、归档和三阶段测试事实。
+{str_py} -m scripts.python.remote.remote_evidence_runtime
 """.strip()
 
     # 主命令摘要绑定本次实际执行合同，避免完成清单只证明了文件存在。
@@ -420,16 +727,22 @@ fi
 
     # 最终写入器只在主命令全部成功后执行，并通过临时文件替换保证原子可见。
     str_completion_snippet = f"""
-VERILOG_GENERATOR_RUN_ID={sh_quote(run_id)} \\
-VERILOG_GENERATOR_SOURCE_DIGEST={source_digest} \\
+VERILOG_GENERATOR_RUN_ID={sh_quote(dict_context['str_run_id'])} \\
+VERILOG_GENERATOR_SOURCE_DIGEST={dict_context['str_source_digest']} \\
 VERILOG_GENERATOR_COMMAND_DIGEST={str_command_digest} \\
 {str_py} - <<'PY'
+import hashlib
 import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 smoke_root = Path(os.environ["VERILOG_GENERATOR_SMOKE_RUN_DIR"])
+evidence_path = smoke_root / "remote_test_evidence.json"
+evidence_payload = json.loads(evidence_path.read_text(encoding="utf-8"))
+evidence_sha256 = hashlib.sha256(
+    json.dumps(evidence_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+).hexdigest()
 completion_path = smoke_root / "completion.json"
 temporary_path = smoke_root / "completion.json.tmp"
 payload = {{
@@ -437,6 +750,7 @@ payload = {{
     "run_id": os.environ["VERILOG_GENERATOR_RUN_ID"],
     "source_digest": os.environ["VERILOG_GENERATOR_SOURCE_DIGEST"],
     "command_digest": os.environ["VERILOG_GENERATOR_COMMAND_DIGEST"],
+    "evidence_sha256": evidence_sha256,
     "started_at": os.environ["VERILOG_GENERATOR_STARTED_AT"],
     "completed_at": datetime.now(timezone.utc).isoformat(),
 }}
@@ -450,10 +764,56 @@ PY
         (
             str_command_body,
             str_completion_snippet,
-            str_cleanup_snippet,
-            str_bytecode_cleanup,
+            dict_context["str_cleanup_snippet"],
+            dict_context["str_bytecode_cleanup"],
         )
     )
+
+# remote_validation_transport_command 把长 bash 正文压缩为 Windows 可传输的短命令。
+def remote_validation_transport_command(
+    str_command: str,
+    str_remote_python: str,
+    *,
+    str_report_root: str,
+    str_agent_review_path: str,
+) -> str:
+    """生成解压并执行远端验证正文的短 shell 命令。
+
+    :param str_command: 已完成路径和工具链绑定的远端 bash 正文。
+    :param str_remote_python: 远端可用的 Python 命令文本。
+    :param str_report_root: outer run 直接报告目录的相对路径。
+    :param str_agent_review_path: Agent 审核文件的 outer run 相对路径。
+    :return: 可交给 request-command 的压缩传输命令。
+    """
+
+    # UTF-8 字节是跨 Windows 与 Linux 的唯一压缩输入，避免本地代码页改变摘要。
+    bytes_command = str_command.encode("utf-8")  # 远端 bash 正文的原始 UTF-8 字节
+
+    # 固定 gzip 时间元数据，使相同正文得到可复核的压缩结果。
+    bytes_compressed = gzip.compress(bytes_command, compresslevel=9, mtime=0)  # 远程传输用的压缩正文
+
+    # base64 把压缩字节限制在安全的 shell 单引号字符集内。
+    str_encoded_command = base64.b64encode(bytes_compressed).decode("ascii")  # 无换行的 shell 传输载荷
+
+    # 原文摘要写入 request 注释，便于 Agent 对传输正文做完整性核对。
+    str_command_digest = hashlib.sha256(bytes_command).hexdigest()  # 远端解码前的正文 SHA-256
+
+    # 远端 Python 只把解压后的 bash 字节写入管道，阶段逻辑仍由原始正文执行。
+    str_python_code = (
+        "import base64,gzip,sys;"
+        f"sys.stdout.buffer.write(gzip.decompress(base64.b64decode('{str_encoded_command}')))"
+    )  # 远端 Python 解码表达式
+
+    # 明文保留两条报告路径，使 request 审计仍能直接确认固定 runs 布局。
+    list_transport_lines = [  # 传输 wrapper 的可读审核行序列
+        f"# 报告目录固定为 outer run 的直接子目录：{str_report_root}",  # 直接报告路径审核行
+        f"# Agent 审核文件固定在 outer run 根：{str_agent_review_path}",  # Agent 审核路径审核行
+        f"# 压缩正文摘要用于传输完整性核对：{str_command_digest}",  # 完整性摘要审核行
+        f"{sh_quote(str_remote_python)} -c {sh_quote(str_python_code)} | bash",  # 远端解压执行行
+    ]
+
+    # 换行只分隔短注释与执行命令，不改变解压后 bash 正文的字节内容。
+    return "\n".join(list_transport_lines)
 
 # filename_gate_remote_snippet 生成 VG148/VG149 远端交付门与 xsim 准入片段。
 def filename_gate_remote_snippet(str_remote_python: str) -> str:
@@ -472,11 +832,15 @@ mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/file_naming_gates"
 __PY__ - <<'PY'
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-root = Path(os.environ["VERILOG_GENERATOR_SMOKE_RUN_DIR"]) / "remote_fixtures/file_naming_gates"
+root = Path(".smoke-scratch/remote_fixtures/file_naming_gates")
+archive_root = Path(os.environ["VERILOG_GENERATOR_SMOKE_RUN_DIR"]) / "remote_fixtures/file_naming_gates"
+root.mkdir(parents=True, exist_ok=True)
+archive_root.mkdir(parents=True, exist_ok=True)
 cases = (
     {
         "case_id": "vg148_version_suffix_reject",
@@ -637,11 +1001,12 @@ for case in cases:
             "role_evidence": file_fact["role_evidence"],
             "confirmation_required": file_fact["confirmation_required"],
             "confirmed_role": file_fact["confirmed_role"],
-            "report": str(report_path),
-            "markdown": str(markdown_path),
+            "report": str(archive_root / case["case_id"] / "report.json"),
+            "markdown": str(archive_root / case["case_id"] / "report.md"),
         }
     )
-(root / "summary.json").write_text(
+shutil.copytree(root, archive_root, dirs_exist_ok=True)
+(archive_root / "summary.json").write_text(
     json.dumps(summary, indent=2, sort_keys=True),
     encoding="utf-8",
 )
@@ -718,6 +1083,7 @@ def rtl_md_constraint_remote_snippet(str_remote_python: str) -> str:
 mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_verilog_quality_gates"
 __PY__ - <<'PY'
 import os
+import shutil
 from pathlib import Path
 
 from scripts.python.workflow.prompt import render_prompt
@@ -766,7 +1132,11 @@ assert "127 active gates" in summary, summary
 assert "reserved gates" not in summary, summary
 
 smoke_root = Path(os.environ["VERILOG_GENERATOR_SMOKE_RUN_DIR"])
-bad_dir = smoke_root / "remote_verilog_quality_gates/bad"
+quality_workspace_root = Path(".smoke-scratch/remote_verilog_quality_gates")
+quality_archive_root = smoke_root / "remote_verilog_quality_gates"
+quality_workspace_root.mkdir(parents=True, exist_ok=True)
+quality_archive_root.mkdir(parents=True, exist_ok=True)
+bad_dir = quality_workspace_root / "bad"
 bad_dir.mkdir(parents=True, exist_ok=True)
 (bad_dir / "bad_constraints.v").write_text(
     "\n".join(
@@ -820,7 +1190,7 @@ for expected in (
 ):
     assert expected in codes, codes
 
-good_dir = smoke_root / "remote_verilog_quality_gates/good"
+good_dir = quality_workspace_root / "good"
 good_dir.mkdir(parents=True, exist_ok=True)
 (good_dir / "good_constraints.v").write_text(
     "\n".join(
@@ -846,11 +1216,15 @@ good_dir.mkdir(parents=True, exist_ok=True)
 )
 good_report = run_vg_semantic_gate(good_dir, spec=spec("good_constraints"))
 assert good_report["delivery_ready"] is True, good_report["delivery_issues_by_rule"]
+shutil.copytree(quality_workspace_root, quality_archive_root, dirs_exist_ok=True)
 PY
+eval_skill_workspace_output="$PWD/.smoke-scratch/remote_eval_skill.json"
+mkdir -p "$(dirname "$eval_skill_workspace_output")"
 __PY__ -m scripts.python.workflow.cli eval-skill \
   --evals skills/readable-verilog-generator/evals/evals.json \
-  --out "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_eval_skill.json" \
+  --out "$eval_skill_workspace_output" \
   --no-state
+cp "$eval_skill_workspace_output" "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_eval_skill.json"
 __PY__ - <<'PY'
 import json
 import os
@@ -878,26 +1252,33 @@ def remote_output_cleanup_snippet(cleanup_outputs: bool, str_remote_python: str 
     :return: 可嵌入主 bash 脚本的输出处理片段。
     """
 
-    # 用户要求清理时使用 Python 安全删除，避免 shell rm -rf。
+    # 新运行目录是审计归档的一部分，任何远端验证流程都保留 reports 及失败证据。
     if cleanup_outputs:
 
-        # 清理片段中的 Python 命令同样需要 shell 单引号转义。
-        str_py = sh_quote(str_remote_python)  # 安全清理片段使用的 Python 命令
+        # 受控清理入口仍校验完整 direct reports 边界，但不删除本轮归档。
+        str_py = sh_quote(str_remote_python)  # 安全归档校验片段使用的 Python 命令
 
-        # 返回安全清理片段，测试断言其中不含 rm -rf。
+        # 归档校验只接受固定的 runs/validation_*/reports 层级，拒绝任意越界路径。
         return f"""{str_py} - <<'PY'
 import os
-import shutil
+import re
 from pathlib import Path
 
-path = Path(os.environ["VERILOG_GENERATOR_SMOKE_RUN_DIR"]).resolve()
-reports_root = Path("reports").resolve()
-if path.parent != reports_root or not path.name.startswith("smoke_runs_"):
-    raise SystemExit(f"Refusing to remove unexpected smoke output path: {{path}}")
-if path.exists():
-    if not path.is_dir():
-        raise SystemExit(f"Refusing to remove non-directory output path: {{path}}")
-    shutil.rmtree(path)
+path_reports = Path(os.environ["VERILOG_GENERATOR_SMOKE_RUN_DIR"]).resolve()
+if path_reports.name != "reports":
+    raise SystemExit(f"Refusing to archive unexpected report path: {{path_reports}}")
+
+path_run = path_reports.parent
+if not re.fullmatch(r"validation_[A-Za-z0-9._-]+", path_run.name):
+    raise SystemExit(f"Refusing to archive unexpected validation run: {{path_run}}")
+
+if path_run.parent.name != "runs":
+    raise SystemExit(f"Refusing to archive outside runs directory: {{path_run}}")
+
+if path_run.parent.parent.name != ".readable-verilog-generator":
+    raise SystemExit(f"Refusing to archive outside readable-verilog-generator root: {{path_run}}")
+
+print(f"remote_outputs_retained={{path_reports}} cleanup_request_ignored=archive_policy")
 PY"""
 
     # 默认保留远端输出，方便用户复查 retained run。

@@ -566,7 +566,7 @@ class SyntaxUtilsMixin:
             str_char = text[int_index]  # 当前扫描字符
 
             # 未转义双引号会切换字符串扫描状态。
-            if str_char == '"' and (int_index == 0 or text[int_index - 1] != "\\"):
+            if self._is_unescaped_double_quote(text, int_index):
 
                 # 字符串状态翻转后继续看下一个字符。
                 bool_in_string = not bool_in_string  # 字符串扫描状态翻转
@@ -586,35 +586,65 @@ class SyntaxUtilsMixin:
                 # 继续扫描后续字符。
                 continue
 
-            # 左括号类字符增加嵌套层级。
-            if str_char in "([{":
+            # 分隔符 helper 统一维护圆、方和花括号深度。
+            int_depth = self._advance_group_depth(str_char, int_depth)  # 当前字符处理后的表达式层级
 
-                # 深层表达式里的 `+:` 不属于当前顶层 range。
-                int_depth += 1  # part-select 扫描括号深度增加
+            # 顶层两字符候选才可能是 indexed part-select。
+            str_operator = text[int_index : int_index + 2]  # indexed part-select 候选操作符
 
-            # 右括号类字符结束当前嵌套层级。
-            elif str_char in ")]}":
+            # 顶层 `+:` 或 `-:` 表示 indexed part-select。
+            if int_depth == 0 and str_operator in {"+:", "-:"}:
 
-                # 异常多出的右括号保持零深度下限。
-                int_depth = max(0, int_depth - 1)  # part-select 扫描括号深度减少
-
-            # 非顶层字符不允许识别 indexed part-select。
-            elif int_depth == 0:
-
-                # str_operator 取当前字符起始的两字符候选。
-                str_operator = text[int_index : int_index + 2]  # indexed part-select 候选操作符
-
-                # 顶层 `+:` 或 `-:` 表示 indexed part-select。
-                if str_operator in {"+:", "-:"}:
-
-                    # 返回位置和操作符，调用方据此拆分左右表达式。
-                    return int_index, str_operator
+                # 返回位置和操作符，调用方据此拆分左右表达式。
+                return int_index, str_operator
 
             # 当前字符处理完成，进入下一字符。
             int_index += 1  # part-select 扫描下一字符下标
 
         # 扫描完整个文本仍未找到顶层 indexed part-select。
         return None
+
+    # 引号 helper 判断当前位置是否打开或关闭字符串范围。
+    def _is_unescaped_double_quote(self, text: str, int_index: int) -> bool:
+        """判断当前字符是否为未转义双引号。
+
+        :param text: 当前完整表达式文本。
+        :param int_index: 待判断字符下标。
+        :return: 当前字符可切换字符串状态时返回 True。
+        """
+
+        # 非双引号字符不会改变字符串扫描状态。
+        if text[int_index] != '"':
+
+            # 调用方可直接继续普通结构扫描。
+            return False
+
+        # 起始引号或前一字符非反斜杠时属于未转义引号。
+        return int_index == 0 or text[int_index - 1] != "\\"
+
+    # 分隔符深度 helper 统一处理圆、方和花括号层级。
+    def _advance_group_depth(self, str_char: str, int_depth: int) -> int:
+        """根据单个分隔符字符推进表达式嵌套深度。
+
+        :param str_char: 当前扫描字符。
+        :param int_depth: 当前表达式嵌套深度。
+        :return: 当前字符处理后的非负嵌套深度。
+        """
+
+        # 左分隔符打开一层嵌套表达式。
+        if str_char in "([{":
+
+            # 深层范围中的操作符不属于调用方顶层。
+            return int_depth + 1
+
+        # 右分隔符关闭最近一层嵌套表达式。
+        if str_char in ")]}":
+
+            # 异常多出的右分隔符保持零深度下限。
+            return max(0, int_depth - 1)
+
+        # 普通字符不改变表达式层级。
+        return int_depth
 
     # part-select 左侧若包含二元算术，紧凑化会损害可读性。
     def _has_obvious_arithmetic_operator(self, text: str) -> bool:
@@ -1509,38 +1539,35 @@ class SyntaxUtilsMixin:
             # str_char 是顶层冒号扫描本轮字符。
             str_char = text[int_index]  # 顶层冒号扫描字符
 
-            # 左括号类字符进入嵌套层。
-            if str_char in "([{":
+            # 分隔符 helper 保持顶层冒号扫描的非负深度。
+            int_depth = self._advance_group_depth(str_char, int_depth)  # 当前字符处理后的冒号扫描层级
 
-                # 嵌套内部冒号不作为顶层冒号返回。
-                int_depth += 1  # 顶层冒号扫描深度增加
+            # 非冒号或嵌套冒号都不能作为结果。
+            if str_char != ":" or int_depth != 0:
 
-            # 右括号类字符退出嵌套层。
-            elif str_char in ")]}":
+                # 继续扫描下一字符。
+                int_index += 1  # 非候选字符处理后的下标
 
-                # 深度不允许低于零，兼容异常文本。
-                int_depth = max(0, int_depth - 1)  # 顶层冒号扫描深度减少
+                # 当前字符不满足顶层冒号条件。
+                continue
 
-            # 只在顶层考虑冒号。
-            elif str_char == ":" and int_depth == 0:
+            # str_previous_char 用于识别 `+:` 或 `-:`。
+            str_previous_char = text[int_index - 1] if int_index > 0 else ""  # 冒号前一字符
 
-                # str_previous_char 用于识别 `+:` 或 `-:`。
-                str_previous_char = text[int_index - 1] if int_index > 0 else ""  # 冒号前一字符
+            # str_next_char 用于识别 `:=` 风格或其他赋值尾部。
+            str_next_char = text[int_index + 1] if int_index + 1 < len(text) else ""  # 冒号后一字符
 
-                # str_next_char 用于识别 `:=` 风格或其他赋值尾部。
-                str_next_char = text[int_index + 1] if int_index + 1 < len(text) else ""  # 冒号后一字符
+            # part-select 或赋值相关冒号不是普通顶层冒号。
+            if str_previous_char in "+-" or str_next_char == "=":
 
-                # part-select 或赋值相关冒号不是普通顶层冒号。
-                if str_previous_char in "+-" or str_next_char == "=":
+                # 跳过当前冒号继续扫描后续文本。
+                int_index += 1  # 跳过特殊冒号后的下标
 
-                    # 跳过当前冒号继续扫描后续文本。
-                    int_index += 1  # 跳过特殊冒号后的下标
+                # 当前冒号不作为结果返回。
+                continue
 
-                    # 当前冒号不作为结果返回。
-                    continue
-
-                # 返回第一个普通顶层冒号位置。
-                return int_index
+            # 返回第一个普通顶层冒号位置。
+            return int_index
 
             # 当前字符处理完成后推进扫描。
             int_index += 1  # 顶层冒号扫描下一下标

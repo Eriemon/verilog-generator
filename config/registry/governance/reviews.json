@@ -673,6 +673,18 @@
       ],
       "decision": "mapped",
       "kind": "option",
+      "rationale": "receipt 只允许绑定 TESTER 提供的 exact tests/** 提交与对应远程 retained run。",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--test-commit-sha"
+    },
+    {
+      "command_ids": [
+        "remote.validate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
       "rationale": "",
       "sources": [
         "references/integration/configuration.md"
@@ -748,6 +760,18 @@
       ],
       "decision": "mapped",
       "kind": "option",
+      "rationale": "receipt 写入是受 retained run、source manifest 与测试提交共同约束的显式高风险输出。",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--write-test-evidence"
+    },
+    {
+      "command_ids": [
+        "remote.validate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
       "rationale": "",
       "sources": [
         "references/integration/configuration.md"
@@ -770,5 +794,5 @@
   ],
   "schema_version": 2,
   "status": "current",
-  "user_confirmation": "not_required"
+  "user_confirmation": "confirmed"
 }

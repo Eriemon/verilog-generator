@@ -2970,6 +2970,139 @@ def _identifier_expression_target(expression: object) -> str:
         expression.get("name") or expression.get("text") or expression.get("value") or ""
     ).strip()
 
+# 输出驱动事实收集保持材料化顺序，并把 seq 镜像与组合事实分开。
+def _output_driver_facts(
+    module: SpecializedModule,
+    port_name: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """收集一个输出端口的全部、组合和存储驱动事实。
+
+    参数:
+        module: 当前 child specialization。
+        port_name: 需要分类的 output formal 名称。
+
+    返回:
+        全部表达式事实、真实组合事实和直接存储事实。
+    """
+
+    # 全部表达式事实保留 parse_error 和未知过程，供 fail-closed 判断使用。
+    list_target_facts = [  # 未知驱动检测需要同时查看解析错误和过程类别
+        _mapping(frozen_fact)  # 解冻当前模块的单条表达式事实
+        for frozen_fact in module.comb_expressions  # 按材料化顺序遍历模块表达式目录
+        if base_target(str(_mapping(frozen_fact).get("target") or "")) == port_name  # 只收集左值匹配当前端口的事实
+    ]
+
+    # seq 赋值由 storage template 负责，不再作为组合 producer。
+    list_comb_facts = [  # 当前 output 的真实组合事实
+        dict_fact  # 保留 continuous 或 comb 驱动
+        for dict_fact in list_target_facts  # 扫描当前 formal 的表达式事实
+        if str(dict_fact.get("process_kind") or "") in {"continuous", "comb"}  # 排除 seq 镜像
+    ]
+
+    # 直接同名 storage template 把 formal 定义为 Q 端。
+    list_storage_facts = [  # 当前 output 的直接存储事实
+        _mapping(frozen_fact)  # 解冻存储模板
+        for frozen_fact in module.storage_drivers  # 遍历特化模块存储目录
+        if str(_mapping(frozen_fact).get("target") or "") == port_name  # 严格匹配 formal
+    ]
+
+    # 三类事实共享同一次稳定筛选结果，避免分类入口重复遍历。
+    return list_target_facts, list_comb_facts, list_storage_facts
+
+# 直接驱动分类先处理 mixed、显式 storage 和 latch 三类确定性切点。
+def _direct_output_driver_class(
+    list_comb_facts: list[dict[str, Any]],
+    list_storage_facts: list[dict[str, Any]],
+) -> OutputDriverClass | None:
+    """返回由直接组合和存储事实确定的驱动类别。
+
+    参数:
+        list_comb_facts: 当前 output 的 continuous 或 comb 事实。
+        list_storage_facts: 当前 output 的直接存储模板。
+
+    返回:
+        mixed 或 storage_q；尚不能确定时返回 None。
+    """
+
+    # 组合与存储事实并存时必须局部 fail-closed，不能任意选边。
+    if list_comb_facts and list_storage_facts:
+
+        # mixed 保留冲突事实，阻止不可信的跨层展开。
+        return "mixed"
+
+    # 任一直接 storage template 都把 formal 定义为 Q 端。
+    if list_storage_facts:
+
+        # 父级在 Q 处截止，D 与 enable 仍由 child 自身目标分析。
+        return "storage_q"
+
+    # 不完整组合覆盖形成 latch，因此同样属于存储切点。
+    if any(_comb_fact_is_latch(dict_fact) for dict_fact in list_comb_facts):
+
+        # latch 输出不向父级传播内部 D 锥。
+        return "storage_q"
+
+    # 剩余事实需要继续检查 exact bridge、unknown 或普通组合驱动。
+    return None
+
+# exact Q bridge 只允许单一零操作 identifier 指向内部存储目标。
+def _is_exact_output_q_bridge(
+    module: SpecializedModule,
+    list_comb_facts: list[dict[str, Any]],
+) -> bool:
+    """判断组合事实是否构成内部存储目标的精确直连桥。
+
+    参数:
+        module: 当前 child specialization。
+        list_comb_facts: 当前 output 的真实组合事实。
+
+    返回:
+        单一 identifier 直连内部 storage target 时返回 True。
+    """
+
+    # 多驱动或无驱动都不能证明零操作 identifier 直连。
+    if len(list_comb_facts) != 1:
+
+        # 非单一组合事实不属于 exact Q bridge。
+        return False
+
+    # identifier 名称用于匹配内部 storage template 的目标。
+    str_bridge_target = _identifier_expression_target(  # 潜在内部 Q 名称
+        list_comb_facts[0].get("expression")  # 唯一组合事实的 typed expression
+    )
+
+    # 空名称或任一同名 storage target 共同决定桥接结论。
+    return bool(str_bridge_target) and any(
+        str(_mapping(frozen_fact).get("target") or "") == str_bridge_target
+        for frozen_fact in module.storage_drivers
+    )
+
+# parse_error 和未知过程类别会阻止当前 output 的组合展开。
+def _has_unknown_output_driver_fact(list_target_facts: list[dict[str, Any]]) -> bool:
+    """判断输出表达式事实中是否存在未知或解析失败的驱动。
+
+    参数:
+        list_target_facts: 当前 output 的全部表达式事实。
+
+    返回:
+        存在 parse_error 或未知 process_kind 时返回 True。
+    """
+
+    # 任一解析错误都使当前端口的驱动锥不再可信。
+    bool_has_parse_error = any(  # 当前 output 解析错误状态
+        str(dict_fact.get("parse_error") or "")  # 读取单条事实解析错误
+        for dict_fact in list_target_facts  # 检查每条驱动的过程类别
+    )  # 当前 output 是否包含解析错误
+
+    # 除 continuous、comb、seq 外的过程类别没有受支持的分类语义。
+    bool_has_unknown_process = any(  # 当前 output 未知过程状态
+        str(dict_fact.get("process_kind") or "") not in {"continuous", "comb", "seq"}  # 识别不支持的过程类别
+        for dict_fact in list_target_facts  # 扫描当前 output 全部事实
+    )  # 当前 output 是否包含未知过程
+
+    # 任一未知证据只污染当前 output，并强制局部 fail-closed。
+    return bool_has_parse_error or bool_has_unknown_process
+
 # 公开驱动分类入口决定 child output 是否展开、截止或局部未知。
 def classify_output_driver(
     module: SpecializedModule,
@@ -3007,65 +3140,41 @@ def classify_output_driver(
         # 不生成反向唯一 child binding。
         return "unresolved_net_boundary"
 
-    # 当前端口的全部表达式事实按材料化顺序保留。
-    list_target_facts = [  # 直接驱动当前 output formal 的全部表达式事实
-        _mapping(frozen_fact)  # 解冻单条表达式事实供本次分类读取
-        for frozen_fact in module.comb_expressions  # 遍历当前特化模块的表达式目录
-        if base_target(str(_mapping(frozen_fact).get("target") or "")) == port_name  # 汇聚 formal 的静态位驱动
-    ]  # 完成当前 formal 的表达式驱动事实筛选
+    # 三类事实由同一 helper 按材料化顺序收集，避免分类分支重复扫描。
+    tuple_driver_facts = _output_driver_facts(  # 一次读取端口事实以维持原始材料化顺序
+        module,  # 提供当前子模块的表达式和存储目录
+        port_name,  # 限定本次事实收集的输出端口名称
+    )
 
-    # seq 赋值会同时形成 storage template，不得再次当成组合驱动。
-    list_comb_facts = [  # 排除 seq 镜像后可参与组合分类的驱动事实
-        dict_fact  # 保留 continuous 或完整组合过程事实
-        for dict_fact in list_target_facts  # 遍历当前 output 的所有表达式驱动
-        if str(dict_fact.get("process_kind") or "") in {"continuous", "comb"}  # seq 由 storage 目录负责
-    ]  # 当前 output 的真实组合驱动事实
+    # 全部事实用于后续 parse_error 与未知过程的 fail-closed 判断。
+    list_target_facts: list[dict[str, Any]] = tuple_driver_facts[0]  # output 表达式事实
 
-    # storage templates 明确标识时序或未知过程切点。
-    list_storage_facts = [  # 直接把当前 output 定义为 Q 端的存储事实
-        _mapping(frozen_fact)  # 解冻单条存储模板供目标比较
-        for frozen_fact in module.storage_drivers  # 遍历当前特化模块的存储目录
-        if str(_mapping(frozen_fact).get("target") or "") == port_name  # 只保留当前 formal 的 Q 事实
-    ]  # 直接驱动当前 output 的存储事实
+    # 组合事实用于 latch、Q bridge 和普通 producer 分类。
+    list_comb_facts: list[dict[str, Any]] = tuple_driver_facts[1]  # 可参与跨层展开的组合驱动事实
 
-    # 同一 output 同时有组合和存储驱动时不能任意选择一类。
-    if list_comb_facts and list_storage_facts:
+    # 存储事实用于直接 Q 端和 mixed 驱动判断。
+    list_storage_facts: list[dict[str, Any]] = tuple_driver_facts[2]  # 同名 storage 事实
 
-        # mixed 保留局部 fail-closed 语义。
-        return "mixed"
+    # mixed、直接 storage 和 latch 可由当前 formal 的直接事实立即确定。
+    optional_direct_class = _direct_output_driver_class(  # 为空时继续检查直连桥和未知驱动
+        list_comb_facts,  # 检查组合驱动冲突和锁存器切点
+        list_storage_facts,  # 检查同名存储模板形成的时序切点
+    )
 
-    # 任一直接 storage driver 都把当前 output 定义为 Q 端。
-    if list_storage_facts:
+    # 已确定的直接类别优先于 bridge 和 unknown 判定。
+    if optional_direct_class is not None:
 
-        # D 与 enable 仍由 child 自身目标分析，父级在 Q 处截止。
-        return "storage_q"
+        # 返回 mixed 或 storage_q，保持原有分类优先级。
+        return optional_direct_class
 
-    # 不完整组合覆盖同样形成 latch Q 端切点。
-    if any(_comb_fact_is_latch(dict_fact) for dict_fact in list_comb_facts):
+    # 单一零操作 identifier 指向内部 Q 时在该切点截止。
+    if _is_exact_output_q_bridge(module, list_comb_facts):
 
-        # latch 输出不向父级传播内部 D 锥。
-        return "storage_q"
+        # bridge 自身不引入逻辑，父级无需继续展开内部 D 锥。
+        return "exact_q_bridge"
 
-    # 单一零操作 identifier 驱动可能是内部 Q 的直接桥接。
-    if len(list_comb_facts) == 1:
-
-        # identifier 名称用于查找内部 storage target。
-        str_bridge_target = _identifier_expression_target(list_comb_facts[0].get("expression"))  # 潜在内部 Q 名称
-
-        # 任一同名 storage template 证明 exact Q bridge。
-        if str_bridge_target and any(
-            str(_mapping(frozen_fact).get("target") or "") == str_bridge_target
-            for frozen_fact in module.storage_drivers
-        ):
-
-            # bridge 自身零操作，父级在内部 Q 处截止。
-            return "exact_q_bridge"
-
-    # parse_error 或没有对应 storage template 的未知过程阻止组合展开。
-    if any(str(dict_fact.get("parse_error") or "") for dict_fact in list_target_facts) or any(
-        str(dict_fact.get("process_kind") or "") not in {"continuous", "comb", "seq"}
-        for dict_fact in list_target_facts
-    ):
+    # parse_error 或未知过程阻止当前 output 的组合展开。
+    if _has_unknown_output_driver_fact(list_target_facts):
 
         # unknown 驱动与其他端口隔离。
         return "unknown"

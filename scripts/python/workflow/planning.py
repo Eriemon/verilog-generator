@@ -477,17 +477,35 @@ def _attach_evidence(dict_spec: dict[str, Any], dict_evidence: dict[str, Any]) -
         # 三个字段共享同一证据查找逻辑。
         for field_name in ("behavior", "constraints", "test_intent"):
 
-            # 字段下的每个 dict 条目都可能附加 evidence 引用。
-            for info_item in subfunction_item.get(field_name, []):
+            # 单字段 helper 隔离条目类型判断，避免证据遍历形成深层嵌套。
+            _attach_field_evidence(subfunction_item.get(field_name, []), dict_evidence)
 
-                # 非 dict 条目没有可写 evidence 字段，保持原样跳过。
-                if isinstance(info_item, dict):
+# 字段证据 helper 隔离条目类型判断和命中引用写回。
+def _attach_field_evidence(list_items: list[Any], dict_evidence: dict[str, Any]) -> None:
+    """给一个计划信息字段中的字典条目附加证据引用。
 
-                    # 证据查找只基于 text 字段，避免把其它结构字段误当检索文本。
-                    list_refs = evidence_refs_for_text(dict_evidence, str(info_item.get("text", "")))  # 匹配证据引用
+    参数:
+        list_items: behavior、constraints 或 test_intent 字段条目。
+        dict_evidence: evidence 索引对象。
 
-                    # 有命中引用时才写入 evidence 字段，保持输出紧凑。
-                    if list_refs:
+    返回:
+        无返回值。
+    """
 
-                        # evidence 字段形状由 evidence 模块返回值决定。
-                        info_item["evidence"] = list_refs  # 命中的证据引用
+    # 单层扫描保持原有条目顺序，并跳过没有可写字段的非字典值。
+    for info_item in list_items:
+
+        # 非 dict 条目没有可写 evidence 字段，保持原样跳过。
+        if not isinstance(info_item, dict):
+
+            # 调用方允许字段中混入纯文本条目。
+            continue
+
+        # 证据查找只基于 text 字段，避免把其它结构字段误当检索文本。
+        list_refs = evidence_refs_for_text(dict_evidence, str(info_item.get("text", "")))  # 匹配证据引用
+
+        # 有命中引用时才写入 evidence 字段，保持输出紧凑。
+        if list_refs:
+
+            # evidence 字段形状由 evidence 模块返回值决定。
+            info_item["evidence"] = list_refs  # 命中的证据引用

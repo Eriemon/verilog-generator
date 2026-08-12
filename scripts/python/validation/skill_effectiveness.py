@@ -47,7 +47,7 @@ from scripts.python.quality.vg_comb_model import CombTargetCone
 from scripts.python.quality.vg_semantic_facts import build_vg_facts
 
 # JSON 写出继续复用 workflow 层的确定性实现。
-from scripts.python.workflow.workspace import write_json
+from scripts.python.workflow.workspace import use_workspace_root, write_json
 
 # case 基础工具负责最核心的检查计算与文件复制。
 from .skill_effectiveness_support import (
@@ -112,6 +112,41 @@ SKILL_ROOT = skill_root()  # skill 主体根目录
 
 # 单个 eval case 的内部执行函数签名，保持 _evaluate_case 分派逻辑可读。
 CaseEvaluator = Callable[[dict[str, Any], str, Path], dict[str, Any]]  # eval kind 处理函数类型
+
+# 远程 retained run 的报告目录必须保持固定命名和层级。
+DIRECT_VALIDATION_RUN_PATTERN = re.compile(r"validation_[A-Za-z0-9._-]+")  # direct run 目录名安全模式
+
+# _direct_validation_archive_root 识别唯一允许跨 workspace 写入的远程归档根。
+def _direct_validation_archive_root(path_output: Path) -> Path | None:
+    """返回受控 remote ``runs/validation_*/reports`` 的 run 根，否则返回 None。
+
+    :param path_output: 即将写出的效果评估报告路径。
+    :return: 合法 direct validation run 根目录，或表示普通 workspace 输出的 None。
+    """
+
+    # 先解析符号链接，避免用链接名称绕过报告目录边界。
+    path_resolved_output = path_output.resolve()  # 报告输出的规范化路径
+
+    # outer run 的直接报告目录承载最终效果评估输出。
+    path_reports = path_resolved_output.parent  # outer run 的直接报告目录
+
+    # validation_<id> retained run 根是本次 archive workspace 的安全锚点。
+    path_run = path_reports.parent  # 校验固定 `.readable-verilog-generator/runs` 布局的 validation 根
+
+    # 只允许固定的 reports 叶目录和 validation_<id> 父目录。
+    if path_reports.name != "reports" or not DIRECT_VALIDATION_RUN_PATTERN.fullmatch(path_run.name):
+
+        # 普通本地 smoke 或任意其他路径继续使用当前 workspace 边界。
+        return None
+
+    # runs 与固定的新远程根必须是 direct run 的祖先，不接受旧根或任意目录伪装。
+    if path_run.parent.name != "runs" or path_run.parent.parent.name != ".readable-verilog-generator":
+
+        # 目录层级不完整时不启用 archive-root 特例。
+        return None
+
+    # 返回 run 根，调用方仅在此根内临时放宽 workspace 解析锚点。
+    return path_run
 
 # 公开 CLI 入口读取 eval 集并写出汇总报告。
 def evaluate_skill_effectiveness(
@@ -205,8 +240,24 @@ def evaluate_skill_effectiveness(
             "summary": dict_summary,  # 顶层通过计数和 ok 状态
         }  # CLI 写出的 skill-effectiveness 报告
 
-        # write_json 负责统一缩进和 UTF-8 写出。
-        write_json(out_path, dict_report)
+        # 远程 direct reports 归档需要以 outer run 为受控 workspace 锚点。
+        # 该解析只返回通过固定命名和祖先层级校验的 retained run 根。
+        path_archive_root = _direct_validation_archive_root(out_path)  # use_workspace_root 绑定的 direct validation run 根
+
+        # 只有固定 runs/validation_*/reports 形状才允许跨 staged workspace 写报告。
+        if path_archive_root is not None:
+
+            # 作用域退出后恢复原 workspace，避免影响后续 workflow 调用。
+            with use_workspace_root(path_archive_root):
+
+                # write_json 继续执行原有保护目录和 UTF-8 写入合同。
+                write_json(out_path, dict_report)
+
+        # 普通路径仍严格限制在当前 workspace 内。
+        else:
+
+            # write_json 负责统一缩进和 UTF-8 写出。
+            write_json(out_path, dict_report)
 
         # 返回内存中的同一份报告，供单元测试无需重新读文件。
         return dict_report
