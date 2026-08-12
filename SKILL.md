@@ -87,6 +87,8 @@ The first outer command group is the generated-deliverable gate:
 python -m scripts.python.validation.generated_deliverable_gate <rtl-file-or-dir> --json <report.json> --markdown <report.md>
 ```
 
+When `--markdown` is omitted, Markdown is written to `reports/readable/deliverable_gate.md` under the caller's current working directory. Runtime reports must never be written back to the source or installed skill root.
+
 The second outer command group is package validation:
 
 ```text

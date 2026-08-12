@@ -93,21 +93,18 @@ def _ensure_runtime_import_path() -> None:
         # runtime 包位于 skill 根目录下。
         sys.path.insert(0, str_skill_root)
 
-# _default_markdown_report_path 返回治理批准的默认 Markdown 报告路径。
+# _default_markdown_report_path 返回调用方工作目录中的默认 Markdown 报告路径。
 def _default_markdown_report_path() -> Path:
     """返回默认 Markdown 报告路径。
 
     参数:
         本函数不接收业务参数。
     返回:
-        返回当前布局下治理批准的默认 Markdown 报告路径。
+        返回调用方工作目录中的默认 Markdown 报告路径。
     """
 
-    # project_root 根据源码仓库或安装态布局选择安全的项目根目录。
-    from scripts.python.workflow.config import project_root
-
-    # path_reports_dir 汇总默认人工报告的受管目录。
-    path_reports_dir = project_root() / "reports" / "readable"  # 默认 Markdown 报告目录
+    # 默认报告属于调用方项目，不能回写只读的 source 或 installed skill 根。
+    path_reports_dir = Path.cwd() / "reports" / "readable"  # 调用方 Markdown 报告目录
 
     # 返回固定的默认 Markdown 报告文件路径。
     return path_reports_dir / "deliverable_gate.md"
