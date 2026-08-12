@@ -65,7 +65,7 @@ Remote validation runs are retained by default, including fixed remote-fixture r
 
 ## Document And Command Registry
 
-Registration is enabled for this skill. Markdown remains the authoritative knowledge source; structured JSON under `config/registry/` is the only editable registry source; `config/registry/registry.sqlite3` is a generated local FTS5 trigram index. The skill runtime is self-contained and must not import or call an external `agents-md-generator` registry implementation.
+Registration is enabled for this skill. Markdown remains the authoritative knowledge source. Editable command records live under `config/registry/commands/`; document responsibilities and search metadata have one owner in `config/registry/documents/catalog.json`; current duplicate and interface decisions live in `config/registry/governance/reviews.json`; `config/registry/registry.sqlite3` is a generated local FTS5 trigram index at the location required by the agents-md-generator gate. The skill runtime is self-contained and must not import or call an external `agents-md-generator` registry implementation.
 
 Document governance scans `SKILL.md` and every Markdown file below `references/`, recursively. It records one responsibility per document, knowledge pointers, exact and fuzzy duplicate adjudications, interface mappings, and content hashes. Remove only confirmed equivalent duplication; preserve structural repetition and every unique contract. Installed copies may query and check but must not mutate registry sources.
 

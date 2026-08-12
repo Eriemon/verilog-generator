@@ -314,7 +314,7 @@
       "scripts/python/validation/validation_source_audit.py",
       "scripts/python/validation/generated_deliverable_gate.py",
       "scripts/python/quality/verilog_quality_gate.py",
-      "config/registry/toolchain/commands.json",
+      "config/registry/commands/toolchain.json",
       "config/registry/registry.sqlite3",
       "scripts/python/validation/generated_deliverable_gate.py",
       "scripts/python/quality/verilog_quality_gate.py"

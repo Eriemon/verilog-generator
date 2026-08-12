@@ -1,150 +1,306 @@
 {
   "documents": [
     {
-      "content_sha256": "d100a3634f295d7d4de57446390ed793dd080ae868a4a8f4dfe4831cf7799ceb",
+      "content_sha256": "56bbefaa5b06b70a782067bc8289f38d859861ebaa86d24bb8a65a65f0ebf1d1",
       "id": "document.skill",
+      "keywords": [
+        "route",
+        "Verilog-2001",
+        "quality",
+        "registry",
+        "boundaries"
+      ],
       "path": "SKILL.md",
       "responsibility": "定义技能触发、外层任务路由、强制质量链、停止边界与渐进披露入口。",
-      "status": "reviewed",
-      "summary": "readable-verilog-generator 的最外层执行合同。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "readable-verilog-generator 的最外层执行合同。",
+      "title": "Readable Verilog Generator"
     },
     {
       "content_sha256": "6a7b43ef62f09df968439f68a2569aa920b0f7d79344804a6cd8a60964b041b8",
       "id": "document.references-checklists-capability-distillation-checklist",
+      "keywords": [
+        "capability",
+        "distillation",
+        "source",
+        "evidence"
+      ],
       "path": "references/checklists/capability-distillation-checklist.md",
       "responsibility": "定义外部能力蒸馏、来源追溯和吸收边界的复核清单。",
-      "status": "reviewed",
-      "summary": "能力蒸馏与来源证据检查表。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "能力蒸馏与来源证据检查表。",
+      "title": "Capability Distillation Checklist"
     },
     {
       "content_sha256": "d9bb94604052628a5156d1ed8f082e0280187dadfdeb527834c973b365269506",
       "id": "document.references-checklists-lint-checklist",
+      "keywords": [
+        "lint",
+        "Verilator",
+        "static",
+        "blocking"
+      ],
       "path": "references/checklists/lint-checklist.md",
       "responsibility": "定义独立 Verilog 静态 lint 的检查项、工具证据和阻断解释。",
-      "status": "reviewed",
-      "summary": "静态 lint 审查清单与外部工具边界。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "静态 lint 审查清单与外部工具边界。",
+      "title": "Lint Checklist"
     },
     {
       "content_sha256": "bbf8664b481dbcafb50e4534f575b6ee0bbe90be73d5894b8de03a7e1c6e67b1",
       "id": "document.references-checklists-verilog-readability-gate",
+      "keywords": [
+        "readability",
+        "delivery",
+        "review",
+        "gate"
+      ],
       "path": "references/checklists/verilog-readability-gate.md",
       "responsibility": "定义生成或修改 Verilog 在交付前的人类可读性复核清单。",
-      "status": "reviewed",
-      "summary": "Verilog 可读性交付人工门禁。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "Verilog 可读性交付人工门禁。",
+      "title": "Verilog Readability Gate"
     },
     {
       "content_sha256": "21bf4c9e03104e39ee6a422dc3650bf1821175651625699d64f2fa7cff037b06",
       "id": "document.references-corpus-verilog-style-observations",
+      "keywords": [
+        "corpus",
+        "ideal",
+        "bad",
+        "style",
+        "observations"
+      ],
       "path": "references/corpus/verilog-style-observations.md",
       "responsibility": "记录理想与反例语料中可复现的经验风格观察，且不替代规范规则。",
-      "status": "reviewed",
-      "summary": "Verilog 语料风格的经验观察。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "Verilog 语料风格的经验观察。",
+      "title": "Verilog Style Observations"
     },
     {
       "content_sha256": "1663b68c9056ead89cca16f88abff98e44351ee7c58ae94265f4763ed3b8a035",
       "id": "document.references-integration-configuration",
+      "keywords": [
+        "settings",
+        "dependencies",
+        "remote",
+        "toolchain",
+        "validation"
+      ],
       "path": "references/integration/configuration.md",
       "responsibility": "定义设置文件、依赖、验证、远程目标、工具链选择和运行目录配置合同。",
-      "status": "reviewed",
-      "summary": "本地与远程 Verilog 工作流配置合同。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "本地与远程 Verilog 工作流配置合同。",
+      "title": "Configuration"
     },
     {
       "content_sha256": "e1a70ebdde7232ac6aeef725a563290a7fc98162362e8b36aa077a09e6b21194",
       "id": "document.references-integration-host-integration",
+      "keywords": [
+        "facade",
+        "host",
+        "API",
+        "artifacts",
+        "routing"
+      ],
       "path": "references/integration/host-integration.md",
       "responsibility": "定义 Python facade、宿主调用输入输出和宿主拥有的执行边界。",
-      "status": "reviewed",
-      "summary": "Verilog facade 与宿主集成合同。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "Verilog facade 与宿主集成合同。",
+      "title": "Host Integration"
     },
     {
       "content_sha256": "dccca8bd7ce40c4418469839366585f23426632e18d40f8c910a3da4df162da9",
       "id": "document.references-rules-asic-verilog-quality",
+      "keywords": [
+        "ASIC",
+        "CDC",
+        "reset",
+        "timing",
+        "synthesis"
+      ],
       "path": "references/rules/asic-verilog-quality.md",
       "responsibility": "定义 ASIC 导向的组合逻辑、时钟、复位、CDC、综合和时序审查规则。",
-      "status": "reviewed",
-      "summary": "ASIC 质量审查规则。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "ASIC 质量审查规则。",
+      "title": "ASIC Verilog Quality"
     },
     {
       "content_sha256": "17507abbb0830ceb184c5d910d34518d74dc96a9fc7df8660f17b492b90559a3",
       "id": "document.references-rules-erie-style",
+      "keywords": [
+        "erie_strict",
+        "header",
+        "FSM",
+        "instance",
+        "bus"
+      ],
       "path": "references/rules/erie-style.md",
       "responsibility": "定义 erie_strict 叠加层的头部、命名、FSM、实例和总线分组约定。",
-      "status": "reviewed",
-      "summary": "Erie 严格 Verilog 风格叠加层。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "Erie 严格 Verilog 风格叠加层。",
+      "title": "Erie Style"
     },
     {
       "content_sha256": "339e403b21ed4e267708bdbabde5c14bb10c288b8a811a66faadc0a432c6dd72",
       "id": "document.references-rules-testbench-patterns",
+      "keywords": [
+        "testbench",
+        "stimulus",
+        "self-checking",
+        "Verilog-2001"
+      ],
       "path": "references/rules/testbench-patterns.md",
       "responsibility": "定义 Verilog-2001 自检 testbench 的结构、激励、检查和安全修复模式。",
-      "status": "reviewed",
-      "summary": "自检 Verilog testbench 模式。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "自检 Verilog testbench 模式。",
+      "title": "Testbench Patterns"
     },
     {
       "content_sha256": "3b374b9ed90a1e5eb91b6d0ef8c796918d4192dca5128a9529f2c7c1643c2db6",
       "id": "document.references-rules-verilog-code-comment-naming-standard",
+      "keywords": [
+        "Verilog",
+        "code",
+        "comment",
+        "naming",
+        "format"
+      ],
       "path": "references/rules/verilog-code-comment-naming-standard.md",
       "responsibility": "保存可读 Verilog 代码、注释、命名、区域与格式的完整规范正文。",
-      "status": "reviewed",
-      "summary": "Verilog 代码注释命名规范的权威规则书。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "Verilog 代码注释命名规范的权威规则书。",
+      "title": "Verilog Code Comment Naming Standard"
     },
     {
       "content_sha256": "64e5d42b48c5cd09c715ed77b44a417a3f38c93e9c48d2a82e418b09beff6238",
       "id": "document.references-rules-verilog-comment-placement",
+      "keywords": [
+        "comment",
+        "placement",
+        "entity",
+        "FSM",
+        "instance"
+      ],
       "path": "references/rules/verilog-comment-placement.md",
       "responsibility": "定义模块实体、过程、FSM、实例和生成块的语义注释放置合同。",
-      "status": "reviewed",
-      "summary": "Verilog 语义注释放置规则。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "Verilog 语义注释放置规则。",
+      "title": "Verilog Comment Placement"
     },
     {
       "content_sha256": "5fbadb2922ef227799e74668b8f4169641fd8499bd138fb8ed5a21612baadb03",
       "id": "document.references-rules-verilog-pattern-templates",
+      "keywords": [
+        "patterns",
+        "templates",
+        "RTL",
+        "reuse"
+      ],
       "path": "references/rules/verilog-pattern-templates.md",
       "responsibility": "定义从本地 RTL 蒸馏的紧凑结构模式及禁止大段复制的边界。",
-      "status": "reviewed",
-      "summary": "可复用 Verilog 结构模式指引。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "可复用 Verilog 结构模式指引。",
+      "title": "Verilog Pattern Templates"
     },
     {
       "content_sha256": "95db6826c886264131acb1d6fc0623923efbfd2a03bdcac896b6e6842821ae74",
       "id": "document.references-rules-verilog-quality-gates",
+      "keywords": [
+        "VG",
+        "catalog",
+        "severity",
+        "schema",
+        "quality"
+      ],
       "path": "references/rules/verilog-quality-gates.md",
       "responsibility": "定义 VG 规则目录、严重度、结果状态、统一执行和报告 schema。",
-      "status": "reviewed",
-      "summary": "统一 Verilog VG 质量门禁合同。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "统一 Verilog VG 质量门禁合同。",
+      "title": "Verilog Quality Gates"
     },
     {
-      "content_sha256": "0f8be7427686c896ae96c681fefeec61bebe7b3097f61f15af4fbda78302e39a",
+      "content_sha256": "47ba6878553ba4213f51ba623d41ec19d0f8703b4e7fdefcc24a7f32c8ca7aa7",
       "id": "document.references-skill-script-guide",
+      "keywords": [
+        "SQLite",
+        "FTS5",
+        "registry",
+        "query",
+        "governance"
+      ],
       "path": "references/skill/script-guide.md",
       "responsibility": "定义 SQLite 注册表查询、构建、文档治理与命令分类的紧凑入口。",
-      "status": "reviewed",
-      "summary": "自包含命令和文档注册表使用指南。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "自包含命令和文档注册表使用指南。",
+      "title": "Script Guide"
     },
     {
       "content_sha256": "0e721cb294758d59d9cc243aba0e2e0618f5072d8803a8621e1b209afd62a78c",
       "id": "document.references-skill-skill-standards",
+      "keywords": [
+        "skill",
+        "frontmatter",
+        "resources",
+        "progressive disclosure"
+      ],
       "path": "references/skill/skill-standards.md",
       "responsibility": "定义技能 frontmatter、资源布局、渐进披露、自包含和评测要求。",
-      "status": "reviewed",
-      "summary": "readable-verilog-generator 技能包装标准。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "readable-verilog-generator 技能包装标准。",
+      "title": "Skill Standards"
     },
     {
       "content_sha256": "63c007e68ed32ba5dfdb47554dff9d55cf56fe0f55d4c55bebed95e295b5f2b6",
       "id": "document.references-workflows-verilog-dispatcher",
+      "keywords": [
+        "dispatcher",
+        "route",
+        "delivery matrix",
+        "repair",
+        "language"
+      ],
       "path": "references/workflows/verilog_dispatcher.md",
       "responsibility": "定义 Verilog 任务分类、公开交付矩阵、语言路由与安全修复边界。",
-      "status": "reviewed",
-      "summary": "Verilog 请求调度与交付边界。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "Verilog 请求调度与交付边界。",
+      "title": "Verilog Dispatcher"
     },
     {
       "content_sha256": "4317c60849897b406699e4a565e9ef3a84a1ba1ddbff34bac4aa160c7c2ba73b",
       "id": "document.references-workflows-workflow-contracts",
+      "keywords": [
+        "workflow",
+        "artifacts",
+        "status",
+        "resume",
+        "trace"
+      ],
       "path": "references/workflows/workflow-contracts.md",
       "responsibility": "定义运行目录、固定阶段、交付状态、已有 RTL 子流、恢复和 trace 语义。",
-      "status": "reviewed",
-      "summary": "Verilog 工作流产物与状态合同。"
+      "source_anchor": "",
+      "status": "current",
+      "summary": "Verilog 工作流产物与状态合同。",
+      "title": "Workflow Contracts"
     }
   ],
-  "schema_version": 1,
+  "schema_version": 2,
   "status": "current"
 }

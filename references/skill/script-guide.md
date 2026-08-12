@@ -1,6 +1,6 @@
 # Script Guide
 
-Detailed commands are registered as structured JSON under `config/registry/`. JSON is the only editable registry source. The generated `config/registry/registry.sqlite3` is a local SQLite FTS5 trigram index for Chinese and English retrieval; never edit it manually or use it to overwrite JSON.
+Detailed commands are registered under `config/registry/commands/`, while workflow composition lives in `config/registry/workflows/catalog.json`. Document responsibilities and search metadata have one editable owner in `config/registry/documents/catalog.json`; current duplicate and interface decisions live in `config/registry/governance/reviews.json`. The generated `config/registry/registry.sqlite3` is a local SQLite FTS5 trigram index for Chinese and English retrieval at the agents-md-generator-compliant path; never edit it manually or use it to overwrite JSON.
 
 ## Ask For Usage
 
@@ -15,7 +15,7 @@ Exit codes are:
 
 ## Build The Index
 
-After changing any command, workflow, document, knowledge, migration, or governance JSON, check or rebuild the generated index:
+After changing any command, workflow, document catalog, or governance review JSON, check or rebuild the generated index:
 
 ```text
 python -m scripts.python.registry.build_registry .
@@ -36,7 +36,7 @@ python -m scripts.python.registry.manage_document_registry check . --json
 python -m scripts.python.registry.manage_document_registry finalize . --write [--confirm-user] --json
 ```
 
-`status`, `scan`, and `check` are read-only. `init` requires explicit registration authorization. `finalize` writes only after Agent review of document responsibilities, knowledge pointers, duplicate decisions, interface mappings, and current hashes. `--confirm-user` is required only when an adjudication is uncertain and has been returned to the user. Markdown remains authoritative throughout.
+`status`, `scan`, and `check` are read-only. `init` requires explicit registration authorization. `finalize` writes only after Agent review of document responsibilities, search metadata, duplicate decisions, interface mappings, and current hashes. Knowledge query rows are derived from the document catalog rather than maintained as a second JSON source. `--confirm-user` is required only when an adjudication is uncertain and has been returned to the user. Markdown remains authoritative throughout.
 
 Exact or fuzzy similarity is a review signal, not permission to delete text. Consolidate only equivalent statements into a named authoritative document. Keep structural repetition such as table-of-contents headings and rulebook separators when it serves document navigation or parsing. Preserve unique inputs, outputs, stop conditions, risk boundaries, and evidence semantics.
 

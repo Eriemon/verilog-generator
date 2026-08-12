@@ -8,7 +8,7 @@
       "entrypoint": "scripts.python.registry.build_registry",
       "subcommand": "",
       "title": "检查或构建本地命令检索索引",
-      "summary": "验证全部 JSON 注册源、文档治理源、SQLite schema、来源摘要和记录计数；只有 --write 才原子重建 registry.sqlite3。",
+      "summary": "验证规范 JSON 注册源、文档治理源、SQLite schema、来源摘要和记录计数；只有 --write 才原子重建 registry.sqlite3。",
       "when_to_use": "修改 config/registry 下任一 JSON 事实源后，或验证 SQLite 没有漂移时。",
       "aliases": {"zh": ["构建命令注册表", "检查 SQLite 索引", "重建本地 RAG"], "en": ["build command registry", "check SQLite index", "rebuild local RAG"]},
       "parameters": [
@@ -53,7 +53,7 @@
       "entrypoint": "scripts.python.registry.manage_document_registry",
       "subcommand": "<operation>",
       "title": "管理本技能文档注册化生命周期",
-      "summary": "在显式启用后扫描 SKILL.md 与 references Markdown，登记唯一职责、知识指针、重复裁决、接口映射和当前正文摘要。",
+      "summary": "在显式启用后扫描 SKILL.md 与 references Markdown，由单一文档目录登记职责、检索元数据和正文摘要，并维护当前重复与接口裁决。",
       "when_to_use": "用户明确要求启用、检查、更新或完成当前技能的 instruction/document registration 时。",
       "aliases": {"zh": ["启用文档注册", "检查文档重复", "完成知识登记"], "en": ["enable document registry", "check document duplicates", "finalize knowledge registration"]},
       "parameters": [

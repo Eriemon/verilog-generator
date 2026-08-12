@@ -55,7 +55,11 @@ def parse_args(list_arguments: list[str] | None = None) -> argparse.Namespace:
     object_parser.add_argument("skill_dir", nargs="?", type=Path)
 
     # 写入开关是唯一允许替换数据库的显式信号。
-    object_parser.add_argument("--write", action="store_true", help="Rebuild registry.sqlite3 from JSON sources.")
+    object_parser.add_argument(
+        "--write",
+        action="store_true",
+        help="Rebuild the generated SQLite registry from JSON sources.",
+    )
 
     # 返回解析结果供主编排器选择模式。
     return object_parser.parse_args(list_arguments)

@@ -28,10 +28,10 @@
     {
       "id": "workflow.registry-update",
       "title": "命令与文档注册表更新闭环",
-      "summary": "复核 Markdown 语义、更新 JSON 事实源、裁决重复和接口、重建 SQLite 并运行问询与覆盖测试。",
+      "summary": "复核 Markdown 语义、更新规范 JSON 事实源和当前 reviews、重建 SQLite 并运行问询与覆盖测试。",
       "aliases": {"zh": ["更新命令注册表", "文档语义去重流程"], "en": ["update command registry", "semantic document deduplication workflow"]},
       "steps": ["registry.document-governance", "registry.build", "registry.ask", "validation.skill"],
-      "boundaries": ["JSON 是唯一可编辑注册源", "Markdown 是知识正文权威源", "只去除等价重复，不删除唯一语义"]
+      "boundaries": ["文档路径、哈希和检索元数据只由 catalog 编辑维护", "Markdown 是知识正文权威源", "只去除等价重复，不删除唯一语义"]
     }
   ]
 }

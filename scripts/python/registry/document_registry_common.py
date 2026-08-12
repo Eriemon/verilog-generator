@@ -13,6 +13,9 @@ from pathlib import Path
 import re
 from typing import Any
 
+# 统一投影器保证生命周期检查与 SQLite 构建使用相同知识记录。
+from .registry_common import knowledge_records_from_documents
+
 # 默认相似度阈值在不同技能之间保持同一候选口径。
 FLOAT_DEFAULT_SIMILARITY_THRESHOLD = 0.78  # 模糊重复候选最低相似度。
 
@@ -23,14 +26,13 @@ INT_DEFAULT_MINIMUM_CHARACTERS = 80  # 模糊比较最小规范化字符数。
 OPTION_PATTERN = re.compile(r"--[a-z][a-z0-9-]*")  # CLI 长选项匹配规则。
 
 # 配置文件名是判断技能是否显式启用文档门禁的唯一来源。
-STR_GOVERNANCE_CONFIG_PATH = "config/registry/document-governance.json"  # 文档门禁配置相对路径。
+STR_GOVERNANCE_CONFIG_PATH = "config/registry/governance/config.json"  # 文档门禁配置相对路径。
 
-# 初始化会复制这四份可发布 JSON Schema 到目标技能注册根。
+# 初始化会复制三份可发布 JSON Schema 到目标技能注册根。
 TUPLE_DOCUMENT_SCHEMA_FILES = (  # 文档治理可发布 schema 文件名。
-    "document-governance.schema.json",  # 可选门禁配置 schema。
-    "document.schema.json",  # 文档职责目录 schema。
-    "knowledge.schema.json",  # 知识指针索引 schema。
-    "migration.schema.json",  # 首次迁移复核 schema。
+    "schemas/governance-config.schema.json",  # 可选门禁配置 schema。
+    "schemas/document-catalog.schema.json",  # 文档和知识元数据目录 schema。
+    "schemas/governance-reviews.schema.json",  # 当前复核裁决 schema。
 )
 
 # 统一写入受管 JSON。
@@ -500,11 +502,11 @@ def document_id(str_relative_path: str) -> str:
     return f"document.{str_slug}"
 
 # 构造待复核目录草案。
-def initial_catalog_records(dict_scan: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """构造文档职责草案和知识指针草案。
+def initial_catalog_records(dict_scan: dict[str, Any]) -> list[dict[str, Any]]:
+    """构造同时拥有职责与知识元数据的文档目录草案。
 
     参数：dict_scan 为当前技能扫描报告。
-    返回：文档目录记录和知识指针记录两个列表。
+    返回：一文档一记录的目录草案列表。
     """
 
     # 每份 Markdown 获得一条待 Agent 复核的唯一职责记录。
@@ -514,29 +516,17 @@ def initial_catalog_records(dict_scan: dict[str, Any]) -> tuple[list[dict[str, A
             "path": dict_document["path"],  # 权威 Markdown 路径。
             "responsibility": "PENDING_AGENT_REVIEW",  # 待填写唯一职责。
             "summary": "PENDING_AGENT_REVIEW",  # 待填写检索摘要。
+            "title": dict_document["path"],  # 初始标题使用稳定文档路径。
+            "keywords": [],  # 待填写检索关键词。
+            "source_anchor": "",  # 文档级知识入口不使用锚点。
             "content_sha256": dict_document["sha256"],  # 初始化正文摘要。
             "status": "draft",  # Agent 复核前状态。
         }
         for dict_document in dict_scan["documents"]  # 遍历受管文档事实。
     ]
 
-    # 知识记录只保存权威正文指针和待复核摘要。
-    list_knowledge_records = [  # 文档级知识指针草案。
-        {
-            "id": str(dict_document["id"]).replace("document.", "knowledge.", 1),  # 知识标识。
-            "kind": "knowledge",  # 查询命名空间。
-            "title": dict_document["path"],  # 初始路径标题。
-            "summary": "PENDING_AGENT_REVIEW",  # 待填写语义摘要。
-            "source_path": dict_document["path"],  # 知识指针指向的正文路径。
-            "source_anchor": "",  # 文档级指针没有锚点。
-            "content_sha256": dict_document["content_sha256"],  # 权威正文摘要。
-            "keywords": [],  # 待填写检索关键词。
-        }
-        for dict_document in list_catalog_documents  # 每份文档对应一个知识指针。
-    ]
-
-    # 两类草案记录交给初始化载荷构造器。
-    return list_catalog_documents, list_knowledge_records
+    # 单一目录草案交给初始化载荷构造器。
+    return list_catalog_documents
 
 # 构造迁移复核任务。
 def initial_migration_reviews(dict_scan: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
@@ -606,11 +596,11 @@ def document_schema_payloads() -> dict[str, dict[str, Any]]:
     # 结果映射保留固定文件名。
     dict_schemas: dict[str, dict[str, Any]] = {}  # schema 文件名到载荷。
 
-    # 四份模板逐一读取并验证顶层结构。
+    # 三份模板逐一读取并验证顶层结构。
     for str_schema_name in TUPLE_DOCUMENT_SCHEMA_FILES:
 
         # 当前模板路径不得从目标技能推导。
-        path_schema_source = path_owner_registry_root / str_schema_name  # 当前 schema 模板路径。
+        path_schema_source = path_owner_registry_root / Path(str_schema_name)  # 当前 schema 模板路径。
 
         # UTF-8 JSON 保留 schema 标题和约束。
         object_schema = json.loads(path_schema_source.read_text(encoding="utf-8"))  # 当前 schema 载荷。
@@ -639,45 +629,32 @@ def initial_governance_payloads(path_skill_root: Path) -> dict[str, dict[str, An
     # 当前文档字节状态绑定全部初始化草案。
     dict_scan = scan_skill_documents(path_skill_root)  # 首次文档扫描报告。
 
-    # 职责记录和知识指针由同一文档集合生成。
-    tuple_initial_records = initial_catalog_records(dict_scan)  # 文档与知识草案二元组。
-
-    # 元组首项是文档职责记录。
-    list_catalog_documents = tuple_initial_records[0]  # 文档目录草案。
-
-    # 元组次项是知识指针记录。
-    list_knowledge_records = tuple_initial_records[1]  # 知识索引草案。
+    # 职责与知识检索元数据由同一文档目录记录拥有。
+    list_catalog_documents = initial_catalog_records(dict_scan)  # 文档目录草案。
 
     # 重复和接口事实保持待 Agent 裁决。
     dict_reviews = initial_migration_reviews(dict_scan)  # 首次迁移复核队列。
 
     # 业务 JSON 文件使用固定相对布局。
     dict_payloads = {  # 文档治理初始化文件集合。
-        "document-governance.json": {  # 可选门禁主配置。
-            "schema_version": 1,  # 文档治理配置版本。
+        "governance/config.json": {  # 可选门禁主配置。
+            "schema_version": 2,  # 文档治理配置版本。
             "enabled": True,  # 用户显式启用后的状态。
             "status": "draft",  # finalize 前保持草案。
             "catalog": "documents/catalog.json",  # 主配置引用的职责目录。
-            "knowledge_index": "knowledge/index.json",  # 主配置引用的知识索引。
-            "migration": "migrations/initial-document-registration.json",  # 首次迁移记录。
+            "reviews": "governance/reviews.json",  # 主配置引用的当前裁决记录。
             "similarity_policy": dict_scan["similarity_policy"],  # 固定相似度策略。
             "scan_scope": ["SKILL.md", "references/**/*.md"],  # 受管 Markdown 边界。
         },
         "documents/catalog.json": {  # 文档唯一职责目录。
-            "schema_version": 1,  # 文档目录版本。
+            "schema_version": 2,  # 文档目录版本。
             "status": "draft",  # 文档职责目录草案状态。
             "documents": list_catalog_documents,  # 文档职责记录。
         },
-        "knowledge/index.json": {  # 权威 Markdown 知识指针索引。
-            "schema_version": 1,  # 知识索引版本。
-            "status": "draft",  # 知识指针索引草案状态。
-            "records": list_knowledge_records,  # 权威 Markdown 指针。
-        },
-        "migrations/initial-document-registration.json": {  # 首次注册的语义复核证据。
-            "schema_version": 1,  # 迁移记录版本。
+        "governance/reviews.json": {  # 当前语义复核与接口映射证据。
+            "schema_version": 2,  # 当前复核记录版本。
             "status": "pending_agent_review",  # Agent 尚未裁决。
             "user_confirmation": "not_required",  # 当前无确认请求。
-            "source_documents": dict_scan["documents"],  # 初始化源摘要。
             **dict_reviews,  # 三类复核队列。
         },
     }
@@ -709,8 +686,8 @@ def initialize_document_governance(path_skill_root: Path) -> dict[str, Any]:
     # 全部草案载荷在任何写入前构造完成。
     dict_payloads = initial_governance_payloads(path_skill_root)  # 初始化 JSON 文件集合。
 
-    # 注册根由固定配置路径的父目录确定。
-    path_registry_root = path_config.parent  # 文档注册治理根目录。
+    # 配置位于 governance 子目录，其父目录的父目录才是 registry 根。
+    path_registry_root = path_config.parents[1]  # 文档注册治理根目录。
 
     # 每份文件使用独立原子替换并按路径稳定写入。
     for str_relative_path, dict_payload in sorted(dict_payloads.items()):
@@ -786,7 +763,7 @@ def load_governance_documents(path_skill_root: Path) -> dict[str, Any]:
     """加载已启用技能的文档治理文件集合。
 
     参数：path_skill_root 为已配置技能根目录。
-    返回：包含路径和四份 JSON 对象的映射。
+    返回：包含路径、治理配置、文档目录和当前裁决的映射。
     异常：配置未启用、路径越界或文件无效时抛出 ValueError。
     """
 
@@ -802,20 +779,19 @@ def load_governance_documents(path_skill_root: Path) -> dict[str, Any]:
     # 主配置路径来自已验证启用状态。
     path_config = Path(str(dict_status["config"]))  # 已启用主配置的绝对路径。
 
-    # 配置父目录约束所有相对治理文件。
-    path_registry_root = path_config.parent  # 文档治理 registry 根目录。
+    # 配置位于 governance 子目录，registry 根用于解析全部相对引用。
+    path_registry_root = path_config.parents[1]  # 文档治理 registry 根目录。
 
-    # 配置对象提供目录、知识和迁移相对路径。
+    # 配置对象提供文档目录和当前裁决相对路径。
     dict_governance = dict_status["governance"]  # 文档治理配置对象。
 
-    # 三个引用字段必须是非空相对路径文本。
+    # 两个引用字段必须是非空相对路径文本。
     dict_paths: dict[str, Path] = {}  # 治理文档逻辑名称到路径。
 
     # 固定逻辑名称映射到配置字段。
     for str_label, str_field_name in (
         ("catalog", "catalog"),
-        ("knowledge_index", "knowledge_index"),
-        ("migration", "migration"),
+        ("reviews", "reviews"),
     ):
 
         # 缺失或空路径不能形成可审计闭环。
@@ -830,7 +806,7 @@ def load_governance_documents(path_skill_root: Path) -> dict[str, Any]:
         # 安全解析后的路径供统一读取。
         dict_paths[str_label] = resolve_governance_file(  # 当前逻辑名称的安全文件路径。
             path_registry_root,  # 文档治理注册根。
-            object_relative_path,  # 当前 catalog、knowledge 或 migration 引用值。
+            object_relative_path,  # 当前 catalog 或 reviews 引用值。
         )
 
     # 返回路径与载荷便于 finalize 原位更新状态。
@@ -839,10 +815,8 @@ def load_governance_documents(path_skill_root: Path) -> dict[str, Any]:
         "governance": dict_governance,
         "catalog_path": dict_paths["catalog"],
         "catalog": read_json_object(dict_paths["catalog"], "document catalog"),
-        "knowledge_path": dict_paths["knowledge_index"],
-        "knowledge": read_json_object(dict_paths["knowledge_index"], "knowledge index"),
-        "migration_path": dict_paths["migration"],
-        "migration": read_json_object(dict_paths["migration"], "migration record"),
+        "reviews_path": dict_paths["reviews"],
+        "reviews": read_json_object(dict_paths["reviews"], "governance reviews"),
     }
 
 # 校验文档治理状态。
@@ -850,7 +824,7 @@ def validate_current_governance_status(
     dict_documents: dict[str, Any],
     bool_require_current: bool,
 ) -> None:
-    """验证四份治理文件的生命周期状态一致。
+    """验证三份治理文件的生命周期状态一致。
 
     参数：dict_documents 为治理文件集合；bool_require_current 控制是否要求完成态。
     返回：无业务返回值，状态合法时直接结束。
@@ -869,20 +843,14 @@ def validate_current_governance_status(
         # 草案配置不能通过持续门禁。
         raise ValueError("> ERR: [Python] document governance status is not current")
 
-    # 目录与知识索引必须和主配置同步完成。
+    # 目录与当前裁决必须和主配置同步完成。
     if (
         dict_documents["catalog"].get("status") != "current"
-        or dict_documents["knowledge"].get("status") != "current"
+        or dict_documents["reviews"].get("status") != "current"
     ):
 
         # 部分完成状态表示 finalize 未闭环。
         raise ValueError("> ERR: [Python] document governance files are not current")
-
-    # 迁移记录使用 finalized 表示裁决不可被脚本覆盖。
-    if dict_documents["migration"].get("status") != "finalized":
-
-        # 未完成迁移不能作为持久治理证据。
-        raise ValueError("> ERR: [Python] document migration is not finalized")
 
 # 校验文档目录记录。
 def validate_catalog_records(
@@ -926,11 +894,11 @@ def validate_catalog_records(
         # 不自动修改目录，保留新增、删除或重复证据。
         raise ValueError("> ERR: [Python] document set drift detected")
 
-    # 每份文档必须具备 Agent 复核的职责、摘要和当前哈希。
+    # 每份文档必须具备 Agent 复核的职责、检索元数据和当前哈希。
     for str_path, dict_catalog_document in sorted(dict_catalog_by_path.items()):
 
-        # 两个语义字段均不得保留脚本占位符。
-        for str_field_name in ("responsibility", "summary"):
+        # 三个语义字段均不得保留脚本占位符。
+        for str_field_name in ("responsibility", "summary", "title"):
 
             # 当前字段值用于统一非空检查。
             object_value = dict_catalog_document.get(str_field_name)  # 当前语义字段值。
@@ -944,6 +912,25 @@ def validate_catalog_records(
 
                 # 诊断定位具体文档和字段。
                 raise ValueError(f"> ERR: [Python] document {str_path} has pending {str_field_name}")
+
+        # 关键词必须保留至少一个非空检索词。
+        object_keywords = dict_catalog_document.get("keywords")  # 当前文档检索关键词
+
+        # 空列表或非字符串元素会削弱知识问询召回。
+        if (
+            not isinstance(object_keywords, list)
+            or not object_keywords
+            or not all(isinstance(object_keyword, str) and object_keyword.strip() for object_keyword in object_keywords)
+        ):
+
+            # 诊断定位缺少知识元数据的文档。
+            raise ValueError(f"> ERR: [Python] document {str_path} has invalid keywords")
+
+        # 文档级锚点允许空文本，但类型必须稳定。
+        if not isinstance(dict_catalog_document.get("source_anchor"), str):
+
+            # 非字符串锚点不能进入 SQLite 检索载荷。
+            raise ValueError(f"> ERR: [Python] document {str_path} has invalid source_anchor")
 
         # 登记摘要必须等于当前权威正文摘要。
         if dict_catalog_document.get("content_sha256") != dict_scan_by_path[str_path]["sha256"]:
@@ -1022,24 +1009,24 @@ def validate_knowledge_records(
 
 # 校验重复内容裁决。
 def validate_duplicate_reviews(
-    dict_migration: dict[str, Any],
+    dict_reviews: dict[str, Any],
     dict_scan: dict[str, Any],
     *,
     bool_require_current: bool,
     bool_user_confirmed: bool,
 ) -> None:
-    """验证迁移状态和精确、模糊重复裁决。
+    """验证当前精确、模糊重复裁决。
 
-    参数：dict_migration 为迁移记录；dict_scan 为实时扫描；bool_require_current 为状态模式；bool_user_confirmed 为本次确认信号。
+    参数：dict_reviews 为当前裁决记录；dict_scan 为实时扫描；bool_require_current 为状态模式；bool_user_confirmed 为本次确认信号。
     返回：无业务返回值，全部重复裁决合法时直接结束。
     异常：迁移未复核、裁决 pending 或缺少用户确认时抛出 ValueError。
     """
 
-    # finalize 前迁移必须由 Agent 标记复核完成。
-    if not bool_require_current and dict_migration.get("status") != "agent_reviewed":
+    # finalize 前裁决必须由 Agent 标记复核完成。
+    if not bool_require_current and dict_reviews.get("status") not in {"agent_reviewed", "current"}:
 
         # 脚本不得替代 Agent 语义裁决。
-        raise ValueError("> ERR: [Python] migration requires Agent review")
+        raise ValueError("> ERR: [Python] governance reviews require Agent review")
 
     # 从实时扫描重建候选身份，阻止旧裁决只凭相同数量继续通过。
     dict_expected_reviews = initial_migration_reviews(dict_scan)  # 当前候选身份和证据。
@@ -1048,13 +1035,13 @@ def validate_duplicate_reviews(
     for str_review_field in ("exact_reviews", "fuzzy_reviews"):
 
         # 没有候选时允许空列表。
-        object_reviews = dict_migration.get(str_review_field, [])  # 当前重复复核记录容器。
+        object_reviews = dict_reviews.get(str_review_field, [])  # 当前重复复核记录容器。
 
         # 非列表结构不能形成逐项审计记录。
         if not isinstance(object_reviews, list):
 
             # 诊断明确损坏字段。
-            raise ValueError(f"> ERR: [Python] migration {str_review_field} must be a list")
+            raise ValueError(f"> ERR: [Python] governance {str_review_field} must be a list")
 
         # 标识及证据必须逐项对应当前确定性扫描结果。
         dict_actual_identity: dict[str, Any] = {}  # 已持久化裁决的标识到证据映射。
@@ -1114,19 +1101,19 @@ def load_registered_commands(path_skill_root: Path) -> dict[str, dict[str, Any]]
     """
 
     # 命令清单位于文档治理配置同一 registry 根。
-    path_registry_root = governance_config_path(path_skill_root).parent  # 当前注册根目录。
+    path_registry_root = governance_config_path(path_skill_root).parents[1]  # 当前注册根目录。
 
     # manifest 是命令源集合的唯一入口。
     dict_manifest = read_json_object(path_registry_root / "manifest.json", "registry manifest")  # 命令清单。
 
-    # source_files 必须是字符串列表。
-    object_source_files = dict_manifest.get("source_files")  # 命令源相对路径容器。
+    # command_sources 必须是字符串列表。
+    object_source_files = dict_manifest.get("command_sources")  # 命令源相对路径容器。
 
     # 错误容器无法安全迭代。
     if not isinstance(object_source_files, list):
 
         # 缺失命令源清单阻止接口映射完成。
-        raise ValueError("> ERR: [Python] registry manifest source_files must be a list")
+        raise ValueError("> ERR: [Python] registry manifest command_sources must be a list")
 
     # 结果映射支持标识存在性和选项文本检查。
     dict_commands_by_id: dict[str, dict[str, Any]] = {}  # 命令标识到注册记录。
@@ -1231,18 +1218,18 @@ def validate_mapped_interface(
 # 校验接口复核记录。
 def validate_interface_reviews(
     path_skill_root: Path,
-    dict_migration: dict[str, Any],
+    dict_reviews: dict[str, Any],
     dict_scan: dict[str, Any],
 ) -> None:
     """验证脚本接口裁决覆盖和命令映射。
 
-    参数：path_skill_root 为技能根；dict_migration 为迁移记录；dict_scan 为实时扫描。
+    参数：path_skill_root 为技能根；dict_reviews 为当前裁决记录；dict_scan 为实时扫描。
     返回：无业务返回值，接口复核闭环时直接结束。
     异常：覆盖不全、裁决 pending 或映射无证据时抛出 ValueError。
     """
 
     # 接口复核数量必须与当前扫描事实一致。
-    object_interface_reviews = dict_migration.get("interface_reviews", [])  # 接口复核容器。
+    object_interface_reviews = dict_reviews.get("interface_reviews", [])  # 接口复核容器。
 
     # 错误容器不能形成逐项裁决。
     if not isinstance(object_interface_reviews, list):
@@ -1344,28 +1331,30 @@ def validate_document_governance(
     # 一次加载确保本轮使用同一组持久文件。
     dict_documents = load_governance_documents(path_skill_root)  # 当前治理文件集合。
 
-    # 四份文件生命周期状态必须一致。
+    # 三份文件生命周期状态必须一致。
     validate_current_governance_status(dict_documents, bool_require_current)
 
     # 实时扫描提供文档集合、摘要和接口事实。
     dict_scan = scan_skill_documents(path_skill_root)  # 当前权威 Markdown 事实。
 
-    # 文档目录校验返回知识索引所需路径映射。
-    dict_scan_by_path = validate_catalog_records(dict_documents["catalog"], dict_scan)  # 当前文档路径映射。
+    # 文档目录同时校验职责、知识元数据和 Markdown 哈希绑定。
+    validate_catalog_records(dict_documents["catalog"], dict_scan)
 
-    # 知识记录必须覆盖并绑定全部权威 Markdown。
-    validate_knowledge_records(dict_documents["knowledge"], dict_scan_by_path)
+    # 知识记录从已验证目录派生，供构建与调用方共享。
+    dict_documents["knowledge_records"] = knowledge_records_from_documents(  # 当前派生知识记录
+        dict_documents["catalog"]["documents"]  # 唯一文档事实源
+    )
 
     # 重复候选必须由 Agent 明确裁决。
     validate_duplicate_reviews(
-        dict_documents["migration"],  # 当前迁移复核记录。
+        dict_documents["reviews"],  # 当前治理复核记录。
         dict_scan,  # 当前重复候选身份和证据。
         bool_require_current=bool_require_current,  # 当前状态模式。
         bool_user_confirmed=bool_user_confirmed,  # 本次用户确认信号。
     )
 
     # 脚本接口事实必须进入命令注册源或明确判定非公开。
-    validate_interface_reviews(path_skill_root, dict_documents["migration"], dict_scan)
+    validate_interface_reviews(path_skill_root, dict_documents["reviews"], dict_scan)
 
     # finalize 复用实时扫描结果更新完成统计。
     dict_documents["scan"] = dict_scan  # 本轮实时扫描报告。
@@ -1395,14 +1384,11 @@ def finalize_document_governance(path_skill_root: Path, *, bool_user_confirmed: 
     # 文档职责目录同步晋级。
     dict_documents["catalog"]["status"] = "current"  # 文档目录完成态。
 
-    # 知识指针索引同步晋级。
-    dict_documents["knowledge"]["status"] = "current"  # 知识索引完成态。
-
-    # 迁移记录使用不可再自动覆盖的 finalized 状态。
-    dict_documents["migration"]["status"] = "finalized"  # 迁移记录完成态。
+    # 当前裁决同步晋级，持续门禁以后直接比较实时扫描事实。
+    dict_documents["reviews"]["status"] = "current"  # 当前裁决完成态。
 
     # 用户确认字段记录本次是否处理不确定裁决。
-    dict_documents["migration"]["user_confirmation"] = (  # 迁移确认结果。
+    dict_documents["reviews"]["user_confirmation"] = (  # 当前裁决确认结果。
         "confirmed"  # 本次获得显式用户确认。
         if bool_user_confirmed  # 当前命令携带确认信号。
         else "not_required"  # 没有候选要求额外确认。
@@ -1411,11 +1397,8 @@ def finalize_document_governance(path_skill_root: Path, *, bool_user_confirmed: 
     # 首先落盘文档职责完成态。
     write_json_file(dict_documents["catalog_path"], dict_documents["catalog"])
 
-    # 其次落盘知识指针完成态。
-    write_json_file(dict_documents["knowledge_path"], dict_documents["knowledge"])
-
-    # 迁移证据在主配置之前持久化。
-    write_json_file(dict_documents["migration_path"], dict_documents["migration"])
+    # 当前裁决在主配置之前持久化。
+    write_json_file(dict_documents["reviews_path"], dict_documents["reviews"])
 
     # 最后更新主配置，避免提前暴露 current。
     write_json_file(dict_documents["config_path"], dict_documents["governance"])
@@ -1426,6 +1409,6 @@ def finalize_document_governance(path_skill_root: Path, *, bool_user_confirmed: 
         "enabled": True,
         "status": "current",
         "document_count": len(dict_documents["catalog"]["documents"]),
-        "knowledge_count": len(dict_documents["knowledge"]["records"]),
-        "user_confirmation": dict_documents["migration"]["user_confirmation"],
+        "knowledge_count": len(dict_documents["knowledge_records"]),
+        "user_confirmation": dict_documents["reviews"]["user_confirmation"],
     }

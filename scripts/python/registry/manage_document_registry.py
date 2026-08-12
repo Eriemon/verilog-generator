@@ -295,7 +295,7 @@ def main(list_arguments: list[str] | None = None) -> int:
                 "status": "current",
                 "config": dict_status["config"],
                 "document_count": len(dict_documents["catalog"]["documents"]),
-                "knowledge_count": len(dict_documents["knowledge"]["records"]),
+                "knowledge_count": len(dict_documents["knowledge_records"]),
             }
         )
 

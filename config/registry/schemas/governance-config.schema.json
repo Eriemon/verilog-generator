@@ -1,17 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "document-governance.schema.json",
+  "$id": "governance-config.schema.json",
   "title": "Optional document governance configuration",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "enabled", "status", "catalog", "knowledge_index", "migration", "similarity_policy", "scan_scope"],
+  "required": ["schema_version", "enabled", "status", "catalog", "reviews", "similarity_policy", "scan_scope"],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "enabled": {"const": true},
     "status": {"enum": ["draft", "current"]},
     "catalog": {"const": "documents/catalog.json"},
-    "knowledge_index": {"const": "knowledge/index.json"},
-    "migration": {"const": "migrations/initial-document-registration.json"},
+    "reviews": {"const": "governance/reviews.json"},
     "similarity_policy": {
       "type": "object",
       "additionalProperties": false,

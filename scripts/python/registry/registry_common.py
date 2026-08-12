@@ -63,16 +63,69 @@ def registry_root(path_skill_root: Path) -> Path:
     # JSON 和生成数据库共同位于固定配置子目录。
     return path_skill_root / "config" / "registry"
 
-# 数据库寻址器隔离生成工件的固定文件名。
-def database_path(path_skill_root: Path) -> Path:
-    """返回生成式 SQLite 索引路径。
+# manifest 寻址器为构建、查询和测试提供同一入口文件。
+def manifest_path(path_skill_root: Path) -> Path:
+    """返回技能注册表 manifest 路径。
 
     参数：path_skill_root 为技能源码根目录。
-    返回：registry.sqlite3 文件路径。
+    返回：config/registry/manifest.json 文件路径。
     """
 
-    # 数据库与 JSON 同目录，便于安装包完整携带。
-    return registry_root(path_skill_root) / "registry.sqlite3"
+    # manifest 固定存放在注册根，其他路径均由其相对声明解析。
+    return registry_root(path_skill_root) / "manifest.json"
+
+# 通用注册路径解析器负责非 JSON 生成物的根边界约束。
+def resolve_registry_path(path_registry_root: Path, str_relative_path: str) -> Path:
+    """解析并约束 manifest 声明的任意注册表相对路径。
+
+    参数：path_registry_root 为注册根；str_relative_path 为 manifest 相对路径。
+    返回：位于注册根目录内的规范化路径。
+    异常：绝对路径或父目录逃逸时抛出 RegistryError。
+    """
+
+    # 相对路径对象用于独立拒绝绝对路径输入。
+    path_relative = Path(str_relative_path)  # manifest 声明的相对路径
+
+    # 根目录和候选路径都规范化后再检查父子关系。
+    path_root_resolved = path_registry_root.resolve()  # 规范化注册根目录
+
+    # 候选路径允许尚未生成，但不能逃逸注册根。
+    path_target_resolved = (path_registry_root / path_relative).resolve()  # 规范化候选路径
+
+    # manifest 不得把读写操作引向技能注册目录之外。
+    if path_relative.is_absolute() or not path_target_resolved.is_relative_to(path_root_resolved):
+
+        # 错误保留原始相对值，便于直接修复 manifest。
+        raise RegistryError(f"> ERR: [Python] registry path is outside registry root: {str_relative_path}")
+
+    # 返回已通过目录边界检查的路径。
+    return path_target_resolved
+
+# manifest 加载入口保持技能根调用方式稳定。
+def load_manifest(path_skill_root: Path) -> dict[str, Any]:
+    """读取并校验当前技能的注册表 manifest。
+
+    参数：path_skill_root 为技能源码根目录。
+    返回：通过结构校验的 manifest 对象。
+    异常：文件、JSON 或字段合同无效时抛出 RegistryError。
+    """
+
+    # 既有清单校验器继续承担字段与版本验证。
+    return load_registry_manifest(registry_root(path_skill_root))
+
+# 数据库寻址器从 manifest 解析生成工件位置。
+def database_path(path_skill_root: Path) -> Path:
+    """返回 manifest 声明的生成式 SQLite 索引路径。
+
+    参数：path_skill_root 为技能源码根目录。
+    返回：位于注册根内的 SQLite 文件路径。
+    """
+
+    # manifest 是生成数据库相对路径的唯一配置所有者。
+    dict_manifest = load_manifest(path_skill_root)  # 已通过结构校验的注册清单
+
+    # 清单字段经过加载器验证后仍显式转换为路径文本。
+    return resolve_registry_path(registry_root(path_skill_root), str(dict_manifest["generated_database"]))
 
 # 安全路径解析器阻止清单把构建器引向注册源目录外部。
 def resolve_registry_source(path_registry_root: Path, str_relative_path: str) -> Path:
@@ -83,22 +136,8 @@ def resolve_registry_source(path_registry_root: Path, str_relative_path: str) ->
     异常：路径逃逸根目录或后缀不是 JSON 时抛出 RegistryError。
     """
 
-    # 相对路径对象用于独立拒绝绝对路径输入。
-    path_relative = Path(str_relative_path)  # 清单声明的相对路径
-
-    # 两端都规范化后再检查父子关系，覆盖 .. 路径段。
-    path_root_resolved = path_registry_root.resolve()  # 规范化注册源根目录
-
-    # 候选路径规范化用于识别父目录逃逸。
-    path_source_resolved = (path_registry_root / path_relative).resolve()  # 规范化候选路径
-
-    # 绝对路径和父目录逃逸都违反 JSON 源边界。
-    if path_relative.is_absolute() or not path_source_resolved.is_relative_to(path_root_resolved):
-
-        # 错误保留原始清单值，便于定位不安全记录。
-        raise RegistryError(
-            f"> ERR: [Python] registry source is outside registry root: {str_relative_path}"
-        )
+    # 通用路径门禁先阻止绝对路径和父目录逃逸。
+    path_source_resolved = resolve_registry_path(path_registry_root, str_relative_path)  # 规范化 JSON 路径
 
     # 注册源只接受 JSON，避免把任意文件内容纳入摘要。
     if path_source_resolved.suffix.casefold() != ".json":
@@ -490,7 +529,7 @@ def load_registry_manifest(path_registry_root: Path) -> dict[str, Any]:
     """读取并校验命令注册清单基础字段。
 
     参数：path_registry_root 为 config/registry 目录。
-    返回：已验证 schema 版本、command_schema 和 source_files 的清单。
+    返回：已验证 schema 版本、规范源路径和生成数据库路径的清单。
     异常：文件、JSON 或清单字段无效时抛出 RegistryError。
     """
 
@@ -521,65 +560,98 @@ def load_registry_manifest(path_registry_root: Path) -> dict[str, Any]:
         # 禁止猜测跨版本兼容性。
         raise RegistryError("> ERR: [Python] registry manifest schema_version is incompatible")
 
-    # command_schema 必须是非空相对路径文本。
-    object_command_schema = object_manifest.get("command_schema")  # 命令 schema 配置值
+    # 命令源必须是至少包含一个安全相对路径的列表。
+    object_command_sources = object_manifest.get("command_sources")  # 命令分类源路径
 
-    # 错误类型不能进入路径解析器。
-    if not isinstance(object_command_schema, str) or not object_command_schema:
+    # 空命令源无法生成公开入口索引。
+    if not is_string_list(object_command_sources, bool_allow_empty=False):
 
-        # 缺失结构合同阻止加载。
-        raise RegistryError("> ERR: [Python] registry manifest command_schema must be a string")
+        # 诊断绑定规范化后的字段名称。
+        raise RegistryError("> ERR: [Python] registry manifest command_sources must be a string list")
 
-    # source_files 必须是非空字符串列表。
-    object_source_files = object_manifest.get("source_files")  # 命令与工作流源路径容器
+    # 唯一工作流源使用一个非空相对路径文本。
+    object_workflow_source = object_manifest.get("workflow_source")  # 工作流目录路径
 
-    # 空清单不能产生可用索引。
-    if not isinstance(object_source_files, list) or not object_source_files:
+    # 多文件或空值都违反单一工作流所有权合同。
+    if not isinstance(object_workflow_source, str) or not object_workflow_source.strip():
 
-        # 诊断明确 source_files 容器合同。
-        raise RegistryError("> ERR: [Python] registry manifest source_files must be a non-empty list")
+        # 调用方应修复 manifest 而不是猜测默认文件。
+        raise RegistryError("> ERR: [Python] registry manifest workflow_source must be a string")
 
-    # 每个源路径必须是非空文本。
-    if not all(isinstance(object_path, str) and object_path for object_path in object_source_files):
+    # schema 映射必须为五类活动源分别指定所有者。
+    object_schema_sources = object_manifest.get("schema_sources")  # 活动 JSON Schema 路径映射
 
-        # 禁止隐式字符串化路径。
-        raise RegistryError("> ERR: [Python] registry manifest source_files must contain strings")
+    # 严格键集合防止旧 schema 字段继续作为隐式输入。
+    set_required_schema_keys = {
+        "command",  # 命令记录结构
+        "workflow",  # 工作流记录结构
+        "document_catalog",  # 文档目录结构
+        "governance_config",  # 治理配置结构
+        "governance_reviews",  # 当前裁决结构
+    }  # 规范 schema 职责集合
+
+    # 每个 schema 路径都必须是非空文本。
+    if (
+        not isinstance(object_schema_sources, dict)
+        or set(object_schema_sources) != set_required_schema_keys
+        or not all(
+            isinstance(object_path, str) and object_path.strip()
+            for object_path in object_schema_sources.values()
+        )
+    ):
+
+        # 结构偏差必须在加载任何源文件前阻断。
+        raise RegistryError("> ERR: [Python] registry manifest schema_sources is invalid")
+
+    # 生成数据库路径必须由 manifest 显式声明。
+    object_generated_database = object_manifest.get("generated_database")  # SQLite 相对路径
+
+    # 空值不能进入生成物安全路径解析。
+    if not isinstance(object_generated_database, str) or not object_generated_database.strip():
+
+        # 缺失生成路径会让查询器与构建器分叉。
+        raise RegistryError("> ERR: [Python] manifest generated_database must be a non-empty string")
 
     # 类型收窄后的清单供后续加载步骤复用。
     return object_manifest
 
 # 命令 schema 加载器验证可发布结构文件可读取。
-def validate_command_schema(path_registry_root: Path, dict_manifest: dict[str, Any]) -> None:
-    """验证 manifest 声明的命令 JSON Schema。
+def validate_command_workflow_schemas(path_registry_root: Path, dict_manifest: dict[str, Any]) -> None:
+    """验证 manifest 声明的命令与工作流 JSON Schema。
 
     参数：path_registry_root 为注册根；dict_manifest 为已验证清单。
     返回：无业务返回值，schema 为 JSON 对象时直接结束。
     异常：路径、文件或 JSON 无效时抛出 RegistryError。
     """
 
-    # 安全路径解析阻止 schema 逃逸注册根。
-    path_command_schema = resolve_registry_source(  # manifest 声明的命令 schema 安全绝对路径。
-        path_registry_root,  # 当前注册根目录。
-        str(dict_manifest["command_schema"]),  # command_schema 相对路径字段值。
-    )
+    # 两份运行时结构 schema 都必须可读取且保持 JSON 对象顶层。
+    for str_schema_kind in ("command", "workflow"):
 
-    # 文件和 JSON 错误转换为领域异常。
-    try:
+        # manifest 映射提供当前职责对应的安全相对路径。
+        str_relative_path = str(dict_manifest["schema_sources"][str_schema_kind])  # 当前结构 schema 路径
 
-        # 运行时字段校验与可发布 schema 共享事实边界。
-        object_command_schema = json.loads(path_command_schema.read_text(encoding="utf-8"))  # 命令 schema 载荷
+        # 安全路径解析阻止 schema 逃逸注册根。
+        path_schema = resolve_registry_source(path_registry_root, str_relative_path)  # 当前 schema 绝对路径
 
-    # 解析位置保留在错误文本中。
-    except (OSError, json.JSONDecodeError) as object_error:
+        # 文件和 JSON 错误转换为领域异常。
+        try:
 
-        # 构建器据此拒绝生成数据库。
-        raise RegistryError(f"> ERR: [Python] cannot load command schema: {object_error}") from object_error
+            # 运行时字段校验与可发布 schema 共享事实边界。
+            object_schema = json.loads(path_schema.read_text(encoding="utf-8"))  # 当前 schema 载荷
 
-    # 顶层非对象不能表达 properties 合同。
-    if not isinstance(object_command_schema, dict):
+        # 解析位置保留在错误文本中。
+        except (OSError, json.JSONDecodeError) as object_error:
 
-        # 数组或标量 schema 无效。
-        raise RegistryError("> ERR: [Python] command schema must be a JSON object")
+            # 构建器据此拒绝生成数据库。
+            raise RegistryError(
+                f"> ERR: [Python] cannot load {str_schema_kind} schema: {object_error}"
+            ) from object_error
+
+        # 顶层非对象不能表达 properties 合同。
+        if not isinstance(object_schema, dict):
+
+            # 数组或标量 schema 无效。
+            raise RegistryError("> ERR: [Python] registry schema must be a JSON object")
 
 # 分类源加载器聚合命令和工作流记录。
 def load_command_workflow_sources(
@@ -672,16 +744,16 @@ def load_registry(
     # 固定注册根约束所有清单相对路径。
     path_registry_root = registry_root(path_skill_root)  # 当前注册源目录
 
-    # 基础清单先验证 schema 版本和路径容器。
-    dict_manifest = load_registry_manifest(path_registry_root)  # 已通过结构校验的注册清单。
+    # 当前加载步骤固定命令、工作流和 schema 的唯一来源路由。
+    dict_manifest = load_registry_manifest(path_registry_root)  # 命令与工作流加载路由
 
-    # 可发布命令 schema 必须可读取。
-    validate_command_schema(path_registry_root, dict_manifest)
+    # 可发布命令与工作流 schema 必须可读取。
+    validate_command_workflow_schemas(path_registry_root, dict_manifest)
 
-    # 分类 JSON 源聚合为两类记录。
+    # 分类 JSON 和唯一工作流源按 manifest 顺序聚合为两类记录。
     tuple_registry_records = load_command_workflow_sources(  # 分类源聚合后的命令与工作流二元组。
         path_registry_root,  # 分类 JSON 的安全根目录。
-        dict_manifest["source_files"],  # manifest 中的 source_files 清单值。
+        [*dict_manifest["command_sources"], dict_manifest["workflow_source"]],  # 规范活动源清单。
     )
 
     # 元组首项是命令记录集合。
@@ -794,23 +866,58 @@ def load_document_source_objects(
     # 返回完整源对象映射。
     return dict_sources
 
-# 完成态文档源校验器提取两类 SQLite 记录。
+# 单份文档记录投影为兼容的知识查询记录。
+def knowledge_record_from_document(dict_document: dict[str, Any]) -> dict[str, Any]:
+    """从文档目录记录派生知识索引载荷。
+
+    参数：dict_document 为已验证的文档目录记录。
+    返回：保持既有 knowledge 标识和公开字段的派生记录。
+    """
+
+    # 文档与知识使用平行命名空间，后缀保持稳定。
+    str_document_id = str(dict_document["id"])  # 当前文档公开标识
+
+    # 派生载荷不引入第二份可编辑路径或哈希事实。
+    return {
+        "id": "knowledge." + str_document_id.removeprefix("document."),
+        "kind": "knowledge",
+        "title": str(dict_document["title"]),
+        "summary": str(dict_document["summary"]),
+        "keywords": list(dict_document["keywords"]),
+        "source_path": str(dict_document["path"]),
+        "source_anchor": str(dict_document["source_anchor"]),
+        "content_sha256": str(dict_document["content_sha256"]),
+    }
+
+# 批量投影器保持文档目录的稳定顺序。
+def knowledge_records_from_documents(
+    list_documents: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """从文档目录派生全部知识记录。
+
+    参数：list_documents 为已验证的文档目录记录列表。
+    返回：与输入顺序一致的知识记录列表。
+    """
+
+    # 一对一投影保证文档与知识计数保持相同。
+    return [knowledge_record_from_document(dict_document) for dict_document in list_documents]
+
+# 完成态文档源校验器提取文档记录并派生知识记录。
 def finalized_document_records(
     dict_sources: dict[str, dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """验证文档源完成态并返回职责与知识记录。
+    """验证规范文档源完成态并返回文档与派生知识记录。
 
     参数：dict_sources 为文档治理源对象映射。
     返回：文档职责记录和知识指针记录两个列表。
     异常：必需源、状态、容器或标识无效时抛出 RegistryError。
     """
 
-    # 四份固定事实源必须全部存在。
+    # 三份当前事实源必须全部存在。
     tuple_required_sources = (  # 文档注册化必需源路径
-        "document-governance.json",  # 可选门禁主配置
+        "governance/config.json",  # 当前治理配置
         "documents/catalog.json",  # 文档职责目录
-        "knowledge/index.json",  # 权威 Markdown 知识指针
-        "migrations/initial-document-registration.json",  # 首次迁移复核证据
+        "governance/reviews.json",  # 当前重复与接口裁决
     )
 
     # 缺失源逐项给出可定位诊断。
@@ -823,32 +930,28 @@ def finalized_document_records(
             raise RegistryError(f"> ERR: [Python] missing document registry source: {str_required_path}")
 
     # 主配置必须处于 current。
-    if dict_sources["document-governance.json"].get("status") != "current":
+    if dict_sources["governance/config.json"].get("status") != "current":
 
         # 草案不得进入可查询数据库。
         raise RegistryError("> ERR: [Python] document governance is not current")
 
-    # 三份附属源必须同步完成。
+    # 文档目录和当前裁决必须同步完成。
     if (
         dict_sources["documents/catalog.json"].get("status") != "current"
-        or dict_sources["knowledge/index.json"].get("status") != "current"
-        or dict_sources["migrations/initial-document-registration.json"].get("status") != "finalized"
+        or dict_sources["governance/reviews.json"].get("status") != "current"
     ):
 
         # 部分完成状态不能生成联合索引。
         raise RegistryError("> ERR: [Python] document registry sources are not finalized")
 
-    # 职责与知识记录使用独立列表容器。
+    # 文档目录是路径、哈希和知识检索元数据的唯一编辑源。
     object_documents = dict_sources["documents/catalog.json"].get("documents")  # 文档职责容器
 
-    # 知识记录从权威指针索引提取。
-    object_knowledge = dict_sources["knowledge/index.json"].get("records")  # 知识指针容器
+    # 错误容器不能进入派生逻辑或 SQLite 构建。
+    if not isinstance(object_documents, list):
 
-    # 两个错误容器统一拒绝。
-    if not isinstance(object_documents, list) or not isinstance(object_knowledge, list):
-
-        # SQLite 构建只接受列表记录。
-        raise RegistryError("> ERR: [Python] document registry records must be lists")
+        # SQLite 构建只接受文档记录列表。
+        raise RegistryError("> ERR: [Python] document catalog records must be a list")
 
     # 文档主键必须非空且唯一。
     list_document_ids = [  # 文档记录标识集合
@@ -862,11 +965,30 @@ def finalized_document_records(
         # 主键错误阻止构建。
         raise RegistryError("> ERR: [Python] document ids must be non-empty and unique")
 
+    # 文档路径必须唯一，避免同一 Markdown 拥有多个职责记录。
+    list_document_paths = [str(dict_record.get("path", "")) for dict_record in object_documents]  # 文档路径集合
+
+    # 内容哈希绑定每份当前 Markdown，不允许目录内重复路径哈希事实。
+    list_document_facts = [
+        (str(dict_record.get("path", "")), str(dict_record.get("content_sha256", "")))  # 当前路径与正文哈希
+        for dict_record in object_documents  # 当前文档目录记录
+    ]  # 文档路径与哈希绑定集合
+
+    # 空路径、重复路径或重复事实都会破坏单一所有权。
+    if (
+        not all(list_document_paths)
+        or len(list_document_paths) != len(set(list_document_paths))
+        or len(list_document_facts) != len(set(list_document_facts))
+    ):
+
+        # 诊断明确目录的唯一路径合同。
+        raise RegistryError("> ERR: [Python] document paths and hashes must be unique")
+
+    # 知识记录完全从文档目录派生，不读取第二份 JSON 索引。
+    list_knowledge = knowledge_records_from_documents(object_documents)  # 当前派生知识记录
+
     # 知识主键使用独立命名空间。
-    list_knowledge_ids = [  # 知识记录标识集合
-        str(dict_record.get("id", ""))  # 当前知识标识
-        for dict_record in object_knowledge  # 遍历知识指针
-    ]
+    list_knowledge_ids = [str(dict_record.get("id", "")) for dict_record in list_knowledge]  # 知识标识集合
 
     # 空知识标识或重复知识标识破坏 knowledge 主键。
     if not all(list_knowledge_ids) or len(list_knowledge_ids) != len(set(list_knowledge_ids)):
@@ -875,14 +997,14 @@ def finalized_document_records(
         raise RegistryError("> ERR: [Python] knowledge ids must be non-empty and unique")
 
     # 返回已验证记录集合。
-    return object_documents, object_knowledge
+    return object_documents, list_knowledge
 
 # 文档记录加载器把完成态职责目录和知识指针纳入 schema v2。
 def load_document_records(
     path_skill_root: Path,
     dict_manifest: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """加载已完成的文档目录和知识索引记录。
+    """加载已完成的文档目录并派生知识索引记录。
 
     参数：path_skill_root 为技能根；dict_manifest 为已校验注册清单。
     返回：文档职责记录和知识指针记录两个列表。
@@ -892,8 +1014,8 @@ def load_document_records(
     # 两个清单分别声明文档治理源和可发布 schema。
     object_document_sources = dict_manifest.get("document_sources")  # 文档治理源路径容器
 
-    # schema 路径使用独立容器。
-    object_document_schemas = dict_manifest.get("document_schemas")  # 文档结构约束路径容器
+    # 三份文档治理 schema 从统一职责映射中选取。
+    dict_schema_sources = dict_manifest.get("schema_sources")  # 全部活动 schema 路径映射
 
     # 源文件清单必须是非空字符串列表。
     if not is_string_list(object_document_sources, bool_allow_empty=False):
@@ -901,19 +1023,26 @@ def load_document_records(
         # 缺失文档源不能构建 schema v2。
         raise RegistryError("> ERR: [Python] registry manifest document_sources must be a string list")
 
-    # schema 清单同样必须完整。
-    if not is_string_list(object_document_schemas, bool_allow_empty=False):
+    # schema 映射已由 manifest 加载器校验，此处保持防御性检查。
+    if not isinstance(dict_schema_sources, dict):
 
         # 缺失 schema 会让 JSON 合同不可审查。
-        raise RegistryError("> ERR: [Python] registry manifest document_schemas must be a string list")
+        raise RegistryError("> ERR: [Python] registry manifest schema_sources must be an object")
+
+    # 文档治理只验证其三类当前 schema。
+    list_document_schemas = [
+        str(dict_schema_sources["document_catalog"]),  # 文档目录 schema
+        str(dict_schema_sources["governance_config"]),  # 治理配置 schema
+        str(dict_schema_sources["governance_reviews"]),  # 当前裁决 schema
+    ]  # 文档治理 schema 路径
 
     # 注册根约束全部文档路径。
     path_registry_root = registry_root(path_skill_root)  # 当前注册源根目录
 
-    # 四份可发布 schema 必须是 JSON 对象。
-    validate_document_schema_files(path_registry_root, object_document_schemas)
+    # 三份可发布 schema 必须是 JSON 对象。
+    validate_document_schema_files(path_registry_root, list_document_schemas)
 
-    # 文档职责、知识和迁移源按清单加载。
+    # 当前治理配置、目录和裁决按清单加载。
     dict_sources = load_document_source_objects(path_registry_root, object_document_sources)  # 治理源对象
 
     # 完成态校验后返回两类 SQLite 记录。
@@ -933,9 +1062,9 @@ def source_digest(path_skill_root: Path, dict_manifest: dict[str, Any]) -> str:
     # manifest 自身也必须参与漂移检测。
     list_relative_paths = [  # 构建数据库摘要的全部事实源
         "manifest.json",  # 注册源清单
-        str(dict_manifest["command_schema"]),  # 命令记录 schema
-        *dict_manifest.get("source_files", []),  # 分类命令与工作流源
-        *dict_manifest.get("document_schemas", []),  # 文档治理 JSON Schema
+        *dict_manifest.get("schema_sources", {}).values(),  # 五类活动源 JSON Schema
+        *dict_manifest.get("command_sources", []),  # 分类命令源
+        str(dict_manifest["workflow_source"]),  # 唯一工作流源
         *dict_manifest.get("document_sources", []),  # 文档职责、知识和迁移源
     ]
 

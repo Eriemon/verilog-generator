@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "readable-verilog-generator workflow registry record",
+  "type": "object",
+  "required": ["id", "title", "summary", "aliases", "steps", "boundaries"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {"type": "string", "minLength": 1, "pattern": "^workflow\\."},
+    "title": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "summary": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "aliases": {
+      "type": "object",
+      "required": ["zh", "en"],
+      "additionalProperties": false,
+      "properties": {
+        "zh": {"$ref": "#/$defs/nonEmptyStringArray"},
+        "en": {"$ref": "#/$defs/nonEmptyStringArray"}
+      }
+    },
+    "steps": {"$ref": "#/$defs/nonEmptyStringArray"},
+    "boundaries": {"$ref": "#/$defs/nonEmptyStringArray"}
+  },
+  "$defs": {
+    "nonEmptyStringArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1, "pattern": "\\S"}
+    }
+  }
+}
