@@ -838,7 +838,7 @@ class ControlParseMixin(ControlNodeParseMixin):
             return True, int_line_index + 1, []
 
         # 普通信号声明和属性声明交给声明 parser。
-        if re.match(r"^(?:wire|reg|logic|integer|real)\b", str_stripped) or str_stripped.startswith("(*"):
+        if re.match(r"^(?:wire|tri1|reg|logic|integer|real)\b", str_stripped) or str_stripped.startswith("(*"):
 
             # tuple_signal_declaration 保存完整声明原文、注释和下一行下标。
             tuple_signal_declaration = self._collect_declaration_statement(  # 信号声明完整文本、尾注和扫描出口
@@ -858,7 +858,7 @@ class ControlParseMixin(ControlNodeParseMixin):
                 tuple_attribute_parts = self._extract_leading_attributes(str_statement)  # 属性前缀与裸声明主体
 
                 # 非信号声明回插到后续 body 扫描中。
-                if not re.match(r"^(?:wire|reg|logic|integer|real)\b", tuple_attribute_parts[1]):
+                if not re.match(r"^(?:wire|tri1|reg|logic|integer|real)\b", tuple_attribute_parts[1]):
 
                     # 属性包裹的非声明语句留给后续 body 分支重新识别。
                     list_deferred_statements.append(str_statement)
@@ -1535,7 +1535,7 @@ class ControlParseMixin(ControlNodeParseMixin):
             r"^while\b",  # 条件循环入口
             r"^parameter\b",  # 模块参数声明入口
             r"^localparam\b",  # 局部参数声明入口
-            r"^(?:wire|reg|logic|integer|genvar)\b",  # 信号或 genvar 声明
+            r"^(?:wire|tri1|reg|logic|integer|genvar)\b",  # 信号或 genvar 声明
             r"^(?:input|output|inout)\b",  # 端口方向声明
             r"^function\b",  # 函数定义块入口
             r"^task\b",  # 任务定义块入口

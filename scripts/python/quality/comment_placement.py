@@ -777,7 +777,7 @@ def _classify_declaration_construct(stripped: str) -> str | None:
         return "port"
 
     # 常见信号声明需要解释寄存器、连线或循环变量用途。
-    if re.match(r"^(reg|wire|integer|genvar)\b", stripped):
+    if re.match(r"^(reg|wire|tri1|integer|genvar)\b", stripped):
 
         # 返回信号声明构造。
         return "signal"

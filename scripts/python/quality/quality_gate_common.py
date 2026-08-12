@@ -368,6 +368,7 @@ PROCEDURAL_ASSIGNMENT_IGNORED_PREFIXES = (  # 非过程赋值起始关键字
     "localparam ",  # 局部参数定义由结构化注释规则负责
     "reg ",  # 寄存器声明由信号注释规则负责
     "wire ",  # wire 网络声明走结构化信号规则
+    "tri1 ",  # tri1 弱上拉网络声明走结构化信号规则
     "logic ",  # logic 兼容声明走结构化信号规则
     "integer ",  # integer 计数变量声明不按赋值处理
     "real ",  # real 仿真变量声明不按赋值处理
@@ -691,7 +692,7 @@ def _is_definition_statement_line(str_line: str) -> bool:
 
     # 参数和信号定义关键字覆盖用户列出的类型。
     return re.match(
-        r"^(?:localparam|parameter|reg|wire|logic|integer|real|input|output|inout|genvar)\b",
+        r"^(?:localparam|parameter|reg|wire|tri1|logic|integer|real|input|output|inout|genvar)\b",
         str_code,
     ) is not None
 

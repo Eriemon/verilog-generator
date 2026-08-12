@@ -689,5 +689,5 @@
   ],
   "schema_version": 2,
   "status": "current",
-  "user_confirmation": "confirmed"
+  "user_confirmation": "not_required"
 }

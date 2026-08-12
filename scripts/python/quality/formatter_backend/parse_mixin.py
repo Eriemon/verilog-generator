@@ -756,7 +756,7 @@ class ParseMixin:
 
         # 先拆出声明种类、signed 标记、位宽和剩余信号列表文本。
         str_signal_decl_pattern = (
-            r"^(wire|reg|logic|integer|real)\s*"
+            r"^(wire|tri1|reg|logic|integer|real)\s*"
             r"(signed\s*)?"
             r"(\[[^\]]+\])?\s*"
             r"(.+)$"
