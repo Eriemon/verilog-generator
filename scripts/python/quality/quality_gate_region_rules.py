@@ -31,6 +31,7 @@ from .quality_gate_common import (
 
 # 区域归属还需要输出端口、标签与严重级别相关 helper。
 from .quality_gate_common import (
+    _expected_instance_regions,
     _module_output_ports,
     _nearest_region_title,
     _span_item_label,
@@ -183,9 +184,6 @@ def _iter_fixed_region_expectations(dict_module: dict[str, Any]) -> list[dict[st
     # task 定义兼容普通任务和状态任务区域。
     tuple_task_check = ("tasks", ("任务区域", "任务定义区域", "状态任务处理区域"), "regions.task")  # task AST 归属映射
 
-    # 子模块实例化必须留在实例化区域。
-    tuple_instance_check = ("instances", ("模块实例化区域",), "regions.instance")  # 实例化区域规则
-
     # 固定结构检查先从 generate 规则开始。
     list_fixed_region_checks = [tuple_generate_check]  # 固定结构区域规则表
 
@@ -197,9 +195,6 @@ def _iter_fixed_region_expectations(dict_module: dict[str, Any]) -> list[dict[st
 
     # task 追加在 function 之后，保持工具过程定义的检查顺序。
     list_fixed_region_checks += [tuple_task_check]  # 任务定义检查入口
-
-    # 实例化规则最后追加，便于和主要逻辑区域分离。
-    list_fixed_region_checks += [tuple_instance_check]  # 补充实例化规则
 
     # 逐个 AST 集合生成统一结构，供 VG061 复用。
     for str_collection_name, tuple_expected_regions, str_rule in list_fixed_region_checks:
@@ -216,6 +211,25 @@ def _iter_fixed_region_expectations(dict_module: dict[str, Any]) -> list[dict[st
                     "rule": str_rule,
                 }
             )
+
+    # 当前 module 的 generate span 用于逐项判定实例上下文。
+    list_generates = list(dict_module.get("generates", []) or [])  # 当前实例归属判断使用的 generate 边界
+
+    # 实例期望区域由其源码位置和可信 generate span 共同决定。
+    for dict_instance in dict_module.get("instances", []) or []:
+
+        # 追加带上下文区域期望的实例检查项。
+        list_items.append(
+            {
+                "item": dict_instance,
+                "label": _span_item_label(dict_instance),
+                "regions": _expected_instance_regions(
+                    dict_instance,
+                    list_generates,
+                ),
+                "rule": "regions.instance",
+            }
+        )
 
     # 返回固定结构区域期望。
     return list_items

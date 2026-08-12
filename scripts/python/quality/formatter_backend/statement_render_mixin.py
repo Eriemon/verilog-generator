@@ -5,7 +5,7 @@ from __future__ import annotations
 
 # 标准库只用于语句文本的局部识别和路径型兼容注解。
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable
@@ -966,6 +966,55 @@ class StatementRenderMixin:
         # 调用方把这些初始化块放回 module body。
         return list_lines
 
+    # 实例头部功能注释只在归属明确且没有既有前导说明时提升。
+    def _promote_instance_header_comment(self, instance: InstanceBlock) -> InstanceBlock:
+        """
+        把可确认属于实例头的行尾功能注释提升为前导纯注释。
+
+        :param instance: parser 产出的实例块。
+        :return: 可安全提升时返回替换后的实例块，否则返回原对象。
+        """
+
+        # 已有前导说明时无法安全判断两条注释的相对语义。
+        if instance.leading_comments:
+
+            # 保留原实例对象，避免重排用户已经建立的说明顺序。
+            return instance
+
+        # 按原始换行拆分实例文本，只检查第一个可见声明行。
+        list_instance_lines = instance.text.splitlines()  # 待检查的实例原始行
+
+        # 空白前缀不应影响实例头识别。
+        for int_line_index, str_instance_line in enumerate(list_instance_lines):
+
+            # 空行继续留在原位置，并寻找第一个可见实例行。
+            if not str_instance_line.strip():
+
+                # 跳过实例文本开头的空白行。
+                continue
+
+            # 拆开首个可见行的代码和行尾注释。
+            str_code, str_comment = self._split_comment(str_instance_line)  # 实例头代码与说明
+
+            # 只提升明确位于实例端口左括号后的行尾说明。
+            if not str_comment or not str_code.rstrip().endswith("("):
+
+                # 非实例头说明保持原位，不猜测参数或端口注释归属。
+                return instance
+
+            # 从实例头移除已确认可提升的行尾注释。
+            list_instance_lines[int_line_index] = str_code.rstrip()  # 已移除可提升说明的实例头
+
+            # 返回不可变替换结果，保持 parser 原对象及其他字段不变。
+            return replace(
+                instance,
+                text="\n".join(list_instance_lines),
+                leading_comments=[f"//{str_comment}"],
+            )
+
+        # 没有可见实例行时保持原对象。
+        return instance
+
     # 实例区域先渲染结构化实例，再追加无法结构化的 raw block。
     def _render_instance_region(self, instances: list[InstanceBlock], raw_blocks: list[RawBlock]) -> list[str]:
         """
@@ -988,11 +1037,14 @@ class StatementRenderMixin:
         # 先输出结构化实例，保持解析后的主要实例顺序。
         for instance in instances:
 
+            # 提升归属明确的实例头功能注释，不修改 parser 持有的原对象。
+            instance_block_render: InstanceBlock = self._promote_instance_header_comment(instance)  # 当前实例的安全渲染副本
+
             # 实例前导注释保持一级缩进。
-            list_lines.extend(self._render_leading_comments(instance.leading_comments, 1))
+            list_lines.extend(self._render_leading_comments(instance_block_render.leading_comments, 1))
 
             # 实例块按 canonical 或 legacy 路径渲染。
-            list_lines.extend(self._render_instance_block(instance, 1))
+            list_lines.extend(self._render_instance_block(instance_block_render, 1))
 
             # 相邻结构化实例之间保留空行，便于区分模块实例。
             list_lines.append("")
@@ -1026,7 +1078,60 @@ class StatementRenderMixin:
         list_lines: list[str] = []  # 控制节点输出行
 
         # 控制节点必须按 parser 产出的顺序逐个展开。
-        for node in nodes:
+        for int_node_index, node in enumerate(nodes):
+
+            # 纯注释只有紧邻实例 statement 时才属于实例说明布局。
+            bool_comment_precedes_instance = False  # 当前 comment 是否直接说明后续实例
+
+            # 同级下一个节点提供纯注释的唯一安全归属边界。
+            if node.kind == "comment" and int_node_index + 1 < len(nodes):
+
+                # 读取当前 comment 后的直接兄弟节点。
+                control_node_next = nodes[int_node_index + 1]  # 注释后的同级控制节点
+
+                # 只有 statement 节点才可能是实例声明。
+                if control_node_next.kind == "statement":
+
+                    # 复用实例渲染识别入口，避免维护第二套实例起点规则。
+                    list_instance_preview = self._render_control_instance_statement(  # 后续 statement 的可选实例输出
+                        control_node_next.text,  # 紧邻 comment 的 statement 文本
+                        indent_level,  # 当前控制树缩进层级
+                    )
+
+                    # 非 None 结果确认当前纯注释紧邻真实实例。
+                    bool_comment_precedes_instance = list_instance_preview is not None  # 实例说明布局标志
+
+            # VG063 要求实例说明上方恰有一个空行。
+            if bool_comment_precedes_instance and (not list_lines or list_lines[-1] != ""):
+
+                # 插入唯一空行，兼容首次提升和二次控制树解析。
+                list_lines.append("")
+
+            # 紧邻实例的同级纯注释已经承担实例前导说明职责。
+            bool_has_instance_leading_comment = (  # 当前 statement 是否已有独立前导说明
+                node.kind == "statement"  # 只有 statement 节点可能承载实例声明
+                and int_node_index > 0  # 首个节点前不存在可归属的兄弟注释
+                and nodes[int_node_index - 1].kind == "comment"  # 直接前驱必须是纯注释节点
+            )
+
+            # 已有实例说明时直接走保守实例渲染，禁止再次提升行尾说明。
+            if bool_has_instance_leading_comment:
+
+                # 带前导说明的 statement 仍需先确认自身确实是实例。
+                list_instance_with_leading_comment = self._render_control_instance_statement(  # 保守实例渲染结果
+                    node.text,  # 当前 statement 的实例候选文本
+                    indent_level,  # 沿用该 generate 分支的实例输出层级
+                    has_leading_comment=True,  # 阻止重排第二条功能说明
+                )
+
+                # 识别成功后直接消费保守结果，避免通用分发再次提升注释。
+                if list_instance_with_leading_comment is not None:
+
+                    # 保留已有前导说明和实例头行尾说明的原始相对归属。
+                    list_lines.extend(list_instance_with_leading_comment)
+
+                    # 当前 statement 已经完成渲染，不再进入通用节点分发。
+                    continue
 
             # 单节点 helper 返回一个完整结构片段，调用方只负责拼接。
             list_lines.extend(self._render_control_node(node, indent_level))
@@ -1301,12 +1406,19 @@ class StatementRenderMixin:
         return list_lines
 
     # 控制语句中的实例化片段复用实例块渲染路径。
-    def _render_control_instance_statement(self, text: str, indent_level: int) -> list[str] | None:
+    def _render_control_instance_statement(
+        self,
+        text: str,
+        indent_level: int,
+        *,
+        has_leading_comment: bool = False,
+    ) -> list[str] | None:
         """
         尝试把控制语句文本识别并渲染为实例化块。
 
         :param text: statement 控制节点中的原始文本。
         :param indent_level: 实例化块使用的缩进层级。
+        :param has_leading_comment: 同级前驱是否已经提供实例功能说明。
         :return: 识别成功时返回实例化输出行，否则返回 `None`。
         """
 
@@ -1348,8 +1460,30 @@ class StatementRenderMixin:
             "\n".join(list_normalized_lines)  # 规范化后的多行实例文本
         )
 
-        # 使用统一实例渲染入口输出 canonical 或 legacy 形式。
-        return self._render_instance_block(instance_block_instance_block, indent_level)
+        # 已有兄弟前导说明时保留行尾注释，否则允许安全提升唯一说明。
+        instance_block_render: InstanceBlock = (  # 控制树实例渲染副本
+            instance_block_instance_block  # 双注释实例保持 parser 原始归属
+            if has_leading_comment  # 同级纯注释已经承担前导说明职责
+            else self._promote_instance_header_comment(instance_block_instance_block)  # 单行尾说明允许提升
+        )
+
+        # list_lines 收集控制树实例的可选说明和实例本体。
+        list_lines: list[str] = []  # 控制树实例输出行
+
+        # 首次提升出的实例说明需要满足 VG063 的上方单空行。
+        if instance_block_render.leading_comments:
+
+            # 空行作为实例说明簇的固定边界。
+            list_lines.append("")
+
+            # 前导说明与实例块保持同一控制层级。
+            list_lines.extend(self._render_leading_comments(instance_block_render.leading_comments, indent_level))
+
+        # 实例本体沿用统一 canonical 或 legacy 渲染路径。
+        list_lines.extend(self._render_instance_block(instance_block_render, indent_level))
+
+        # 返回包含提升注释和实例本体的完整片段。
+        return list_lines
 
     # 条件分支节点输出 begin、children 和可选 alternate。
     def _render_if_node(self, node: ControlNode, indent_level: int) -> list[str]:
@@ -2605,6 +2739,47 @@ class StatementRenderMixin:
         # 返回拆分出的右侧注释和规范化后的代码行。
         return tuple_comment_parts, str_normalized
 
+    # 单行参数覆盖实例头只在参数括号完整且余下文本是实例端口开头时成立。
+    def _is_single_line_parameterized_instance_header(self, text: str) -> bool:
+        """
+        判断一行是否包含完整参数覆盖和实例端口左括号。
+
+        :param text: 待识别的 legacy 实例代码行。
+        :return: 参数覆盖与实例端口头都完整时返回 `True`。
+        """
+
+        # 前缀必须从模块标识符开始并紧接参数覆盖左括号。
+        match_prefix = re.match(r"^[A-Za-z_]\w*\s*#\s*\(", text)  # 模块名和参数覆盖前缀
+
+        # 非参数化实例或前方含赋值文本时直接拒绝。
+        if match_prefix is None:
+
+            # 返回 False，保持非目标行的既有 legacy 相位。
+            return False
+
+        # 正则前缀最后一个字符就是 `#(` 的参数左括号。
+        int_parameter_open = match_prefix.end() - 1  # 参数覆盖外层左括号位置
+
+        # 复用共享括号匹配器定位完整参数覆盖的右括号。
+        int_parameter_close = self._find_matching_paren_in_text(text, int_parameter_open)  # 参数覆盖外层右括号位置
+
+        # 未闭合参数覆盖不能提前进入端口关联区。
+        if int_parameter_close < 0:
+
+            # 返回 False，让异常或多行文本沿用原有保守路径。
+            return False
+
+        # 参数覆盖之后只允许实例名、可选数组范围和端口左括号。
+        str_remainder = text[int_parameter_close + 1 :].strip()  # 参数覆盖后的实例头余量
+
+        # 完整匹配避免接受赋值、额外 token 或已经包含端口内容的行。
+        return bool(
+            re.fullmatch(
+                r"[A-Za-z_]\w*(?:\s*\[[^\]]+\])?\s*\(",
+                str_remainder,
+            )
+        )
+
     # legacy 实例代码行布局同时决定当前行缩进和后续解析相位。
     def _legacy_instance_line_layout(
         self,
@@ -2620,6 +2795,12 @@ class StatementRenderMixin:
         :param indent_level: 实例首行缩进层级。
         :return: 当前代码行缩进层级和处理后的解析相位。
         """
+
+        # 完整单行参数覆盖实例头已经打开端口列表。
+        if self._is_single_line_parameterized_instance_header(str_normalized):
+
+            # 当前实例头保持根缩进，后续关联直接按 ports phase 处理。
+            return indent_level, "ports"
 
         # 参数块开头保持实例首行缩进，并切换到 params phase。
         if re.search(r"#\s*\($", str_normalized):

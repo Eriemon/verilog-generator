@@ -8,11 +8,12 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
-# re 只用于剥离 generate 实例前受 Verilog 语法允许的 attribute。
-import re
-
 # formatter 配置工厂提供唯一受控的 parser/backend 入口。
 from .formatter_backend import FormatterBackend, VerilogFormatterError
+from .formatter_ast_instances import (
+    instance_from_control_statement as _instance_from_control_statement,
+    instances_from_control_nodes as _instances_from_control_nodes,
+)
 from .formatter_config import create_formatter_backend
 
 # VerilogAstError 表示 formatter AST 桥接层无法产出可信结构。
@@ -406,100 +407,6 @@ def _formatter_violations(
 
         # 违规文本仍由调用方展示，不转换为 AST error。
         return [str(exc)]
-
-# _instance_from_control_statement 对单个控制树叶子执行有界实例识别。
-def _instance_from_control_statement(formatter_engine: Any, str_statement: str) -> Any | None:
-    """识别 generate 控制树叶子中的实例。
-
-    参数:
-        formatter_engine: formatter 后端。
-        str_statement: 单条叶子语句。
-    返回:
-        实例模型或 ``None``。
-    """
-
-    # attribute 不是模块名的一部分，必须在实例起点识别前完整剥离。
-    str_instance_candidate = re.sub(  # 去除连续前导 attribute 后的实例候选
-        r"^(?:\s*\(\*.*?\*\)\s*)+",  # 仅匹配 statement 起始处的 attribute 块
-        "",  # attribute 不进入后端实例名解析
-        str_statement,  # 控制树已经隔离出的叶子 statement
-        flags=re.DOTALL,  # 允许 attribute 自身跨越物理行
-    )  # attribute 清理结果
-
-    # 规范候选行供实例起点识别。
-    list_normalized_lines = [
-        formatter_engine._normalize_statement_line(str_line.strip())  # 当前实例候选规范行
-        for str_line in str_instance_candidate.splitlines()  # attribute 后的 statement 行集合
-        if str_line.strip()  # 空行不参与实例起点判断
-    ]  # 有效实例候选行
-
-    # attribute 后没有可见语句时不存在实例模型。
-    if not list_normalized_lines:
-
-        # 空候选交回普通 statement 路径。
-        return None
-
-    # 首行提供模块名或参数起点。
-    str_first_line = list_normalized_lines[0]  # 实例候选首行
-
-    # 次行补足跨行参数化实例。
-    str_next_line = list_normalized_lines[1] if len(list_normalized_lines) > 1 else ""  # 实例候选次行
-
-    # 非实例 statement 不得交给实例元数据 parser 猜测。
-    if not formatter_engine._is_instance_start_line(str_first_line, str_next_line):
-
-        # 普通 assign 或声明继续由既有控制树语义处理。
-        return None
-
-    # 单实例 parser 只提取当前声明，不递归扫描 module body。
-    return formatter_engine._parse_instance_block("\n".join(list_normalized_lines))
-
-# _parse_module_with_formatter 把 formatter module 模型转成稳定 JSON 字典。
-def _instances_from_control_nodes(formatter_engine: Any, list_nodes: list[Any]) -> list[Any]:
-    """按源码顺序收集 generate 控制树中的实例。
-
-    参数:
-        formatter_engine: formatter 后端。
-        list_nodes: generate 控制节点。
-    返回:
-        实例模型列表。
-    """
-
-    # 控制树遍历保持源码顺序，确保实例 span 后续可以稳定定位。
-    list_instances: list[Any] = []  # generate 内实例块
-
-    # 逐节点保留 parser 给出的源码顺序，避免实例定位游标倒退。
-    for obj_node in list_nodes:
-
-        # statement 节点文本已排除 if/else 外壳，只需执行有界实例识别。
-        if str(obj_node.kind) == "statement" and str(obj_node.text).strip():
-
-            # 有界 helper 禁止把叶子 statement 重新解释成完整 module body。
-            obj_instance = _instance_from_control_statement(  # 当前叶子的可选实例模型
-                formatter_engine,  # 复用现有实例起点与单实例 parser
-                str(obj_node.text),  # 控制树隔离出的叶子 statement
-            )  # 有界识别结果
-
-            # 只有后端实例起点合同确认的声明才进入公开 AST。
-            if obj_instance is not None:
-
-                # 单个 statement 最多对应一个实例声明。
-                list_instances.append(obj_instance)
-
-        # 遍历普通分支。
-        for list_child_nodes in (obj_node.children, obj_node.alternate):
-
-            # 合并子分支实例。
-            list_instances.extend(_instances_from_control_nodes(formatter_engine, list_child_nodes))
-
-        # 遍历 case 分支。
-        for obj_case_item in obj_node.items:
-
-            # 合并 case 实例。
-            list_instances.extend(_instances_from_control_nodes(formatter_engine, obj_case_item.children))
-
-    # 返回保持控制树源码顺序的实例集合。
-    return list_instances
 
 # module 转换继续消费包含 generate 实例的统一集合。
 def _parse_module_with_formatter(formatter_engine: Any, module_text: str, *, index: int) -> dict[str, Any]:

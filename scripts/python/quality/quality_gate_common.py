@@ -509,6 +509,58 @@ def _has_line_span(dict_item: dict[str, Any]) -> bool:
     # 返回最终可信性判断。
     return bool_span_ordered
 
+# 供实例区域规则复用可信 generate span，避免嵌套实例被当作顶层实例。
+def _expected_instance_regions(
+    dict_instance: dict[str, Any],
+    list_generates: list[dict[str, Any]],
+) -> tuple[str, ...]:
+    """
+    根据可信 generate span 返回实例唯一允许的区域。
+
+    :param dict_instance: formatter AST 中的实例条目。
+    :param list_generates: 当前 module 的 generate 条目。
+    :return: 实例应归属的单一规范区域。
+    """
+
+    # 实例缺少起始行时不能证明嵌套关系，保留顶层默认。
+    int_instance_line = _as_line(dict_instance.get("line_start"))  # 实例声明起始行
+
+    # 缺失实例行号由 VG050 报告，本 helper 不提供 generate 豁免。
+    if int_instance_line is None:
+
+        # 返回顶层默认区域，避免不可信位置获得嵌套豁免。
+        return ("模块实例化区域",)
+
+    # 只遍历当前 module 已解析出的 generate 块。
+    for dict_generate in list_generates:
+
+        # 无效 generate span 不能参与实例包含判断。
+        if not _has_line_span(dict_generate):
+
+            # 跳过不能证明包含关系的 generate 条目。
+            continue
+
+        # 起始行用于判断实例是否落在当前 generate 内。
+        int_generate_start = _as_line(dict_generate.get("line_start"))  # 当前 generate 包含范围的下界
+
+        # 结束行用于判断实例是否超出当前 generate。
+        int_generate_end = _as_line(dict_generate.get("line_end"))  # 当前 generate 包含范围的上界
+
+        # 类型收窄保护外部构造的异常 AST 字典。
+        if int_generate_start is None or int_generate_end is None:
+
+            # 跳过安全转换后仍无法形成完整边界的条目。
+            continue
+
+        # 实例首行落入 generate 完整范围时归入生成块区域。
+        if int_generate_start <= int_instance_line <= int_generate_end:
+
+            # 返回生成块区域，消除 VG061 的顶层实例误报。
+            return ("生成块区域",)
+
+    # 没有可信 generate 包含关系时保持顶层实例区域合同。
+    return ("模块实例化区域",)
+
 # 供 `_span_item_label` 复用的拆分 helper，专门处理AST 条目可读标签。
 def _span_item_label(dict_item: dict[str, Any]) -> str:
     """
