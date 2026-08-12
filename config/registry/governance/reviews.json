@@ -249,6 +249,36 @@
       "value": "--external-interface-source"
     },
     {
+      "command_ids": [],
+      "decision": "not_public",
+      "kind": "option",
+      "rationale": "WaveDrom runtime 的全局安装开关只由 bundled runtime 固定调用，依赖治理入口不暴露自由组合参数。",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--global"
+    },
+    {
+      "command_ids": [],
+      "decision": "not_public",
+      "kind": "option",
+      "rationale": "WaveDrom 缩进值属于 bundled runtime 的固定渲染参数，不是技能公开工作流选项。",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--indent"
+    },
+    {
+      "command_ids": [],
+      "decision": "not_public",
+      "kind": "option",
+      "rationale": "WaveDrom 渲染输入由 bundled runtime 负责传递，宿主只使用 write-spec 的规范 JSON 入口。",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--input"
+    },
+    {
       "command_ids": [
         "registry.ask",
         "registry.document-governance",
@@ -288,6 +318,18 @@
         "SKILL.md"
       ],
       "value": "--kind"
+    },
+    {
+      "command_ids": [
+        "workflow.write-spec"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "write-spec 以显式语言选项决定 *_spec.md 的文档语言。",
+      "sources": [
+        "SKILL.md"
+      ],
+      "value": "--language"
     },
     {
       "command_ids": [
@@ -463,6 +505,18 @@
     },
     {
       "command_ids": [
+        "workflow.write-spec"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "write-spec 只把规范与 WaveDrom 伴随包写入调用方显式指定的产物根。",
+      "sources": [
+        "SKILL.md"
+      ],
+      "value": "--out-dir"
+    },
+    {
+      "command_ids": [
         "quality.external-interface-extract",
         "quality.external-interface-manifest"
       ],
@@ -618,9 +672,22 @@
       "kind": "option",
       "rationale": "source 只声明允许扫描的 vendor Verilog/SystemVerilog 文件或目录。",
       "sources": [
+        "SKILL.md",
         "references/skill/script-guide.md"
       ],
       "value": "--source"
+    },
+    {
+      "command_ids": [
+        "workflow.write-spec"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "write-spec 从调用方显式提供的规范 JSON 读取严格模块合同。",
+      "sources": [
+        "SKILL.md"
+      ],
+      "value": "--spec"
     },
     {
       "command_ids": [
@@ -787,6 +854,7 @@
       "kind": "option",
       "rationale": "",
       "sources": [
+        "SKILL.md",
         "references/integration/configuration.md"
       ],
       "value": "--yes"
@@ -794,5 +862,5 @@
   ],
   "schema_version": 2,
   "status": "current",
-  "user_confirmation": "confirmed"
+  "user_confirmation": "not_required"
 }

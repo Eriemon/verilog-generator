@@ -117,6 +117,8 @@ def _rtl_defaults(name: str) -> dict[str, Any]:
         "codegen_plan_required": True,  # 默认要求代码生成计划
         "codegen_plan_path": None,  # 未指定外部计划文件
         "description": "Implement a synthesizable Verilog-2001 RTL module.",  # 默认设计说明
+        "rtl_path": f"rtl/{name}.v",  # 规范文档映射使用的 RTL 相对路径
+        "feature": "",  # 可选功能目录，用于 spec/<feature> 归档
         "interfaces": {  # 默认接口对象
             "ports": [  # 默认端口列表
                 {"name": "i_clk", "direction": "input", "width": 1, "role": "clock"},  # 时钟端口
@@ -130,6 +132,9 @@ def _rtl_defaults(name: str) -> dict[str, Any]:
         "behavior": [  # 默认行为说明列表
             "Describe cycle-by-cycle behavior, latency, handshakes, and corner cases here.",  # 默认行为说明文本
         ],  # 默认行为说明占位文本
+        "corner_cases": [],  # 必须由用户补充的边界场景列表
+        "verification_cases": [],  # 必须由用户补充的验收场景列表
+        "timing_diagrams": [],  # 必须由用户补充的 WaveDrom 图列表
         "clock": {"name": "i_clk", "edge": "posedge", "frequency_mhz": 100},  # 默认时钟约束
         "reset": {"name": "i_rstn", "active": "low", "synchronous": False},  # 默认低有效异步复位
         "constraints": [  # 默认 RTL 编码约束列表

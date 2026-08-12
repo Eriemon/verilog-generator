@@ -58,6 +58,8 @@ class RemoteValidationRunConfig:
     :param str_run_id: 本次 outer retained run 的唯一标识。
     :param str_source_digest: 上传 staging 内容的 SHA-256 摘要。
     :param str_remote_server: 本次远端验证使用的服务器标识。
+    :param path_upload_archive: 本地完整验证包归档路径。
+    :param str_remote_archive_name: 远端 skill 目录内的归档文件名。
     """
 
     # staging 包是 request-upload 的本地源目录。
@@ -92,6 +94,12 @@ class RemoteValidationRunConfig:
 
     # 新布局把 reports 固定放在 runs/<run-id>/ 下，避免嵌套 smoke_runs 目录。
     str_remote_reports: str = ""  # 本次 run 的直接报告目录
+
+    # 单文件归档替代易出现部分缺失的递归目录上传。
+    path_upload_archive: Path | None = None  # 本地 tar.gz 上传源
+
+    # 归档目标固定在远端 skill 目录内，解包后恢复 workspace 结构。
+    str_remote_archive_name: str = ""  # 远端 tar.gz 文件名
 
 # _ensure_runtime_import_path 只在需要 runtime helper 时调整导入路径。
 def _ensure_runtime_import_path() -> None:

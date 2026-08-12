@@ -58,6 +58,7 @@ SETTINGS_TOP_LEVEL_KEYS = {  # 本轮强校验允许的顶层键集合
     "policy",  # 策略配置段键
     "remote",  # 远程配置段键
     "skill_dependencies",  # 依赖路由配置段键
+    "tool_dependencies",  # npm/Node 外部工具依赖配置段键
     "validation",  # 校验配置段键
     "workflow",  # 工作流配置段键
     "fpga_developer_routing",  # FPGA developer 路由配置段键
@@ -69,6 +70,7 @@ SETTINGS_TOP_LEVEL_OBJECT_KEYS = {  # 必须保持 object 结构的顶层段集�
     "policy",  # 策略配置段必须是 object
     "remote",  # 远程配置段必须是 object
     "skill_dependencies",  # 依赖路由配置段必须是 object
+    "tool_dependencies",  # 外部工具依赖配置段必须是 object
     "validation",  # 校验配置段必须是 object
     "workflow",  # 工作流配置段必须是 object
     "fpga_developer_routing",  # FPGA developer 路由配置段必须是 object
@@ -432,7 +434,7 @@ def build_smoke_run_path(
     """
 
     # 微秒时间戳避免同一进程短时间内连续运行时复用旧目录。
-    datetime_run = datetime_current or datetime.now()  # 当前 smoke 运行使用的本地时间
+    datetime_run: datetime = datetime_current or datetime.now()  # 当前 smoke 运行使用的本地时间
 
     # 进程号补充并发隔离，避免多个验证进程在同一微秒写入相同目录。
     int_run_process_id = int_process_id if int_process_id is not None else os.getpid()  # 当前 smoke 运行进程号
@@ -687,6 +689,72 @@ def skill_dependency_settings(settings: dict[str, Any] | None = None) -> dict[st
         raise ValueError("> ERR: [Python] settings.skill_dependencies.adaptation_policy must be required.")
 
     # 返回规范化后的依赖治理配置。
+    return dict_result
+
+# WaveDrom npm 依赖通过此 facade 读取并校验。
+def tool_dependency_settings(settings: dict[str, Any] | None = None) -> dict[str, Any]:
+    """
+    返回并校验外部工具依赖配置。
+
+    :param settings: 可选的已加载 settings；为空时重新加载默认 settings。
+    :return: 规范化后的 ``tool_dependencies`` 配置副本。
+    :raises ValueError: 当工具依赖缺失或 WaveDrom 合同漂移时抛出。
+    """
+
+    # 使用调用方 settings 或默认 settings 作为工具配置来源。
+    dict_payload = settings or load_settings()  # 工具依赖配置来源
+
+    # 工具依赖段必须是对象并包含 required 列表。
+    dict_tools = dict_payload.get("tool_dependencies")  # 外部工具依赖对象
+
+    # 缺少对象时立即阻断配置读取。
+    if not isinstance(dict_tools, dict):
+
+        # 错误信息明确指出 defaults.json 的结构位置。
+        raise ValueError("> ERR: [Python] settings.tool_dependencies must be an object.")
+
+    # required 列表提供 WaveDrom 固定版本的唯一来源。
+    list_required = dict_tools.get("required")  # required 工具配置列表
+
+    # 空列表和错误类型都不允许绕过工具依赖检查。
+    if not isinstance(list_required, list) or not list_required:
+
+        # 工具依赖缺失时阻断后续安装和检查。
+        raise ValueError("> ERR: [Python] settings.tool_dependencies.required must be a non-empty list.")
+
+    # 深拷贝避免调用方在运行中修改版本锁定。
+    dict_result = deepcopy(dict_tools)  # 返回前隔离工具配置副本
+
+    # 逐项验证 required 工具的固定字段。
+    for int_index, dict_item in enumerate(list_required):
+
+        # 每个工具条目必须是对象，才能读取字段合同。
+        if not isinstance(dict_item, dict):
+
+            # 错误消息携带条目索引，便于定位配置。
+            raise ValueError(f"> ERR: [Python] tool_dependencies.required[{int_index}] must be an object.")
+
+        # 固定字段必须存在且为非空字符串。
+        for str_key in ("id", "package_manager", "package", "version", "executable", "minimum_node_version"):
+
+            # 当前字段为空时阻断安装器参数生成。
+            if not isinstance(dict_item.get(str_key), str) or not dict_item[str_key].strip():
+
+                # 错误消息携带字段名，避免静默回退默认值。
+                raise ValueError(f"> ERR: [Python] tool_dependencies.required[{int_index}].{str_key} is required.")
+
+        # WaveDrom 条目必须保持 npm、包名、版本和可执行入口固定。
+        if dict_item["id"] == "wavedrom" and (
+            dict_item["package_manager"] != "npm"  # npm 是唯一支持的安装器
+            or dict_item["package"] != "wavedrom"  # 包名必须保持官方名称
+            or dict_item["version"] != "3.6.1"  # 版本必须锁定为当前合同
+            or dict_item["executable"] != "wavedrom"  # CLI 入口必须可发现
+        ):
+
+            # 合同漂移时阻断，避免生成无法复现的 SVG。
+            raise ValueError("> ERR: [Python] wavedrom tool dependency must remain npm wavedrom@3.6.1.")
+
+    # 返回经字段校验的外部工具配置。
     return dict_result
 
 # FPGA developer 路由配置读取入口。

@@ -1,12 +1,17 @@
 """远端验证的 staging、helper 调用和 retained-run 摘要实现。"""
 
 # 标准库负责 JSON 协议、远端请求子进程、临时包 staging 和清理。
+import gzip
+import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+
+# tarfile 和 time 负责确定性归档与 Windows 文件锁重试。
+import tarfile
 import time
 
 # pathlib 负责本地路径。
@@ -23,6 +28,12 @@ PATH_SKILL_ROOT = Path(__file__).resolve().parents[3]  # 包含 runtime、script
 
 # 仓库根目录用于复制 smoke harness。
 PATH_PROJECT_ROOT = PATH_SKILL_ROOT.parents[1]  # 当前 skill 仓库根目录
+
+# 归档与清单文件名固定，保证远端单文件上传和解包路径可审计。
+PACKAGE_ARCHIVE_NAME = "readable-verilog-generator-package.tar.gz"  # 远端验证包归档名
+
+# 清单自身不纳入清单记录，避免清单内容形成自引用哈希。
+PACKAGE_MANIFEST_NAME = "package-manifest.json"  # 归档内逐文件完整性清单名
 
 # 新布局的每轮运行目录统一位于固定远端根的 runs 子目录。
 REMOTE_RUNS_DIRECTORY = "runs"  # 新 retained run 的远端容器目录
@@ -386,8 +397,222 @@ def stage_package(path_helper: Path, str_run_id: str) -> Path:
     # 上传包工作区根使用真实受管 AGENTS，兼顾根发现和治理版本验证。
     shutil.copy2(PATH_PROJECT_ROOT / "AGENTS.md", path_target / "AGENTS.md")
 
+    # 在归档前写入逐文件清单，避免递归上传缺失文件只能在 pytest 收集阶段暴露。
+    write_package_manifest(path_package_root)
+
     # 返回 staging 包根，finally 中由 cleanup_package 删除。
     return path_package_root
+
+# write_package_manifest 为远端包生成确定性的逐文件内容清单。
+def write_package_manifest(path_package_root: Path) -> Path:
+    """为 staging 包写入逐文件路径、大小和 SHA-256 清单。
+
+    :param path_package_root: 已完成复制的本地 staging 包根目录。
+    :return: 写入后的 package-manifest.json 路径。
+    :raises RuntimeError: staging 中出现符号链接或文件读取失败时抛出。
+    """
+
+    # 当前 staging 的逐文件清单路径。
+    path_manifest = path_package_root / PACKAGE_MANIFEST_NAME  # 清单写入目标
+
+    # 清单中的稳定文件记录。
+    list_records: list[dict[str, object]] = []  # 不包含清单自身
+
+    # 排序后写入，保证不同文件系统枚举顺序不会改变清单字节。
+    list_paths = sorted(  # staging 中待处理的有序路径
+        (path_item for path_item in path_package_root.rglob("*") if path_item != path_manifest),  # 排除清单自身
+        key=lambda path_item: path_item.relative_to(path_package_root).as_posix(),  # 按相对路径稳定排序
+    )
+
+    # 逐项检查 staging 中的路径类型和内容。
+    for path_file in list_paths:
+
+        # 归档边界不接受符号链接，避免远端解包逃逸 staging 根。
+        if path_file.is_symlink():
+
+            # 发现链接时立即停止，避免产生不可审计的归档。
+            raise RuntimeError(f"> ERR: [Python] Staging package contains symlink: {path_file}")
+
+        # 目录由归档格式保留，清单只记录普通文件内容。
+        if not path_file.is_file():
+
+            # 目录不产生文件级哈希记录。
+            continue
+
+        # 文件路径和原始字节共同形成远端完整性事实。
+        bytes_file = path_file.read_bytes()  # 当前文件的原始字节
+
+        # 将路径、大小和内容摘要写入清单记录。
+        list_records.append(
+            {
+                "path": path_file.relative_to(path_package_root).as_posix(),
+                "sha256": hashlib.sha256(bytes_file).hexdigest(),
+                "size": len(bytes_file),
+            }
+        )
+
+    # 归档完整性清单载荷，键顺序和 LF 结尾保持稳定。
+    dict_manifest = {"files": list_records, "schema": 1}  # 固定 schema 版本
+
+    # 统一 JSON 键顺序和 LF 结尾，保证 manifest 可复核。
+    path_manifest.write_text(
+        json.dumps(dict_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    # 返回清单路径供归档和调用方复核。
+    return path_manifest
+
+# package_archive_path 计算 staging 旁边的唯一归档路径。
+def package_archive_path(path_package_root: Path) -> Path:
+    """返回当前 staging 包对应的 tar.gz 归档路径。
+
+    :param path_package_root: 本地 staging 包根目录。
+    :return: 与 staging 同级的归档文件路径。
+    """
+
+    # 归档放在 staging 外并使用固定文件名，便于远端请求与日志审计。
+    return path_package_root.parent / PACKAGE_ARCHIVE_NAME
+
+# add_package_archive_entries 写入 staging 中的全部目录和文件条目。
+def add_package_archive_entries(path_package_root: Path, archive: tarfile.TarFile) -> None:
+    """把 staging 路径按稳定顺序写入已打开的 tar 流。
+
+    :param path_package_root: 已完成 staging 的本地包根目录。
+    :param archive: 已配置为写入确定性 gzip 流的 tar 文件对象。
+    :return: 不返回业务值；发现符号链接时抛出异常。
+    :raises RuntimeError: staging 含符号链接时抛出。
+    """
+
+    # staging 中待归档的有序路径。
+    list_paths = sorted(  # 归档顺序固定
+        path_package_root.rglob("*"),  # 包含目录和文件条目
+        key=lambda path_item: path_item.relative_to(path_package_root).as_posix(),  # 按相对路径排序
+    )
+
+    # 逐项写入目录和文件条目。
+    for path_item in list_paths:
+
+        # 符号链接不允许进入跨主机验证包。
+        if path_item.is_symlink():
+
+            # 发现链接时立即停止归档。
+            raise RuntimeError(f"> ERR: [Python] Staging package contains symlink: {path_item}")
+
+        # 归档条目使用 POSIX 相对路径，避免 Windows 分隔符污染远端。
+        str_archive_name = path_item.relative_to(path_package_root).as_posix()  # 归档内相对名称
+
+        # 读取当前路径的 tar 元数据。
+        tar_info_tar_info: tarfile.TarInfo = archive.gettarinfo(  # 当前归档条目
+            str(path_item),  # 当前 staging 路径
+            arcname=str_archive_name,  # 归档内使用的相对名称
+        )
+
+        # 归零修改时间，保持不同主机生成结果稳定。
+        tar_info_tar_info.mtime = 0  # 固定归档修改时间
+
+        # 归零归档用户标识，避免本地账户信息进入包。
+        tar_info_tar_info.uid = 0  # 固定归档用户标识
+
+        # 归零归档组标识，避免本地账户信息进入包。
+        tar_info_tar_info.gid = 0  # 固定归档组标识
+
+        # 清空归档用户名，避免平台名称影响包字节。
+        tar_info_tar_info.uname = ""  # 固定归档用户名
+
+        # 清空归档组名，避免平台名称影响包字节。
+        tar_info_tar_info.gname = ""  # 固定归档组名
+
+        # 普通文件需要把原始字节写入 tar 条目。
+        if path_item.is_file():
+
+            # 打开当前文件并写入归档。
+            with path_item.open("rb") as file_source:
+
+                # 保留 tar 元数据与文件内容的对应关系。
+                archive.addfile(tar_info_tar_info, file_source)
+
+        # 目录只写入目录元数据，不附带文件流。
+        else:
+
+            # 写入空内容的目录条目。
+            archive.addfile(tar_info_tar_info)
+
+# create_package_archive 将完整 staging 树压缩成可原子上传的单文件。
+def create_package_archive(path_package_root: Path) -> Path:
+    """创建包含清单的确定性 tar.gz 远端验证包。
+
+    :param path_package_root: 已完成 staging 的本地包根目录。
+    :return: 可交给 erie-remote-ssh request-upload 的归档路径。
+    :raises RuntimeError: staging 含符号链接或归档路径不安全时抛出。
+    """
+
+    # 归档前刷新逐文件完整性清单，兼容 staging 后追加事实文件的调用方。
+    write_package_manifest(path_package_root)
+
+    # 当前 run 的上传归档路径。
+    path_archive = package_archive_path(path_package_root)  # 归档位于 staging 同级
+
+    # 同一 staging run 重试时先替换旧归档，避免 append 造成重复成员。
+    if path_archive.exists():
+
+        # 删除旧归档，保证本次归档从空文件开始。
+        path_archive.unlink()
+
+    # 使用固定 gzip 头、tar 元数据和排序路径生成可复核归档。
+    with path_archive.open("wb") as file_archive:
+
+        # 固定 gzip mtime，避免相同 staging 在不同时间产生不同归档。
+        with gzip.GzipFile(
+            filename="",
+            mode="wb",
+            compresslevel=9,
+            fileobj=file_archive,
+            mtime=0,
+        ) as gzip_stream:
+
+            # tar 直接写入固定 gzip 流，远端可解包到 workspace 父目录。
+            with tarfile.open(fileobj=gzip_stream, mode="w") as archive:
+
+                # 写入 staging 中的全部稳定归档条目。
+                add_package_archive_entries(path_package_root, archive)
+
+    # 归档必须在返回前成为普通文件，防止 request-upload 读取半成品。
+    if not path_archive.is_file():
+
+        # 归档缺失时拒绝进入远端上传阶段。
+        raise RuntimeError(f"> ERR: [Python] Package archive was not created: {path_archive}")
+
+    # 返回已完成的本地归档。
+    return path_archive
+
+# cleanup_package_archive 只删除当前 staging 同级的归档文件。
+def cleanup_package_archive(path_package_root: Path) -> None:
+    """清理本地远端验证归档，不影响 retained 远端证据。
+
+    :param path_package_root: 本地 staging 包根目录。
+    :return: 归档不存在时无操作。
+    :raises AssertionError: 归档路径不在受控 staging tmp 目录时拒绝删除。
+    """
+
+    # 当前 staging 对应归档。
+    path_archive = package_archive_path(path_package_root)  # 固定名称的临时归档
+
+    # 归档不存在时清理操作保持幂等。
+    if not path_archive.exists():
+
+        # 归档缺失时直接结束清理。
+        return
+
+    # 删除边界与 staging 根保持一致，防止路径推导扩大范围。
+    if path_archive.parent != path_package_root.parent or path_archive.name != PACKAGE_ARCHIVE_NAME:
+
+        # 路径不符合本流程约束时拒绝删除。
+        raise AssertionError(f"> ERR: [Python] Refusing to remove unexpected package archive: {path_archive}")
+
+    # 删除当前 run 的临时归档，不影响远端 retained 证据。
+    path_archive.unlink()
 
 # cleanup_package 安全删除本地 staging 包。
 def cleanup_package(path_package_root: Path) -> None:

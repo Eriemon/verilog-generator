@@ -94,6 +94,24 @@ def _template_command_specs() -> tuple[CommandSpec, ...]:
             state=True,  # scaffold 会写 workflow-state 记录模板位置
         ),
         CommandSpec(
+            "write-spec",
+            "Write strict module specs and WaveDrom companion artifacts.",
+            "write-spec",
+            (
+                arg("--spec", required=True, type=Path),
+                arg("--out-dir", required=True, type=Path),
+                arg(
+                    "--source",  # 可重复提供用于接口精确比对的 RTL 源文件
+                    action="append",
+                    type=Path,
+                    help="Optional Verilog source for exact module/port cross-check.",
+                ),
+                arg("--language", choices=("zh", "en"), default="zh"),
+            ),
+            trace=True,
+            state=True,
+        ),
+        CommandSpec(
             "prompt",
             "Render a model prompt from a JSON spec.",
             "prompt",

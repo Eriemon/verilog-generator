@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Any 允许 settings 与局部 JSON 载荷保持宽类型兼容。
-from typing import Any
+from typing import Any, cast
 
 # SourceAuditContext 汇总源码、文档与发布卫生审计会反复读取的依赖。
 @dataclass(frozen=True)
@@ -559,11 +559,23 @@ def verify_legacy_terms(
     # list_violations 累积命中禁止 legacy 领域词的路径与行号。
     list_violations: list[str] = []  # legacy 词违规列表
 
+    # 二进制资产不具备源码术语语义，必须交给各自的格式门禁校验。
+    str_binary_suffixes = ".bmp .gif .ico .jpeg .jpg .pdf .png .sqlite .sqlite3 .webp .zip"  # 二进制资产后缀集合
+
+    # 后缀集合用于阻止宽松文本解码制造跨字节术语误报。
+    set_binary_suffixes = set(str_binary_suffixes.split())  # 不参与 legacy 文本扫描的后缀
+
     # 沿当前源码审计文件集逐个扫描 legacy 词是否泄漏。
     for path_file in source_audit_context.func_iter_skill_files():
 
         # str_relative_path 用于白名单判断和错误摘要输出。
         str_relative_path = path_file.relative_to(source_audit_context.path_skill_root).as_posix()  # skill 相对文件路径
+
+        # PNG 等压缩资产不应被按 UTF-8 文本解释，否则非法字节会拼接出虚假旧术语。
+        if path_file.suffix.lower() in set_binary_suffixes:
+
+            # 二进制资产由 PNG、归档或数据库格式门禁独立证明其有效性。
+            continue
 
         # 白名单文件允许保留 legacy 词，直接跳过。
         if str_relative_path in set_allowlist:
@@ -611,10 +623,17 @@ def verify_dependency_schema(settings: dict[str, Any]) -> None:
     """
 
     # 路由与依赖配置 helper 只在真正需要解析 defaults 时才延迟导入。
-    from scripts.python.workflow.config import fpga_developer_routing_settings, skill_dependency_settings
+    from scripts.python.workflow.config import (
+        fpga_developer_routing_settings,
+        skill_dependency_settings,
+        tool_dependency_settings,
+    )
 
     # dict_dependencies 保存当前 defaults 里的技能依赖配置。
     dict_dependencies = skill_dependency_settings(settings)  # 技能依赖配置字典
+
+    # dict_tools 保存固定 WaveDrom npm 依赖，防止版本和安装入口漂移。
+    dict_tools = tool_dependency_settings(settings)  # 外部工具依赖配置字典
 
     # dict_routing 保存当前 defaults 里的 FPGA developer 路由配置。
     dict_routing = fpga_developer_routing_settings(settings)  # FPGA developer 路由配置字典
@@ -634,9 +653,8 @@ def verify_dependency_schema(settings: dict[str, Any]) -> None:
         # required 依赖 URL 集合一旦偏离约束，就立即阻断校验。
         raise AssertionError(f"> ERR: [Python] Unexpected required dependency URLs: {sorted(set_required_urls)}")
 
-    # recommended 依赖只能包含 superpowers 与 context-engineering 两个仓库。
+    # recommended 依赖只保留 context-engineering，其他外部技能组均不纳入。
     if set_recommended_urls != {
-        "https://github.com/obra/superpowers.git",
         "https://github.com/muratcankoylan/Agent-Skills-for-Context-Engineering.git",
     }:
 
@@ -652,6 +670,20 @@ def verify_dependency_schema(settings: dict[str, Any]) -> None:
         raise AssertionError(
             f"> ERR: [Python] Unexpected manual fallback dependency URLs: {sorted(set_manual_fallback_urls)}"
         )
+
+    # WaveDrom 依赖必须锁定 npm 包、命令和版本，避免 CLI 实现漂移。
+    dict_wavedrom = dict_tools.get("wavedrom", {})  # 固定 WaveDrom 依赖对象
+
+    # 逐项确认 npm 包、版本和可执行入口保持锁定。
+    if (
+        dict_wavedrom.get("package_manager") != "npm"  # npm 是唯一安装器
+        or dict_wavedrom.get("package") != "wavedrom"  # 包名必须固定
+        or dict_wavedrom.get("version") != "3.6.1"  # 版本必须锁定
+        or dict_wavedrom.get("executable") != "wavedrom"  # CLI 入口必须固定
+    ):
+
+        # 依赖合同漂移时阻断验证，避免生成不可复现的波形。
+        raise AssertionError("> ERR: [Python] tool_dependencies.wavedrom must remain npm wavedrom@3.6.1.")
 
     # dict_fpga_dependency 提取 manual_fallback 里 FPGA-Agent-skills 的配置项。
     dict_fpga_dependency = next(  # FPGA-Agent-skills 对应的手动回退依赖配置
@@ -1151,7 +1183,10 @@ def _allowed_dependency_term_line(str_relative_path: str, str_line: str) -> bool
     ):
 
         # 只采用首个明确识别当前路径的白名单判定。
-        optional_allowed = func_checker(str_relative_path, str_line)  # 当前职责域判定
+        optional_allowed: bool | None = cast(  # 当前职责域白名单判定值
+            bool | None,  # 结果类型限定为白名单布尔值或未识别 None
+            func_checker(str_relative_path, str_line),  # 当前职责域判定
+        )
 
         # False 也是明确拒绝结果，不能继续落入更宽的路径规则。
         if optional_allowed is not None:

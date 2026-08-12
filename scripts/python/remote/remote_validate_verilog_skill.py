@@ -94,6 +94,18 @@ module_type_stage_manifest_support = _load_local_support_module(  # facade 绑�
     "readable_verilog_remote_stage_manifest",  # execution 动态导入使用的稳定模块别名
 )
 
+# 归档完整性模块先载入，供归档验证片段使用。
+module_type_archive_integrity_support = _load_local_support_module(  # facade 绑定归档完整性支撑模块
+    "remote_archive_integrity.py",  # 承载归档解包、manifest 和摘要校验脚本生成逻辑
+    "readable_verilog_remote_archive_integrity",  # 归档验证模块别名
+)
+
+# reports 处置模块先载入，供输出策略包装器使用。
+module_type_output_cleanup_support = _load_local_support_module(  # facade 绑定输出处置支撑模块
+    "remote_output_cleanup.py",  # 承载 retained reports 路径检查脚本生成逻辑
+    "readable_verilog_remote_output_cleanup",  # 输出策略模块别名
+)
+
 # execution 支撑模块承载 staging、request 和 retained-run 汇总实现。
 module_type_execution_support = _load_local_support_module(  # facade 绑定 retained-run 执行支撑模块
     "remote_validate_execution.py",  # 承载 request 执行与 retained-run 汇总逻辑的实现文件
@@ -187,7 +199,9 @@ _export_module_members(
 _export_module_members(
     module_type_execution_support,
     "ensure_local_prerequisites ensure_remote_prerequisites ensure_remote_read_prerequisites "
-    "stage_package cleanup_package remove_tree_with_retries request_and_run helper_base run_helper "
+    "PACKAGE_ARCHIVE_NAME stage_package write_package_manifest package_archive_path "
+    "create_package_archive cleanup_package cleanup_package_archive remove_tree_with_retries "
+    "request_and_run helper_base run_helper "
     "emit_prefixed_lines emit_json_payload parse_request_path cleanup_requests cleanup_local_residuals "
     "summarize_validation_report summarize_fixture_report summarize_pytest_report "
     "parse_json_output parse_download_path",
@@ -772,10 +786,13 @@ def staged_source_digest(path_package_root: Path) -> str:
     # 同时纳入路径和内容，避免同字节文件在不同位置产生相同包身份。
     obj_digest: object = hashlib.sha256()  # 当前 staging 包的增量 SHA-256 计算器
 
-    # 排序消除文件系统枚举顺序差异，保证同一内容跨运行可复现。
-    for path_file in sorted(path_item for path_item in path_package_root.rglob("*") if path_item.is_file()):
+    # 排序消除枚举顺序差异，保证跨运行可复现。
+    for path_file in sorted(
+        (path_item for path_item in path_package_root.rglob("*") if path_item.is_file()),
+        key=lambda path_item: path_item.relative_to(path_package_root).as_posix(),
+    ):
 
-        # 相对路径使用 POSIX 分隔符，消除本地主机路径风格差异。
+        # 相对路径使用 POSIX 分隔符，消除主机差异。
         str_relative_path = path_file.relative_to(path_package_root).as_posix()  # 摘要中的平台无关相对路径
 
         # 路径先进入摘要，避免相同字节位于不同位置时产生同一包身份。
@@ -810,6 +827,7 @@ def run_remote_validation(
     :param str_remote_runtime_config: 远端 runtime 配置相对路径。
     :param cleanup_remote: 是否在 gate 后删除远端验证目录。
     :return: 进程退出码，0 表示远端 gate 成功。
+    :raises BaseException: staging、归档、远端请求或验证阶段失败时继续抛出原始异常。
     """
 
     # 每次远端验证都使用高熵 run id，避免同秒并发共享 retained 目录。
@@ -845,8 +863,29 @@ def run_remote_validation(
     # 打包本地 skill 和 smoke 目录到临时 staging 根。
     path_package_root = stage_package(remote_context.path_helper, str_run_id)  # 本地临时上传包根目录
 
-    # 摘要必须在上传前对最终 staging 计算，后续 completion 与调用方都绑定该值。
-    str_source_digest = staged_source_digest(path_package_root)  # 本轮上传包的稳定 SHA-256 身份
+    # 归档或摘要生成失败时立即清理 staging，避免半成品留在本地临时目录。
+    try:
+
+        # 将 staging 树封装成单文件，避免递归 SCP 在目录树中静默遗漏模块。
+        path_upload_archive = create_package_archive(path_package_root)  # 本轮唯一上传源归档
+
+        # 摘要必须在上传前对最终 staging 计算，后续 completion 与调用方都绑定该值。
+        str_source_digest = staged_source_digest(path_package_root)  # 本轮上传包的稳定 SHA-256 身份
+
+    # 归档或摘要阶段发生异常时进入本地临时资源清理分支。
+    except BaseException:
+
+        # 失败时清理归档和 staging；原始异常继续交给上层报告。
+        cleanup_package_archive(path_package_root)
+
+        # 删除归档来源目录，避免下一轮误用半成品。
+        cleanup_package(path_package_root)
+
+        # 保留原始异常类型和堆栈，禁止把失败伪装成成功。
+        raise
+
+    # 归档放在远端 skill 目录内，解包目标为其父级 workspace。
+    str_remote_archive_name = PACKAGE_ARCHIVE_NAME  # 远端解包使用的归档文件名
 
     # 请求列表在 try 前初始化，保证失败清理路径也可访问。
     list_request_paths: list[Path] = []  # 本轮创建的 erie-remote-ssh request 文件
@@ -864,6 +903,8 @@ def run_remote_validation(
         str_source_digest=str_source_digest,  # completion 绑定的上传包身份
         str_remote_server=remote_context.str_server,  # 远端环境指纹绑定的服务器标识
         str_remote_reports=str_remote_reports,  # outer run 的直接报告目录
+        path_upload_archive=path_upload_archive,  # 本地 tar.gz 上传源
+        str_remote_archive_name=str_remote_archive_name,  # 远端 skill 目录内的归档文件名
     )
 
     # 远端执行可能失败，但本地 staging 和 request 文件必须进入清理路径。
@@ -956,23 +997,70 @@ def run_remote_validation_requests(
         )
     )
 
-    # 上传 staging 包到远端 retained run 目录。
-    list_request_paths.append(
-        request_and_run(
-            remote_context,
-            "request-upload",
-            [
-                "--local",
-                str(run_config.path_package_root / "readable-verilog-generator"),
-                "--remote",
-                run_config.str_remote_skill,
-                "--reason",
-                "upload Verilog skill validation package",
-                "--confirm-sensitive-local-upload",
-            ],
-            run_request_args=["--confirm-sensitive-local-upload"],
+    # 归档上传需要先创建最终 skill 目录，避免 scp 把归档落到错误层级。
+    if run_config.path_upload_archive is not None and run_config.str_remote_archive_name:
+
+        # 记录创建归档解包目录的远端请求。
+        list_request_paths.append(
+
+            # 通过统一 helper 创建远端目录。
+            request_and_run(
+                remote_context,
+                "request-mkdir",
+                [
+                    "--path",
+                    run_config.str_remote_skill,
+                    "--reason",
+                    "prepare Verilog skill archive extraction directory",
+                ],
+            )
         )
-    )
+
+    # 优先上传单一归档；旧调用方未提供归档时保留目录上传兼容路径。
+    if run_config.path_upload_archive is not None and run_config.str_remote_archive_name:
+
+        # 记录单一归档上传请求。
+        list_request_paths.append(
+
+            # 通过统一 helper 上传确定性归档。
+            request_and_run(
+                remote_context,
+                "request-upload",
+                [
+                    "--local",
+                    str(run_config.path_upload_archive),
+                    "--remote",
+                    remote_join(run_config.str_remote_skill, run_config.str_remote_archive_name),
+                    "--reason",
+                    "upload Verilog skill validation package archive",
+                    "--confirm-sensitive-local-upload",
+                ],
+                run_request_args=["--confirm-sensitive-local-upload"],
+            )
+        )
+
+    # 未配置归档时继续使用旧的递归目录上传兼容路径。
+    else:
+
+        # 记录兼容目录上传请求。
+        list_request_paths.append(
+
+            # 通过统一 helper 上传 staging skill 目录。
+            request_and_run(
+                remote_context,
+                "request-upload",
+                [
+                    "--local",
+                    str(run_config.path_package_root / "readable-verilog-generator"),
+                    "--remote",
+                    run_config.str_remote_skill,
+                    "--reason",
+                    "upload Verilog skill validation package",
+                    "--confirm-sensitive-local-upload",
+                ],
+                run_request_args=["--confirm-sensitive-local-upload"],
+            )
+        )
 
     # 远端执行命令包含 compile、smoke、fixture 和 readiness 验证。
     # reports 与 workspace skill 根保持两级相对关系，避免硬编码路径散落。
@@ -1011,6 +1099,9 @@ def run_remote_validation_requests(
 
         # 服务器标识进入远端环境和测试证据，不写入连接凭据。
         remote_server_id=run_config.str_remote_server,  # 本轮远端服务器身份
+
+        # 归档文件名用于远端解包和逐文件完整性校验。
+        package_archive_name=run_config.str_remote_archive_name,  # skill 目录内的 tar.gz 名称
     )
 
     # 将完整 bash 正文压缩后再进入 request，避免 Windows OpenSSH argv 超过上限。
@@ -1069,7 +1160,10 @@ def finalize_remote_validation_run(
         # 详细 retained 路径已由 remote_location_lines 在启动阶段打印。
         print("> INFO: [Python] remote validation artifacts retained.")
 
-    # 删除本地 staging 包，避免 reports/tmp 持续增长。
+    # 先清理 staging 同级的确定性归档，避免 reports/tmp 持续增长。
+    cleanup_package_archive(run_config.path_package_root)
+
+    # 再清理归档来源目录。
     cleanup_package(run_config.path_package_root)
 
     # 删除本地 request 文件，远端执行证据仍留在 retained run 中。

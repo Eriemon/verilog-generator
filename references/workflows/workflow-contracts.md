@@ -28,6 +28,7 @@ Every `run_verilog_workflow(...)` execution writes a self-contained run director
 The adapter also materializes preflight inputs under `_adapter_inputs/`:
 
 - `spec.json`
+- `spec/<feature>/<module>_spec.md` plus sibling `spec/<feature>/waveforms/<module>_<scenario>.json5` and `.svg`
 - `requirements.json`
 - `codegen_plan.json`
 - optional `evidence.json`

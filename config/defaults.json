@@ -88,37 +88,6 @@
     ],
     "recommended": [
       {
-        "id": "superpowers",
-        "url": "https://github.com/obra/superpowers.git",
-        "purpose": "Task planning, multi-step execution, and verification workflows.",
-        "skills": [
-          "using-superpowers",
-          "writing-plans",
-          "executing-plans",
-          "test-driven-development"
-        ],
-        "install_specs": [
-          {
-            "skill": "using-superpowers",
-            "source_path": "skills/using-superpowers"
-          },
-          {
-            "skill": "writing-plans",
-            "source_path": "skills/writing-plans"
-          },
-          {
-            "skill": "executing-plans",
-            "source_path": "skills/executing-plans"
-          },
-          {
-            "skill": "test-driven-development",
-            "source_path": "skills/test-driven-development"
-          }
-        ],
-        "alternative": "superpowers_plugin_namespace",
-        "adaptation": "optional_workflow"
-      },
-      {
         "id": "context-engineering",
         "url": "https://github.com/muratcankoylan/Agent-Skills-for-Context-Engineering.git",
         "purpose": "Engineering task debugging, context optimization, and agent workflow diagnosis.",
@@ -203,6 +172,32 @@
         ],
         "alternative": "aggregate_or_upstream_multi_skill",
         "adaptation": "optional_debug"
+      }
+    ]
+  },
+  "tool_dependencies": {
+    "wavedrom": {
+      "id": "wavedrom",
+      "display_name": "WaveDrom",
+      "required": true,
+      "package_manager": "npm",
+      "package": "wavedrom",
+      "version": "3.6.1",
+      "executable": "wavedrom",
+      "runtime": "wavedrom",
+      "minimum_node_version": "20.0.0"
+    },
+    "required": [
+      {
+        "id": "wavedrom",
+        "display_name": "WaveDrom",
+        "required": true,
+        "package_manager": "npm",
+        "package": "wavedrom",
+        "version": "3.6.1",
+          "executable": "wavedrom",
+          "runtime": "wavedrom",
+          "minimum_node_version": "20.0.0"
       }
     ]
   },
@@ -291,6 +286,7 @@
       }
     },
     "markdown_non_ascii_allowlist": [
+      "README.md",
       "README-CN.md",
       "references/rules/verilog-code-comment-naming-standard.md",
       "references/corpus/verilog-style-observations.md"

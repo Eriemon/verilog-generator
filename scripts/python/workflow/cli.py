@@ -34,6 +34,7 @@ def _command_handlers() -> dict[str, CommandHandler]:
     # 该映射必须覆盖 cli_parser.py 中的全部 handler_key。
     return {
         "scaffold": cli_generation.cmd_scaffold,
+        "write-spec": cli_generation.cmd_write_spec,
         "prompt": cli_generation.cmd_prompt,
         "extract": cli_generation.cmd_extract,
         "validate": cli_generation.cmd_validate,

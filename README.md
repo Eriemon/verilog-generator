@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/readme/hero.svg" alt="Verilog Generator RTL workbench" width="100%">
+  <img src="assets/readme/hero.png" alt="Verilog Generator RTL workbench" width="100%">
 </p>
 
 ![Verilog Generator RTL workflow](assets/readme-workflow.png)
@@ -25,7 +25,7 @@
 
 Verilog Generator is a Codex skill for everyday Verilog-2001 work. Give it a module requirement, existing RTL, a testbench, or a tool log. It can write a new module, explain old code, add useful comments, or repair code against actual diagnostics.
 
-The project follows one rule: generated RTL should be easy for the next engineer to read, review, and verify. It records what was checked and never presents unrun simulation or synthesis as evidence.
+The project follows one rule: generated RTL should be easy for the next engineer to read, review, and verify. It states which checks were run and never presents unrun simulation or synthesis as completed.
 
 ## What can it do?
 
@@ -42,12 +42,30 @@ The project follows one rule: generated RTL should be easy for the next engineer
       <code>structure / behavior / risk locations</code>
     </td>
     <td width="33%">
-      <strong>03 / Repair with evidence</strong><br><br>
+      <strong>03 / Repair with verification</strong><br><br>
       Fix against expected behavior and real diagnostics while preserving a reviewable diff and validation boundary.<br><br>
-      <code>patch / diff / static or real tool evidence</code>
+      <code>patch / diff / static or real tool results</code>
     </td>
   </tr>
 </table>
+
+### Project facts
+
+![Project facts](assets/readme/project-facts.png)
+
+The skill keeps project facts, interfaces, and validation boundaries visible before a change is proposed.
+
+### Design profile
+
+![Design profile](assets/readme/design-profile.png)
+
+Each request is routed through a readable design profile so generated RTL has an explicit purpose and review scope.
+
+### Rule rendering
+
+![Rule rendering](assets/readme/rule-rendering.png)
+
+The final output preserves the selected readability rules, semantic comments, and verification handoff.
 
 ## Generated RTL example
 
@@ -87,7 +105,7 @@ end
 | Errors | `0` |
 | Strict warnings | `0` |
 
-> This is static repository-local evidence. No simulator, synthesis, hardware, or remote-tool result is claimed here.
+> This is a repository-local static result. No simulator, synthesis, hardware, or remote-tool result is claimed here.
 
 ## Installation
 
@@ -95,15 +113,17 @@ end
 
 Restart Codex after installation so the skill is discovered.
 
-This README describes the latest public GitHub release, `v0.4.0`. This governed checkout also contains the validated local package `v1.0.9`; use `VERSION` as the local package version authority and do not infer GitHub publication from it.
+This README describes the latest public GitHub release, `v0.4.0`. This governed checkout also contains the validated local package `v1.1.0`; use `VERSION` as the local package version authority and do not infer GitHub publication from it.
 
-For a pinned public install, use tag `v0.4.0` or the automatically generated source archive on the [GitHub release page](https://github.com/Eriemon/verilog-generator/releases/tag/v0.4.0). For a pinned local install, use the validated `dist/readable-verilog-generator-v1.0.9/` package produced by the governed release workflow.
+For a pinned public install, use tag `v0.4.0` or the automatically generated source archive on the [GitHub release page](https://github.com/Eriemon/verilog-generator/releases/tag/v0.4.0). For a pinned local install, use the validated `dist/readable-verilog-generator-v1.1.0/` package produced by the governed release workflow.
 
 ## Authors
 
 <p align="center">
-  <img src="assets/readme/authors.svg" alt="Jiyuan Liu and He Li, Southeast University HIQC Laboratory" width="100%">
+  <img src="assets/readme/authors.png" alt="Jiyuan Liu and He Li, Southeast University HIQC Laboratory" width="100%">
 </p>
+
+Jiyuan Liu and He Li · Southeast University · 东南大学 · HIQC (Heterogeneous Intelligence and Quantum Computing Laboratory)
 
 ## How to cite
 
@@ -128,6 +148,8 @@ For a pinned public install, use tag `v0.4.0` or the automatically generated sou
   <a href="SKILL.md">Skill contract</a>
   <span>&nbsp;&bull;&nbsp;</span>
   <a href="LICENSE">Apache-2.0</a>
+  <span>&nbsp;&bull;&nbsp;</span>
+  <a href="LICENSE">Apache License 2.0</a>
   <span>&nbsp;&bull;&nbsp;</span>
   <a href="CITATION.cff">Citation</a>
   <span>&nbsp;&bull;&nbsp;</span>

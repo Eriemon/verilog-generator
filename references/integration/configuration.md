@@ -40,7 +40,6 @@ Skill-effectiveness eval assets live under `evals/evals.json`. The file records 
 
 The recommended groups are:
 
-- `https://github.com/obra/superpowers.git`: planning, execution, TDD, and verification workflows.
 - `https://github.com/muratcankoylan/Agent-Skills-for-Context-Engineering.git`: engineering debug and context optimization workflows.
 
 The manual fallback group is:
@@ -52,14 +51,16 @@ Run the dependency manager from the skill root through the canonical module entr
 ```powershell
 python -m scripts.python.toolchain.manage_skill_dependencies check --settings .\config\defaults.json
 python -m scripts.python.toolchain.manage_skill_dependencies prompt --settings .\config\defaults.json
-python -m scripts.python.toolchain.manage_skill_dependencies skip --settings .\config\defaults.json superpowers
 python -m scripts.python.toolchain.manage_skill_dependencies install --settings .\config\defaults.json --dependency-id erie-remote-ssh --yes
+python -m scripts.python.toolchain.manage_skill_dependencies install --settings .\config\defaults.json --dependency-id wavedrom --yes
 python -m scripts.python.toolchain.manage_skill_dependencies adapt --settings .\config\defaults.json
 ```
 
 `install` requires `--yes` and must be used only after the user confirms installation. `skip` is valid only for recommended dependencies. `adapt` writes project-local dependency state to `<workspace-root>/.readable-verilog-generator-state/dependency-state.json`; for `erie-remote-ssh`, this records the installed `scripts/python/runtime/remote_ssh.py` entrypoint and the supported defaults file path under either `config/defaults.json` or `assets/defaults.json` so remote validation can use the local installation without storing machine-specific helper paths in this skill. Legacy `.erie-verilog-generator-state` files remain read-only migration sources. If the command is not launched from a workspace root containing `.git` or `AGENTS.md`, pass `--state-path` explicitly.
 
 `fpga_developer_routing` records vendor-level developer skill preferences. AMD-Xilinx work recognizes `vivado-developer` and `vitis-developer`; PangoMicro work recognizes `pds-developer`. When any developer skill is installed, FPGA-Agent-Skills is not required and its Vivado/Vitis skills are not installed by this skill. If no developer skill is installed, FPGA-Agent-Skills remains a manual fallback only: `install --dependency-id fpga-agent-skills --yes` still skips it, and installation requires the additional `--allow-fpga-agent-fallback` flag. If both vendor families are available, ask the user which vendor to use for the current FPGA workflow and persist only that vendor choice in the project-local state file.
+
+`tool_dependencies.wavedrom` locks the external waveform runtime to npm package `wavedrom@3.6.1`, executable `wavedrom`, and Node.js `>=20.0.0`. The bundled `scripts/python/toolchain/wavedrom_runtime.py` is the only install/check/render route: it runs `npm install --global wavedrom@3.6.1 --yes` only after explicit confirmation, checks the exact version, and captures SVG from `wavedrom --input <wavejson> --indent 2`. The separate `wavedrom-cli` package is not a supported dependency.
 
 Developer routing commands:
 

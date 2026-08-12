@@ -6,7 +6,7 @@
       "title": "从规范到可验证 RTL",
       "summary": "依次完成依赖检查、规范骨架或 prompt、受管生成、交付门禁和 readiness 验证。",
       "aliases": {"zh": ["从 spec 生成 RTL", "规范优先生成流程"], "en": ["spec-first RTL generation", "spec to validated RTL"]},
-      "steps": ["toolchain.dependencies-check", "workflow.scaffold", "workflow.prompt", "workflow.run", "validation.generated-deliverable", "workflow.validate"],
+      "steps": ["toolchain.dependencies-check", "workflow.scaffold", "workflow.write-spec", "workflow.prompt", "workflow.run", "validation.generated-deliverable", "workflow.validate"],
       "boundaries": ["requirements 和 codegen plan 先于 RTL", "外部 readiness 证据与静态交付门禁分开报告"]
     },
     {

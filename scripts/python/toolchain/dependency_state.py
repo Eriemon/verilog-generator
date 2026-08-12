@@ -50,6 +50,23 @@ def read_skill_dependency_settings(settings: dict[str, Any]) -> dict[str, Any]:
     # 直接返回 runtime helper 的结果，避免调用方暴露 helper 变量。
     return skill_dependency_settings(settings)
 
+# read_tool_dependency_settings 读取 npm/Node 外部工具配置分区。
+def read_tool_dependency_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    """读取外部工具依赖治理配置。
+
+    :param settings: 已加载的 defaults.json 配置字典。
+    :return: 返回 tool_dependencies 分区的规范化字典。
+    """
+
+    # 延迟准备 skill 根目录，保持模块导入没有路径副作用。
+    ensure_skill_root_on_path()
+
+    # workflow.config 负责固定 WaveDrom 包名和版本合同。
+    from scripts.python.workflow.config import tool_dependency_settings
+
+    # 直接返回规范化工具配置，调用方不需要感知配置模块。
+    return tool_dependency_settings(settings)
+
 # read_settings_file 延迟加载 defaults.json 配置文件。
 def read_settings_file(path_settings: Path) -> dict[str, Any]:
     """读取 skill defaults.json 配置文件。
@@ -83,6 +100,198 @@ def read_fpga_developer_routing_settings(settings: dict[str, Any]) -> dict[str, 
 
     # 返回 vendor 路由策略，调用方无需感知 runtime helper 名称。
     return fpga_developer_routing_settings(settings)
+
+# required_tool_status 把 WaveDrom runtime 诊断映射成旧工具状态合同。
+def _required_tool_status(
+    tool_settings: dict[str, Any],
+    wavedrom_runtime: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """生成 required 外部工具状态及其缺失子集。
+
+    参数:
+        tool_settings: ``tool_dependencies`` 规范化配置。
+        wavedrom_runtime: ``check_runtime`` 返回的 WaveDrom 诊断。
+
+    返回:
+        ``(required_tools, missing_required_tools)`` 两个稳定列表。
+    """
+
+    # 先创建外部工具状态列表，再按配置顺序填充。
+    list_required_tools: list[dict[str, Any]] = []  # 外部工具状态列表
+
+    # 每个工具都复用同一份 runtime 诊断，避免版本读取漂移。
+    for dict_tool in tool_settings["required"]:
+
+        # 只有 wavedrom 条目可以由当前 runtime 报告证明存在。
+        bool_present = (  # 当前工具是否满足 required 可用性
+            bool(wavedrom_runtime.get("ok"))  # WaveDrom runtime 的整体可用标志
+            if dict_tool["id"] == "wavedrom"  # 只把 wavedrom 配置映射到 runtime
+            else False  # 未知工具默认视为未满足
+        )  # 工具存在性判定
+
+        # 单独提取版本，避免在报告字典中重复长表达式。
+        str_tool_version = (  # 当前工具的机器可读版本文本
+            wavedrom_runtime.get("wavedrom", {}).get("version")  # 读取 WaveDrom 精确版本
+            if dict_tool["id"] == "wavedrom"  # 只为 wavedrom 提供版本证据
+            else None  # 未知工具没有可推断版本
+        )  # 工具版本证据
+
+        # 追加保持旧字段合同的外部工具状态记录。
+        list_required_tools.append(
+            {
+                "id": dict_tool["id"],
+                "kind": "tool",
+                "present": bool_present,
+                "required": True,
+                "version": str_tool_version,
+                "details": wavedrom_runtime,
+            }
+        )
+
+    # 只保留 present 为 False 的工具，供 required gate 和 prompt 使用。
+    list_missing_required_tools = [  # 缺失 required 外部工具清单
+        dict_item  # 保留完整工具状态供安装命令定位
+        for dict_item in list_required_tools  # 遍历已归一化工具记录
+        if not dict_item["present"]  # 过滤未满足工具合同的记录
+    ]  # required 工具缺失结果
+
+    # 返回完整工具状态和缺失子集，调用方负责写入总报告。
+    return list_required_tools, list_missing_required_tools
+
+# collect_dependency_statuses 扫描 skill 依赖组并计算缺失集合。
+def _collect_dependency_statuses(
+    dependency_settings: dict[str, Any],
+    skills_root: Path,
+    plugin_cache: Path,
+    skipped_ids: set[str],
+    fpga_agent_skipped: bool,
+) -> dict[str, list[dict[str, Any]]]:
+    """收集 required、fallback、recommended 及其缺失子集。
+
+    参数:
+        dependency_settings: skill 依赖分组配置。
+        skills_root: skill 搜索根目录。
+        plugin_cache: 插件缓存搜索根目录。
+        skipped_ids: 当前配置版本仍有效的跳过 id 集合。
+        fpga_agent_skipped: 是否由 developer skill 覆盖旧 fallback。
+
+    返回:
+        按固定键名组织的依赖状态和缺失列表。
+    """
+
+    # required 依赖缺失会阻塞相关远程/Vivado 工作流。
+    list_required: list[dict[str, Any]] = []  # required 依赖状态列表
+
+    # 逐项检查 required 依赖组的 skill 集合。
+    for dict_dependency in dependency_settings["required"]:
+
+        # 单个依赖状态保留 id、kind、url、missing_skills 和 skill_paths。
+        dict_status = _dependency_status(dict_dependency, "required", skills_root, plugin_cache)  # required 依赖状态
+
+        # required 状态按 defaults.json 顺序输出。
+        list_required.append(dict_status)
+
+    # manual_fallback 仅在显式请求时安装，但 check 报告仍展示可用性。
+    list_manual_fallback: list[dict[str, Any]] = []  # 手动 fallback 依赖状态列表
+
+    # 逐项检查手动 fallback 依赖组。
+    for dict_dependency in dependency_settings.get("manual_fallback", []):
+
+        # fallback 依赖也复用通用依赖状态解析。
+        dict_status = _dependency_status(dict_dependency, "manual_fallback", skills_root, plugin_cache)  # 手动 fallback 依赖安装状态
+
+        # developer skill 已安装时把 FPGA-Agent 视为逻辑满足。
+        if dict_dependency["id"] == "fpga-agent-skills" and fpga_agent_skipped:
+
+            # 覆盖 present 字段，避免提示用户再装旧集合。
+            dict_status["present"] = True  # developer skill 已覆盖旧 FPGA-Agent 集合
+
+            # developer skill 覆盖后不再报告缺失的 FPGA-Agent 子技能。
+            dict_status["missing_skills"] = []  # 覆盖后不再提示旧子技能缺失
+
+            # 报告中显式记录跳过原因，便于上层解释。
+            dict_status["skipped_by_developer_skill"] = True  # 报告中保留 developer 覆盖证据
+
+        # fallback 状态按配置顺序追加，便于 prompt 保持稳定输出。
+        list_manual_fallback.append(dict_status)
+
+    # recommended_all 保留所有状态，报告可展示被跳过项。
+    list_recommended_all = [  # 全量 recommended 依赖状态
+        _dependency_status(dict_dependency, "recommended", skills_root, plugin_cache)  # 单个 recommended 依赖状态
+        for dict_dependency in dependency_settings["recommended"]  # 按配置顺序遍历 recommended 依赖
+    ]  # recommended 状态结果
+
+    # recommended 过滤掉当前版本仍有效的 skip 记录。
+    list_recommended = [  # 参与缺失判定的 recommended 依赖
+        dict_item  # 保留未被跳过的推荐状态
+        for dict_item in list_recommended_all  # 遍历全量推荐依赖
+        if dict_item["id"] not in skipped_ids  # 排除当前配置版本有效 skip 项
+    ]  # 当前生效的 recommended 集合
+
+    # required 缺失集合决定 required_ok。
+    list_missing_required = [  # 缺失 required 依赖列表
+        dict_item  # 保留完整依赖诊断供 prompt 使用
+        for dict_item in list_required  # 遍历 required 状态
+        if not dict_item["present"]  # 仅保留仍缺少 required skill 的记录
+    ]  # required 缺失结果
+
+    # missing_recommended 只影响推荐依赖提示，不绕过 required gate。
+    list_missing_recommended = [  # 未被 skip 且仍缺失的推荐依赖
+        dict_item  # 保留缺失推荐状态
+        for dict_item in list_recommended  # 遍历当前生效推荐集合
+        if not dict_item["present"]  # recommended 未满足时才进入用户提示清单
+    ]  # 形成 prompt 使用的推荐缺口集合
+
+    # 返回总报告需要的所有依赖列表，主函数只负责组装外部工具状态。
+    return {
+        "required": list_required,
+        "manual_fallback": list_manual_fallback,
+        "recommended_all": list_recommended_all,
+        "missing_required": list_missing_required,
+        "missing_recommended": list_missing_recommended,
+    }
+
+# read_wavedrom_runtime 延迟加载 bundled runtime 并读取工具状态。
+def _read_wavedrom_runtime() -> dict[str, Any]:
+    """读取当前机器的 WaveDrom 版本和入口诊断。
+
+    参数:
+        本函数不接收业务参数；配置由 bundled runtime 固定提供。
+
+    返回:
+        ``check_runtime`` 产生的机器可读 runtime 报告。
+    """
+
+    # 运行期才准备 skill 根目录，避免模块导入阶段修改 sys.path。
+    ensure_skill_root_on_path()
+
+    # 从 skill 内 runtime 导入固定版本检查入口。
+    from scripts.python.toolchain.wavedrom_runtime import check_runtime
+
+    # 返回当前机器的 WaveDrom 版本状态。
+    return check_runtime(smoke=False)
+
+# read_required_tool_status 将 runtime 报告转换为外部工具列表。
+def _read_required_tool_status(
+    settings: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """读取 WaveDrom runtime 并生成 required 工具状态。
+
+    参数:
+        settings: 已加载的 defaults.json 配置。
+
+    返回:
+        required 工具列表及缺失工具列表。
+    """
+
+    # 外部工具配置单独读取，避免把 npm 包伪装成可跳过的 skill。
+    dict_tool_settings = read_tool_dependency_settings(settings)  # 外部工具依赖治理配置
+
+    # 读取固定版本 runtime 诊断。
+    dict_runtime = _read_wavedrom_runtime()  # 当前机器的 WaveDrom 运行状态
+
+    # 将诊断映射到旧字段合同。
+    return _required_tool_status(dict_tool_settings, dict_runtime)
 
 # check_dependencies 汇总 required、recommended 和 manual fallback 依赖状态。
 def check_dependencies(
@@ -139,66 +348,38 @@ def check_dependencies(
         bool_developer_present and not dict_developer_skills["fpga_agent_required_when_developer_present"]  # developer 存在且策略允许覆盖旧 fallback
     )
 
-    # required 依赖缺失会阻塞相关远程/Vivado 工作流。
-    list_required: list[dict[str, Any]] = []  # required 依赖状态列表
+    # 收集 skill 依赖状态，把循环和 fallback 覆盖逻辑封装在 helper 内。
+    dict_dependency_status = _collect_dependency_statuses(  # skill 依赖状态汇总
+        dict_dependency_settings,  # 传递规范化依赖分组
+        path_skills_root,  # 传递 skill 搜索根目录
+        path_plugin_cache,  # 传递插件缓存根目录
+        set_skipped,  # 传递当前配置版本有效 skip 集合
+        bool_fpga_agent_skipped,  # 传递 developer 对 fallback 的覆盖判定
+    )
 
-    # 逐项检查 required 依赖组的 skill 集合。
-    for dict_dependency in dict_dependency_settings["required"]:
+    # 接受 helper 返回的 required 分组状态。
+    list_required = dict_dependency_status["required"]  # required 依赖扫描结果
 
-        # 单个依赖状态保留 id、kind、url、missing_skills 和 skill_paths。
-        dict_status = _dependency_status(dict_dependency, "required", path_skills_root, path_plugin_cache)  # required 依赖状态
+    # 接受 helper 返回的手动 fallback 分组状态。
+    list_manual_fallback = dict_dependency_status["manual_fallback"]  # fallback 安装候选结果
 
-        # required 状态按 defaults.json 顺序输出。
-        list_required.append(dict_status)
+    # 接受 helper 返回的全量 recommended 分组状态。
+    list_recommended_all = dict_dependency_status["recommended_all"]  # 全量推荐扫描结果
 
-    # manual_fallback 仅在显式请求时安装，但 check 报告仍展示可用性。
-    list_manual_fallback: list[dict[str, Any]] = []  # 手动 fallback 依赖状态列表
+    # 接受 helper 返回的 required 缺口明细。
+    list_missing_required = dict_dependency_status["missing_required"]  # required 安装阻断明细
 
-    # 逐项检查手动 fallback 依赖组。
-    for dict_dependency in dict_dependency_settings.get("manual_fallback", []):
+    # 将推荐缺口单独存放，供 prompt 决定是否询问用户。
+    list_missing_recommended = dict_dependency_status["missing_recommended"]  # recommended 可选安装明细
 
-        # fallback 依赖也复用通用依赖状态解析。
-        dict_status = _dependency_status(dict_dependency, "manual_fallback", path_skills_root, path_plugin_cache)  # 手动 fallback 依赖安装状态
-
-        # developer skill 已安装时把 FPGA-Agent 视为逻辑满足。
-        if dict_dependency["id"] == "fpga-agent-skills" and bool_fpga_agent_skipped:
-
-            # 覆盖 present 字段，避免提示用户再装旧集合。
-            dict_status["present"] = True  # developer skill 已覆盖旧 FPGA-Agent 集合
-
-            # developer skill 覆盖后不再报告缺失的 FPGA-Agent 子技能。
-            dict_status["missing_skills"] = []  # 覆盖后不再提示旧子技能缺失
-
-            # 报告中显式记录跳过原因，便于上层解释。
-            dict_status["skipped_by_developer_skill"] = True  # 报告中保留 developer 覆盖证据
-
-        # fallback 状态按配置顺序追加，便于 prompt 保持稳定输出。
-        list_manual_fallback.append(dict_status)
-
-    # recommended_all 保留所有 recommended 状态，报告可展示被跳过项。
-    list_recommended_all = [  # 全量 recommended 依赖状态
-        _dependency_status(dict_dependency, "recommended", path_skills_root, path_plugin_cache)  # 单个 recommended 依赖状态
-        for dict_dependency in dict_dependency_settings["recommended"]  # 按配置顺序遍历 recommended 依赖
-    ]
-
-    # recommended 过滤掉当前版本仍有效的 skip 记录。
-    list_recommended = [  # 参与缺失判定的 recommended 依赖
-        dict_item for dict_item in list_recommended_all if dict_item["id"] not in set_skipped  # 排除当前版本有效 skip 项
-    ]
-
-    # required 缺失集合决定 required_ok。
-    list_missing_required = [dict_item for dict_item in list_required if not dict_item["present"]]  # 缺失 required 依赖
-
-    # missing_recommended 只影响推荐依赖提示，不绕过 required gate。
-    list_missing_recommended = [  # 未被 skip 且仍缺失的 recommended 依赖
-        dict_item for dict_item in list_recommended if not dict_item["present"]  # present 为 False 的推荐依赖
-    ]
+    # WaveDrom runtime 检查固定通过 bundled wrapper，报告保留完整诊断。
+    tuple_required_tools, tuple_missing_required_tools = _read_required_tool_status(settings)  # 取得外部工具状态与缺失子集
 
     # 组装旧 JSON 字段合同，避免上层 smoke 和用户脚本破坏。
     dict_report: dict[str, Any] = {  # 依赖检查总报告
-        "version": 1,  # 报告 schema 版本
-        "ok": not list_missing_required and not list_missing_recommended,  # 全部强制和推荐依赖是否满足
-        "required_ok": not list_missing_required,  # required 依赖是否满足
+        "version": 2,  # 报告 schema 版本，新增外部工具状态
+        "ok": not list_missing_required and not list_missing_recommended and not tuple_missing_required_tools,  # 全部强制、推荐和工具依赖是否满足
+        "required_ok": not list_missing_required and not tuple_missing_required_tools,  # required skill 与工具依赖是否满足
         "recommended_ok": not list_missing_recommended,  # 未跳过的推荐依赖是否全部满足
         "skills_root": str(path_skills_root),  # 实际扫描的 skills 根目录
         "plugin_cache": str(path_plugin_cache),  # 实际扫描的插件缓存目录
@@ -209,13 +390,55 @@ def check_dependencies(
         "required": list_required,  # required 依赖逐项状态列表
         "manual_fallback": list_manual_fallback,  # 仅显式允许时才安装的 fallback 状态
         "recommended": list_recommended_all,  # 全量 recommended 依赖状态列表
-        "missing_required": list_missing_required,  # 缺失 required 依赖列表
+        "missing_required": list_missing_required,  # 报告需要的 required 缺口明细
         "missing_recommended": list_missing_recommended,  # prompt 需要询问安装或跳过的推荐依赖
+        "required_tools": tuple_required_tools,  # required 外部工具逐项状态
+        "missing_required_tools": tuple_missing_required_tools,  # 缺失 required 外部工具
         "skipped_recommended": sorted(set_skipped),  # 当前版本有效的 skipped recommended id
     }
 
     # 返回完整依赖报告供 CLI、smoke 和测试使用。
     return dict_report
+
+# append_required_tool_prompt 将外部工具缺失提示追加到现有行缓冲。
+def _append_required_tool_prompt(
+    lines: list[str],
+    missing_tools: list[dict[str, Any]],
+) -> None:
+    """追加 WaveDrom 等外部工具的固定安装命令提示。
+
+    参数:
+        lines: 当前 prompt 的可变行缓冲。
+        missing_tools: required 外部工具缺失状态列表。
+
+    返回:
+        不返回业务值；直接扩展传入的行缓冲。
+    """
+
+    # 没有缺失工具时不改变已有 prompt 段落。
+    if not missing_tools:
+
+        # 空工具清单无需写标题或空行。
+        return
+
+    # 标题明确外部工具缺失会阻断 spec bundle 渲染。
+    lines.append("Missing required external tools. These block spec bundle rendering:")
+
+    # 每个工具都给出固定 runtime 的可复制安装入口。
+    for dict_item in missing_tools:
+
+        # 组合安装命令，避免在主 prompt 函数中重复长字符串。
+        str_install_command = (  # 当前工具的可复制安装命令
+            f"- {dict_item['id']}: install with `python -m "
+            "scripts.python.toolchain.manage_skill_dependencies install "
+            f"--dependency-id {dict_item['id']} --yes`"
+        )  # 外部工具安装提示行
+
+        # 追加当前工具的精确安装提示。
+        lines.append(str_install_command)
+
+    # 工具段落结束后留空，避免与 fallback 文本粘连。
+    lines.append("")
 
 # prompt_for_missing 把依赖报告渲染成用户可读提示文本。
 def prompt_for_missing(report: dict) -> str:
@@ -231,6 +454,9 @@ def prompt_for_missing(report: dict) -> str:
     # recommended 缺失需要询问用户安装或跳过。
     list_missing_recommended = report.get("missing_recommended", [])  # prompt 中需要用户选择的推荐依赖
 
+    # required_tools 缺失会直接阻断 WaveDrom spec 伴随包发布。
+    list_missing_required_tools = report.get("missing_required_tools", [])  # 缺失外部工具依赖
+
     # developer_skills 决定是否需要让用户选择 FPGA vendor。
     dict_developer_skills = report.get("developer_skills", {})  # FPGA developer 状态报告
 
@@ -241,7 +467,15 @@ def prompt_for_missing(report: dict) -> str:
     list_manual_fallback = report.get("manual_fallback", [])  # 手动 fallback 状态列表
 
     # 没有缺失也无需选择 vendor 时给出简短成功提示。
-    if not list_missing_required and not list_missing_recommended and not bool_selection_required:
+    bool_dependency_state_clear = (  # 汇总所有缺失和 vendor 选择条件
+        not list_missing_required  # required skill 组全部满足
+        and not list_missing_recommended  # recommended skill 组没有未跳过缺失
+        and not list_missing_required_tools  # WaveDrom 等外部工具全部满足
+        and not bool_selection_required  # 不需要用户选择 vendor
+    )  # 当前依赖状态是否无需用户动作
+
+    # 清单为空时给出简短成功提示。
+    if bool_dependency_state_clear:
 
         # 成功提示保留 adapt 操作建议。
         return (
@@ -251,7 +485,7 @@ def prompt_for_missing(report: dict) -> str:
 
     # lines 逐行拼接，保持原 prompt 文本合同。
     list_lines = [  # prompt 输出行集合
-        "readable-verilog-generator dependency check found missing skills.",  # prompt 首行摘要
+        "readable-verilog-generator dependency check found missing skills or tools.",  # prompt 首行摘要
         "",  # 摘要和明细之间的空行
     ]
 
@@ -296,6 +530,9 @@ def prompt_for_missing(report: dict) -> str:
 
         # 空行分隔 required 和 fallback 段落。
         list_lines.append("")
+
+    # 外部工具缺失必须给出精确版本和安装命令，不允许推荐 wavedrom-cli。
+    _append_required_tool_prompt(list_lines, list_missing_required_tools)
 
     # fallback_missing 只展示尚未满足的手动 fallback。
     list_fallback_missing = [  # 尚未满足的手动 fallback 依赖
@@ -535,13 +772,13 @@ def _dependency_status(item: dict, kind: str, skills_root: Path, plugin_cache: P
     # 返回单个依赖的状态报告。
     return {
         "id": item["id"],  # 依赖 id
-        "kind": kind,  # 依赖分组
+        "kind": kind,  # 记录该依赖来自 required、recommended 或 fallback 分组
         "url": item["url"],  # 依赖来源 URL
         "purpose": item.get("purpose", ""),  # 依赖用途说明
         "present": not list_missing,  # 是否完整满足
         "skills": item["skills"],  # 主 skill 集合
         "selected_skill_set": list_selected_skill_set,  # 当前用于判定的 skill 集合
-        "missing_skills": list_missing,  # 缺失 skill 列表
+        "missing_skills": list_missing,  # 记录该依赖未覆盖的 skill 名称
         "skill_paths": dict_skill_paths,  # 已发现 skill 路径
     }
 

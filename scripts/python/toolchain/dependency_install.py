@@ -164,15 +164,153 @@ def adapt_dependencies(
     # 返回适配摘要。
     return {"adapted": list_adapted, "blocked": [], "state_path": str(path_state)}
 
+# install_wavedrom_if_requested 处理 npm 工具依赖的独立安装分支。
+def _install_wavedrom_if_requested(
+    report: dict[str, Any],
+    dependency_id: str | None,
+    confirm: bool,
+) -> dict[str, Any] | None:
+    """按调用方选择安装固定 WaveDrom 版本，否则返回 None。
+
+    参数:
+        report: check_dependencies 生成的依赖报告。
+        dependency_id: 可选依赖 id；为空时根据缺失工具状态决定。
+        confirm: 是否已由 CLI 显式确认外部安装副作用。
+
+    返回:
+        WaveDrom 安装摘要；不属于工具分支时返回 None。
+    """
+
+    # 读取缺失工具状态，避免把 npm 包误交给 skill-installer。
+    list_missing_tools = report.get("missing_required_tools", [])  # required 外部工具缺失状态
+
+    # 显式指定 wavedrom 或自动发现缺失工具时进入 runtime 安装。
+    bool_tool_requested = (  # 当前调用是否请求 WaveDrom 安装
+        dependency_id == "wavedrom"  # 显式 id 直接选择工具分支
+        or (dependency_id is None and bool(list_missing_tools))  # 自动模式只在工具缺失时选择
+    )  # WaveDrom 分支选择结果
+
+    # 普通 skill 依赖继续由下层 installer 处理。
+    if not bool_tool_requested:
+
+        # 非工具依赖不产生安装摘要。
+        return None
+
+    # 延迟导入 runtime，保持普通 skill 安装路径不启动 npm 代码。
+    from scripts.python.toolchain.wavedrom_runtime import install_runtime
+
+    # 使用固定版本 runtime 安装器并传递确认状态。
+    dict_tool_install = install_runtime(confirm=confirm)  # WaveDrom 安装报告
+
+    # 返回与旧 installer 摘要兼容的工具安装字段。
+    return {
+        "installed": [],
+        "installed_tools": ["wavedrom"],
+        "tool_install": dict_tool_install,
+        "restart_required": False,
+    }
+
+# install_selected_skills 执行普通 skill 的安装命令并记录跳过原因。
+def _install_selected_skills(
+    missing: list[dict[str, Any]],
+    report: dict[str, Any],
+    dependencies: dict[str, Any],
+    installer: Path,
+    allow_fpga_agent_fallback: bool,
+) -> dict[str, list[Any]]:
+    """安装已选 skill 缺失项并返回 installed/skipped 列表。
+
+    参数:
+        missing: 已经过滤的缺失依赖状态。
+        report: 原始依赖报告，用于读取 developer 覆盖状态。
+        dependencies: 依赖 id 到 defaults 条目的索引。
+        installer: skill-installer helper 路径。
+        allow_fpga_agent_fallback: 是否允许手动 FPGA-Agent fallback。
+
+    返回:
+        含 ``installed`` 与 ``skipped`` 两个列表的摘要字典。
+    """
+
+    # installed 记录本轮成功安装的 skill id。
+    list_installed: list[str] = []  # 已安装 skill id 列表
+
+    # skipped 记录未安装但被策略跳过的依赖。
+    list_skipped: list[dict[str, str]] = []  # 安装跳过原因列表
+
+    # 逐个缺失依赖执行安装或策略跳过。
+    for dict_status in missing:
+
+        # developer skill 存在时不再安装 FPGA-Agent fallback。
+        if dict_status["id"] == "fpga-agent-skills" and report.get("fpga_agent_skipped_by_developer_skill"):
+
+            # 记录 developer skill 覆盖原因。
+            list_skipped.append({"dependency_id": "fpga-agent-skills", "reason": "developer skill is installed"})
+
+            # 当前依赖已处理，继续下一个缺失项。
+            continue
+
+        # FPGA-Agent fallback 需要额外显式批准。
+        if dict_status["id"] == "fpga-agent-skills" and not allow_fpga_agent_fallback:
+
+            # 记录缺少 fallback 批准。
+            list_skipped.append({"dependency_id": "fpga-agent-skills", "reason": "manual fallback approval required"})
+
+            # 缺少 fallback 批准时跳过当前依赖，继续处理其他缺失项。
+            continue
+
+        # dependency 配置提供 GitHub URL 和 install_specs。
+        dict_dependency = dependencies[dict_status["id"]]  # 待安装依赖配置
+
+        # repo slug 是 installer 接收的 owner/repo 形式。
+        str_repo = github_repo_slug(dict_dependency["url"])  # 传给 installer 的仓库标识
+
+        # selected_specs 只包含缺失 skill 对应的安装规格。
+        list_selected_specs = _selected_install_specs(dict_dependency, dict_status["missing_skills"])  # 当前依赖待安装的 spec
+
+        # 按 spec 调用 installer helper。
+        for dict_spec in list_selected_specs:
+
+            # installer 命令把依赖 URL 和 source_path 转换为 skill-installer CLI 参数。
+            list_command = [  # 安装器启动时使用的解释器、仓库和来源目录清单
+                sys.executable,  # 保持安装器使用当前 Python 解释器运行
+                str(installer),  # 实际执行的 skill-installer 脚本路径
+                "--repo",  # 后续字符串解释为仓库标识的选项名
+                str_repo,  # 从依赖 URL 解析出的 GitHub 仓库标识
+                "--path",  # 后续字符串解释为仓库子目录的选项名
+                str(dict_spec["source_path"]),  # 依赖 skill 在仓库中的来源子目录
+            ]
+
+            # dest_name 存在时通过 --name 覆盖安装名。
+            if dict_spec.get("dest_name"):
+
+                # installer 的 --name 用于聚合仓库中的子 skill。
+                list_command.extend(["--name", str(dict_spec["dest_name"])])
+
+            # 调用 installer，失败时让 CalledProcessError 直接暴露。
+            subprocess.run(list_command, check=True)
+
+            # 成功后记录 skill 名称。
+            list_installed.append(str(dict_spec["skill"]))
+
+    # 返回本轮普通 skill 的安装摘要。
+    return {"installed": list_installed, "skipped": list_skipped}
+
 # install_missing 根据缺失报告调用 skill-installer 安装依赖。
 def install_missing(
-    settings: dict,
-    report: dict,
-    dependency_id: str | None = None,
+    settings: dict,  # defaults.json 依赖配置来源
+    # report 保持与依赖检查报告的字段契约一致。
+    report: dict,  # check_dependencies 生成的缺失报告
+    # dependency_id 允许 CLI 只处理一个依赖。
+    dependency_id: str | None = None,  # 可选的单依赖筛选条件
+    # 星号分隔位置参数与关键字参数。
     *,
-    installer: Path | None = None,
-    allow_fpga_agent_fallback: bool = False,
-) -> dict:
+    # installer 支持测试和受控部署注入 helper。
+    installer: Path | None = None,  # 可替换的 skill-installer helper
+    # fallback 开关防止隐式安装 FPGA-Agent。
+    allow_fpga_agent_fallback: bool = False,  # FPGA-Agent 手动 fallback 开关
+    # confirm 控制 npm 工具安装的外部副作用。
+    confirm: bool = False,  # npm 工具安装的外部副作用确认
+) -> dict:  # 返回安装摘要
     """安装报告中缺失的依赖 skill。
 
     :param settings: 已加载的 defaults.json 配置。
@@ -180,6 +318,7 @@ def install_missing(
     :param dependency_id: 可选依赖 id；为空时安装全部缺失 required/recommended。
     :param installer: 可选 skill-installer helper 路径。
     :param allow_fpga_agent_fallback: 是否允许安装 FPGA-Agent 手动 fallback。
+    :param confirm: 是否已由 CLI 显式确认外部安装副作用。
     :return: 返回 installed、skipped 和 restart_required 等安装摘要。
     :raises FileNotFoundError: installer helper 不存在时抛出。
     :raises ValueError: 依赖缺少 install spec 时抛出。
@@ -187,6 +326,15 @@ def install_missing(
 
     # 依赖配置提供安装 spec 和 fallback 集合。
     dict_dependency_settings = read_skill_dependency_settings(settings)  # 安装命令依赖配置
+
+    # WaveDrom 是 npm 工具依赖，必须走固定 runtime wrapper 而不是 skill-installer。
+    dict_tool_result = _install_wavedrom_if_requested(report, dependency_id, confirm)  # 可选 WaveDrom 安装摘要
+
+    # 工具分支完成后立即返回，普通 skill 依赖继续走 installer。
+    if dict_tool_result is not None:
+
+        # 保持原有调用方看到的 installed_tools 字段。
+        return dict_tool_result
 
     # dependencies 建立 id 到依赖配置的索引。
     dict_dependencies = {  # 全部可安装依赖配置索引
@@ -247,66 +395,18 @@ def install_missing(
         # 明确报告 installer 路径缺失。
         raise FileNotFoundError(f"> ERR: [Python] Missing skill installer helper: {path_installer}")
 
-    # installed 记录本轮成功安装的 skill id。
-    list_installed: list[str] = []  # 已安装 skill id 列表
+    # 普通 skill 安装结果决定返回摘要中的 installed 与 skipped 字段。
+    dict_install_result = _install_selected_skills(  # 返回字典承载安装成功项和策略跳过项
+        list_missing,  # 已按调用参数筛选的缺失依赖
+        report,  # 当前依赖报告提供覆盖状态
+        dict_dependencies,  # 依赖 id 到安装配置的索引
+        path_installer,  # 定位可执行安装器，避免使用默认路径
+        allow_fpga_agent_fallback,  # 控制是否允许手动安装 FPGA-Agent fallback
+    )
 
-    # skipped 记录未安装但被策略跳过的依赖。
-    list_skipped: list[dict[str, str]] = []  # 安装跳过原因列表
-
-    # 逐个缺失依赖执行安装或策略跳过。
-    for dict_status in list_missing:
-
-        # developer skill 存在时不再安装 FPGA-Agent fallback。
-        if dict_status["id"] == "fpga-agent-skills" and report.get("fpga_agent_skipped_by_developer_skill"):
-
-            # 记录 developer skill 覆盖原因。
-            list_skipped.append({"dependency_id": "fpga-agent-skills", "reason": "developer skill is installed"})
-
-            # 当前依赖已处理，继续下一个缺失项。
-            continue
-
-        # FPGA-Agent fallback 需要额外显式批准。
-        if dict_status["id"] == "fpga-agent-skills" and not allow_fpga_agent_fallback:
-
-            # 记录缺少 fallback 批准。
-            list_skipped.append({"dependency_id": "fpga-agent-skills", "reason": "manual fallback approval required"})
-
-            # 缺少 fallback 批准时跳过当前依赖，继续处理其他缺失项。
-            continue
-
-        # dependency 配置提供 GitHub URL 和 install_specs。
-        dict_dependency = dict_dependencies[dict_status["id"]]  # 待安装依赖配置
-
-        # repo slug 是 installer 接收的 owner/repo 形式。
-        str_repo = github_repo_slug(dict_dependency["url"])  # 传给 installer --repo 的仓库 slug
-
-        # selected_specs 只包含缺失 skill 对应的安装规格。
-        list_selected_specs = _selected_install_specs(dict_dependency, dict_status["missing_skills"])  # 本依赖需要安装的 spec 列表
-
-        # 按 spec 调用 installer helper。
-        for dict_spec in list_selected_specs:
-
-            # installer 命令把依赖 URL 和 source_path 转换为 skill-installer CLI 参数。
-            list_command = [  # 安装器启动时使用的解释器、仓库和来源目录清单
-                sys.executable,  # 保持安装器使用当前 Python 解释器运行
-                str(path_installer),  # 实际执行的 skill-installer 脚本路径
-                "--repo",  # 后续字符串解释为仓库标识的选项名
-                str_repo,  # 从依赖 URL 解析出的 GitHub 仓库标识
-                "--path",  # 后续字符串解释为仓库子目录的选项名
-                str(dict_spec["source_path"]),  # 依赖 skill 在仓库中的来源子目录
-            ]
-
-            # dest_name 存在时通过 --name 覆盖安装名。
-            if dict_spec.get("dest_name"):
-
-                # installer 的 --name 用于聚合仓库中的子 skill。
-                list_command.extend(["--name", str(dict_spec["dest_name"])])
-
-            # 调用 installer，失败时让 CalledProcessError 直接暴露。
-            subprocess.run(list_command, check=True)
-
-            # 成功后记录 skill 名称。
-            list_installed.append(str(dict_spec["skill"]))
-
-    # 返回安装摘要，restart_required 只在实际安装后为真。
-    return {"installed": list_installed, "skipped": list_skipped, "restart_required": bool(list_installed)}
+    # 统一返回旧安装接口的三个顶层字段。
+    return {
+        "installed": dict_install_result["installed"],  # 本轮成功安装的 skill
+        "skipped": dict_install_result["skipped"],  # 本轮按策略跳过的 skill
+        "restart_required": bool(dict_install_result["installed"]),  # 仅真实安装后要求重启
+    }

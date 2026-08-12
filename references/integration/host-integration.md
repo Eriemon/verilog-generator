@@ -30,10 +30,11 @@ from scripts.python.facade.verilog_api import (
     run_verilog_workflow,
     render_verilog_prompt,
     validate_verilog_artifacts,
+    write_verilog_specs,
 )
 ```
 
-Use `run_verilog_workflow(...)` for full staged execution and resume. Use `run_verilog_batch(...)` when the caller has multiple generation specs and wants one aggregate summary while keeping each case in its own run directory. Use `render_verilog_prompt(...)` when the host already owns the model call. Use `validate_verilog_artifacts(...)` to gate generated `.v` files before downstream use. Use `analyze_existing_verilog(...)` to build `rtl_analysis.json`, `project_analysis.json`, and `design_explanation.md` from an existing design, `improve_existing_verilog(...)` to create `rtl_transform_plan.json` plus controlled helper artifacts, `compare_verilog_semantics(...)` to emit `equivalence.json`, `qor_report.json`, and `transform_validation.json`, and `verify_existing_verilog(...)` to run the log-driven verify-repair flow with stable run artifacts plus a diagnostics pack.
+Use `run_verilog_workflow(...)` for full staged execution and resume. Use `write_verilog_specs(...)` as the shared spec-first companion writer for generated and modified RTL; it emits one same-name `*_spec.md` plus WaveJSON/SVG evidence per module and can cross-check explicit sources. Use `run_verilog_batch(...)` when the caller has multiple generation specs and wants one aggregate summary while keeping each case in its own run directory. Use `render_verilog_prompt(...)` when the host already owns the model call. Use `validate_verilog_artifacts(...)` to gate generated `.v` files before downstream use. Use `analyze_existing_verilog(...)` to build `rtl_analysis.json`, `project_analysis.json`, and `design_explanation.md` from an existing design, `improve_existing_verilog(...)` to create `rtl_transform_plan.json` plus controlled helper artifacts, `compare_verilog_semantics(...)` to emit `equivalence.json`, `qor_report.json`, and `transform_validation.json`, and `verify_existing_verilog(...)` to run the log-driven verify-repair flow with stable run artifacts plus a diagnostics pack.
 
 Use `route_verilog_request(...)` before selecting a workflow when the host has mixed inputs. It is read-only and returns `route_decision` with `recommended_flow`, `entry_mode`, `required_inputs`, `missing_inputs`, `next_action`, `safe_recovery_hint`, `blocking_findings`, and `provenance_policy`. It must not generate RTL, run validation, mutate source files, create backups, or start remote actions.
 

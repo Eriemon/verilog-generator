@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/readme/hero-cn.svg" alt="Verilog Generator RTL 工作台" width="100%">
+  <img src="assets/readme/hero-cn.png" alt="Verilog Generator RTL 工作台" width="100%">
 </p>
 
 ![Verilog Generator RTL 工作流](assets/readme-workflow.png)
@@ -42,12 +42,30 @@ Verilog Generator 是一个面向日常 Verilog-2001 开发的 Codex Skill。把
       <code>结构 · 行为 · 风险位置</code>
     </td>
     <td width="33%">
-      <strong>03 / 修到有证据</strong><br><br>
+      <strong>03 / 修到可验证</strong><br><br>
       按预期行为和真实诊断修复，同时保留可审查的差异与验证边界。<br><br>
-      <code>补丁 · 差异 · 静态或真实工具证据</code>
+      <code>补丁 · 差异 · 静态或真实工具结果</code>
     </td>
   </tr>
 </table>
+
+### 项目事实
+
+![项目事实](assets/readme/project-facts-cn.png)
+
+先把项目事实、接口和验证边界摆清楚，再进入 RTL 修改。
+
+### 设计画像
+
+![设计画像](assets/readme/design-profile-cn.png)
+
+每个请求都会带着明确的设计目的和审查范围进入可读工作流。
+
+### 规则生成
+
+![规则生成](assets/readme/rule-rendering-cn.png)
+
+最终交付保留选定的可读性规则、语义注释和验证交接信息。
 
 ## 生成结果示例
 
@@ -87,7 +105,7 @@ end
 | 错误 | `0` |
 | 严格警告 | `0` |
 
-> 这里只展示仓库本地静态证据，不声称已经执行仿真、综合、硬件或远程工具验证。
+> 这里只展示仓库本地静态结果，不声称已经执行仿真、综合、硬件或远程工具验证。
 
 ## 安装
 
@@ -95,15 +113,17 @@ end
 
 安装后重启 Codex，让它重新发现该 Skill。
 
-本文档描述 GitHub 当前最新公开 release `v0.4.0`。本受治理 checkout 同时包含已经验证的本地包 `v1.0.9`；本地包版本以 `VERSION` 为准，不应据此推断该版本已经公开发布。
+本文档描述 GitHub 当前最新公开 release `v0.4.0`。本受治理 checkout 同时包含已经验证的本地包 `v1.1.0`；本地包版本以 `VERSION` 为准，不应据此推断该版本已经公开发布。
 
-需要固定公开版本时，使用 `v0.4.0` tag，或下载 [GitHub release 页面](https://github.com/Eriemon/verilog-generator/releases/tag/v0.4.0)自动生成的源码归档；需要固定的本地版本时，使用受治理 release 流程生成的 `dist/readable-verilog-generator-v1.0.9/` 验证包。
+需要固定公开版本时，使用 `v0.4.0` tag，或下载 [GitHub release 页面](https://github.com/Eriemon/verilog-generator/releases/tag/v0.4.0)自动生成的源码归档；需要固定的本地版本时，使用受治理 release 流程生成的 `dist/readable-verilog-generator-v1.1.0/` 验证包。
 
 ## 作者
 
 <p align="center">
-  <img src="assets/readme/authors-cn.svg" alt="作者刘济源和李鹤，东南大学异构智能与量子计算实验室" width="100%">
+  <img src="assets/readme/authors-cn.png" alt="作者刘济源和李鹤，东南大学异构智能与量子计算实验室" width="100%">
 </p>
+
+Jiyuan Liu、He Li · Southeast University · 东南大学 · HIQC（Heterogeneous Intelligence and Quantum Computing Laboratory）
 
 ## 如何引用
 
@@ -128,6 +148,8 @@ end
   <a href="SKILL.md">Skill 约束</a>
   <span>&nbsp;·&nbsp;</span>
   <a href="LICENSE">Apache-2.0</a>
+  <span>&nbsp;·&nbsp;</span>
+  <a href="LICENSE">Apache License 2.0</a>
   <span>&nbsp;·&nbsp;</span>
   <a href="CITATION.cff">引用</a>
   <span>&nbsp;·&nbsp;</span>

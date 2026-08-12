@@ -74,6 +74,18 @@ def read_skill_dependency_settings(settings: dict[str, Any]) -> dict[str, Any]:
     # 委托 dependency_state 解析 skill_dependencies 分区。
     return module_dependency_state.read_skill_dependency_settings(settings)
 
+# read_tool_dependency_settings 继续通过 facade 暴露 npm/Node 工具配置入口。
+def read_tool_dependency_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    """读取外部工具依赖治理配置。
+
+    :param settings: 已加载的 defaults.json 配置字典。
+    :return: 返回 tool_dependencies 分区的规范化字典。
+    数组合同：本函数返回配置字典；shape、dtype 和 unit 不适用。
+    """
+
+    # 委托 dependency_state 解析固定 WaveDrom 版本合同。
+    return module_dependency_state.read_tool_dependency_settings(settings)
+
 # default_skills_root 继续通过 facade 暴露默认 skills 根目录入口。
 def default_skills_root() -> Path:
     """返回默认 Codex skills 根目录。
@@ -278,13 +290,19 @@ def print_json(payload: dict[str, Any]) -> None:
 
 # install_missing 保留 facade 上的 subprocess patch 面，再委托安装子模块执行。
 def install_missing(
-    settings: dict[str, Any],
-    report: dict[str, Any],
-    dependency_id: str | None = None,
+    settings: dict[str, Any],  # defaults.json 依赖配置来源
+    # report 与 check_dependencies 的字段合同保持一致。
+    report: dict[str, Any],  # 当前依赖缺失报告
+    # dependency_id 允许 CLI 只处理一个依赖。
+    dependency_id: str | None = None,  # 单依赖过滤条件
     *,
-    installer: Path | None = None,
-    allow_fpga_agent_fallback: bool = False,
-) -> dict[str, Any]:
+    # installer 允许测试注入可控 helper。
+    installer: Path | None = None,  # skill-installer helper 路径
+    # fallback 默认关闭以阻止隐式安装。
+    allow_fpga_agent_fallback: bool = False,  # FPGA-Agent fallback 开关
+    # confirm 由 CLI 显式传入外部副作用确认。
+    confirm: bool = False,  # npm/Node 工具安装确认
+) -> dict[str, Any]:  # 安装摘要字典
     """安装报告中缺失的依赖 skill，并保留 facade 上的 subprocess patch 面。
 
     :param settings: 已加载的 defaults.json 配置。
@@ -292,6 +310,7 @@ def install_missing(
     :param dependency_id: 可选依赖 id；为空时安装全部缺失 required/recommended。
     :param installer: 可选 skill-installer helper 路径。
     :param allow_fpga_agent_fallback: 是否允许安装 FPGA-Agent 手动 fallback。
+    :param confirm: 是否已由 CLI 显式确认外部工具安装副作用。
     :return: 返回 installed、skipped 和 restart_required 等安装摘要。
     数组合同：本函数返回安装摘要 JSON object；shape、dtype 和 unit 不适用。
     """
@@ -306,6 +325,7 @@ def install_missing(
         dependency_id,
         installer=installer,
         allow_fpga_agent_fallback=allow_fpga_agent_fallback,
+        confirm=confirm,
     )
 
 # cleanup_fpga_agent_skills 保留 facade 上的时间与旧公开常量兼容面。
@@ -525,6 +545,7 @@ def main(argv: list[str] | None = None) -> int:
             namespace_args.dependency_id,  # 可选单依赖过滤条件
             installer=namespace_args.installer,  # 测试或用户覆盖的 installer 脚本
             allow_fpga_agent_fallback=namespace_args.allow_fpga_agent_fallback,  # 是否允许安装旧 FPGA-Agent fallback
+            confirm=namespace_args.yes,  # npm/Node 工具安装沿用 CLI 的显式确认
         )
 
         # 安装结果使用 JSON stdout 供调用方确认是否需要重启。

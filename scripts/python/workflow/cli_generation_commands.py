@@ -29,6 +29,7 @@ from .cli_support import (
 from .extractor import extract_response
 from .prompt import render_prompt
 from .spec import read_spec, scaffold_spec, write_spec
+from .spec_document import write_spec_bundle
 from .trace import append_trace_event, safe_path, spec_summary
 
 # 验证链路依赖 Verilog 质量门和 validation report。
@@ -62,6 +63,47 @@ def cmd_scaffold(args: argparse.Namespace) -> int:
     record_state(args, "scaffold", {"target": "rtl", "output": path_spec_output})
 
     # scaffold 只生成文件，成功写入即返回 0。
+    return 0
+
+# cmd_write_spec 负责独立或工作流内的 spec-first 伴随包写出。
+def cmd_write_spec(args: argparse.Namespace) -> int:
+    """处理 write-spec 子命令。
+
+    参数:
+        args: argparse 解析出的 write-spec 命名空间。
+
+    返回:
+        规范、WaveJSON 和 SVG 全部写出成功时返回 0。
+    """
+
+    # 输入 JSON 必须位于当前工作区，防止 CLI 读取越界文件。
+    path_spec = require_workspace_path(args.spec, purpose="spec document", must_exist=True)  # 工作区内的 spec JSON 路径
+
+    # 产物根允许新建，但仍受工作区和受保护目录边界限制。
+    path_out_dir = require_write_path(args.out_dir, purpose="spec bundle output")  # spec bundle 发布目录
+
+    # 可选源文件逐个通过工作区存在性检查，再交由统一核心做接口比对。
+    list_sources = [
+        require_workspace_path(path_source, purpose="Verilog source", must_exist=True)  # 已验证的 RTL 源文件
+        for path_source in (args.source or [])  # 迭代用户显式提供的 RTL 源文件
+    ]
+
+    # write_spec_bundle 只在全部波形渲染成功后发布旧 bundle 的替换内容。
+    dict_report = write_spec_bundle(  # 统一写出规范、WaveDrom JSON 与 SVG 结果
+        path_spec,  # 规范 JSON 输入路径
+        path_out_dir,  # 规范与波形产物输出目录
+        source_paths=list_sources,  # 用于接口集合比对的源文件
+        language=args.language,  # Markdown 文档语言
+    )
+
+    # 记录模块数量和输出根，不在终端倾倒完整 JSON 报告。
+    record_state(
+        args,
+        "write-spec",
+        {"target": "rtl", "output": path_out_dir, "module_count": len(dict_report["modules"])},  # 状态记录载荷
+    )
+
+    # 所有 spec 与波形产物成功发布后返回成功码。
     return 0
 
 # cmd_prompt 渲染单阶段模型 prompt。
@@ -198,7 +240,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
     list_extracted_files = extract_response(path_response.read_text(encoding="utf-8"), path_output_dir)  # 提取产物路径清单
 
     # workflow-state payload 保持 extract 旧字段。
-    dict_extract_state = {  # extract 状态记录载荷
+    dict_extract_state = {  # payload 对齐 extract 命令的旧状态键
         "response": path_response,  # 原始模型响应文件
         "out_dir": path_output_dir,  # extract 写入 RTL 产物的目录
         "files": list_extracted_files,  # 提取出的产物路径清单

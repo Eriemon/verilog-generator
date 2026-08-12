@@ -10,7 +10,7 @@ Generate, analyze, improve, and verify readable Verilog-2001 RTL through the bun
 
 ## Route
 
-- `create/write`: confirm the design contract, then use `requirements -> codegen_plan -> python -> rtl`.
+- `create/write`: confirm the design contract, then use `requirements -> codegen_plan -> spec_document -> python -> rtl`.
 - `deep_review`: insert a non-empty structured review between the Python semantic model and RTL; it must cover interface, reset, timing/pipeline, handshake or FSM behavior, width, synthesis, testbench coverage, and risks.
 - `review/analyze`: remain read-only and report the eight public gate states before suggesting changes.
 - `annotate`: preserve an immutable normalized baseline, change only `//` comments, prove token equivalence from that baseline, and rerun the final deliverable gate.
@@ -29,6 +29,8 @@ Generate, analyze, improve, and verify readable Verilog-2001 RTL through the bun
 5. Keep batch execution generation-only, with one run directory per confirmed spec. Do not use batch mode for existing-RTL mutation or decision resume.
 6. Treat streaming as provider interaction only. The finalized response artifact remains the extraction source of truth.
 7. Run the strict generated-deliverable gate before downstream use. Optional lint and testbench helpers never replace it.
+
+Every module generated or modified by this skill must ship with a same-name `<module>_spec.md` companion. The canonical JSON contract accepts a single legacy module projection or a `modules` array, but each normalized module must declare a safe `.v` `rtl_path`, complete interface ports, clock/reset semantics, cycle behavior, constraints, corner cases, verification cases, and at least one `timing_diagrams` entry. A timing entry contains `id`, `title`, `scenario`, `description`, and WaveJSON with named signals. `python -m scripts.python.workflow.cli write-spec --spec <spec.json> --out-dir <artifact-root> [--source <rtl.v>] --language <zh|en>` writes `spec/<feature>/<module>_spec.md` plus sibling `spec/<feature>/waveforms/<module>_<scenario>.json5` and `.svg`. The `--source` form fails closed when a module or port is undeclared; the no-source form validates and renders only the confirmed spec and never infers behavior from RTL. All waveform rendering goes through the pinned `wavedrom@3.6.1` runtime and fails closed when Node.js 20+, npm, the exact package version, or the `wavedrom` executable is unavailable. A render failure stages diagnostics without overwriting the previous valid bundle.
 
 The default profile is `erie_strict`. Its authoritative naming, bilingual header, region, FSM, comment, port-order, runtime-message, and formatter-AST rules live in `references/rules/verilog-code-comment-naming-standard.md`, `references/rules/erie-style.md`, `references/rules/verilog-comment-placement.md`, and machine-readable assets. Do not duplicate those rule catalogs in this entry document.
 
@@ -63,7 +65,7 @@ Existing-RTL diagnostic comment findings are advisory so compile, semantic, inte
 
 ## Dependencies And External Evidence
 
-Run dependency preflight before first use and before remote, Vivado, or Vitis work. Missing required dependencies require user approval before installation; if declined, continue only with self-contained static Verilog work and block remote/execute/implement claims. Prefer `vivado-developer` and `vitis-developer` for AMD-Xilinx, and `pds-developer` for PangoMicro. FPGA-Agent-Skills remains an explicit manual fallback.
+Run dependency preflight before first use and before remote, Vivado, or Vitis work. Missing required dependencies require user approval before installation; if declined, continue only with self-contained static Verilog work and block remote/execute/implement claims. The required skill dependency remains `erie-remote-ssh`; the optional context-engineering group is the only recommended external skill group. No additional external skill suite is included. The required external tool dependency is `wavedrom@3.6.1` from npm with Node.js `>=20.0.0`; use `scripts/python/toolchain/wavedrom_runtime.py` with the `check`, `install --yes`, or `render` subcommand, never an ad-hoc npm command or the separate `wavedrom-cli` package. Prefer `vivado-developer` and `vitis-developer` for AMD-Xilinx, and `pds-developer` for PangoMicro. FPGA-Agent-Skills remains an explicit manual fallback.
 
 Compile, execute, simulation, synthesis, or implement readiness requires actual external evidence. Remote validation is preferred and must use `erie-remote-ssh`, a user-confirmed server, local-only server selection/configuration, and the remote workdir's `.settings/verilog.remote.json`. A configured default is only a recommendation. Multiple Vivado settings candidates require user selection. Do not silently fall back to local tools and do not add direct SSH/SCP logic.
 
@@ -108,6 +110,8 @@ Run the smallest relevant checks while editing, then the governed final chain. T
 - `references/workflows/workflow-contracts.md`: run artifacts, statuses, resume behavior, and trace semantics.
 - `references/integration/configuration.md`: paths, dependencies, remote settings, and validation configuration.
 - `references/integration/host-integration.md`: facade functions and host-owned execution boundaries.
+- `scripts/python/workflow/spec_document.py`: strict module contract, source cross-check, Markdown and WaveDrom bundle writer.
+- `scripts/python/toolchain/wavedrom_runtime.py`: pinned Node/npm/WaveDrom check, explicit install, and SVG renderer.
 - `references/rules/verilog-code-comment-naming-standard.md`: canonical readable RTL rule text.
 - `references/rules/verilog-quality-gates.md`: VG catalog and report semantics.
 - `references/rules/xilinx-primitive-exemptions.md`: exact AMD-Xilinx UNISIM/XPM/project-IP primitive inventory and VG097/VG132/VG146/VG147 boundary contract.

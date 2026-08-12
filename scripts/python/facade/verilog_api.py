@@ -3,14 +3,18 @@
 # future annotations 避免注解在导入期求值。
 from __future__ import annotations
 
-# Any 用于兼容旧 facade 的自由配置字典。
-from typing import Any
+# Any 用于兼容旧 facade 的自由配置字典；其余类型描述 spec bundle 输入。
+from pathlib import Path
+from typing import Any, Callable, Mapping, Sequence
 
 # runtime 路由器负责只分类请求、不触发生成执行。
 from scripts.python.workflow.workflow_router import route_verilog_entry
 
 # 统一 VG 门禁入口由质量模块直接提供，避免 facade 复制规则逻辑。
 from scripts.python.quality.quality_gate import run_verilog_quality_gate
+
+# spec_document 是规范文档、接口交叉核验和 WaveDrom 伴随包的唯一实现入口。
+from scripts.python.workflow.spec_document import write_spec_bundle
 
 # existing-RTL 相关公开能力从子模块重导出。
 from .existing_rtl_api import (
@@ -126,4 +130,34 @@ def route_verilog_request(
         remote_validation_requested=bool(
             dict_options.get("remote_validation_requested", False),
         ),
+    )
+
+# write_verilog_specs 为生成、既有 RTL 和独立 CLI 共用同一 spec-first 核心。
+def write_verilog_specs(
+    spec: Mapping[str, Any] | Path,
+    out_dir: Path,
+    *,
+    source_paths: Sequence[Path] | None = None,
+    language: str = "zh",
+    renderer: Callable[[Path, Path], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """
+    写出每个 Verilog 模块的 ``*_spec.md``、WaveJSON 和 SVG 伴随包。
+
+    :param spec: 单模块或多模块规范对象，也可以是 JSON 文件路径。
+    :param out_dir: 交付工件根目录。
+    :param source_paths: 可选 RTL 源文件，用于模块和端口严格交叉核验。
+    :param language: Markdown 语言，支持 ``zh`` 或 ``en``。
+    :param renderer: 可选 WaveDrom 渲染器替身，默认使用固定 runtime。
+    :return: 模块级写出报告，包含 ``ok``、``spec_root`` 和 ``modules``。
+    :raises ValueError: 规范字段、源接口或 WaveDrom 渲染失败时抛出。
+    """
+
+    # facade 不复制 spec 规则，只把统一入口暴露给上层调用方。
+    return write_spec_bundle(
+        spec,
+        out_dir,
+        source_paths=source_paths,
+        language=language,
+        renderer=renderer,
     )
