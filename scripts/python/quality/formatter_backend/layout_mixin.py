@@ -1228,7 +1228,7 @@ class LayoutMixin:
                 annotated,  # 当前协议分组里的全部候选端口项
                 key=lambda item: (  # 槽位、section、方向和成员联合排序键
                     dict_slot_order.get(dict_slot_labels[item[0]], 999),  # 先按槽位聚拢同一接口成员
-                    section_order.get(effective_sections[item[0]], 999),  # 同一槽位内再按 section 顺序展开
+                    section_order.get(effective_sections[item[0]], -1),  # 无 section 端口先输出，避免后续标题向前泄漏
                     item[2].direction_rank, item[2].member_rank, item[0],  # 方向、成员和原始次序共同收束最终顺序
                 ),
             )
@@ -1261,7 +1261,7 @@ class LayoutMixin:
             list_ranked_items = sorted(  # 单槽位但保留 subgroup 时的排序结果
                 annotated,  # 当前单槽位协议段的端口候选
                 key=lambda item: (  # section、方向和成员三层排序键
-                    section_order.get(effective_sections[item[0]], 999),  # 单槽位内部仍先按 section 展开
+                    section_order.get(effective_sections[item[0]], -1),  # 无 section 端口先输出，随后再开启结构标题
                     item[2].direction_rank, item[2].member_rank,  # section 内继续按方向优先级和成员表顺序排布
                     item[0],  # 最后用原始索引兜底稳定顺序
                 ),
@@ -1295,7 +1295,7 @@ class LayoutMixin:
         list_ranked_items = sorted(  # 单槽位协议段的排序结果
             annotated,  # group 标题已吸收槽位信息后的端口候选
             key=lambda item: (  # section、方向和原始次序联合排序键
-                section_order.get(effective_sections[item[0]], 999),  # 单槽位协议段先按 section 排开
+                section_order.get(effective_sections[item[0]], -1),  # 无 section 端口先输出，避免标题覆盖后续声明
                 item[2].direction_rank, item[2].member_rank,  # 同一 section 内沿用方向优先级和成员表顺序
                 item[0],  # 最后保留原始声明先后次序
             ),

@@ -167,7 +167,7 @@
       "title": "Testbench Patterns"
     },
     {
-      "content_sha256": "3b374b9ed90a1e5eb91b6d0ef8c796918d4192dca5128a9529f2c7c1643c2db6",
+      "content_sha256": "88a60b95dc22a45be0181cc45b3bce42dbeeb4aa23e684c34d687a120951b981",
       "id": "document.references-rules-verilog-code-comment-naming-standard",
       "keywords": [
         "Verilog",
@@ -217,7 +217,7 @@
       "title": "Verilog Pattern Templates"
     },
     {
-      "content_sha256": "68cf7cf60fca2d4e3d24178e9e3cb0184ecc555fe8ef0a1b0a5641cb2e611912",
+      "content_sha256": "a208799543d654aff4a9d5b44157d1e62f9b33d38de4bc8f8966bd63026fdbe7",
       "id": "document.references-rules-verilog-quality-gates",
       "keywords": [
         "VG",
@@ -267,7 +267,7 @@
       "title": "Skill Standards"
     },
     {
-      "content_sha256": "63c007e68ed32ba5dfdb47554dff9d55cf56fe0f55d4c55bebed95e295b5f2b6",
+      "content_sha256": "5b07a2077494742accd2134ea993292e2fe81325907dcf8708e1c6c61aeefba1",
       "id": "document.references-workflows-verilog-dispatcher",
       "keywords": [
         "dispatcher",
@@ -284,7 +284,7 @@
       "title": "Verilog Dispatcher"
     },
     {
-      "content_sha256": "4317c60849897b406699e4a565e9ef3a84a1ba1ddbff34bac4aa160c7c2ba73b",
+      "content_sha256": "70d4663301d61d76068617615cf67435c09912cc492759aebd97144cbd4934e7",
       "id": "document.references-workflows-workflow-contracts",
       "keywords": [
         "workflow",

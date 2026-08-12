@@ -38,6 +38,8 @@ Existing RTL modify requests require a real source target. If the target RTL or 
 
 Run exactly: `format baseline -> comment draft -> verify comment-only -> deliverable gate -> format final -> verify comment-only`. The script only proves RTL tokens did not change; the agent must still write entity-level comments from real code intent and must not emit template, hollow, or fallback placeholders.
 
+The formatter may always be inspected during comment-only work, but a candidate that changes Verilog tokens is diagnostic-only and must not be written. Token-changing formatter output is writable only in an explicitly selected `generate`, `modify`, `repair`, or `refactor` workflow, and formatter output must be stable after one pass before any write.
+
 ### `analyze`
 
 Read-only analysis must not write source files. It may output AST summaries, style deltas, review-priority notes, and suggested commands, but suggestions are not executed work.
@@ -58,6 +60,7 @@ Repository regression fixtures live under `tests/cases`. Tests and runtime valid
 
 - Do not guess rewrites when the AST cannot identify modules, ports, always blocks, instances, or preprocessor-sensitive structure.
 - Do not change RTL tokens, lvalues, ports, instance connections, reset polarity, or always targets during a comment-only workflow.
+- Do not copy an object-level semantic comment into another declaration, assign group, or process block as if it were a structural label.
 - Do not drive top-level outputs directly from sequential logic; use an internal output signal and an assign bridge.
 - Do not split a multi-target always block unless the AST and normalization path can prove the split is safe enough for the selected profile.
 - Do not treat non-strict legacy analysis as approval for generated deliverables.

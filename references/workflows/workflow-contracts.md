@@ -103,7 +103,7 @@ The workflow does not enter prompt-driven code generation until the confirmed re
 The `checks` object must contain exactly these eight public gates:
 
 - `compile`: local static syntax, parser, and basic lint evidence. It does not mean xsim, VCS, iverilog, or any external simulator compile ran.
-- `ast`: formatter AST coverage and parse-error evidence.
+- `ast`: formatter AST coverage, parse-error evidence, and formatter-template consistency. Any non-empty `formatter_violations` count fails this gate and contributes to top-level `errors`.
 - `readability`: Verilog readable quality gate evidence.
 - `comment`: semantic comment placement and comment coverage evidence.
 - `naming`: naming and prefix-related rule evidence.

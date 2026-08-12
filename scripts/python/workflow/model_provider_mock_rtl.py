@@ -1102,11 +1102,8 @@ def _align_mock_region_comments(text: str) -> str:
             # 当前行按最近区域锚点处理。
             list_aligned_lines.append(_align_mock_line_comment(str_line, int_anchor_column))
 
-    # list_compact_lines 在对齐后恢复 mock 模块体的既有 `//注释` 合同风格。
-    list_compact_lines = [_compact_mock_semantic_comment_spacing(str_line) for str_line in list_aligned_lines]  # 恢复 mock 语义注释紧凑前缀后的文本行
-
     # 统一补末尾换行后，再修正输出连线区分组注释的空行合同。
-    return _normalize_mock_assign_group_comment_spacing("\n".join(list_compact_lines) + "\n")
+    return _normalize_mock_assign_group_comment_spacing("\n".join(list_aligned_lines) + "\n")
 
 # _normalize_mock_assign_group_comment_spacing 修正输出信号连线区分组注释的空行布局。
 def _normalize_mock_assign_group_comment_spacing(text: str) -> str:
@@ -1227,39 +1224,6 @@ def _normalize_mock_assign_group_comment_spacing(text: str) -> str:
 
     # 修正后的文本继续保持单个结尾换行。
     return "\n".join(list_normalized_lines) + "\n"
-
-# _compact_mock_semantic_comment_spacing 恢复 mock 模块体语义注释的既有 `//注释` 风格。
-def _compact_mock_semantic_comment_spacing(str_line: str) -> str:
-    """
-    压缩 mock 模块体纯注释行和右侧注释的 `// ` 前缀。
-
-    :param str_line: 已完成对齐的单行 mock RTL 文本。
-    :return: 恢复既有语义注释风格后的单行文本。
-    """
-
-    # str_compact_line 保存逐步压缩后的行文本。
-    str_compact_line = str_line  # 待恢复注释前缀合同的 mock RTL 行
-
-    # 行尾语义注释保留代码前空格，但注释标记回到 `//注释` 形式。
-    if " // " in str_compact_line and not str_compact_line.lstrip().startswith("//"):
-
-        # 只压缩首个行尾语义注释前缀，避免误改注释正文。
-        str_compact_line = str_compact_line.replace(" // ", " //", 1)  # 行尾语义注释恢复紧凑前缀
-
-    # 缩进后的纯注释行属于模块体语义说明，恢复 `//注释` 形式。
-    str_lstripped = str_compact_line.lstrip()  # 去掉缩进后的注释候选文本
-
-    # int_indent_len 区分文件头无缩进行和模块体缩进注释行。
-    int_indent_len = len(str_compact_line) - len(str_lstripped)  # 当前行的缩进字符数
-
-    # 只压缩带缩进的纯注释行，文件头 `// 字段` 风格保持不变。
-    if int_indent_len > 0 and str_lstripped.startswith("// "):
-
-        # 缩进保留原样，只把注释前缀恢复为紧凑形式。
-        str_compact_line = f"{str_compact_line[:int_indent_len]}//{str_lstripped[3:]}"  # 纯注释语义说明恢复紧凑前缀
-
-    # 返回恢复既有 mock 注释风格后的行文本。
-    return str_compact_line
 
 # _align_mock_line_comment 对齐单行代码注释。
 def _align_mock_line_comment(str_line: str, int_anchor_column: int) -> str:

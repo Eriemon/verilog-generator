@@ -80,6 +80,7 @@ module axis_packet_meter
 	reg [31:0]cnt_byte_o = 32'd0;               // 已传输有效字节数量的内部输出缓存
 
 	//---------------其他信号连线---------------//
+	//AXIS接口
 	//AXI-Stream 事务判定
 	assign flag_transfer = i_axis_tvalid & i_axis_tready; // 仅在发送方与接收方同时就绪时采样
 	assign flag_packet_end = flag_transfer & i_axis_tlast; // 完成握手且 tlast 有效时结束数据包
@@ -87,7 +88,11 @@ module axis_packet_meter
 	//单拍字节数与饱和累加量
 	assign cnt_byte = {2'b00, i_axis_tkeep[0]} + {2'b00, i_axis_tkeep[1]} + {2'b00, i_axis_tkeep[2]} + {2'b00, i_axis_tkeep[3]}; // 累加四个字节使能位
 	assign data_byte_increment = {29'd0, cnt_byte}; // 将单拍字节数零扩展为 32 位
+
+	//其他信号连线
 	assign data_frame_sum = {1'b0, cnt_packet_o} + 1'b1; // 用扩展位捕获数据包计数进位
+
+	//AXIS接口
 	assign data_byte_sum = {1'b0, cnt_byte_o} + {1'b0, data_byte_increment}; // 用扩展位捕获字节计数进位
 
 	//---------------输出信号连线---------------//

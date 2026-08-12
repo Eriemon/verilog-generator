@@ -145,7 +145,9 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 
 - Reset roles are recognized as complete underscore-delimited semantic segments. Names such as `rstn`, `rst_n`, `i_rstn`, `foo_rstn_sync`, `i_tb_rstn`, `i_axi_arstn`, `i_axis_arstn`, `i_ahb_hrstn`, and `i_apb_prstn` are supported; ordinary substrings such as `burst_count`, `forest`, `setup`, and `clearance` are not reset controls.
 - VG073 and VG132 build clock identity independently for each module. Different clock port names across module boundaries do not by themselves prove multiple clock domains or clock-as-data use.
+- VG012 requires module `parameter` names to use `C_` plus uppercase naming. Ordinary non-state `localparam` names must be uppercase without `C_`; state encodings continue to use `ST_`.
 - VG081 and VG123 resolve `parameter` and `localparam` names only in the module that declares them. VG123 accepts deterministic Verilog-2001 sized binary, octal, decimal, and hexadecimal literals, while X, Z, question-mark, malformed, and undeclared-symbol expressions remain unsupported.
+- Shared width facts accept a parameter or integer endpoint with one optional decimal `+/-` delta and optional surrounding whitespace. Multiplication, compound arithmetic, malformed expressions, and unknown parameters remain unresolved.
 
 ## Formerly Reserved Rules
 

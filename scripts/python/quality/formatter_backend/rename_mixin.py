@@ -489,6 +489,7 @@ class RenameMixin:
             # 原声明的表达式和注释元数据需要原样透传。
             init=decl.init,
             comment=decl.comment,
+            leading_comments=list(decl.leading_comments),
             signed=decl.signed,
             unpacked=decl.unpacked,
 

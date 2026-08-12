@@ -550,8 +550,11 @@ class VerilogFormatterEngine(
             # 返回单条错误文本，保持历史接口形态。
             return [str(exc)]
 
-        # 输出不一致代表源码需要格式化。
-        if str_formatted != source:
+        # 平台换行符不属于 Verilog 模板差异，比较前统一为 formatter 的 LF 输出。
+        str_normalized_source = source.replace("\r\n", "\n").replace("\r", "\n")  # 仅归一化平台行结束符
+
+        # 除换行符外的任何输出不一致都代表源码需要格式化。
+        if str_formatted != str_normalized_source:
 
             # 诊断文本维持既有英文消息，避免改变 CLI 断言。
             self.violations.append("Source does not match the enforced formatter template.")

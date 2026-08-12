@@ -176,6 +176,12 @@ def _count_deliverable_totals(dict_context: dict[str, Any], strict: bool) -> dic
     # 注释位置 error 表示实体级注释落点不满足交付要求。
     int_comment_errors = sum(1 for issue in list_comment_gate_issues if issue.get("severity") == "error")  # 注释落点阻断项
 
+    # formatter mismatch 只从 AST summary 读取，不重复加入 VG/readability 诊断。
+    dict_ast_summary = report_quality.ast_report.get("summary", {})  # formatter AST 聚合摘要
+
+    # 每条 formatter violation 作为独立 AST error 计入最终交付。
+    int_formatter_errors = int(dict_ast_summary.get("formatter_errors", 0) or 0)  # AST 子门禁的模板差异计数
+
     # VG warning 在 strict 交付中等同待修复问题。
     int_quality_warnings = report_quality.warnings  # VG 可疑项总量
 
@@ -186,7 +192,7 @@ def _count_deliverable_totals(dict_context: dict[str, Any], strict: bool) -> dic
     int_comment_warnings = sum(1 for issue in list_comment_gate_issues if issue.get("severity") == "warning")  # 注释落点警告项
 
     # 最终 error 数量由 VG、lint 和 comment gate 三类阻断项组成。
-    int_errors = int_quality_errors + int_vg_errors + int_comment_errors  # 最终阻断问题总数
+    int_errors = int_quality_errors + int_vg_errors + int_comment_errors + int_formatter_errors  # 最终阻断问题总数
 
     # strict warning 汇总所有必须在交付前清零的 warning。
     int_strict_warnings = int_quality_warnings + int_vg_warnings + int_comment_warnings  # 严格模式待修复警告总数
@@ -199,6 +205,7 @@ def _count_deliverable_totals(dict_context: dict[str, Any], strict: bool) -> dic
         "quality_errors": int_quality_errors,  # VG 深规则阻断计数
         "vg_errors": int_vg_errors,  # VG 阻断门禁非通过计数
         "comment_errors": int_comment_errors,  # 注释落点阻断计数
+        "formatter_errors": int_formatter_errors,  # AST formatter 模板错误计数
         "quality_warnings": int_quality_warnings,  # VG 可疑诊断计数
         "vg_warnings": int_vg_warnings,  # VG 警告门禁非通过计数
         "comment_warnings": int_comment_warnings,  # 注释覆盖风险计数
@@ -244,6 +251,9 @@ def _build_deliverable_checks(
     # AST parse error 是 compile/AST 两个公开门禁共同消费的解析证据。
     int_parse_errors = int(dict_ast_summary.get("parse_errors", 0) or 0)  # formatter AST 解析错误数
 
+    # formatter mismatch 只属于 AST，不进入 compile、profile 或 readability。
+    int_formatter_errors = int(dict_ast_summary.get("formatter_errors", 0) or 0)  # formatter 模板错误数
+
     # 命名门禁从现有 VG/comment/lint 诊断里抽取命名相关问题。
     tuple_naming_counts = _count_matching_issue_severity(  # 命名风险命中后会影响 checks["naming"]
         list_all_issues,  # 在完整诊断流中筛选命名问题
@@ -275,12 +285,13 @@ def _build_deliverable_checks(
 
     # ast 摘要定位 formatter AST 是否真正覆盖文件和 module。
     dict_checks["ast"] = _check_summary(  # ast 门禁暴露 formatter parser 的结构覆盖状态
-        errors=int_parse_errors,  # ast 门禁只消费 formatter parser 错误
+        errors=int_parse_errors + int_formatter_errors,  # ast 门禁合并解析与模板一致性错误
         warnings=0,  # ast 门禁当前没有独立 warning 来源
         strict=strict,  # ast 门禁保持交付 strict 字段一致
         files=dict_ast_summary.get("files", 0),  # AST 覆盖文件数用于定位 parser 是否实际运行
         modules=dict_ast_summary.get("modules", 0),  # AST 模块数用于发现空解析或漏解析
         parse_errors=int_parse_errors,  # ast 门禁展示解析失败总数
+        formatter_errors=int_formatter_errors,  # ast 门禁展示模板不一致总数
         source="formatter_ast",  # ast 门禁证据来源
     )
 
@@ -585,6 +596,12 @@ def _count_delivery_issues_by_rule(
 
         # 累加当前规则的阻断次数。
         dict_counts[str_rule] = dict_counts.get(str_rule, 0) + 1  # 当前规则的待修复命中数
+
+    # formatter mismatch 没有伪装成 VG 诊断，使用稳定非 VG 键单独聚合。
+    if dict_totals.get("formatter_errors", 0) > 0:
+
+        # 计数与 AST summary 中的 formatter violation 数量保持一致。
+        dict_counts["FORMATTER_TEMPLATE_MISMATCH"] = int(dict_totals["formatter_errors"])  # formatter 模板阻断数
 
     # 如果某些子门禁只给聚合计数而没有细粒度诊断，保留兜底可追踪项。
     if not dict_counts and (dict_totals["errors"] > 0 or (strict and dict_totals["strict_warnings"] > 0)):

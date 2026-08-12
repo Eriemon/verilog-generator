@@ -2629,11 +2629,23 @@ class RenderMixin:
                     # 类别 0 表示不再插入次级标签。
                     return 0, "", 0
 
-        # 来源布局存在时，使用 section 或 subgroup 作为次级标签。
+        # 来源布局存在时，只允许结构化 section 传播为 assign 标签。
         if obj_source_layout is not None:
 
-            # str_label 优先使用来源 section，缺失时退回 subgroup。
-            str_label = obj_source_layout.section or obj_source_layout.subgroup  # 来源分组标签
+            # 先判定来源 section 是否满足结构标签协议。
+            bool_section_is_structured = self._comment_looks_like_structured_label(obj_source_layout.section)  # 来源 section 的结构属性
+
+            # 普通语义 section 仍归原端口所有，不能复制成 assign 分组标题。
+            str_section_label = obj_source_layout.section if bool_section_is_structured else ""  # 可传播的结构标签
+
+            # 结构化 section 优先，缺失时使用 formatter 推导的协议 subgroup。
+            str_label = str_section_label or obj_source_layout.subgroup  # 来源分组标签
+
+            # 没有可传播的结构标签时进入普通连线兜底分组。
+            if not str_label:
+
+                # 类别 1 保持其它普通 assign 的一致分组行为。
+                return 1, "其他信号连线", 0
 
             # 类别 2 表示可排序的来源区段。
             return 2, str_label, obj_source_layout.port_rank
@@ -3143,6 +3155,17 @@ class RenderMixin:
 
                     # 清空状态能让下一条来源标签重新输出 cluster。
                     str_current_source_section = ""  # 当前 assign 没有来源区段
+
+            # 同一自动标签内的新语义注释组必须与上一条 assign 保持一个空行。
+            if (
+                list_leading_comments
+                and bool_rendered_assign
+                and list_lines
+                and list_lines[-1].lstrip().startswith("assign ")
+            ):
+
+                # 只在上一可见行仍是 assign 时补分隔，避免拆开刚输出的结构标签。
+                self._ensure_single_blank_line_before_cluster(list_lines, bool_rendered_assign)
 
             # 前导注释先于 assign 文本输出。
             list_lines.extend(self._render_leading_comments(list_leading_comments, 1))

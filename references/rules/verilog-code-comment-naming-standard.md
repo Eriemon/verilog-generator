@@ -306,7 +306,7 @@ formatter 当前自动把常见 `clk/clock` 归一为 `i_clk`，把常见低有�
 - 参数表达式要显式、可综合，必要时用 parameter 化位宽。
 - 用户历史约束要求：根据 C model/range 推导位宽并参数化。formatter 本身不会读取 C model，生成器必须在生成 RTL 时完成位宽推导。
 - 已有 `C_`、`ST_` 前缀不得重复。
-- 交付门禁使用 `VG012` 阻断 `C_C_`、`ST_ST_` 这类参数前缀重复；非 state localparam 不得借 `C_` 或 `ST_` 逃避区域归属。
+- 交付门禁使用 `VG012` 阻断 `C_C_`、`ST_ST_` 这类参数前缀重复；module `parameter` 缺少 `C_` 会失败，普通非 state `localparam` 使用 `C_` 也会失败，state localparam 则继续要求 `ST_`。
 
 ### 6.5 内部寄存器、计数器、状态、编码译码、标志
 
@@ -1035,4 +1035,3 @@ python -m scripts.python.validation.generated_deliverable_gate <input.v> --json 
 python -m scripts.python.quality.verify_verilog_comment_only baseline.v annotated.v --require-comment-delta
 python -m scripts.python.quality.verify_verilog_comment_only baseline.v final.v --require-comment-delta
 ```
-

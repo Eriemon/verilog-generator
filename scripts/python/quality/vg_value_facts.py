@@ -139,8 +139,8 @@ def parse_width(str_width: str, dict_parameter_values: dict[str, int]) -> int | 
         # 标量默认占一位。
         return 1
 
-    # 受限模式只捕获数字、参数及单次加减的左右端点。
-    obj_match = re.search(r"\[\s*([\w+-]+)\s*:\s*([\w+-]+)\s*\]", str_width)  # 声明区间匹配结果
+    # 区间层只切分左右端点，端点合法性仍由受限整数解析器决定。
+    obj_match = re.search(r"\[\s*([^:\[\]]+?)\s*:\s*([^:\[\]]+?)\s*\]", str_width)  # 声明区间匹配结果
 
     # 不支持的区间表达式保持未知。
     if obj_match is None:
@@ -174,8 +174,8 @@ def constant_integer(str_expression: str, dict_parameter_values: dict[str, int])
         确定整数；不支持或未知时返回 None。
     """
 
-    # 模式限制为一个基础值和一个可选加减增量。
-    obj_match = re.fullmatch(r"(\w+)(?:([+-])(\d+))?", str_expression.strip())  # 受限整数表达式匹配结果
+    # 模式限制为一个基础值和一个可选加减增量，只放宽运算符两侧空白。
+    obj_match = re.fullmatch(r"(\w+)(?:\s*([+-])\s*(\d+))?", str_expression.strip())  # 受限整数表达式匹配结果
 
     # 复杂算术不进入静态求值范围。
     if obj_match is None:

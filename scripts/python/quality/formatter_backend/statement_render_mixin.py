@@ -433,6 +433,24 @@ class StatementRenderMixin:
         # 普通布局只有子组变化时才追加子标题。
         bool_subgroup_changed = port_marker_context.tuple_flags[2]  # 普通布局的子组刷新标记
 
+        # section 文本单独命名，避免后续判定重复访问端口模型。
+        str_port_section = port_marker_context.port.section  # 当前端口的 section 文本
+
+        # 结构标签可以作为 formatter 布局标题，不属于对象级语义注释。
+        bool_section_is_structured = self._comment_looks_like_structured_label(str_port_section)  # section 是否为结构标签
+
+        # 非结构化 section 是归属当前端口的语义注释，必须直接贴近声明。
+        bool_has_semantic_section = bool(str_port_section and not bool_section_is_structured)  # 是否携带对象级语义注释
+
+        # 自动 subgroup 标题会隔断语义注释与端口声明，因此只更新游标而不输出标题。
+        if bool_subgroup_changed and bool_has_semantic_section:
+
+            # 记录当前 subgroup，避免同一端口区的后续声明重复触发标题判断。
+            str_current_subgroup = port_marker_context.port.subgroup  # 已消费但未渲染的协议子组
+
+            # 保持语义 section 紧邻它所描述的首个端口。
+            return str_current_group, str_current_section, str_current_subgroup
+
         # 普通布局在当前 section 内追加协议子标题。
         if bool_subgroup_changed:
 

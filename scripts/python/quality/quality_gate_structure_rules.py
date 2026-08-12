@@ -2778,6 +2778,20 @@ def _localparam_name_issues(dict_param: dict[str, Any], str_rel_path: str, *, st
             )
         ]
 
+    # C_ 仅表示 module parameter，普通 localparam 不得复用该所有权前缀。
+    if str_name.startswith("C_"):
+
+        # 前缀错用继续归入 VG012，便于命名修复队列统一处理。
+        return [
+            QualityIssue(
+                "VG012",
+                _style_severity(strict),
+                f"localparam `{str_name}` must not use the module-parameter `C_` prefix.",
+                str_rel_path,
+                rule="naming.localparam_prefix",
+            )
+        ]
+
     # 普通 localparam 应为全大写。
     if UPPER_IDENTIFIER_PATTERN.fullmatch(str_name):
 

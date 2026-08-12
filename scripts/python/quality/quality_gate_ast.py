@@ -51,6 +51,12 @@ def _build_ast_tree_report(
         if dict_item.get("severity") == "error"  # 只统计 error 级 parse 诊断
     )
 
+    # formatter mismatch 独立于 parser 诊断汇总，避免解析成功时继续假绿。
+    int_formatter_errors = sum(  # 目录报告暴露的模板差异总量
+        len(dict_report.get("formatter_violations", []))  # 单个 RTL 文件的未收敛模板条目数
+        for dict_report in list_file_reports  # 汇合全部待交付 RTL 的模板检查结果
+    )
+
     # 返回目录级 AST 报告，字段保持旧调用方兼容。
     return {
         "version": 1,
@@ -61,6 +67,8 @@ def _build_ast_tree_report(
             "files": len(list_file_reports),
             "modules": int_module_count,
             "parse_errors": int_parse_errors,
+            "formatter_errors": int_formatter_errors,
+            "errors": int_parse_errors + int_formatter_errors,
         },
     }
 

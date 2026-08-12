@@ -186,8 +186,14 @@ def build_ast_report_for_text(
         包含 header、module、诊断、formatter 违规和文本指标的 AST 报告。
     """
 
-    # 后端创建只使用随包配置，避免 ad-hoc parser 分叉。
-    formatter_backend_formatter_engine: FormatterBackend = create_formatter_backend(profile=profile)  # 负责 normalize 与 AST 复检的后端
+    # formatter 比较必须在 AST 内部解析前执行，避免共享配置状态污染检查结果。
+    formatter_backend_check_engine: FormatterBackend = create_formatter_backend(profile=profile)  # 只负责模板一致性检查的后端
+
+    # check_text 结果保留为 formatter 原生违规文本。
+    list_formatter_violations = _formatter_violations(formatter_backend_check_engine, source, source_path)  # 报告中保留的 formatter 原生违规文本
+
+    # AST 解析使用独立后端，避免 check_text 的格式化状态进入结构报告。
+    formatter_backend_formatter_engine: FormatterBackend = create_formatter_backend(profile=profile)  # 负责 AST 结构解析的后端
 
     # diagnostics 收集 warning/error，不让 parser 细节泄漏到调用方。
     list_diagnostics: list[dict[str, Any]] = []  # AST 诊断列表
@@ -201,20 +207,32 @@ def build_ast_report_for_text(
     # modules 字段描述 formatter 识别出的 module 结构。
     list_modules = tuple_parse[1]  # module 结构列表
 
-    # check_text 结果保留为 formatter 原生违规文本。
-    list_formatter_violations = _formatter_violations(formatter_backend_formatter_engine, source, source_path)  # 报告中保留的 formatter 原生违规文本
+    # parse error 与 formatter mismatch 分开计数，避免模板不一致被解析成功掩盖。
+    int_parse_errors = sum(  # 当前文本的 formatter AST 解析错误数
+        1  # 每条 error 诊断计为一个解析错误
+        for dict_item in list_diagnostics  # 遍历 parser 返回的全部诊断
+        if dict_item.get("severity") == "error"  # 只统计阻断级解析诊断
+    )
+
+    # 每条 formatter violation 都是模板一致性错误。
+    int_formatter_errors = len(list_formatter_violations)  # 当前文本的 formatter 模板错误数
 
     # 返回字段保持 v0.3.0 quality gate 契约。
     return {
         "version": 1,
         "path": str(source_path) if source_path is not None else None,
         "profile": profile,
-        "ok": not any(dict_item.get("severity") == "error" for dict_item in list_diagnostics),
+        "ok": int_parse_errors == 0 and int_formatter_errors == 0,
         "header": dict_header,
         "formatter_violations": list_formatter_violations,
         "diagnostics": list_diagnostics,
         "modules": list_modules,
         "source_metrics": _source_metrics(source),
+        "summary": {
+            "parse_errors": int_parse_errors,
+            "formatter_errors": int_formatter_errors,
+            "errors": int_parse_errors + int_formatter_errors,
+        },
     }
 
 # normalize_text_with_formatter_ast 对格式化结果再跑 AST 检查。
@@ -250,6 +268,24 @@ def normalize_text_with_formatter_ast(
 
         # 调用方只需要处理 VerilogAstError。
         raise VerilogAstError(f"> ERR: [Python] formatter normalization failed: {exc}") from exc
+
+    # 第二次格式化只用于验证首次输出已经收敛，禁止循环多次掩盖不稳定行为。
+    try:
+
+        # 使用同一后端和来源路径执行严格的单次幂等复检。
+        str_reformatted = formatter_backend_formatter_engine.format_text(str_formatted, source_path)  # 第二次 formatter 输出
+
+    # 幂等复检异常沿用 AST 层统一错误类型。
+    except VerilogFormatterError as exc:
+
+        # 调用方无需区分首次格式化与幂等复检异常。
+        raise VerilogAstError(f"> ERR: [Python] formatter idempotence check failed: {exc}") from exc
+
+    # 第二次输出变化说明 formatter 尚未在单次调用后收敛。
+    if str_reformatted != str_formatted:
+
+        # 不稳定输出不得继续进入写回或交付路径。
+        raise VerilogAstError("> ERR: [Python] formatter output is not idempotent after one pass")
 
     # 对格式化结果重跑结构报告，确保输出仍可解析。
     dict_report = build_ast_report_for_text(str_formatted, source_path=source_path, profile=profile)  # 格式化输出的二次 AST 报告
@@ -1291,11 +1327,22 @@ def _tree_summary(
         包含文件数、module 数、error 数和 warning 数的摘要字典。
     """
 
-    # summary 字段保持历史 JSON 结构。
+    # parse error 与 formatter mismatch 分开汇总，供公开 AST 门禁独立展示。
+    int_parse_errors = sum(1 for dict_item in list_diagnostics if dict_item.get("severity") == "error")  # 目录解析错误总数
+
+    # 逐文件 formatter violation 数量反映模板一致性错误规模。
+    int_formatter_errors = sum(  # 目录 formatter 模板错误总数
+        len(dict_report.get("formatter_violations", []))  # 当前文件的模板不一致条数
+        for dict_report in list_file_reports  # 从每份单文件报告读取模板差异列表
+    )
+
+    # summary 在保留旧字段的同时新增独立错误来源。
     return {
         "files": len(list_file_reports),
         "modules": sum(len(dict_report.get("modules", [])) for dict_report in list_file_reports),
-        "errors": sum(1 for dict_item in list_diagnostics if dict_item.get("severity") == "error"),
+        "parse_errors": int_parse_errors,
+        "formatter_errors": int_formatter_errors,
+        "errors": int_parse_errors + int_formatter_errors,
         "warnings": sum(1 for dict_item in list_diagnostics if dict_item.get("severity") == "warning"),
     }
 
