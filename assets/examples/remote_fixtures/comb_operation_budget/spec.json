@@ -1,0 +1,106 @@
+{
+  "name": "comb_operation_budget",
+  "target": "rtl",
+  "rtl_dialect": "verilog",
+  "design_requirements": {
+    "target": "rtl",
+    "pipeline_required": true,
+    "streamability": "non_streamable",
+    "interface_family": "native",
+    "interface_profile": {},
+    "confirmed_by_user": true,
+    "confirmation_notes": "Remote fixture proving a registered replacement for an over-budget combinational chain."
+  },
+  "streamability": "non_streamable",
+  "interface_family": "native",
+  "interface_profile": {},
+  "pipeline_required": true,
+  "codegen_plan_required": true,
+  "description": "Register two pairwise terms, combine them on the following cycle, and expose a valid result with explicit latency.",
+  "interfaces": {
+    "ports": [
+      {
+        "name": "i_clk",
+        "direction": "input",
+        "width": 1,
+        "role": "clock"
+      },
+      {
+        "name": "i_rstn",
+        "direction": "input",
+        "width": 1,
+        "role": "reset"
+      },
+      {
+        "name": "i_valid",
+        "direction": "input",
+        "width": 1
+      },
+      {
+        "name": "i_data",
+        "direction": "input",
+        "width": 4
+      },
+      {
+        "name": "o_input_ready",
+        "direction": "output",
+        "width": 1
+      },
+      {
+        "name": "i_output_ready",
+        "direction": "input",
+        "width": 1
+      },
+      {
+        "name": "o_valid",
+        "direction": "output",
+        "width": 1
+      },
+      {
+        "name": "o_match",
+        "direction": "output",
+        "width": 1
+      }
+    ]
+  },
+  "behavior": [
+    "Clear all pipeline state during active-low reset.",
+    "Capture the two pairwise AND terms when i_valid is asserted.",
+    "One cycle later, output the OR of the registered terms and assert o_valid.",
+    "Hold o_valid and o_match stable while i_output_ready is deasserted, and conserve every accepted transaction."
+  ],
+  "clock": {
+    "name": "i_clk",
+    "edge": "posedge",
+    "frequency_mhz": 100
+  },
+  "reset": {
+    "name": "i_rstn",
+    "active": "low",
+    "synchronous": false
+  },
+  "constraints": [
+    "Use synthesizable Verilog-2001.",
+    "Keep every register D-input and continuous output bridge within three combinational operations.",
+    "Preserve the documented two-edge result latency when the pipeline is not stalled.",
+    "Honor ready/valid backpressure without loss, duplication, or output changes during a stall."
+  ],
+  "outputs": [
+    {
+      "path": "rtl/comb_operation_budget.v",
+      "kind": "source",
+      "language": "verilog"
+    },
+    {
+      "path": "tb/comb_operation_budget_tb.v",
+      "kind": "testbench",
+      "language": "verilog"
+    }
+  ],
+  "notes": [
+    "comb_operation_budget_bad.v is a gate-only negative probe and is intentionally excluded from simulation outputs."
+  ],
+  "subfunctions": [],
+  "workflow": {},
+  "performance": {}
+}

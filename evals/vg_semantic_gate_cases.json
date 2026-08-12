@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "catalog_version": 5,
+  "catalog_version": 6,
   "description": "Self-contained three-way fixture routing for every active VG semantic gate.",
   "fixtures": {
     "canonical_clean": "module dut (\n    input wire clk,\n    input wire [3:0] a,\n    output reg y\n);\nalways @(posedge clk) begin\n    y <= a[0];\nend\nendmodule\n",
@@ -101,7 +101,13 @@
     "vg144_three_process_fsm": "module dut\n(\n    input wire clk,\n    input wire rst_n,\n    input wire start,\n    output reg busy\n);\nlocalparam ST_IDLE = 1'b0;\nlocalparam ST_BUSY = 1'b1;\nreg state_current;\nreg state_next;\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) state_current <= ST_IDLE;\n    else state_current <= state_next;\nend\nalways @(*) begin\n    state_next = state_current;\n    case (state_current)\n        ST_IDLE: if (start) state_next = ST_BUSY;\n        ST_BUSY: state_next = ST_IDLE;\n        default: state_next = ST_IDLE;\n    endcase\nend\nalways @(*) begin\n    busy = 1'b0;\n    case (state_current)\n        ST_BUSY: busy = 1'b1;\n        default: busy = 1'b0;\n    endcase\nend\nendmodule\n",
     "vg144_assign_next_state": "module dut\n(\n    input wire clk,\n    input wire rst_n,\n    input wire start,\n    output reg busy\n);\nlocalparam ST_IDLE = 1'b0;\nlocalparam ST_BUSY = 1'b1;\nreg state_current;\nwire state_next;\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) state_current <= ST_IDLE;\n    else state_current <= state_next;\nend\nassign state_next = start ? ST_BUSY : ST_IDLE;\nalways @(*) begin\n    case (state_current)\n        ST_IDLE: busy = 1'b0;\n        ST_BUSY: busy = 1'b1;\n        default: busy = 1'b0;\n    endcase\nend\nendmodule\n",
     "vg145_three_source_cone": "module dut\n(\n    input wire [2:0] data,\n    output wire y\n);\nassign y = data[0] | data[1] | data[2];\nendmodule\n",
-    "vg145_four_source_cone": "module dut\n(\n    input wire a,\n    input wire b,\n    input wire c,\n    input wire d,\n    output wire y\n);\nwire pair_ab;\nreg merged;\nassign pair_ab = a & b;\nalways @(*) begin\n    if (c) merged = pair_ab;\n    else merged = d;\nend\nassign y = merged;\nendmodule\n"
+    "vg145_four_source_cone": "module dut\n(\n    input wire a,\n    input wire b,\n    input wire c,\n    input wire d,\n    output wire y\n);\nwire pair_ab;\nreg merged;\nassign pair_ab = a & b;\nalways @(*) begin\n    if (c) merged = pair_ab;\n    else merged = d;\nend\nassign y = merged;\nendmodule\n",
+    "vg146_three_operations": "module dut\n(\n    input wire a,\n    output wire y\n);\nassign y = ~~~a;\nendmodule\n",
+    "vg146_four_operations": "module dut\n(\n    input wire a,\n    output wire y\n);\nassign y = ~~~~a;\nendmodule\n",
+    "vg146_unsupported_call": "module dut\n(\n    input wire a,\n    output wire y\n);\nassign y = helper(a);\nendmodule\n",
+    "vg147_three_iterations": "module dut\n(\n    input wire [2:0] data,\n    output reg parity\n);\ninteger i;\nalways @(*) begin\n    parity = 1'b0;\n    for (i = 0; i < 3; i = i + 1) begin\n        parity = parity ^ data[i];\n    end\nend\nendmodule\n",
+    "vg147_four_iterations": "module dut\n(\n    input wire [3:0] data,\n    output reg parity\n);\ninteger i;\nalways @(*) begin\n    parity = 1'b0;\n    for (i = 0; i < 4; i = i + 1) begin\n        parity = parity ^ data[i];\n    end\nend\nendmodule\n",
+    "vg147_unknown_iterations": "module dut\n#(\n    parameter C_COUNT = 3\n)\n(\n    input wire [3:0] data,\n    output reg parity\n);\ninteger i;\nalways @(*) begin\n    parity = 1'b0;\n    for (i = 0; i < C_COUNT; i = i + 1) begin\n        parity = parity ^ data[i];\n    end\nend\nendmodule\n"
   },
   "shared_fixtures": {
     "positive": "canonical_clean",
@@ -118,7 +124,8 @@
         "VG080",
         "VG082",
         "VG119",
-        "VG125"
+        "VG125",
+        "VG146"
       ]
     },
     "VG076": {
@@ -553,6 +560,22 @@
       "inconclusive": "formatter_parse_error",
       "allowed_overlaps": []
     },
+    "VG146": {
+      "positive": "vg146_three_operations",
+      "negative": "vg146_four_operations",
+      "inconclusive": "vg146_unsupported_call",
+      "allowed_overlaps": []
+    },
+    "VG147": {
+      "positive": "vg147_three_iterations",
+      "negative": "vg147_four_iterations",
+      "inconclusive": "vg147_unknown_iterations",
+      "allowed_overlaps": [
+        "VG123",
+        "VG136",
+        "VG138"
+      ]
+    },
     "VG087": {
       "positive": "reset_clean",
       "negative": "reset_override",
@@ -736,7 +759,8 @@
         "VG080",
         "VG082",
         "VG119",
-        "VG125"
+        "VG125",
+        "VG147"
       ]
     },
     "VG102": {
@@ -749,7 +773,8 @@
         "VG080",
         "VG082",
         "VG119",
-        "VG125"
+        "VG125",
+        "VG146"
       ]
     },
     "VG113": {
@@ -965,7 +990,8 @@
         "VG119",
         "VG125",
         "VG136",
-        "VG138"
+        "VG138",
+        "VG147"
       ]
     },
     "VG082": {

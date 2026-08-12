@@ -64,7 +64,7 @@ from .quality_gate_reports import write_quality_gate_report
 from .quality_gate_structure_rules import _module_rules
 from .quality_gate_text_rules import _raw_text_rules
 from .vg_semantic_engine import run_vg_semantic_gate
-from .vg_semantic_facts import build_vg_facts_from_reports
+from .vg_semantic_facts import VgFacts, build_vg_facts_from_reports
 
 # 运行时外部接口来源暂存于规格副本，避免扩大稳定公共质量门签名。
 EXTERNAL_INTERFACE_SOURCES_SPEC_KEY = "__external_interface_sources__"  # 规格载体中的运行时专用键
@@ -97,6 +97,55 @@ def _semantic_runtime_inputs(
 
     # 返回彼此隔离的设计合同与运行时文件来源。
     return dict_normalized_spec, tuple_external_sources
+
+# 语义段助手集中复用 formatter 事实和统一目录。
+def _run_semantic_rules(
+    path_root: Path,
+    list_file_reports: list[dict[str, Any]],
+    dict_semantic_spec: dict[str, Any] | None,
+    tuple_external_sources: tuple[Path, ...],
+
+    # 以下关键字参数保持公开质量门选项不被位置误传。
+    *,
+    strict: bool,
+    include_testbench: bool,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """执行共享目录驱动的 VG072 至 VG147 语义段。
+
+    参数:
+        path_root: 本轮质量门的规范 RTL 入口。
+        list_file_reports: formatter 已生成的逐文件报告。
+        dict_semantic_spec: 已移除运行时键的设计规格。
+        tuple_external_sources: 显式外部接口来源路径。
+        strict: WARNING 级结果是否阻断交付。
+        include_testbench: 是否把 testbench 纳入语义检查。
+    返回:
+        已验证目录和语义规则报告。
+    """
+
+    # 类型化名称明确该对象承载单次 formatter 事实快照。
+    vg_facts_vg_facts: VgFacts = build_vg_facts_from_reports(  # 共享 AST 语义事实
+        path_root,  # 语义执行器消费的规范 RTL 入口
+        list_file_reports,  # 已生成的逐文件 AST 报告
+        spec=dict_semantic_spec,  # 已移除运行时键的设计规格
+        external_interface_sources=tuple_external_sources,  # 仅供 VG097 的外部接口 stub
+    )
+
+    # 统一目录在外层只加载一次，并同时提供给原生段和语义段。
+    dict_catalog = load_verilog_quality_gates()  # 已验证的一百二十五条统一规则目录
+
+    # 迁移语义段通过统一入口生成 VG072-VG147 结果。
+    dict_semantic_report = run_vg_semantic_gate(  # 七十六条迁移语义规则报告
+        path_root,  # 本轮统一质量门扫描根
+        spec=dict_semantic_spec,  # 语义规则可选设计规格
+        strict=strict,  # WARNING 级结果的阻断策略
+        include_testbench=include_testbench,  # testbench 纳入策略
+        facts=vg_facts_vg_facts,  # 复用本轮唯一 AST 事实
+        catalog=dict_catalog,  # 复用外层已加载目录，禁止二次读取
+    )
+
+    # 两个对象共同保证原生段和语义段使用同一目录版本。
+    return dict_catalog, dict_semantic_report
 
 # 组织目录级质量门运行并保持旧入口签名稳定。
 def run_verilog_quality_gate(
@@ -185,34 +234,30 @@ def run_verilog_quality_gate(
     # 聚合 module 数复用 AST summary，避免重复口径。
     dict_aggregate_metrics["modules"] = dict_ast_tree_report["summary"]["modules"]  # 已解析 module 总数
 
-    # 设计规格与外部 stub 路径必须在进入事实层前解除混合。
-    tuple_semantic_inputs = _semantic_runtime_inputs(spec)  # 已分离的语义事实输入
+    # 设计合同和外部 stub 来源在进入事实层前完成拆分。
+    tuple_semantic_inputs = _semantic_runtime_inputs(spec)  # 已隔离的语义输入二元组
 
-    # 第一项仅保留规则能够消费的设计合同。
-    dict_semantic_spec = tuple_semantic_inputs[0]  # 去除运行时键的规格副本
+    # 第一项是规则能够消费的纯设计合同。
+    dict_semantic_spec = tuple_semantic_inputs[0]  # 已移除运行时路径键的规格
 
-    # 第二项提供 VG097 额外可见的模块接口来源。
+    # 第二项是 VG097 显式允许读取的接口来源。
     tuple_external_sources = tuple_semantic_inputs[1]  # 规范化外部接口路径
 
-    # 迁移语义段复用本轮已经生成的 formatter AST，禁止第二次解析。
-    vg_facts = build_vg_facts_from_reports(  # 共享 AST 语义事实
-        path_root,  # 语义执行器消费的规范 RTL 入口
-        list_file_reports,  # 已生成的逐文件 AST 报告
-        spec=dict_semantic_spec,  # 已移除运行时键的设计规格
-        external_interface_sources=tuple_external_sources,  # 仅供 VG097 的外部接口 stub
+    # 独立助手保证目录和 formatter 事实都只构建一次。
+    tuple_semantic_results = _run_semantic_rules(  # 统一目录和七十六条语义规则报告
+        path_root,  # 锁定本轮 RTL 根
+        list_file_reports,  # 复用 formatter 产物
+        dict_semantic_spec,  # 注入设计合同
+        tuple_external_sources,  # 补充接口存根
+        strict=strict,  # 继承交付严格度
+        include_testbench=include_testbench,  # 保持扫描边界
     )
 
-    # 迁移语义段通过统一入口生成 VG072-VG145 结果。
-    dict_semantic_report = run_vg_semantic_gate(  # 72 条迁移语义规则报告
-        path_root,  # 本轮统一质量门扫描根
-        spec=dict_semantic_spec,  # 语义规则可选设计规格
-        strict=strict,  # WARNING 级结果的阻断策略
-        include_testbench=include_testbench,  # testbench 纳入策略
-        facts=vg_facts,  # 复用本轮唯一 AST 事实
-    )
+    # 第一项供原生门禁与语义门禁共享相同目录版本。
+    dict_catalog = tuple_semantic_results[0]  # 本轮唯一目录对象
 
-    # catalog 元数据把原生 issue 聚合为 VG000-VG071 的逐规则结论。
-    dict_catalog = load_verilog_quality_gates()  # 已验证的 121 条统一规则目录
+    # 第二项提供 VG072 至 VG147 的逐规则结论。
+    dict_semantic_report = tuple_semantic_results[1]  # 本轮语义门禁报告
 
     # 原生规则结果与迁移语义结果采用相同公开模型。
     list_native_results = _native_vg_rule_results(  # 49 条原生规则结果
@@ -222,15 +267,15 @@ def run_verilog_quality_gate(
     )
 
     # 两段结果严格按 catalog 顺序拼成完整统一报告。
-    list_vg_results = (  # 121 条 VG 结果
+    list_vg_results = (  # 一百二十五条 VG 结果
         list_native_results + list(dict_semantic_report["vg_rule_results"])  # 原生段后接语义段
     )
 
     # 语义规则的失败或不确定状态进入统一 issue 列表，复用既有 ok/errors 语义。
     _append_semantic_issues(list_issues, dict_semantic_report["vg_rule_results"], strict=strict)
 
-    # 全量摘要不再沿用语义子引擎的 72 条局部计数。
-    dict_vg_summary = _summarize_vg_rule_results(list_vg_results)  # 121 条规则执行摘要
+    # 全量摘要不再沿用语义子引擎的七十六条局部计数。
+    dict_vg_summary = _summarize_vg_rule_results(list_vg_results)  # 一百二十五条规则执行摘要
 
     # 返回不可变报告对象，供 CLI 或验证流程序列化。
     return QualityGateReport(

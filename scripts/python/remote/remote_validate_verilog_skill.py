@@ -22,7 +22,7 @@ from types import ModuleType
 from typing import Any
 
 # 文本型回归 gate 会直接扫描 facade 源码，因此这里保留固定 VG 目录标识。
-STR_RTL_MD_GATE_MARKERS_HEAD = "remote_verilog_quality_gates VG072 VG145"  # 文本型回归 gate 依赖的目录边界标识
+STR_RTL_MD_GATE_MARKERS_HEAD = "remote_verilog_quality_gates VG072 VG147"  # 文本型回归 gate 依赖的目录边界标识
 
 # 文本型回归 gate 还会继续核对后半段标识，确保远端约束回归仍被 facade 对外承诺。
 STR_RTL_MD_GATE_MARKERS_TAIL = "VG123 eval-skill vg_semantic_gate_regression"  # 文本型回归 gate 依赖的执行标识

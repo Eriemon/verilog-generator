@@ -1,7 +1,7 @@
 {
   "documents": [
     {
-      "content_sha256": "e1771fe6a84e38df140fe95181d77540048a526d362672340a6b07b189b1c245",
+      "content_sha256": "3e0fc79a71a72d461d068988206806a9787274d7363327dcd5a0bdf9d67ffbf5",
       "id": "document.skill",
       "keywords": [
         "route",
@@ -83,7 +83,7 @@
       "title": "Verilog Style Observations"
     },
     {
-      "content_sha256": "f957c2d6d538812734c67546c9b105d6297cfa48af447b6e0a28b07c31e4aed8",
+      "content_sha256": "80e0ab05d70d75edd6e5575707873738793ce97c73d9b336496a1ea2039c14db",
       "id": "document.references-integration-configuration",
       "keywords": [
         "settings",
@@ -169,7 +169,7 @@
       "title": "Testbench Patterns"
     },
     {
-      "content_sha256": "9009b63baec9906cc0c612dbff63a0728776175e106b5968cc1e7205d1142779",
+      "content_sha256": "d4d990abf1ac5adefd0adb91fd340324279423bb1dd2fb2706122654b211ac4d",
       "id": "document.references-rules-verilog-code-comment-naming-standard",
       "keywords": [
         "Verilog",
@@ -219,12 +219,16 @@
       "title": "Verilog Pattern Templates"
     },
     {
-      "content_sha256": "e233604f694117013e4b3c41a0d5981dc0af2bd98411a8266928da24aec9167a",
+      "content_sha256": "ad706d9558a05ce64bd01c890abff1eb21af49bd640029359eb08fc09978a8a8",
       "id": "document.references-rules-verilog-quality-gates",
       "keywords": [
         "VG",
         "VG078",
+        "VG146",
+        "VG147",
         "catalog",
+        "combinational operations",
+        "for elaboration",
         "open-drain",
         "X/Z",
         "inout",

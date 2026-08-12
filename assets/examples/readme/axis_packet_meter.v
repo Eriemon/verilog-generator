@@ -59,108 +59,205 @@ module axis_packet_meter
 	output [31:0]o_byte_count                   // 已传输有效字节的饱和计数值
 );
 
+	//----------------寄存器信号----------------//
+	//用户接口--统计控制与读出
+	reg [31:0]reg_frame_total = 32'd0;          // 数据包计数的未钳位内部状态
+	reg [31:0]reg_byte_total = 32'd0;           // 有效字节计数的未钳位内部状态
+	//流水化统计中间值
+	reg [2:0]reg_byte_increment_d1 = 3'd0;      // 单拍有效字节数量缓存
+
 	//-----------------标志信号-----------------//
 	//AXI-Stream 事务与数据包边界
 	wire flag_transfer;                         // 本拍完成 valid-ready 握手
-	wire flag_packet_end;                       // 本拍握手同时到达数据包末尾
+	wire flag_packet_end;                       // 本拍完成数据包末拍握手
+	reg flag_packet_end_d1 = 1'b0;              // 延迟一拍的数据包结束事件
+	reg flag_transfer_d1 = 1'b0;                // 延迟一拍的有效传输事件
+	reg flag_packet_overflow_d1 = 1'b0;         // 数据包计数进位事件缓存
+	reg flag_byte_overflow_d2 = 1'b0;           // 字节计数进位事件缓存
+	reg flag_packet_saturated = 1'b0;           // 数据包计数饱和状态
+	reg flag_byte_saturated = 1'b0;             // 字节计数饱和状态
 
 	//-----------------其他信号-----------------//
 	//饱和计数使用的扩展位运算量
 	wire [32:0]data_frame_sum;                  // 数据包计数器加一后的扩展结果
-	wire [32:0]data_byte_sum_1;                 // 字节计数器加一后的扩展结果
-	wire [32:0]data_byte_sum_2;                 // 字节计数器加二后的扩展结果
-	wire [32:0]data_byte_sum_3;                 // 字节计数器加三后的扩展结果
-	wire [32:0]data_byte_sum_4;                 // 字节计数器加四后的扩展结果
+	wire [32:0]data_byte_sum;                   // 字节计数器流水累加扩展结果
 
 	//-----------------输出信号-----------------//
 	//用户接口--统计控制与读出
-	reg [31:0]cnt_packet_o = 32'd0;             // 已完成数据包数量的内部输出缓存
-	reg [31:0]cnt_byte_o = 32'd0;               // 已传输有效字节数量的内部输出缓存
+	wire [31:0]cnt_packet_o;                    // 数据包计数输出桥接值
+	wire [31:0]cnt_byte_o;                      // 有效字节计数输出桥接值
 
 	//---------------其他信号连线---------------//
 	//AXIS接口
 	//AXI-Stream 事务判定
 	assign flag_transfer = i_axis_tvalid & i_axis_tready; // 仅在发送方与接收方同时就绪时采样
-	assign flag_packet_end = flag_transfer & i_axis_tlast; // 完成握手且 tlast 有效时结束数据包
+	assign flag_packet_end = flag_transfer & i_axis_tlast; // 仅在末拍握手时累计数据包
 
 	//其他信号连线
-	assign data_frame_sum = {1'b0, cnt_packet_o} + 1'b1; // 用扩展位捕获数据包计数进位
+	assign data_frame_sum = {1'b0, reg_frame_total} + 1'b1; // 用扩展位捕获数据包计数进位
 
 	//单拍字节数与饱和累加量
-	assign data_byte_sum_1 = {1'b0, cnt_byte_o} + 1'b1; // 捕获一个字节增量的进位
-	assign data_byte_sum_2 = {1'b0, cnt_byte_o} + 2'd2; // 捕获两个字节增量的进位
-	assign data_byte_sum_3 = {1'b0, cnt_byte_o} + 2'd3; // 捕获三个字节增量的进位
-	assign data_byte_sum_4 = {1'b0, cnt_byte_o} + 3'd4; // 捕获四个字节增量的进位
+	assign data_byte_sum = {1'b0, reg_byte_total} + reg_byte_increment_d1; // 使用缓存增量捕获字节计数进位
+
+	//饱和统计输出选择
+	assign cnt_packet_o = (flag_packet_saturated | flag_packet_overflow_d1) ? 32'hFFFF_FFFF : reg_frame_total; // 饱和后钳位数据包计数
+	assign cnt_byte_o = (flag_byte_saturated | flag_byte_overflow_d2) ? 32'hFFFF_FFFF : reg_byte_total; // 饱和后钳位有效字节计数
 
 	//---------------输出信号连线---------------//
 	//用户接口--统计控制与读出
-	assign o_packet_count = cnt_packet_o;       // 输出已完成数据包累计值
-	assign o_byte_count = cnt_byte_o;           // 输出已传输有效字节累计值
+	assign o_packet_count = cnt_packet_o;       // 桥接已钳位的数据包计数
+	assign o_byte_count = cnt_byte_o;           // 桥接已钳位的有效字节计数
 
-	//-------------输出信号处理区域-------------//
+	//-------------主要任务处理区域-------------//
 	//用户接口--统计控制与读出
-	//数据包计数器在数据包末拍握手后递增并在上限处饱和
+	//数据包原始计数每次末拍握手后递增，饱和状态由独立寄存器保持
 	always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
 		if(i_axis_arstn == 1'b0)begin
-			cnt_packet_o <= 32'd0;              // 异步复位清空数据包累计值
-		end else if(i_clear == 1'b1)begin
-			cnt_packet_o <= 32'd0;              // 软件清零请求同步清空数据包统计
-		end else if(flag_packet_end == 1'b1)begin
-			if(data_frame_sum[32] == 1'b0)begin
-				cnt_packet_o <= data_frame_sum[31:0]; // 未产生进位时记录新完成的数据包
-			end else begin
-				cnt_packet_o <= 32'hFFFF_FFFF;  // 达到上限后保持最大数据包计数
-			end
+			reg_frame_total <= 32'd0;           // 异步复位清空数据包累计值
 		end else begin
-			cnt_packet_o <= cnt_packet_o;       // 当前拍未结束数据包时保持累计值
+			case(i_clear)
+				1'b1:begin
+					reg_frame_total <= 32'd0;   // 软件清零优先于当前数据包事件
+				end
+				default:begin
+					case(flag_packet_end_d1)
+						1'b1:begin
+							reg_frame_total <= data_frame_sum[31:0]; // 累计流水数据包事件
+						end
+						default:begin
+							reg_frame_total <= reg_frame_total; // 无数据包事件时保持原始计数
+						end
+					endcase
+				end
+			endcase
 		end
 	end
 
-	//字节计数器在每次有效握手后累加 tkeep 指示的字节数量
+	//字节原始计数使用前级字节数量，每拍仍可接受新的传输事件
 	always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
 		if(i_axis_arstn == 1'b0)begin
-			cnt_byte_o <= 32'd0;                // 异步复位清空有效字节累计值
-		end else if(i_clear == 1'b1)begin
-			cnt_byte_o <= 32'd0;                // 软件清零请求同步清空字节统计
-		end else if(flag_transfer == 1'b1)begin
-			case(i_axis_tkeep)
-				4'b0000:begin
-					cnt_byte_o <= cnt_byte_o;   // 当前拍没有有效字节时保持累计值
-				end
-				4'b0001, 4'b0010, 4'b0100, 4'b1000:begin
-					if(data_byte_sum_1[32] == 1'b0)begin
-						cnt_byte_o <= data_byte_sum_1[31:0]; // 累加一个有效字节
-					end else begin
-						cnt_byte_o <= 32'hFFFF_FFFF; // 一个字节增量溢出时饱和
-					end
-				end
-				4'b0011, 4'b0101, 4'b0110, 4'b1001, 4'b1010, 4'b1100:begin
-					if(data_byte_sum_2[32] == 1'b0)begin
-						cnt_byte_o <= data_byte_sum_2[31:0]; // 累加两个有效字节
-					end else begin
-						cnt_byte_o <= 32'hFFFF_FFFF; // 两个字节增量溢出时饱和
-					end
-				end
-				4'b0111, 4'b1011, 4'b1101, 4'b1110:begin
-					if(data_byte_sum_3[32] == 1'b0)begin
-						cnt_byte_o <= data_byte_sum_3[31:0]; // 累加三个有效字节
-					end else begin
-						cnt_byte_o <= 32'hFFFF_FFFF; // 三个字节增量溢出时饱和
-					end
-				end
-				4'b1111:begin
-					if(data_byte_sum_4[32] == 1'b0)begin
-						cnt_byte_o <= data_byte_sum_4[31:0]; // 累加四个有效字节
-					end else begin
-						cnt_byte_o <= 32'hFFFF_FFFF; // 四个字节增量溢出时饱和
-					end
+			reg_byte_total <= 32'd0;            // 异步复位清空有效字节累计值
+		end else begin
+			case(i_clear)
+				1'b1:begin
+					reg_byte_total <= 32'd0;    // 软件清零优先于流水传输事件
 				end
 				default:begin
-					cnt_byte_o <= cnt_byte_o;   // 四态仿真出现未知掩码时保持统计值
+					case(flag_transfer_d1)
+						1'b1:begin
+							reg_byte_total <= data_byte_sum[31:0]; // 累计前级缓存的有效字节数量
+						end
+						default:begin
+							reg_byte_total <= reg_byte_total; // 无流水传输事件时保持原始计数
+						end
+					endcase
 				end
 			endcase
+		end
+	end
+
+	//数据包进位事件寄存器更新逻辑
+	always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
+		if(i_axis_arstn == 1'b0)begin
+			flag_packet_overflow_d1 <= 1'b0;    // 异步复位清除数据包进位事件
 		end else begin
-			cnt_byte_o <= cnt_byte_o;           // 当前拍未握手时保持累计字节数
+			case(i_clear)
+				1'b1:begin
+					flag_packet_overflow_d1 <= 1'b0; // 软件清零丢弃当前进位事件
+				end
+				default:begin
+					flag_packet_overflow_d1 <= flag_packet_end_d1 & data_frame_sum[32]; // 缓存流水数据包进位
+				end
+			endcase
+		end
+	end
+
+	//数据包饱和状态寄存器更新逻辑
+	always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
+		if(i_axis_arstn == 1'b0)begin
+			flag_packet_saturated <= 1'b0;      // 异步复位清除数据包饱和状态
+		end else begin
+			case(i_clear)
+				1'b1:begin
+					flag_packet_saturated <= 1'b0; // 软件清零释放数据包饱和状态
+				end
+				default:begin
+					flag_packet_saturated <= flag_packet_saturated | flag_packet_overflow_d1; // 锁存已缓存的数据包进位
+				end
+			endcase
+		end
+	end
+
+	//字节数量预译码寄存器更新逻辑
+	always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
+		if(i_axis_arstn == 1'b0)begin
+			reg_byte_increment_d1 <= 3'd0;      // 异步复位清除字节增量缓存
+		end else begin
+			reg_byte_increment_d1 <= i_axis_tkeep[0] + i_axis_tkeep[1] + i_axis_tkeep[2] + i_axis_tkeep[3]; // 流水预译码有效字节数量
+		end
+	end
+
+	//数据包结束事件缓存标志更新逻辑
+	always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
+		if(i_axis_arstn == 1'b0)begin
+			flag_packet_end_d1 <= 1'b0;         // 异步复位清除数据包结束事件
+		end else begin
+			case(i_clear)
+				1'b1:begin
+					flag_packet_end_d1 <= 1'b0; // 软件清零冲刷当前数据包事件
+				end
+				default:begin
+					flag_packet_end_d1 <= flag_packet_end; // 缓存本拍数据包末拍握手
+				end
+			endcase
+		end
+	end
+
+	//首级传输事件缓存标志更新逻辑
+	always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
+		if(i_axis_arstn == 1'b0)begin
+			flag_transfer_d1 <= 1'b0;           // 异步复位清除首级传输事件
+		end else begin
+			case(i_clear)
+				1'b1:begin
+					flag_transfer_d1 <= 1'b0;   // 清零时冲刷首级传输事件
+				end
+				default:begin
+					flag_transfer_d1 <= flag_transfer; // 缓存本拍有效传输事件
+				end
+			endcase
+		end
+	end
+
+	//字节进位事件寄存器更新逻辑
+	always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
+		if(i_axis_arstn == 1'b0)begin
+			flag_byte_overflow_d2 <= 1'b0;      // 异步复位清除字节进位事件
+		end else begin
+			case(i_clear)
+				1'b1:begin
+					flag_byte_overflow_d2 <= 1'b0; // 软件清零丢弃当前字节进位事件
+				end
+				default:begin
+					flag_byte_overflow_d2 <= flag_transfer_d1 & data_byte_sum[32]; // 缓存流水字节进位
+				end
+			endcase
+		end
+	end
+
+	//字节饱和状态寄存器更新逻辑
+	always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
+		if(i_axis_arstn == 1'b0)begin
+			flag_byte_saturated <= 1'b0;        // 异步复位清除字节饱和状态
+		end else begin
+			case(i_clear)
+				1'b1:begin
+					flag_byte_saturated <= 1'b0; // 软件清零释放字节饱和状态
+				end
+				default:begin
+					flag_byte_saturated <= flag_byte_saturated | flag_byte_overflow_d2; // 锁存已缓存的字节进位
+				end
+			endcase
 		end
 	end
 

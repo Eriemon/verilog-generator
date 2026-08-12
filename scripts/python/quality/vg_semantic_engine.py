@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 # catalog loader 是固定编号、等级和激活状态的唯一来源。
-from scripts.python.workflow.verilog_gate_catalog import load_verilog_quality_gates
+from scripts.python.workflow.verilog_gate_catalog import COMB_OPERATION_LIMIT_KEY, load_verilog_quality_gates
 
 # 各规则模块按语义域执行固定编号。
 from .vg_branch_rules import evaluate_branch_gate
@@ -18,6 +18,9 @@ from .vg_clock_rules import evaluate_clock_gate
 from .vg_control_rules import evaluate_control_gate
 from .vg_driver_rules import evaluate_driver_gate
 from .vg_expression_rules import evaluate_expression_gate
+
+# vg_comb_cone 只消费 formatter 类型化表达式事实并统一执行 VG146/VG147。
+from .vg_comb_cone import build_comb_target_cones, evaluate_comb_operation_gate
 
 # 状态机、复位和结构模块承载本轮新增的语义域。
 from .vg_fsm_rules import evaluate_fsm_gate
@@ -72,6 +75,9 @@ FSM_GATES = frozenset({"VG086", "VG094", "VG098", "VG112", "VG119", "VG144"})  #
 # 结构模块集中处理锁存环、数组常量边界和普通组合反馈。
 STRUCTURE_GATES = frozenset({"VG104", "VG130", "VG136", "VG145"})  # 组合结构规则编号
 
+# 组合预算规则共享一次分析合同，但按是否包含 for 克隆节点分配所有权。
+COMB_OPERATION_GATES = frozenset({"VG146", "VG147"})  # 普通与循环组合操作预算编号
+
 # run_vg_semantic_gate 是迁移语义规则的内部执行入口。
 def run_vg_semantic_gate(
     root: Path,
@@ -83,8 +89,9 @@ def run_vg_semantic_gate(
     # 以下参数控制预构建事实和显式外部接口来源。
     facts: VgFacts | None = None,
     external_interface_sources: tuple[Path, ...] = (),
+    catalog: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """运行 VG072 至 VG145 语义门禁并返回 fail-closed 报告。
+    """运行 VG072 至 VG147 语义门禁并返回 fail-closed 报告。
 
     参数:
         root: 待检查的 Verilog 文件或目录。
@@ -93,16 +100,24 @@ def run_vg_semantic_gate(
         include_testbench: 是否把 testbench 文件纳入设计 RTL 检查。
         facts: 可选的预构建 VG 事实；提供时禁止再次解析 RTL。
         external_interface_sources: 未提供预构建事实时装载的外部接口 stub 来源。
+        catalog: 可选的已验证统一目录；由外层质量门提供时禁止再次加载。
 
     返回:
-        包含 74 条逐门禁结果、摘要和交付结论的字典。
+        包含 76 条逐门禁结果、摘要和交付结论的字典。
     """
 
     # 绝对路径保证报告和 formatter 扫描使用同一目标。
     path_root = root.resolve()  # 待检查 RTL 根路径
 
-    # catalog 决定 74 条规则的固定顺序和治理元数据。
-    dict_catalog = load_verilog_quality_gates()  # 已校验的统一 VG 目录
+    # 外层统一质量门可复用其目录；直接调用时仍只加载一次权威 JSON。
+    dict_catalog = (  # 本轮语义执行唯一使用的已验证 VG 目录
+        load_verilog_quality_gates()  # 直接语义入口自行加载目录
+        if catalog is None  # 只有调用方未提供目录时才读取资产
+        else catalog  # 复用外层质量门已经验证的目录对象
+    )
+
+    # loader 已严格校验配置类型和正整数范围，此处只读取一次共享阈值。
+    int_comb_operation_limit = int(dict_catalog["config"][COMB_OPERATION_LIMIT_KEY])  # 每目标组合操作预算
 
     # 单次事实构建避免每条规则重复解析 RTL。
     vg_facts = facts or build_vg_facts(  # 当前目标的可信 VG 扫描事实
@@ -112,8 +127,11 @@ def run_vg_semantic_gate(
         external_interface_sources=external_interface_sources,  # 显式外部接口 stub
     )
 
+    # 两条组合预算规则共享一次不可变锥构建，禁止重复分析产生漂移。
+    tuple_comb_cones = build_comb_target_cones(vg_facts)  # VG146/VG147 共享目标锥快照
+
     # 结果列表严格按 catalog 顺序保留全部激活和预留编号。
-    list_results: list[dict[str, Any]] = []  # 74 条逐门禁结果
+    list_results: list[dict[str, Any]] = []  # 76 条逐门禁结果
 
     # 只执行迁移后的语义段；既有 VG000-VG071 由统一质量门原生规则负责。
     for dict_rule in dict_catalog["rules"]:
@@ -125,7 +143,14 @@ def run_vg_semantic_gate(
             continue
 
         # 预留规则也通过统一入口生成 reserved 结果。
-        list_results.append(_evaluate_catalog_rule(dict_rule, vg_facts))
+        list_results.append(
+            _evaluate_catalog_rule(
+                dict_rule,
+                vg_facts,
+                int_comb_operation_limit,
+                tuple_comb_cones,
+            )
+        )
 
     # 状态摘要用于快速核对固定目录的完整覆盖。
     dict_summary = _summarize_results(list_results)  # 固定 VG 状态与目录计数
@@ -189,12 +214,19 @@ def _build_report(
     }
 
 # _evaluate_catalog_rule 保证每个 catalog 条目都有公开结果。
-def _evaluate_catalog_rule(dict_rule: dict[str, Any], facts: VgFacts) -> dict[str, Any]:
+def _evaluate_catalog_rule(
+    dict_rule: dict[str, Any],
+    facts: VgFacts,
+    int_comb_operation_limit: int,
+    tuple_comb_cones: tuple[Any, ...],
+) -> dict[str, Any]:
     """执行单条 catalog 规则或生成 reserved 状态。
 
     参数:
         dict_rule: 当前固定 VG 规则的 catalog 元数据。
         facts: 当前 RTL 目标的共享解析事实。
+        int_comb_operation_limit: 已校验的每目标组合操作预算。
+        tuple_comb_cones: VG146/VG147 共享的不可变组合锥快照。
     返回:
         合并 catalog 元数据与执行结论的公开结果字典。
     """
@@ -218,6 +250,8 @@ def _evaluate_catalog_rule(dict_rule: dict[str, Any], facts: VgFacts) -> dict[st
     vg_evaluation_obj_evaluation: VgEvaluation = _run_active_evaluator(  # 当前固定规则的执行结论
         str_gate_id,  # 当前激活 VG 编号
         facts,  # 共享解析事实
+        int_comb_operation_limit,  # 目录拥有的组合操作预算
+        tuple_comb_cones,  # 两条组合预算规则共用一次分析结果
     )
 
     # 未知状态属于规则实现错误，不能穿透公开报告。
@@ -260,15 +294,33 @@ def _parse_error_evaluation(list_parse_errors: list[dict[str, Any]]) -> VgEvalua
     )
 
 # _run_active_evaluator 维护固定编号到规则模块的唯一映射。
-def _run_active_evaluator(str_gate_id: str, facts: VgFacts) -> VgEvaluation:
+def _run_active_evaluator(
+    str_gate_id: str,
+    facts: VgFacts,
+    int_comb_operation_limit: int,
+    tuple_comb_cones: tuple[Any, ...],
+) -> VgEvaluation:
     """把激活门禁路由到对应的规则模块。
 
     参数:
         str_gate_id: 已确认激活的固定 VG 编号。
         facts: 当前 RTL 目标的共享解析事实。
+        int_comb_operation_limit: 已校验的每目标组合操作预算。
+        tuple_comb_cones: 单次运行预构建的组合锥快照。
     返回:
         对应语义模块生成的逐门禁结论。
     """
+
+    # 新组合预算组必须先于旧结构组接管 VG146/VG147。
+    if str_gate_id in COMB_OPERATION_GATES:
+
+        # 两条规则共享 typed-fact 分析器和目录阈值。
+        return evaluate_comb_operation_gate(
+            str_gate_id,
+            facts,
+            int_comb_operation_limit,
+            cones=tuple_comb_cones,
+        )
 
     # 表达式组覆盖字面量、条件和位宽语义。
     if str_gate_id in EXPRESSION_GATES:
@@ -346,7 +398,7 @@ def _result_dict(dict_rule: dict[str, Any], evaluation: VgEvaluation) -> dict[st
 
 # _summarize_results 同时统计目录状态和执行状态。
 def _summarize_results(list_results: list[dict[str, Any]]) -> dict[str, Any]:
-    """按状态和目录类别汇总 74 条结果。
+    """按状态和目录类别汇总 76 条结果。
 
     参数:
         list_results: 按 catalog 顺序生成的全部规则结果。

@@ -16,9 +16,9 @@
       "id": "vg_semantic_gate_regression",
       "kind": "vg_semantic_gate_regression",
       "expectations": {
-        "failed_gate_ids": ["VG078", "VG079", "VG090", "VG101", "VG109", "VG111", "VG117", "VG124", "VG142"],
+        "failed_gate_ids": ["VG078", "VG079", "VG090", "VG101", "VG109", "VG111", "VG117", "VG124", "VG142", "VG146", "VG147"],
         "clean_all_active_passed": true,
-        "catalog_total_rules": 123,
+        "catalog_total_rules": 125,
         "prompt_mentions_all_rules": true,
         "failed_results_use_vg_ids": true
       }

@@ -8,6 +8,9 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
+# formatter backend 在唯一解析所有者内部生成类型化组合锥事实。
+from .formatter_backend.expression_facts import attach_expression_facts
+
 # formatter 配置工厂提供唯一受控的 parser/backend 入口。
 from .formatter_backend import FormatterBackend, VerilogFormatterError
 from .formatter_ast_instances import (
@@ -210,6 +213,9 @@ def build_ast_report_for_text(
 
     # modules 字段描述 formatter 识别出的 module 结构。
     list_modules = tuple_parse[1]  # module 结构列表
+
+    # 表达式事实由 formatter 层一次构建，后续语义门禁不得重新解析源码文本。
+    attach_expression_facts(list_modules)
 
     # parse error 与 formatter mismatch 分开计数，避免模板不一致被解析成功掩盖。
     int_parse_errors = sum(  # 当前文本的 formatter AST 解析错误数

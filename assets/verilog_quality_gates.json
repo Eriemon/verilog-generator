@@ -1,20 +1,23 @@
 {
-  "version": 5,
+  "version": 6,
   "name": "verilog_quality_gate_catalog",
   "description": "Unified VG catalog for readable Verilog RTL generation, review, and semantic validation.",
-  "total_rules": 123,
-  "active_rules": 123,
+  "total_rules": 125,
+  "active_rules": 125,
   "reserved_rules": 0,
   "status_counts": {
-    "active": 123
+    "active": 125
   },
   "active_level_counts": {
-    "BLOCKER": 53,
+    "BLOCKER": 55,
     "WARNING": 70
   },
   "policy": {
     "active": "Every catalog rule executes through the unified Verilog quality gate.",
     "strict": "Any non-pass BLOCKER blocks delivery; WARNING findings also block strict delivery."
+  },
+  "config": {
+    "max_combinational_operations_per_target": 3
   },
   "rules": [
     {
@@ -1000,6 +1003,22 @@
       "status": "active",
       "topic": "赋值语句和块语句",
       "summary": "连续赋值与组合过程形成的完整 module 局部组合依赖锥最多允许三个源信号；仅豁免输出端口到时序 `_o` reg 的直接桥。"
+    },
+    {
+      "gate_id": "VG146",
+      "rule_key": "comb_operation_budget",
+      "level": "BLOCKER",
+      "status": "active",
+      "topic": "赋值语句和块语句",
+      "summary": "每个静态目标的普通组合操作锥不得超过目录配置上限；时序寄存器只隔断 Q 输出，D 输入表达式仍必须检查。"
+    },
+    {
+      "gate_id": "VG147",
+      "rule_key": "for_comb_operation_budget",
+      "level": "BLOCKER",
+      "status": "active",
+      "topic": "循环语句",
+      "summary": "包含可展开 for 操作节点的静态目标必须按每次迭代克隆后的完整组合操作锥执行目录配置上限。"
     }
   ]
 }

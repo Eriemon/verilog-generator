@@ -15,8 +15,9 @@ PATH_SKILL_ROOT = Path(__file__).resolve().parents[3]  # 包含 runtime、script
 # workflow CLI 统一切到 scripts/python/workflow 官方模块入口。
 WORKFLOW_CLI_MODULE = "scripts.python.workflow.cli"  # workflow 官方 CLI 模块名
 
-# 远端固定 fixture 覆盖组合逻辑、流水线和 ready-valid 协议。
-REMOTE_FIXTURES = (  # 远端内联 fixture 脚本生成三类 RTL 回归用例
+# 远端固定 fixture 覆盖组合逻辑预算、流水线和 ready-valid 协议。
+REMOTE_FIXTURES = (  # 远端内联 fixture 脚本生成四类 RTL 回归用例
+    "comb_operation_budget",  # 覆盖 VG146 负例与注册流水修复后的时序行为
     "comb_parity_mux",  # 覆盖组合奇偶校验与 mux 输出选择链路
     "pipeline_delay",  # 覆盖多拍寄存器延迟和复位后的数据推进
     "ready_valid_slice",  # 覆盖 ready-valid 反压握手与数据保持约束
@@ -40,7 +41,7 @@ REMOTE_EXECUTE_RTL_PATH = (REMOTE_EXECUTE_ROOT / "rtl" / "generated" / "rtl" / "
 # erie_adapter_tb.v 是 retained run 摘要中的仿真激励入口。
 REMOTE_EXECUTE_TESTBENCH_PATH = (REMOTE_EXECUTE_ROOT / "rtl" / "generated" / "tb" / "erie_adapter_tb.v")  # 失败复盘的 testbench 入口
 
-# summary.json 汇总三类远端 fixture 的执行状态。
+# summary.json 汇总四类远端 fixture 的执行状态。
 REMOTE_FIXTURE_SUMMARY_JSON = REMOTE_FIXTURE_ROOT / "summary.json"  # fixture 汇总 JSON 证据路径
 
 # simulator 后端枚举必须与 runtime validation 后端名称保持一致。
@@ -226,6 +227,31 @@ WORKFLOW_CLI_MODULE = "scripts.python.workflow.cli"
 fixtures = os.environ["REMOTE_FIXTURES"].split()
 expected = os.environ["EXPECTED_SIM_BACKEND"]
 summary = {{"fixtures": []}}
+bad_source = Path(
+    "skills/readable-verilog-generator/assets/examples/remote_fixtures/"
+    "comb_operation_budget/comb_operation_budget_bad.v"
+)
+bad_report = Path("_smoke_runs/remote_fixtures/comb_operation_budget/bad_quality_gate.json")
+bad_markdown = Path("_smoke_runs/remote_fixtures/comb_operation_budget/bad_quality_gate.md")
+bad_report.parent.mkdir(parents=True, exist_ok=True)
+bad_command = [
+    sys.executable,
+    "-m",
+    "scripts.python.quality.verilog_quality_gate",
+    str(bad_source),
+    "--json",
+    str(bad_report),
+    "--markdown",
+    str(bad_markdown),
+]
+bad_result = subprocess.run(bad_command, check=False)
+assert bad_result.returncode != 0, bad_result.returncode
+bad_payload = json.loads(bad_report.read_text(encoding="utf-8"))
+bad_vg146 = next(
+    item for item in bad_payload["vg_rule_results"] if item["gate_id"] == "VG146"
+)
+assert bad_payload["ok"] is False, bad_payload
+assert bad_vg146["status"] == "failed", bad_vg146
 for name in fixtures:
     spec = Path("skills/readable-verilog-generator/assets/examples/remote_fixtures") / name / "spec.json"
     generated = Path("skills/readable-verilog-generator/assets/examples/remote_fixtures") / name / "generated"
@@ -357,8 +383,8 @@ def spec(name="remote_verilog_quality_gates"):
 
 
 catalog = load_verilog_quality_gates()
-assert catalog["total_rules"] == 123, catalog
-assert catalog["active_rules"] == 123, catalog
+assert catalog["total_rules"] == 125, catalog
+assert catalog["active_rules"] == 125, catalog
 assert catalog["reserved_rules"] == 0, catalog
 prompt = render_prompt(spec(), stage="rtl")
 for marker in (
@@ -366,10 +392,11 @@ for marker in (
     "VG072",
     "VG111",
     "VG145",
+    "VG147",
 ):
     assert marker in prompt, marker
 summary = summarize_constraints_for_prompt(max_rules_per_group=3)
-assert "123 active gates" in summary, summary
+assert "125 active gates" in summary, summary
 assert "reserved gates" not in summary, summary
 
 bad_dir = Path("_smoke_runs/remote_verilog_quality_gates/bad")
