@@ -463,7 +463,7 @@
       "level": "BLOCKER",
       "status": "active",
       "topic": "运算符",
-      "summary": "禁止在条件表达式中使用包含“x”或者“z”的值。"
+      "summary": "禁止 X/Z 参与条件判断或一般数据选择；仅允许同模块 inout 端口的连续 open-drain 0/Z 三态赋值。"
     },
     {
       "gate_id": "VG079",

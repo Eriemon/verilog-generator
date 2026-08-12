@@ -495,6 +495,87 @@ def _xz_arithmetic(facts: VgFacts) -> VgEvaluation:
         "算术表达式包含 X/Z 字面量。",
     )
 
+# _open_drain_assign_ranges 提取同模块直接 inout 端口上的简单 0/Z 连续赋值。
+def _open_drain_assign_ranges(dict_module: dict[str, object]) -> set[tuple[int, int]]:
+    """返回可从 VG078 文本命中中排除的 open-drain 赋值行范围。
+
+    参数:
+        dict_module: formatter AST 提供的单个可信 module 事实。
+    返回:
+        合法 open-drain 连续赋值的一基起止行号集合。
+    """
+
+    # 只有当前 module 直接声明的 inout 端口可以使用 open-drain 豁免。
+    set_inout_names = {  # 当前 module 的直接 inout 端口名
+        str(dict_port.get("name") or "")  # formatter 规范化后的端口名
+        for dict_port in dict_module.get("ports", [])  # 当前 module 的全部端口事实
+        if str(dict_port.get("direction") or "").lower() == "inout"  # 只保留双向端口
+    }
+
+    # 简单三元模式禁止条件或数据分支继续嵌套问号和冒号。
+    obj_pattern = re.compile(  # 精确匹配 0/Z 或 Z/0 的一位三元表达式
+        r"^\s*(?P<condition>[^?:]+?)\s*\?\s*"
+        r"(?P<true>1'[bB][0zZ])\s*:\s*"
+        r"(?P<false>1'[bB][0zZ])\s*$",
+        re.DOTALL,  # 允许 formatter 保留的跨行 RHS 排版
+    )
+
+    # range 集合只记录同时满足端口、表达式和分支值合同的连续赋值。
+    set_ranges: set[tuple[int, int]] = set()  # 合法 open-drain assign 的源码行范围
+
+    # formatter assigns 只包含连续赋值，不会混入 procedural assignment。
+    for dict_assign in dict_module.get("assigns", []):
+
+        # 左值必须是端口名本身，位选、拼接和内部网络都不接受。
+        str_lhs = str(dict_assign.get("lhs") or "").strip()  # 当前连续赋值左值
+
+        # 非 inout 直接端口不进入表达式豁免判断。
+        if str_lhs not in set_inout_names:
+
+            # 继续检查下一个连续赋值。
+            continue
+
+        # RHS 保留 formatter 已拆分的完整连续赋值表达式。
+        str_rhs = str(dict_assign.get("rhs") or "").strip()  # 当前连续赋值右值
+
+        # fullmatch 防止简单三元前后夹带其他一般数据选择。
+        obj_match = obj_pattern.fullmatch(str_rhs)  # 简单 open-drain 三元匹配结果
+
+        # 非简单三元表达式必须继续由 VG078 检查。
+        if obj_match is None:
+
+            # 当前连续赋值不属于豁免边界。
+            continue
+
+        # 条件部分本身不得使用任何 X/Z 字面量。
+        if re.search(XZ_LITERAL, obj_match.group("condition")):
+
+            # 条件未知态仍是 VG078 的明确违规。
+            continue
+
+        # 分支集合必须恰好包含一位低电平和一位高阻释放。
+        set_branches = {  # 忽略大小写后的两个数据分支
+            obj_match.group("true").lower(),  # 条件为真时的数据值
+            obj_match.group("false").lower(),  # 条件为假时的数据值
+        }
+
+        # 1/Z、0/X 和相同分支均不属于 open-drain 赋值。
+        if set_branches != {"1'b0", "1'bz"}:
+
+            # 当前一般三态选择继续保留 VG078 finding。
+            continue
+
+        # AST 行范围让调用方只跳过当前合法 assign 内的具体正则命中。
+        set_ranges.add(
+            (
+                int(dict_assign["line_start"]),  # 连续赋值起始源码行
+                int(dict_assign["line_end"]),  # 连续赋值结束源码行
+            )
+        )
+
+    # 返回当前 module 中全部合法 open-drain 连续赋值范围。
+    return set_ranges
+
 # _xz_condition 禁止未知态字面量参与布尔或三目判断。
 def _xz_condition(facts: VgFacts) -> VgEvaluation:
     """检查条件和三目表达式是否包含 X/Z 字面量。
@@ -505,12 +586,50 @@ def _xz_condition(facts: VgFacts) -> VgEvaluation:
         VG078 的确定性执行结论。
     """
 
-    # 模式同时覆盖 if 条件和三目运算符两侧的未知态字面量。
-    return _pattern_gate(
-        facts,
-        rf"(?:if\s*\([^\n)]*{XZ_LITERAL}|\?[^;\n]*{XZ_LITERAL}|{XZ_LITERAL}[^;\n]*\?)",
-        "条件表达式包含 X/Z 字面量。",
+    # findings 保存排除合法 open-drain assign 后剩余的全部违规证据。
+    list_findings: list[VgFinding] = []  # VG078 的非法 X/Z 条件或数据选择证据
+
+    # 原模式继续覆盖 if 条件和三目运算符两侧的未知态字面量。
+    str_pattern = (  # VG078 既有 X/Z 条件与三目选择模式
+        rf"(?:if\s*\([^\n)]*{XZ_LITERAL}|\?[^;\n]*{XZ_LITERAL}|{XZ_LITERAL}[^;\n]*\?)"  # 保持原规则覆盖面
     )
+
+    # 每个可信 module 独立计算其 inout 端口和合法 assign 范围。
+    for source_facts, dict_module, str_module_text, int_base_line in iter_trusted_modules(facts):
+
+        # 合法范围不得跨 module 或跨文件复用。
+        set_open_drain_ranges = _open_drain_assign_ranges(dict_module)  # 当前 module 的 open-drain assign 范围
+
+        # 逐个正则命中决定是否由对应 AST assign 精确豁免。
+        for obj_match in re.finditer(str_pattern, str_module_text, flags=re.IGNORECASE | re.MULTILINE):
+
+            # module 内偏移换算后才能与 AST assign 的绝对行范围比较。
+            int_line = int_base_line + str_module_text.count("\n", 0, obj_match.start())  # 当前 VG078 命中行号
+
+            # 仅当前具体命中落在合法 open-drain assign 范围时跳过。
+            if any(int_start <= int_line <= int_end for int_start, int_end in set_open_drain_ranges):
+
+                # 合法 0/Z 数据分支不是条件未知态违规。
+                continue
+
+            # 其余命中保持原有 VG078 finding 文本和精确证据。
+            list_findings.append(
+                VgFinding(
+                    source_facts.relative_path,  # 未获豁免构造所在的 RTL 路径
+                    int_line,  # 未知态字面量的定位行
+                    "条件表达式包含 X/Z 字面量。",  # VG078 稳定错误说明
+                    obj_match.group(0).strip(),  # 未知态附近的源码证据
+                )
+            )
+
+    # 任一未豁免命中都使 VG078 确定失败。
+    if list_findings:
+
+        # 返回全部违规，避免合法和非法构造并存时漏掉非法项。
+        return failed(*list_findings)
+
+    # 没有非法命中时按既有文本规则语义返回不适用通过。
+    return passed(applicable=False)
 
 # _xz_branch_condition 专门覆盖 if 与 case 控制表达式。
 def _xz_branch_condition(facts: VgFacts) -> VgEvaluation:

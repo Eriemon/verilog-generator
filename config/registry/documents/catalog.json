@@ -219,11 +219,15 @@
       "title": "Verilog Pattern Templates"
     },
     {
-      "content_sha256": "4ff1dfc110a586ce0fe617e19e5cf6cc89592c53499efb9c9493edc05059fc51",
+      "content_sha256": "e233604f694117013e4b3c41a0d5981dc0af2bd98411a8266928da24aec9167a",
       "id": "document.references-rules-verilog-quality-gates",
       "keywords": [
         "VG",
+        "VG078",
         "catalog",
+        "open-drain",
+        "X/Z",
+        "inout",
         "severity",
         "schema",
         "quality"

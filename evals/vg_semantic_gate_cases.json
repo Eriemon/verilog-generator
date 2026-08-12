@@ -7,6 +7,7 @@
     "formatter_parse_error": "module dut (\n    input wire a\n",
     "xz_arithmetic": "module dut (\n    input wire [3:0] a,\n    output wire [3:0] y\n);\nassign y = a + 4'bx;\nendmodule\n",
     "xz_condition": "module dut (\n    input wire [3:0] a,\n    output wire y\n);\nassign y = (a == 4'bx) ? 1'b1 : 1'b0;\nendmodule\n",
+    "open_drain_inout": "module dut (\n    input wire drive_low,\n    inout wire io_bus\n);\nassign io_bus = drive_low ? 1'b0 : 1'bz;\nendmodule\n",
     "comb_nonblocking": "module dut (\n    input wire a,\n    output reg y\n);\nalways @(*) begin\n    y <= a;\nend\nendmodule\n",
     "relational_width_mismatch": "module dut (\n    input wire [3:0] a,\n    input wire b,\n    output wire y\n);\nassign y = (a == b);\nendmodule\n",
     "unknown_relational_width": "module dut (\n    input wire [3:0] a,\n    output wire y\n);\nassign y = (a == unknown_value);\nendmodule\n",
@@ -108,7 +109,7 @@
   },
   "cases": {
     "VG072": {
-      "positive": "canonical_clean",
+      "positive": "open_drain_inout",
       "negative": "xz_arithmetic",
       "inconclusive": "formatter_parse_error",
       "allowed_overlaps": [
