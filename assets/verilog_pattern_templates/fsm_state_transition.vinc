@@ -1,19 +1,33 @@
 // FSM state transition pattern
 // Use explicit state_current/state_next registers and ST_* localparams.
+// Keep a pure leading comment above each ST_*:begin and default:begin branch.
+// Close every if / else if chain with an explicit final else branch.
 always @(*) begin
-    state_next = state_current;
+    state_next <= state_current;
     case (state_current)
+        // IDLE state transition branch
         ST_IDLE: begin
-            if (start_i) state_next = ST_ACTIVE;
+            if (start_i) begin
+                state_next <= ST_ACTIVE;
+            end else begin
+                state_next <= ST_IDLE;
+            end
         end
+        // ACTIVE state transition branch
         ST_ACTIVE: begin
-            if (done_i) state_next = ST_DONE;
+            if (done_i) begin
+                state_next <= ST_DONE;
+            end else begin
+                state_next <= ST_ACTIVE;
+            end
         end
+        // DONE state transition branch
         ST_DONE: begin
-            state_next = ST_IDLE;
+            state_next <= ST_IDLE;
         end
+        // Default state transition branch
         default: begin
-            state_next = ST_IDLE;
+            state_next <= ST_IDLE;
         end
     endcase
 end

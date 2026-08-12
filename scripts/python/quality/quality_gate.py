@@ -81,6 +81,30 @@ FSM_CASE_KEYWORD_PATTERN = re.compile(r"\b" + "case" + r"\b")  # case 关键字�
 # default 分支正则用于确认 next-state case 存在兜底迁移。
 FSM_DEFAULT_BRANCH_PATTERN = re.compile(r"\b" + "default" + r"\s*:")  # default 分支识别模式
 
+# next-state 默认保持允许兼容 <= 与历史 = 两种赋值写法。
+FSM_STATE_NEXT_ASSIGN_PATTERN = re.compile(r"\bstate_next\s*(?:<=|=)")  # state_next 赋值识别模式
+
+# 三段式默认保持允许 <= 或 = 把 state_current 复制到 state_next。
+FSM_STATE_NEXT_HOLD_PATTERN = re.compile(r"\bstate_next\s*(?:<=|=)\s*state_current\s*;")  # 默认保持赋值识别模式
+
+# next-state 主状态分派固定使用 case(state_current)。
+FSM_STATE_CASE_PATTERN = re.compile(r"^\s*case\s*\(\s*state_current\s*\)\s*$")  # 状态分派 case 模式
+
+# 状态标签与 default 分支必须使用 LABEL:begin 结构。
+FSM_CASE_BRANCH_BEGIN_PATTERN = re.compile(r"^\s*(?:ST_[A-Za-z0-9_]+|default)\s*:\s*begin\b")  # FSM 状态分支标签模式
+
+# 条件分支链在 Erie 紧凑风格下以 begin/end 成对出现。
+FSM_IF_BEGIN_PATTERN = re.compile(r"^\s*if\s*\(.*\)\s*begin\s*$")  # if 分支起始模式
+
+# 兼容 Erie 紧凑风格里的同一行续接 else-if 写法与独立 else-if 写法。
+FSM_ELSE_IF_BEGIN_PATTERN = re.compile(r"^\s*(?:end\s+)?else\s+if\s*\(.*\)\s*begin\s*$")  # else-if 分支延续模式
+
+# 终止 else 同样兼容 Erie 紧凑写法与独立 else begin 写法。
+FSM_ELSE_BEGIN_PATTERN = re.compile(r"^\s*(?:end\s+)?else\s+begin\s*$")  # 终止 else 分支模式
+
+# 紧凑 begin/end 风格下的普通 end 行用于关闭 if/case item 块。
+FSM_PLAIN_END_PATTERN = re.compile(r"^\s*end\s*$")  # 单独 end 行模式
+
 # AXIS_PORT_TOKENS 覆盖 AXI Stream 常见端口名片段。
 AXIS_PORT_TOKENS = _lines(  # AXIS 端口判定 token 集合
     """
@@ -1705,6 +1729,9 @@ def _module_rules(
             )
         )
 
+    # list_source_lines 供需要绝对行号的注释和 FSM 深语义规则复用。
+    list_source_lines = str_text.splitlines()  # 当前文件源码行列表
+
     # 每个 module 独立执行命名、端口、参数和控制块规则。
     for dict_module in list_modules:
 
@@ -1758,7 +1785,7 @@ def _module_rules(
         list_issues.extend(_reset_semantic_rules(dict_module, str_rel_path, strict=strict))
 
         # FSM 规则确认三段式状态机结构。
-        list_issues.extend(_fsm_rules(dict_module, str_rel_path, strict=strict))
+        list_issues.extend(_fsm_rules(dict_module, list_source_lines, str_rel_path, strict=strict))
 
         # instance 规则检查例化命名和 wrapper 风格。
         list_issues.extend(_instance_rules(dict_module, str_rel_path, strict=strict))
@@ -4163,11 +4190,18 @@ def _always_complex_lvalue_issues(
     ]
 
 # _fsm_rules 检查三段式 FSM 约束。
-def _fsm_rules(dict_module: dict[str, Any], str_rel_path: str, *, strict: bool) -> list[QualityIssue]:
+def _fsm_rules(
+    dict_module: dict[str, Any],
+    list_lines: list[str],
+    str_rel_path: str,
+    *,
+    strict: bool,
+) -> list[QualityIssue]:
     """
     检查状态参数、状态寄存器和三段式 FSM 结构。
 
     :param dict_module: formatter AST 中的单个 module 描述。
+    :param list_lines: 当前 Verilog 源码行列表。
     :param str_rel_path: 报告中使用的相对文件路径。
     :param strict: 是否把样式和注释问题升级为 error。
     :return: FSM 结构相关诊断列表。
@@ -4202,6 +4236,9 @@ def _fsm_rules(dict_module: dict[str, Any], str_rel_path: str, *, strict: bool) 
 
     # next-state 组合段必须包含 default 和默认保持。
     list_issues.extend(_fsm_next_state_rules(dict_module, str_rel_path, strict=strict))
+
+    # next-state case 分支的前导注释沿用 VG063 的相邻行、缩进与空行布局规则。
+    list_issues.extend(_fsm_case_branch_leading_comment_issues(dict_module, list_lines, str_rel_path, str_severity))
 
     # 返回状态枚举、三段式分段和状态任务诊断。
     return list_issues
@@ -4619,6 +4656,15 @@ def _comment_rules(
         # 合并块级前导注释诊断。
         list_issues.extend(list_block_comment_issues)
 
+        # tuple_assign_group_args 固定 assign 子分组空行 helper 的参数顺序。
+        tuple_assign_group_args = (dict_module, list_lines, str_rel_path, str_severity)  # assign 子分组空行检查参数
+
+        # assign 纯分组注释存在时，同样必须满足唯一空行或区域横幅直连规则。
+        list_assign_group_spacing_issues = _assign_group_comment_spacing_issues(*tuple_assign_group_args)  # assign 子分组布局诊断
+
+        # 合并 assign 子分组空行布局诊断。
+        list_issues.extend(list_assign_group_spacing_issues)
+
         # tuple_procedural_args 固定过程赋值注释 helper 的参数顺序。
         tuple_procedural_args = (dict_module, list_lines, str_rel_path, str_severity, comment_language)  # 过程赋值参数
 
@@ -4988,9 +5034,9 @@ def _block_comment_issues(
     # 返回块级注释诊断。
     return list_issues
 
-# _leading_comment_layout_issues 检查前导注释相邻行、空行和缩进。
-def _leading_comment_layout_issues(
-    dict_item: dict[str, Any],
+# _leading_comment_layout_issues_for_line_no 检查指定源码行的前导注释布局。
+def _leading_comment_layout_issues_for_line_no(
+    int_line_no: int,
     list_lines: list[str],
     str_rel_path: str,
     str_severity: str,
@@ -4998,9 +5044,9 @@ def _leading_comment_layout_issues(
     str_rule: str,
 ) -> list[QualityIssue]:
     """
-    检查块或实例前导注释是否紧贴目标结构并满足空行规则。
+    检查指定源码行是否具备紧贴、对齐且空行布局正确的前导注释。
 
-    :param dict_item: formatter AST 中的块或实例条目。
+    :param int_line_no: 目标结构或分支标签的一基行号。
     :param list_lines: 当前 Verilog 源码行列表。
     :param str_rel_path: 报告中使用的相对文件路径。
     :param str_severity: 注释布局问题的严重级别。
@@ -5009,19 +5055,16 @@ def _leading_comment_layout_issues(
     :return: 前导注释布局诊断列表。
     """
 
-    # list_issues 保存当前结构的前导注释布局诊断。
-    list_issues: list[QualityIssue] = []  # 前导注释布局诊断
+    # list_issues 保存当前目标行的前导注释布局诊断。
+    list_issues: list[QualityIssue] = []  # 指定目标行的前导注释布局诊断
 
-    # int_line_no 是目标结构的起始行。
-    int_line_no = _as_line(dict_item.get("line_start"))  # 结构起始行号
+    # 缺少行号或越界时不伪造诊断位置。
+    if int_line_no <= 1 or int_line_no > len(list_lines):
 
-    # 缺少行号时由 AST span 规则负责，本规则不伪造位置。
-    if int_line_no is None or int_line_no <= 1 or int_line_no > len(list_lines):
-
-        # 无法定位前一行时不追加布局诊断。
+        # 无法定位上一行时直接跳过。
         return list_issues
 
-    # str_target_line 是 always/initial/function/task/generate 或实例首行。
+    # str_target_line 是当前块或状态分支标签行。
     str_target_line = list_lines[int_line_no - 1]  # 目标结构源码行
 
     # int_comment_line_no 是目标结构正上方一行。
@@ -5076,6 +5119,108 @@ def _leading_comment_layout_issues(
     list_issues.extend(_comment_vertical_spacing_issues(list_lines, int_comment_line_no, vertical_spacing_context))
 
     # 返回当前结构的前导注释布局诊断。
+    return list_issues
+
+# _leading_comment_layout_issues 检查前导注释相邻行、空行和缩进。
+def _leading_comment_layout_issues(
+    dict_item: dict[str, Any],
+    list_lines: list[str],
+    str_rel_path: str,
+    str_severity: str,
+    str_label: str,
+    str_rule: str,
+) -> list[QualityIssue]:
+    """
+    检查块或实例前导注释是否紧贴目标结构并满足空行规则。
+
+    :param dict_item: formatter AST 中的块或实例条目。
+    :param list_lines: 当前 Verilog 源码行列表。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 注释布局问题的严重级别。
+    :param str_label: 诊断中展示的结构类别。
+    :param str_rule: 诊断规则命名空间。
+    :return: 前导注释布局诊断列表。
+    """
+
+    # int_line_no 是目标结构的起始行。
+    int_line_no = _as_line(dict_item.get("line_start"))  # 结构起始行号
+
+    # 缺少行号时由 AST span 规则负责，本规则不伪造位置。
+    if int_line_no is None:
+
+        # 无法定位前一行时不追加布局诊断。
+        return []
+
+    # 复用统一的指定行号布局检查逻辑。
+    return _leading_comment_layout_issues_for_line_no(
+        int_line_no,
+        list_lines,
+        str_rel_path,
+        str_severity,
+        str_label,
+        str_rule,
+    )
+
+# _assign_group_comment_spacing_issues 检查 assign 子分组纯注释的空行布局。
+def _assign_group_comment_spacing_issues(
+    dict_module: dict[str, Any],
+    list_lines: list[str],
+    str_rel_path: str,
+    str_severity: str,
+) -> list[QualityIssue]:
+    """
+    检查 assign 纯分组注释上方是否满足唯一空行或区域横幅直连规则。
+
+    :param dict_module: formatter AST 中的单个 module 描述。
+    :param list_lines: 当前 Verilog 源码行列表。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 空行布局问题的严重级别。
+    :return: assign 子分组空行布局诊断列表。
+    """
+
+    # list_issues 保存 assign 子分组空行布局诊断。
+    list_issues: list[QualityIssue] = []  # assign 子分组空行诊断
+
+    # 逐条扫描连续赋值，只有写了纯分组注释时才附加 VG067 约束。
+    for dict_assign in dict_module.get("assigns", []) or []:
+
+        # 无前导纯注释时不强制要求 assign 必须额外补分组说明。
+        if not dict_assign.get("leading_comments"):
+
+            # 当前 assign 没有子分组注释，跳过 VG067。
+            continue
+
+        # int_line_no 是 assign 代码所在行，用于反查注释位置。
+        int_line_no = _as_line(dict_assign.get("line_start"))  # assign 源码行号
+
+        # 缺少源码行号或越界时不伪造 VG067 落点。
+        if int_line_no is None or int_line_no <= 1 or int_line_no > len(list_lines):
+
+            # 行号无效时交给 span 规则，不重复报布局问题。
+            continue
+
+        # int_comment_line_no 是 assign 正上方一行的纯注释候选。
+        int_comment_line_no = int_line_no - 1  # assign 子分组注释候选行号
+
+        # AST 和源码若不同步，避免对非纯注释行错误附加 VG067。
+        if not _is_pure_line_comment(list_lines[int_comment_line_no - 1]):
+
+            # 只有真实纯注释才参与分组空行布局检查。
+            continue
+
+        # assign_spacing_context 只保存 assign 子分组布局诊断需要的规则元数据。
+        assign_spacing_context = CommentVerticalSpacingContext(  # assign 子分组空行上下文
+            str_rel_path,  # assign 分组布局诊断路径
+            str_severity,  # assign 分组布局问题级别
+            "VG067",  # assign 子分组空行规则码
+            "Assign group",  # assign 子分组诊断标签
+            "comments.assign_group_spacing",  # assign 子分组规则路径
+        )
+
+        # 纯分组注释上方必须满足唯一空行或区域横幅直连规则。
+        list_issues.extend(_comment_vertical_spacing_issues(list_lines, int_comment_line_no, assign_spacing_context))
+
+    # 返回 assign 子分组空行布局诊断。
     return list_issues
 
 # _procedural_assignment_comment_issues 检查过程赋值同线注释。
@@ -5419,9 +5564,9 @@ def _definition_group_comment_issues_for_item(
             )
         )
 
-    # vertical_spacing_context 绑定 VG065 的分组注释空行布局字段。
-    vertical_spacing_context = CommentVerticalSpacingContext(  # 定义分组空行布局上下文
-        str_rel_path,  # 分组注释布局诊断路径
+    # definition_spacing_context 保留定义分组布局诊断所需的路径和规则编号。
+    definition_spacing_context = CommentVerticalSpacingContext(  # 定义分组空行布局上下文
+        str_rel_path,  # 当前定义组在报告中的相对路径
         str_severity,  # 分组注释布局严重级别
         "VG065",  # 定义分组注释空行规则码
         f"{str_label} group",  # 定义分组注释诊断标签
@@ -5429,7 +5574,7 @@ def _definition_group_comment_issues_for_item(
     )
 
     # 分组注释上方同样遵循唯一空行或紧邻区域横幅规则。
-    list_issues.extend(_comment_vertical_spacing_issues(list_lines, int_line_no - 1, vertical_spacing_context))
+    list_issues.extend(_comment_vertical_spacing_issues(list_lines, int_line_no - 1, definition_spacing_context))
 
     # 返回当前定义的 VG065 布局诊断。
     return list_issues
@@ -6752,29 +6897,1022 @@ def _header_rules(str_text: str, str_rel_path: str, *, strict: bool) -> list[Qua
             QualityIssue("VG007", str_severity, str_message, str_rel_path, 1, "header.chinese_fields")
         )
 
-    # References 拼写必须拒绝旧模板的多字母错误写法。
-    str_legacy_references_field = "Refer" + "rences:"  # 拆分避免公开源码重新暴露旧拼写
+    # References/Dependencies 只能命中两种合法 header 形态，并且不允许 tab 与旧拼写。
+    list_issues.extend(_header_reference_dependency_issues(str_pre_module, str_rel_path, str_severity))
 
-    # 发现旧字段名时给出明确诊断。
-    if str_legacy_references_field in str_pre_module:
-
-        # 该拼写规则保护现有 formatter renderer 契约。
-        list_issues.append(
-            QualityIssue(
-                "VG007",
-                str_severity,
-                "Header must use formatter-compatible `References` spelling.",
-                str_rel_path,
-                1,
-                "header.references_spelling",
-            )
-        )
+    # header 结束后必须保留模块功能说明，并满足空行与说明质量合同。
+    list_issues.extend(_header_module_purpose_comment_issues(str_text, str_pre_module, str_rel_path, str_severity))
 
     # 当前版本和历史记录必须具备真实可追溯内容。
     list_issues.extend(_header_version_history_issues(str_pre_module, str_rel_path, str_severity))
 
     # 返回文件头诊断。
     return list_issues
+
+# _header_reference_dependency_issues 检查 References/Dependencies 的合法版式。
+def _header_reference_dependency_issues(
+    str_pre_module: str,
+    str_rel_path: str,
+    str_severity: str,
+) -> list[QualityIssue]:
+    """
+    检查 header 的 References/Dependencies 是否满足 none_mode 或 table_mode。
+
+    :param str_pre_module: module 声明之前的源码文本。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 当前 header 规则严重级别。
+    :return: References/Dependencies 相关诊断列表。
+    """
+
+    # list_issues 保存 References/Dependencies 版式诊断。
+    list_issues = _header_reference_dependency_legacy_layout_issues(  # header 参考资料与依赖文件版式诊断
+        str_pre_module,  # module 之前的 header 源码文本
+        str_rel_path,  # 当前文件的相对报告路径
+        str_severity,  # 当前 header 规则对应的严重级别
+    )
+
+    # tuple_modes_and_issues 汇总英中两段解析出的合法模式与局部诊断。
+    tuple_modes_and_issues = _header_reference_dependency_modes_and_issues(  # header 参考资料与依赖文件的模式聚合结果
+        str_pre_module,  # 同一份 header 文本用于双语模式聚合
+        str_rel_path,  # 模式聚合诊断落点路径
+        str_severity,  # 模式聚合阶段沿用的严重级别
+    )
+
+    # list_modes 记录英中两段各自解析出的合法形态，用于检查全局是否一致。
+    list_modes = tuple_modes_and_issues[0]  # 英中头部的 reference/dependency 总模板形态
+
+    # 先合并每个语言段内部产生的所有 VG068 诊断。
+    list_issues.extend(tuple_modes_and_issues[1])
+
+    # 英文和中文若分别命中了不同合法模式，也属于第三种非法总模板。
+    if len(set(list_modes)) > 1:
+
+        # 双语文件头必须整体收敛到同一种总模板。
+        list_issues.append(
+            QualityIssue(
+                "VG068",
+                str_severity,
+                "English and Chinese References/Dependencies sections must use "
+                "the same global mode (`none_mode` or `table_mode`).",
+                str_rel_path,
+                1,
+                "header.reference_dependency_mode",
+            )
+        )
+
+    # 返回 References/Dependencies 版式诊断。
+    return list_issues
+
+# _header_reference_dependency_legacy_layout_issues 检查 tab 与旧拼写等历史残留。
+def _header_reference_dependency_legacy_layout_issues(
+    str_pre_module: str,
+    str_rel_path: str,
+    str_severity: str,
+) -> list[QualityIssue]:
+    """
+    检查 References/Dependencies 区域是否仍残留历史 tab 版式或旧拼写。
+
+    :param str_pre_module: module 声明之前的源码文本。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 当前 header 规则严重级别。
+    :return: 与历史残留相关的 VG068 诊断列表。
+    """
+
+    # list_issues 保存 tab 与旧拼写等历史残留诊断。
+    list_issues: list[QualityIssue] = []  # header 历史版式残留诊断
+
+    # 旧拼写必须走新规则码 VG068，而不是继续混在 VG007 中。
+    str_legacy_references_field = "Refer" + "rences:"  # 拆分保留旧拼写兼容检测
+
+    # 只要 header 区出现 tab，就说明仍在依赖历史制表布局。
+    if "\t" in str_pre_module:
+
+        # 新合同要求 header 只能使用空格前缀和固定列头模板。
+        list_issues.append(
+            QualityIssue(
+                "VG068",
+                str_severity,
+                "Header must use exact space-based layout; tabs are not allowed "
+                "in References/Dependencies sections.",
+                str_rel_path,
+                1,
+                "header.reference_dependency_spacing",
+            )
+        )
+
+    # References 的旧拼写必须被统一阻断。
+    if str_legacy_references_field in str_pre_module:
+
+        # 英文标签只能是 References，不能回落到旧模板拼写。
+        list_issues.append(
+            QualityIssue(
+                "VG068",
+                str_severity,
+                "Header must use exact `References` spelling in the English section.",
+                str_rel_path,
+                1,
+                "header.references_spelling",
+            )
+        )
+
+    # 返回历史残留诊断。
+    return list_issues
+
+# _header_reference_dependency_layouts 返回英中两段的精确 header 版式定义。
+def _header_reference_dependency_layouts() -> dict[str, dict[str, str]]:
+    """
+    返回 References/Dependencies 规则使用的英中双语精确版式定义。
+
+    参数:
+        本函数没有业务参数，固定返回当前 header 规则的双语布局常量。
+    :return: 以语言名为键的 header 布局定义字典。
+    """
+
+    # dict_layouts 描述英中两段 References/Dependencies 的精确空格版式。
+    return {
+        "english": {  # 英文 header 布局定义
+            "separator_marker": HEADER_ENGLISH_SEPARATOR,
+            "references_line_none": "// References:     None",
+            "references_line_table": "// References:",
+            "references_heading": "// File Format      File Name",
+            "dependencies_line_none": "// Dependencies:    None",
+            "dependencies_line_table": "// Dependencies:",
+            "dependencies_heading": "// Module Name      Version",
+            "version_prefix": "// Version:",
+        },
+        "chinese": {  # 中文 header 布局定义
+            "separator_marker": HEADER_CHINESE_SEPARATOR,
+            "references_line_none": "// 参考资料:        None",
+            "references_line_table": "// 参考资料:",
+            "references_heading": "// 文件格式         文件名称",
+            "dependencies_line_none": "// 依赖文件:        None",
+            "dependencies_line_table": "// 依赖文件:",
+            "dependencies_heading": "// 模块名称         版本",
+            "version_prefix": "// 当前版本:",
+        },
+    }
+
+# _header_reference_dependency_modes_and_issues 汇总英中头段的模式解析结果。
+def _header_reference_dependency_modes_and_issues(
+    str_pre_module: str,
+    str_rel_path: str,
+    str_severity: str,
+) -> tuple[list[str], list[QualityIssue]]:
+    """
+    汇总英中 References/Dependencies 区域解析出的合法模式与局部诊断。
+
+    :param str_pre_module: module 声明之前的源码文本。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 当前 header 规则严重级别。
+    :return: 已识别的合法模式列表，以及全部语言段局部诊断。
+    """
+
+    # list_modes 记录各语言段成功识别出的 none/table 合法模式。
+    list_modes: list[str] = []  # 英中头部 reference/dependency 总模板形态
+
+    # list_issues 聚合同一 header 下各语言段产生的局部诊断。
+    list_issues: list[QualityIssue] = []  # 各语言段局部 VG068 诊断
+
+    # 英中两段分别执行精确版式检查。
+    for str_language, dict_layout in _header_reference_dependency_layouts().items():
+
+        # 当前语言段解析出的模式与局部诊断分开承接，避免主流程再解 tuple 下标。
+        tuple_language_mode = _header_reference_dependency_mode_for_language(  # 当前语言段的模式与局部诊断
+            str_pre_module,  # 当前被聚合的 header 原文
+            dict_layout,  # 当前语言布局常量
+            str_language,  # 当前语言标签
+            str_rel_path,  # 当前语言诊断落点路径
+            str_severity,  # 当前语言诊断严重级别
+        )
+
+        # str_mode 只有在当前语言段成功识别出合法模式时才非空。
+        str_mode = tuple_language_mode[0]  # 当前语言段识别出的合法模式
+
+        # list_language_issues 汇总当前语言段内部的局部 VG068 诊断。
+        list_language_issues = tuple_language_mode[1]  # 当前语言段局部诊断列表
+
+        # 先合并该语言段内的所有 VG068 诊断。
+        list_issues.extend(list_language_issues)
+
+        # 只有成功识别合法形态时，才把它纳入英中一致性比较。
+        if str_mode:
+
+            # 当前语言段已识别到合法 none/table 模板。
+            list_modes.append(str_mode)
+
+    # 返回全部合法模式与局部诊断。
+    return list_modes, list_issues
+
+# _header_reference_dependency_mode_for_language 检查单语言头段的合法形态。
+def _header_reference_dependency_mode_for_language(
+    str_pre_module: str,
+    dict_layout: dict[str, str],
+    str_language: str,
+    str_rel_path: str,
+    str_severity: str,
+) -> tuple[str | None, list[QualityIssue]]:
+    """
+    检查某一语言段的 References/Dependencies 是否满足精确合法形态。
+
+    :param str_pre_module: module 声明之前的源码文本。
+    :param dict_layout: 当前语言段的精确版式定义。
+    :param str_language: `english` 或 `chinese`。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 当前 header 规则严重级别。
+    :return: 识别出的合法模式，以及对应诊断列表。
+    """
+
+    # list_issues 保存当前语言段的 VG068 诊断。
+    list_issues: list[QualityIssue] = []  # 单语言 header 参考资料与依赖文件诊断
+
+    # list_section_lines 是当前语言分隔横幅之下、下一个横幅之前的源码行。
+    list_section_lines = _header_language_section_lines(str_pre_module, dict_layout["separator_marker"])  # 当前语言段源码行
+
+    # 未命中该语言横幅时由 VG007 报 bilingual header，不重复报 VG068。
+    if not list_section_lines:
+
+        # 缺少整段头部时跳过局部 References/Dependencies 形态诊断。
+        return None, list_issues
+
+    # tuple_indexes 保存 References/Dependencies/Version 三个字段的稳定起始位置。
+    tuple_indexes = _header_reference_dependency_indexes(  # 当前语言头段字段起始索引集合
+        list_section_lines,  # 当前语言横幅下的源码行列表
+        dict_layout,  # 当前语言字段布局定义
+    )
+
+    # 缺字段由 VG007 处理，这里只检查已经找到的 block 形态。
+    if tuple_indexes is None:
+
+        # 缺局部字段时不额外伪造 VG068。
+        return None, list_issues
+
+    # 三个字段索引用于切分 References 与 Dependencies 两个局部 block。
+    int_reference_index, int_dependency_index, int_version_index = tuple_indexes  # 当前语言字段起始索引
+
+    # 字段顺序若颠倒，说明当前头段已经不是合法模板。
+    if not (int_reference_index < int_dependency_index < int_version_index):
+
+        # References/Dependencies/Version 的先后顺序属于固定结构合同。
+        list_issues.append(
+            _header_reference_dependency_order_issue(
+                str_language,
+                str_rel_path,
+                str_severity,
+            )
+        )
+
+        # 字段顺序已错乱，后续 block 形态不再可信。
+        return None, list_issues
+
+    # 当前语言段的 References/Dependencies 形态与局部诊断交由 block helper 统一裁决。
+    tuple_mode_scan = _header_reference_dependency_mode_issues_for_sections(  # 当前语言段 block 形态诊断结果
+        list_section_lines,  # 当前语言段的原始源码片段
+        dict_layout,  # 当前语言对应的字段布局
+        str_language,  # 交给 helper 区分英中语段
+        str_rel_path,  # block 诊断落点路径
+        str_severity,  # block 形态问题严重级别
+        tuple_indexes,  # 三个关键字段的起始索引
+    )
+
+    # 这里把 tuple 第一项提升成上游直接消费的总模板名。
+    str_mode = tuple_mode_scan[0]  # tuple 第一项对应 block 汇总后的模板名
+
+    # list_mode_issues 只保存两个局部 block 产生的补充诊断。
+    list_mode_issues = tuple_mode_scan[1]  # tuple 第二项承接局部 block 诊断列表
+
+    # 先合并当前语言段 block 形态诊断，再决定是否返回合法模式。
+    list_issues.extend(list_mode_issues)
+
+    # 返回该语言段成功识别到的合法总模式。
+    return str_mode, list_issues
+
+# _header_reference_dependency_indexes 返回单语言头段内三个关键字段的起始索引。
+def _header_reference_dependency_indexes(
+    list_section_lines: list[str],
+    dict_layout: dict[str, str],
+) -> tuple[int, int, int] | None:
+    """
+    返回单语言 header 段内 References/Dependencies/Version 字段的起始索引。
+
+    :param list_section_lines: 当前语言段的源码行列表。
+    :param dict_layout: 当前语言段的精确版式定义。
+    :return: 三个字段的起始索引；任一缺失时返回 None。
+    """
+
+    # int_reference_index 用于切分参考资料局部 block。
+    int_reference_index = _find_exact_line_index(  # 当前语言参考资料字段起始行索引
+        list_section_lines,  # 当前语言段的源码行列表
+        dict_layout["references_line_none"],  # 参考资料 none_mode 整行模板
+        dict_layout["references_line_table"],  # 参考资料 table 形态字段起始整行
+    )
+
+    # int_dependency_index 锚定依赖文件字段起始位置，供后续切分局部 block。
+    int_dependency_index = _find_exact_line_index(  # 当前语言依赖文件字段起始行索引
+        list_section_lines,  # 依赖字段查找仍复用同一段源码行
+        dict_layout["dependencies_line_none"],  # 依赖 none_mode 整行模板
+        dict_layout["dependencies_line_table"],  # 依赖 table 形态字段起始整行
+    )
+
+    # int_version_index 标记版本字段位置，用来截断依赖 block 的尾部范围。
+    int_version_index = _find_prefix_line_index(  # 当前语言版本字段起始行索引
+        list_section_lines,  # 版本字段定位同样基于当前语言段源码
+        dict_layout["version_prefix"],  # 版本字段稳定前缀
+    )
+
+    # 缺字段由 VG007 处理，这里不额外伪造 VG068。
+    if int_reference_index is None or int_dependency_index is None or int_version_index is None:
+
+        # 任一字段缺失时无法继续做 block 形态检查。
+        return None
+
+    # 返回三个字段的稳定起始位置。
+    return int_reference_index, int_dependency_index, int_version_index
+
+# _header_reference_dependency_order_issue 构造字段顺序错误的 VG068 诊断。
+def _header_reference_dependency_order_issue(
+    str_language: str,
+    str_rel_path: str,
+    str_severity: str,
+) -> QualityIssue:
+    """
+    构造单语言 header 中字段顺序错误的 VG068 诊断。
+
+    :param str_language: `english` 或 `chinese`。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 当前 header 规则严重级别。
+    :return: 字段顺序错误对应的质量问题对象。
+    """
+
+    # 返回 References/Dependencies/Version 顺序错误的固定诊断。
+    return QualityIssue(
+        "VG068",
+        str_severity,
+        f"{str_language.capitalize()} header must keep `References`, "
+        "`Dependencies`, and version fields in the canonical order.",
+        str_rel_path,
+        1,
+        "header.reference_dependency_order",
+    )
+
+# _header_reference_dependency_shape_issue 构造 block 形态非法的 VG068 诊断。
+def _header_reference_dependency_shape_issue(
+    str_language: str,
+    str_rel_path: str,
+    str_severity: str,
+) -> QualityIssue:
+    """
+    构造单语言 References/Dependencies 局部 block 形态非法时的 VG068 诊断。
+
+    :param str_language: `english` 或 `chinese`。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 当前 header 规则严重级别。
+    :return: block 既非 none_mode 也非 table_mode 时的质量问题对象。
+    """
+
+    # 返回局部 block 非法时使用的固定诊断。
+    return QualityIssue(
+        "VG068",
+        str_severity,
+        f"{str_language.capitalize()} References/Dependencies section "
+        "must match exact `none_mode` or `table_mode` layout.",
+        str_rel_path,
+        1,
+        "header.reference_dependency_shape",
+    )
+
+# _header_reference_dependency_mixed_mode_issue 构造 None/table 混用的 VG068 诊断。
+def _header_reference_dependency_mixed_mode_issue(
+    str_language: str,
+    str_rel_path: str,
+    str_severity: str,
+) -> QualityIssue:
+    """
+    构造单语言 References/Dependencies 混用 None 与 table 形态时的 VG068 诊断。
+
+    :param str_language: `english` 或 `chinese`。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 当前 header 规则严重级别。
+    :return: None/table 混用时的质量问题对象。
+    """
+
+    # 返回 References 与 Dependencies 模板不一致时的固定诊断。
+    return QualityIssue(
+        "VG068",
+        str_severity,
+        f"{str_language.capitalize()} References/Dependencies section "
+        "cannot mix `None` and table layouts.",
+        str_rel_path,
+        1,
+        "header.reference_dependency_mixed_mode",
+    )
+
+# _header_reference_dependency_table_rows_issue 构造 table_mode 缺数据行的 VG068 诊断。
+def _header_reference_dependency_table_rows_issue(
+    str_language: str,
+    str_rel_path: str,
+    str_severity: str,
+) -> QualityIssue:
+    """
+    构造单语言 table_mode 缺少真实数据行时的 VG068 诊断。
+
+    :param str_language: `english` 或 `chinese`。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 当前 header 规则严重级别。
+    :return: table_mode 缺真实数据行时的质量问题对象。
+    """
+
+    # 返回 table_mode 只有表头、没有真实数据行时的固定诊断。
+    return QualityIssue(
+        "VG068",
+        str_severity,
+        f"{str_language.capitalize()} table_mode header must contain "
+        "at least one real reference or dependency data row.",
+        str_rel_path,
+        1,
+        "header.reference_dependency_table_rows",
+    )
+
+# _header_reference_dependency_mode_issues_for_sections 检查两个局部 block 的合法形态。
+def _header_reference_dependency_mode_issues_for_sections(
+    list_section_lines: list[str],
+    dict_layout: dict[str, str],
+    str_language: str,
+    str_rel_path: str,
+    str_severity: str,
+    tuple_indexes: tuple[int, int, int],
+) -> tuple[str | None, list[QualityIssue]]:
+    """
+    检查单语言 header 中 References/Dependencies 两个局部 block 的合法形态。
+
+    :param list_section_lines: 当前语言段的源码行列表。
+    :param dict_layout: 当前语言段的精确版式定义。
+    :param str_language: `english` 或 `chinese`。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 当前 header 规则严重级别。
+    :param tuple_indexes: 参考资料、依赖文件、版本字段的起始索引集合。
+    :return: 合法模式，以及当前语言段 block 形态诊断列表。
+    """
+
+    # int_reference_index 等索引用于切分 References 与 Dependencies 两个 block。
+    int_reference_index, int_dependency_index, int_version_index = tuple_indexes  # 当前语言段字段起始索引
+
+    # list_reference_block 是参考资料 section 的完整源码行。
+    list_reference_block = _trim_header_section_block(  # 当前语言参考资料块
+        list_section_lines[int_reference_index:int_dependency_index]  # 参考资料字段到依赖字段之前的源码切片
+    )
+
+    # list_dependency_block 是依赖文件 section 的完整源码行。
+    list_dependency_block = _trim_header_section_block(  # 当前语言依赖文件块
+        list_section_lines[int_dependency_index:int_version_index]  # 依赖字段到版本字段之前的源码切片
+    )
+
+    # 先归类参考资料 block 的模板与真实数据行数量。
+    tuple_reference_mode = _classify_header_section_block(  # 当前语言参考资料块分类结果
+        list_reference_block,  # 当前语言参考资料块源码行
+        dict_layout["references_line_none"],  # 参考资料 none_mode 模板
+        dict_layout["references_line_table"],  # 参考资料 table_mode 字段行
+        dict_layout["references_heading"],  # 参考资料 table_mode 列头行
+    )
+
+    # str_reference_mode 是参考资料 block 的合法模式。
+    str_reference_mode = tuple_reference_mode[0]  # 当前语言参考资料块合法模式
+
+    # int_reference_rows 是参考资料 block 的真实数据行数量。
+    int_reference_rows = tuple_reference_mode[1]  # 当前语言参考资料块真实数据行数
+
+    # 再归类依赖文件 block 的模板与真实数据行数量。
+    tuple_dependency_mode = _classify_header_section_block(  # 当前语言依赖文件块分类结果
+        list_dependency_block,  # 当前语言依赖文件块源码行
+        dict_layout["dependencies_line_none"],  # 依赖 none_mode 模板
+        dict_layout["dependencies_line_table"],  # 依赖 table_mode 字段行
+        dict_layout["dependencies_heading"],  # 依赖 table_mode 列头行
+    )
+
+    # str_dependency_mode 是依赖文件 block 的合法模式。
+    str_dependency_mode = tuple_dependency_mode[0]  # 当前语言依赖文件块合法模式
+
+    # int_dependency_rows 是依赖文件 block 的真实数据行数量。
+    int_dependency_rows = tuple_dependency_mode[1]  # 当前语言依赖文件块真实数据行数
+
+    # 任一 block 不满足精确合法形态时直接报告 VG068。
+    if str_reference_mode is None or str_dependency_mode is None:
+
+        # 只要有一段既不是 none_mode 也不是 table_mode，该语言头段即视为非法。
+        return None, [_header_reference_dependency_shape_issue(str_language, str_rel_path, str_severity)]
+
+    # References 和 Dependencies 必须同时属于同一种总模板。
+    if str_reference_mode != str_dependency_mode:
+
+        # None + table 混用会形成第三种非法形态。
+        return None, [_header_reference_dependency_mixed_mode_issue(str_language, str_rel_path, str_severity)]
+
+    # table_mode 至少一段必须包含真实数据行；另一段允许只有表头零数据行。
+    if str_reference_mode == "table_mode" and (int_reference_rows + int_dependency_rows) == 0:
+
+        # 只有表头而完全没有真实数据行，不满足新合同里的 table_mode。
+        return None, [_header_reference_dependency_table_rows_issue(str_language, str_rel_path, str_severity)]
+
+    # 将两个局部 block 收敛后的合法总模板回传给上游语言段检查。
+    return str_reference_mode, []
+
+# _header_language_section_lines 截取某个双语 header 段的源码行。
+def _header_language_section_lines(str_pre_module: str, str_separator_marker: str) -> list[str]:
+    """
+    截取某个语言横幅下、下一个语言横幅前的源码行。
+
+    :param str_pre_module: module 声明之前的源码文本。
+    :param str_separator_marker: 当前语言横幅的识别标记。
+    :return: 当前语言段的源码行列表。
+    """
+
+    # list_lines 保留 header 源码的原始物理行顺序。
+    list_lines = str_pre_module.splitlines()  # header 物理行列表
+
+    # int_start_index 记录目标语言横幅所在行号。
+    int_start_index: int | None = None  # 当前语言横幅行索引
+
+    # 逐行查找当前语言横幅。
+    for int_index, str_line in enumerate(list_lines):
+
+        # 横幅行命中后，从它下一行开始截取当前语言段正文。
+        if str_separator_marker in str_line:
+
+            # 当前语言段的正文从横幅之后开始。
+            int_start_index = int_index + 1  # 当前语言段正文起始索引
+
+            # 命中目标横幅后即可停止继续向下查找。
+            break
+
+    # 没有该语言横幅时返回空列表，由上游决定是否跳过。
+    if int_start_index is None:
+
+        # 当前 header 不含该语言段。
+        return []
+
+    # list_section_lines 收集当前语言横幅之下、下一横幅之前的所有行。
+    list_section_lines: list[str] = []  # 当前语言段正文源码行
+
+    # 从当前横幅之后继续扫描，遇到另一个语言横幅即停止。
+    for str_line in list_lines[int_start_index:]:
+
+        # 下一个语言横幅意味着当前语言段已经结束。
+        if HEADER_ENGLISH_SEPARATOR in str_line or HEADER_CHINESE_SEPARATOR in str_line:
+
+            # 命中后继横幅时停止收集当前语言段。
+            break
+
+        # 当前行仍属于正在解析的语言段。
+        list_section_lines.append(str_line)
+
+    # 返回当前语言段源码行列表。
+    return list_section_lines
+
+# _find_exact_line_index 查找匹配任一候选整行的索引。
+def _find_exact_line_index(list_lines: list[str], *tuple_candidates: str) -> int | None:
+    """
+    在源码行列表中查找与候选整行完全相等的首个索引。
+
+    :param list_lines: 待查找的源码行列表。
+    :param tuple_candidates: 允许命中的多个整行文本。
+    :return: 命中时返回首个索引，否则返回 None。
+    """
+
+    # 逐行扫描，直到命中某个候选整行。
+    for int_index, str_line in enumerate(list_lines):
+
+        # 只有整行完全匹配时才算命中精确版式。
+        if any(str_line == str_candidate for str_candidate in tuple_candidates):
+
+            # 返回首个命中的整行索引。
+            return int_index
+
+    # 没有找到任何候选整行。
+    return None
+
+# _find_prefix_line_index 查找首个以指定前缀开头的源码行。
+def _find_prefix_line_index(list_lines: list[str], str_prefix: str) -> int | None:
+    """
+    查找首个以指定前缀开头的源码行索引。
+
+    :param list_lines: 待查找的源码行列表。
+    :param str_prefix: 目标前缀文本。
+    :return: 命中时返回索引，否则返回 None。
+    """
+
+    # 逐行查找版本字段等稳定起始前缀。
+    for int_index, str_line in enumerate(list_lines):
+
+        # 只要前缀匹配，即可视为对应字段起点。
+        if str_line.startswith(str_prefix):
+
+            # 返回首个前缀命中位置。
+            return int_index
+
+    # 没有找到目标前缀。
+    return None
+
+# _trim_header_section_block 去掉 block 尾部的注释分隔行与纯空白行。
+def _trim_header_section_block(list_block_lines: list[str]) -> list[str]:
+    """
+    去掉 References/Dependencies block 尾部的分隔空行。
+
+    :param list_block_lines: 未裁剪的 section block 源码行。
+    :return: 去掉尾部分隔行后的 block 行列表。
+    """
+
+    # list_trimmed 复制一份，避免原地修改切片结果影响调用方。
+    list_trimmed = list(list_block_lines)  # 待裁剪的 section block 行列表
+
+    # 尾部允许出现 `//` 分隔行或真正空白行，需要统一裁掉。
+    while list_trimmed and list_trimmed[-1].strip() in {"", "//"}:
+
+        # 尾部空白分隔不属于 block 本体。
+        list_trimmed.pop()
+
+    # 返回裁剪后的稳定 block 行列表。
+    return list_trimmed
+
+# _classify_header_section_block 把单个 section block 归类为 none/table/illegal。
+def _classify_header_section_block(
+    list_block_lines: list[str],
+    str_none_line: str,
+    str_table_line: str,
+    str_heading_line: str,
+) -> tuple[str | None, int]:
+    """
+    归类单个 References/Dependencies block 的形态，并返回真实数据行数量。
+
+    :param list_block_lines: 当前 section block 的源码行列表。
+    :param str_none_line: 当前 block 在 none_mode 下的唯一合法整行。
+    :param str_table_line: 当前 block 在 table_mode 下的字段起始整行。
+    :param str_heading_line: 当前 block 在 table_mode 下的固定列头整行。
+    :return: block 模式，以及真实数据行数量；非法形态返回 `(None, 0)`。
+    """
+
+    # none_mode 只能是单行字段加 None。
+    if list_block_lines == [str_none_line]:
+
+        # 单行 None 形态没有真实表格数据行。
+        return "none_mode", 0
+
+    # table_mode 至少要有字段行和固定列头两行。
+    if len(list_block_lines) >= 2 and list_block_lines[0] == str_table_line and list_block_lines[1] == str_heading_line:
+
+        # list_data_rows 只统计列头之后的真实数据行。
+        list_data_rows = list_block_lines[2:]  # table_mode 列头之后的数据行
+
+        # 表格数据行必须全部保持 `// ` 前缀，且不能回落到 None 占位。
+        if all(str_line.startswith("// ") and str_line != "// None" for str_line in list_data_rows):
+
+            # 返回合法 table_mode 以及真实数据行数量。
+            return "table_mode", len(list_data_rows)
+
+    # 既不是合法 none_mode，也不是合法 table_mode。
+    return None, 0
+
+# _header_module_purpose_comment_issues 检查 header 后的模块功能说明合同。
+def _header_module_purpose_comment_issues(
+    str_text: str,
+    str_pre_module: str,
+    str_rel_path: str,
+    str_severity: str,
+) -> list[QualityIssue]:
+    """
+    检查标准 header 结束后到 module 声明前的中文模块功能说明合同。
+
+    :param str_text: 当前 Verilog 源码文本。
+    :param str_pre_module: module 声明之前的源码文本。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 当前 header 规则严重级别。
+    :return: 模块功能说明相关诊断列表。
+    """
+
+    # list_issues 保存 VG067 header->purpose->module 合同诊断。
+    list_issues: list[QualityIssue] = []  # header 后模块功能说明合同诊断
+
+    # 只有标准双语 header 存在时，才强制执行本合同。
+    if HEADER_ENGLISH_SEPARATOR not in str_pre_module or HEADER_CHINESE_SEPARATOR not in str_pre_module:
+
+        # 双语 header 缺失时由 VG007 处理，这里不重复报告 VG067。
+        return list_issues
+
+    # list_lines 保留全文物理行，便于直接定位 module 上一行与历史上一行。
+    list_lines = str_text.splitlines()  # 当前文件完整源码行列表
+
+    # tuple_module_anchor 给出首个 module 的源码行号和模块名。
+    tuple_module_anchor = _first_module_anchor(str_text)  # 首个 module 声明锚点
+
+    # 没有 module 声明时由 formatter/解析规则负责报错。
+    if tuple_module_anchor is None:
+
+        # 缺少 module 时当前规则不伪造 VG067。
+        return list_issues
+
+    # int_module_line_no 与 str_module_name 供模块说明邻接和质量诊断复用。
+    int_module_line_no, str_module_name = tuple_module_anchor  # 首个 module 行号与模块名
+
+    # 先确认 module 正上方那一行是否真的是功能说明锚点。
+    tuple_anchor_scan = _header_module_purpose_anchor_scan(  # 模块功能说明锚点扫描结果
+        list_lines,  # 本次要扫描的完整源码行列表
+        int_module_line_no,  # 首个 module 的一基行号
+        str_rel_path,  # 功能说明诊断落点路径
+        str_severity,  # 功能说明合同严重级别
+    )
+
+    # str_purpose_line 只有在 module 正上方确实存在纯注释说明时才非空。
+    str_purpose_line = tuple_anchor_scan[0]  # module 正上方模块功能说明行
+
+    # 先合并 module 功能说明存在性相关诊断。
+    list_issues.extend(tuple_anchor_scan[1])
+
+    # 没有纯注释说明时，后续正文与历史间距检查都没有意义。
+    if str_purpose_line is None:
+
+        # 缺少纯注释时直接结束当前合同检查。
+        return list_issues
+
+    # str_comment_body 是去掉 `//` 后的模块功能说明正文。
+    str_comment_body = _line_comment(str_purpose_line)  # 模块功能说明正文
+
+    # 说明正文必须有真实中文 RTL 语义，不能是空洞模板句。
+    if _is_hollow_module_purpose_comment(str_comment_body, str_module_name):
+
+        # 空洞模块说明无法满足“从 RTL 语义推断”的新合同。
+        list_issues.append(
+            QualityIssue(
+                "VG067",
+                str_severity,
+                "Module purpose comment must be Chinese-first, semantic, and cannot be a hollow template sentence.",
+                str_rel_path,
+                int_module_line_no - 1,
+                "header.module_purpose_comment_quality",
+            )
+        )
+
+    # 模块说明之前的空行与中文历史承接关系由独立 helper 统一检查。
+    list_issues.extend(
+        _header_module_purpose_history_spacing_issues(
+            list_lines,
+            int_module_line_no,
+            str_rel_path,
+            str_severity,
+        )
+    )
+
+    # 返回 header 后模块功能说明合同诊断。
+    return list_issues
+
+# _header_module_purpose_anchor_scan 返回 module 前一行的功能说明锚点与存在性诊断。
+def _header_module_purpose_anchor_scan(
+    list_lines: list[str],
+    int_module_line_no: int,
+    str_rel_path: str,
+    str_severity: str,
+) -> tuple[str | None, list[QualityIssue]]:
+    """
+    返回 module 前一行的模块功能说明锚点，以及说明存在性相关诊断。
+
+    :param list_lines: 当前文件完整源码行列表。
+    :param int_module_line_no: 首个 module 的 1 基行号。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 当前 header 规则严重级别。
+    :return: 模块功能说明行，以及对应诊断列表。
+    """
+
+    # list_issues 保存 module 功能说明存在性相关诊断。
+    list_issues: list[QualityIssue] = []  # 模块功能说明存在性诊断
+
+    # module 之前至少还需要存在一行模块功能说明。
+    if int_module_line_no <= 1:
+
+        # module 在首行时不可能满足 header 后模块说明合同。
+        list_issues.append(
+            QualityIssue(
+                "VG067",
+                str_severity,
+                "Standard header must be followed by one Chinese module purpose "
+                "comment immediately before `module`.",
+                str_rel_path,
+                int_module_line_no,
+                "header.module_purpose_comment",
+            )
+        )
+
+        # 缺少上文时无法继续检查空行合同。
+        return None, list_issues
+
+    # str_purpose_line 是 module 正上方一行，必须是纯注释模块说明。
+    str_purpose_line = list_lines[int_module_line_no - 2]  # module 正上方一行源码
+
+    # module 功能说明必须是紧贴 module 的纯注释行。
+    if not _is_pure_line_comment(str_purpose_line):
+
+        # 缺少纯注释时，说明 header 结束后直接贴到了 module。
+        list_issues.append(
+            QualityIssue(
+                "VG067",
+                str_severity,
+                "Standard header must keep one Chinese module purpose comment "
+                "immediately above `module`.",
+                str_rel_path,
+                int_module_line_no,
+                "header.module_purpose_comment",
+            )
+        )
+
+        # 没有纯注释时无法继续判断说明正文和空行合同。
+        return None, list_issues
+
+    # 返回当前 module 前一行的合法纯注释说明锚点。
+    return str_purpose_line, list_issues
+
+# _header_module_purpose_history_spacing_issues 检查历史末行到模块说明之间的固定合同。
+def _header_module_purpose_history_spacing_issues(
+    list_lines: list[str],
+    int_module_line_no: int,
+    str_rel_path: str,
+    str_severity: str,
+) -> list[QualityIssue]:
+    """
+    检查中文历史末行与模块功能说明之间的空行数量和承接锚点。
+
+    :param list_lines: 当前文件完整源码行列表。
+    :param int_module_line_no: 首个 module 的 1 基行号。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 当前 header 规则严重级别。
+    :return: 模块功能说明与历史承接关系的诊断列表。
+    """
+
+    # list_issues 保存模块说明与中文历史之间的承接关系诊断。
+    list_issues: list[QualityIssue] = []  # 模块功能说明承接诊断
+
+    # 继续抽取模块说明前的空白数量与历史末行位置。
+    tuple_blank_context = _header_module_purpose_blank_line_context(  # 模块说明之前的空白与历史锚点上下文
+        list_lines,  # 用来回溯历史末行的完整源码行列表
+        int_module_line_no,  # 需要向上回溯的 module 行号
+    )
+
+    # int_blank_line_count 统计中文历史最后一行与说明之间的空白物理行数。
+    int_blank_line_count = tuple_blank_context[0]  # 模块功能说明之前的连续空白行数量
+
+    # int_scan_index 指向模块功能说明之前最近一条非空行的零基索引。
+    int_scan_index = tuple_blank_context[1]  # 中文历史末行候选索引
+
+    # 模块功能说明前必须恰好保留一个空行。
+    if int_blank_line_count != 1:
+
+        # 多空行、零空行都违反“历史最后一行 -> 空行 -> 模块说明”的固定合同。
+        list_issues.append(
+            QualityIssue(
+                "VG067",
+                str_severity,
+                "Chinese header history must be followed by exactly one blank "
+                "line before the module purpose comment.",
+                str_rel_path,
+                int_module_line_no - 1,
+                "header.module_purpose_comment_spacing",
+            )
+        )
+
+    # 缺少上一条非空行时无法证明模块说明确实承接中文历史末行。
+    if int_scan_index < 0:
+
+        # 没有历史末行锚点时直接结束当前合同检查。
+        return list_issues
+
+    # str_history_tail_line 是模块功能说明之前的上一条非空行，应是中文历史记录。
+    str_history_tail_line = list_lines[int_scan_index]  # 中文历史末行候选
+
+    # 上一条非空行必须是中文历史记录，而不是字段标题、表头或其他注释。
+    if not _is_chinese_history_record_line(str_history_tail_line):
+
+        # 若上一条非空行不是中文历史记录，说明 header 末尾结构已偏离固定合同。
+        list_issues.append(
+            QualityIssue(
+                "VG067",
+                str_severity,
+                "Module purpose comment must be placed after the last Chinese "
+                "history record, not after another header field or heading.",
+                str_rel_path,
+                int_module_line_no - 1,
+                "header.module_purpose_comment_anchor",
+            )
+        )
+
+    # 返回模块说明与历史承接诊断。
+    return list_issues
+
+# _header_module_purpose_blank_line_context 统计模块说明前的空白行与历史锚点位置。
+def _header_module_purpose_blank_line_context(
+    list_lines: list[str],
+    int_module_line_no: int,
+) -> tuple[int, int]:
+    """
+    统计模块功能说明前连续空白行数量，并返回最近一条非空行索引。
+
+    :param list_lines: 当前文件完整源码行列表。
+    :param int_module_line_no: 首个 module 的 1 基行号。
+    :return: 连续空白行数量，以及最近一条非空行的零基索引。
+    """
+
+    # int_scan_index 从模块功能说明上一行开始向上回溯最近一条非空记录。
+    int_scan_index = int_module_line_no - 3  # 从模块说明上一行向上扫描的零基索引
+
+    # int_blank_line_count 记录模块说明之前连续空白的累计数量。
+    int_blank_line_count = 0  # 模块功能说明之前累计的空白行数
+
+    # 先向上消费空白行，计算说明与上一条非空行之间的空行数。
+    while int_scan_index >= 0 and not list_lines[int_scan_index].strip():
+
+        # 这条空白行属于历史末行与模块说明之间的固定缓冲区。
+        int_blank_line_count += 1  # 模块说明之前累计的空白行数量
+
+        # 继续向上寻找最近一条非空历史记录或字段行。
+        int_scan_index -= 1  # 向上推进到下一条待检查行
+
+    # 返回模块说明前的空白数量和历史末行候选位置。
+    return int_blank_line_count, int_scan_index
+
+# _first_module_anchor 返回首个 module 的行号和模块名。
+def _first_module_anchor(str_text: str) -> tuple[int, str] | None:
+    """
+    返回首个 module 声明的一基行号和模块名。
+
+    :param str_text: 当前 Verilog 源码文本。
+    :return: 命中时返回 `(line_no, module_name)`，否则返回 None。
+    """
+
+    # 逐行扫描首个 module 声明，避免跨行正则推断行号。
+    for int_line_no, str_line in enumerate(str_text.splitlines(), start=1):
+
+        # obj_match 用于提取首个 module 名。
+        obj_match = re.match(r"^\s*module\s+([A-Za-z_][A-Za-z0-9_]*)\b", str_line)  # module 声明匹配结果
+
+        # 命中时返回一基行号和模块名。
+        if obj_match is not None:
+
+            # 当前行就是首个 module 声明锚点。
+            return int_line_no, obj_match.group(1)
+
+    # 未找到 module 声明。
+    return None
+
+# _is_hollow_module_purpose_comment 判断模块功能说明是否空洞或机械重复。
+def _is_hollow_module_purpose_comment(str_comment_body: str, str_module_name: str) -> bool:
+    """
+    判断模块功能说明是否为空洞模板句、机械模块名复述或缺少中文语义。
+
+    :param str_comment_body: 去掉 `//` 后的模块功能说明正文。
+    :param str_module_name: 当前 module 名称。
+    :return: 说明空洞或机械时返回 True。
+    """
+
+    # str_normalized 统一去掉常见空白和标点，便于精确比较模板句。
+    str_normalized = re.sub(r"[\s_，。,.;；:：`-]+", "", str_comment_body.strip())  # 规范化模块功能说明文本
+
+    # str_module_normalized 用于识别“模块名 + 模块”这类机械重复句。
+    str_module_normalized = re.sub(r"[_\s]+", "", str_module_name.strip()).lower()  # 规范化模块名文本
+
+    # 空文本、缺中文、或命中既有空洞注释规则时都不满足交付合同。
+    if (
+        not str_normalized
+        or not _comment_has_meaningful_chinese(str_comment_body)
+        or _is_hollow_chinese_comment(str_comment_body)
+    ):
+
+        # 模块说明必须具备真实中文 RTL 语义。
+        return True
+
+    # 明确的模板句与机械模块名复述必须被阻断。
+    return str_normalized in {
+        "模块说明",
+        "模块功能说明",
+        f"{str_module_normalized}模块",
+    }
+
+# _is_chinese_history_record_line 判断某行是否是中文历史记录正文。
+def _is_chinese_history_record_line(str_line: str) -> bool:
+    """
+    判断一行 header 注释是否为中文历史记录正文。
+
+    :param str_line: 当前源码行。
+    :return: 命中中文历史记录正文时返回 True。
+    """
+
+    # 非纯注释行不可能是中文历史记录。
+    if not _is_pure_line_comment(str_line):
+
+        # 只有 header 注释行才参与中文历史记录判断。
+        return False
+
+    # str_body 统一取出去掉 `//` 之后的可见正文。
+    str_body = _line_comment(str_line)  # 中文历史记录候选正文
+
+    # 中文历史记录必须包含中文日期和版本号，避免误把表头当成正文。
+    return re.search(r"\d{4}年\d{1,2}月\d{1,2}日", str_body) is not None and re.search(
+        r"\bV\d+\.\d+\b",
+        str_body,
+    ) is not None
 
 # _header_version_history_issues 检查版本格式和历史记录正文。
 def _header_version_history_issues(
@@ -7558,10 +8696,168 @@ def _is_code_line(str_line: str) -> bool:
     # 非空且不以 // 开头才算代码行。
     return bool(str_stripped and not str_stripped.startswith("//"))
 
+# _fsm_case_branch_action 把 next-state 行文本归一成 case 深度动作。
+def _fsm_case_branch_action(str_line: str, int_case_depth: int) -> str:
+    """
+    返回当前 next-state 行对状态 case 深度的影响动作。
+
+    :param str_line: 去除外侧空白后的当前源码行。
+    :param int_case_depth: 进入 `case(state_current)` 后的当前嵌套深度。
+    :return: case 深度动作名称。
+    """
+
+    # 顶层 `case(state_current)` 会开启后续状态标签扫描。
+    if FSM_STATE_CASE_PATTERN.match(str_line):
+
+        # 命中主状态分派 case。
+        return "enter_state_case"
+
+    # 已进入状态 case 后，普通 case 关键字会继续增加嵌套深度。
+    if int_case_depth > 0 and FSM_CASE_KEYWORD_PATTERN.match(str_line):
+
+        # 命中内层 case。
+        return "enter_nested_case"
+
+    # 只有进入过状态 case 时，endcase 才需要回退深度。
+    if int_case_depth > 0 and str_line == "endcase":
+
+        # 命中 case 结束。
+        return "leave_case"
+
+    # 顶层状态分支标签需要进一步追加 VG063 注释检查。
+    if int_case_depth == 1 and FSM_CASE_BRANCH_BEGIN_PATTERN.match(str_line):
+
+        # 命中 ST_* 或 default 顶层分支。
+        return "check_branch"
+
+    # 其余行不改变状态 case 扫描。
+    return "other"
+
+# _fsm_case_branch_leading_comment_issues_for_block 扫描单个 next-state always 的状态分支注释。
+def _fsm_case_branch_leading_comment_issues_for_block(
+    dict_always: dict[str, Any],
+    list_lines: list[str],
+    str_rel_path: str,
+    str_severity: str,
+) -> list[QualityIssue]:
+    """
+    扫描单个 next-state always 中的状态分支前导注释布局。
+
+    :param dict_always: formatter AST 中驱动 state_next 的组合 always 条目。
+    :param list_lines: 当前 Verilog 源码行列表。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 注释布局问题的严重级别。
+    :return: 当前 next-state always 的状态分支注释诊断列表。
+    """
+
+    # int_block_line_start 是 always 正文第一行在源码中的绝对行号。
+    int_block_line_start = _as_line(dict_always.get("line_start"))  # next-state always 起始行号
+
+    # 缺少绝对行号时无法把分支注释准确落回源文件。
+    if int_block_line_start is None:
+
+        # 行号缺失交给 span 规则，不在 VG063 伪造位置。
+        return []
+
+    # list_issues 保存当前 next-state always 的状态分支注释诊断。
+    list_issues: list[QualityIssue] = []  # 当前 next-state always 的状态分支诊断
+
+    # int_case_depth 只在进入 `case(state_current)` 后跟踪嵌套层数。
+    int_case_depth = 0  # 当前 next-state always 内的状态 case 嵌套深度
+
+    # 逐行扫描 next-state always，找出直属状态分支标签。
+    for int_offset, str_raw_line in enumerate(dict_always.get("lines", []) or []):
+
+        # str_line 用于匹配 Erie 紧凑 next-state 风格里的 case 分支文本。
+        str_line = str(str_raw_line).strip()  # 当前 next-state 行文本
+
+        # str_action 统一表达当前行对状态 case 深度的影响。
+        str_action = _fsm_case_branch_action(str_line, int_case_depth)  # 当前 next-state 行的状态分支动作
+
+        # 主状态 case 和内层 case 都会增加嵌套深度。
+        if str_action in {"enter_state_case", "enter_nested_case"}:
+
+            # 新进入的 case 作用域需要增加深度。
+            int_case_depth += 1  # 当前状态 case 嵌套深度加一
+
+            # case 深度更新完成后继续扫描下一行。
+            continue
+
+        # endcase 命中后回退一层 case 深度。
+        if str_action == "leave_case":
+
+            # 退出当前 case 作用域。
+            int_case_depth = max(int_case_depth - 1, 0)  # 当前状态 case 嵌套深度回退一层
+
+            # case 深度回退完成后继续扫描下一行。
+            continue
+
+        # 非顶层状态分支标签不需要继续做 VG063 扩展检查。
+        if str_action != "check_branch":
+
+            # 当前行不是直属状态分支标签。
+            continue
+
+        # int_branch_line_no 把 block 内偏移换算成源码绝对行号。
+        int_branch_line_no = int_block_line_start + int_offset  # 状态分支标签绝对行号
+
+        # 直接借用通用布局检查，评估当前状态标签前导注释。
+        list_branch_issues = _leading_comment_layout_issues_for_line_no(  # 当前状态分支标签的 VG063 扩展诊断
+            int_branch_line_no,  # 当前状态分支标签的绝对源码行号
+            list_lines,  # 整个 RTL 文件的源码行列表
+            str_rel_path,  # 状态注释诊断落点路径
+            str_severity,  # 状态注释规则严重级别
+            "Case branch",  # 诊断文案里的对象名称
+            "comments.case_branch_leading_comment",  # VG063 扩展到 case 分支的子规则
+        )
+
+        # 状态标签与 default 标签都必须带纯前导注释并满足现有布局规则。
+        list_issues.extend(list_branch_issues)
+
+    # 返回当前 next-state always 的 VG063 扩展诊断。
+    return list_issues
+
+# _fsm_case_branch_leading_comment_issues 检查 next-state case 分支前导注释布局。
+def _fsm_case_branch_leading_comment_issues(
+    dict_module: dict[str, Any],
+    list_lines: list[str],
+    str_rel_path: str,
+    str_severity: str,
+) -> list[QualityIssue]:
+    """
+    检查 `case(state_current)` 下的 `ST_*:begin` 与 `default:begin` 前导注释布局。
+
+    :param dict_module: formatter AST 中的单个 module 描述。
+    :param list_lines: 当前 Verilog 源码行列表。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param str_severity: 注释布局问题的严重级别。
+    :return: FSM 状态分支前导注释诊断列表。
+    """
+
+    # list_issues 聚合全部 next-state always 的状态分支注释诊断。
+    list_issues: list[QualityIssue] = []  # module 级 FSM case 分支前导注释诊断
+
+    # 逐个 next-state always 扫描 `case(state_current)` 下的分支标签。
+    for dict_always in _next_state_always_blocks(dict_module):
+
+        # 让单 always helper 只负责一个块的状态标签检查。
+        list_block_issues = _fsm_case_branch_leading_comment_issues_for_block(  # 单个 next-state always 的 VG063 扩展诊断
+            dict_always,  # 当前正在扫描的 next-state always 条目
+            list_lines,  # 当前 module 对应的完整源码行列表
+            str_rel_path,  # module 级状态注释诊断路径
+            str_severity,  # module 级状态注释规则严重级别
+        )
+
+        # 合并当前 always 贡献的全部状态分支前导注释问题。
+        list_issues.extend(list_block_issues)
+
+    # 返回 FSM 状态分支的 VG063 诊断。
+    return list_issues
+
 # _fsm_next_state_rules 检查 next-state 组合段的 default 和默认保持。
 def _fsm_next_state_rules(dict_module: dict[str, Any], str_rel_path: str, *, strict: bool) -> list[QualityIssue]:
     """
-    检查 FSM next-state 组合段是否包含 default 和默认保持。
+    检查 FSM next-state 组合段是否包含 default、默认保持和完整 if/else 闭合。
 
     :param dict_module: formatter AST 中的单个 module 描述。
     :param str_rel_path: 报告中使用的相对文件路径。
@@ -7606,8 +8902,8 @@ def _fsm_next_state_rules(dict_module: dict[str, Any], str_rel_path: str, *, str
             )
 
         # next-state 组合段应先默认保持当前态，再按条件覆盖。
-        if re.search(r"\bstate_next\s*=", str_block_text) and not re.search(
-            r"\bstate_next\s*=\s*state_current\s*;", str_block_text
+        if FSM_STATE_NEXT_ASSIGN_PATTERN.search(str_block_text) and not FSM_STATE_NEXT_HOLD_PATTERN.search(
+            str_block_text
         ):
 
             # 默认保持是 Erie 三段式 FSM 的可读性和锁存防护要求。
@@ -7615,14 +8911,281 @@ def _fsm_next_state_rules(dict_module: dict[str, Any], str_rel_path: str, *, str
                 QualityIssue(
                     "VG054",
                     _style_severity(strict),
-                    "FSM next-state block must default `state_next = state_current;` before overrides.",
+                    "FSM next-state block must default `state_next <= state_current;` or "
+                    "`state_next = state_current;` before overrides.",
                     str_rel_path,
                     int_line_no,
                     rule="fsm.next_state_hold",
                 )
             )
 
+        # next-state 组合逻辑中的 if / else if 链必须显式闭合到最终 else。
+        list_issues.extend(_fsm_next_state_branch_closure_issues(dict_always, str_rel_path, strict=strict))
+
     # 返回 next-state 默认覆盖诊断。
+    return list_issues
+
+# _fsm_next_state_line_action 把 next-state 行文本归一成分支闭合扫描动作。
+def _fsm_next_state_line_action(str_line: str) -> str:
+    """
+    返回当前 next-state 行在 if 链闭合扫描中的动作名称。
+
+    :param str_line: 去除外侧空白后的当前源码行。
+    :return: 分支闭合扫描动作名称。
+    """
+
+    # 状态分支标签本身会打开一层 begin/end 作用域。
+    if FSM_CASE_BRANCH_BEGIN_PATTERN.match(str_line):
+
+        # 命中状态分支标签。
+        return "case_branch"
+
+    # 普通 if 分支会开启一条新的 if / else if / else 链。
+    if FSM_IF_BEGIN_PATTERN.match(str_line):
+
+        # 命中 if 链起点。
+        return "if_begin"
+
+    # else-if 只是延续已有 if 链，不单独开新链。
+    if FSM_ELSE_IF_BEGIN_PATTERN.match(str_line):
+
+        # 命中 else-if 延续分支。
+        return "else_if"
+
+    # 终止 else 负责闭合当前 if 链的语义覆盖。
+    if FSM_ELSE_BEGIN_PATTERN.match(str_line):
+
+        # 命中终止 else 分支。
+        return "else_begin"
+
+    # 普通 end 用于关闭最近的 begin/end 作用域。
+    if FSM_PLAIN_END_PATTERN.match(str_line):
+
+        # 命中普通 end。
+        return "plain_end"
+
+    # 其余行不会影响 if 链闭合判定。
+    return "other"
+
+# _mark_terminal_else_for_top_if_chain 标记当前最内层 if 链已经显式命中过终止 else。
+def _mark_terminal_else_for_top_if_chain(list_if_stack: list[dict[str, Any]]) -> None:
+    """
+    标记最内层 if 链已经出现终止 else。
+
+    :param list_if_stack: 当前打开的 if 链状态栈。
+    :return: 本函数只更新传入栈状态，不返回业务值。
+    """
+
+    # 没有待闭合 if 链时无需记录终止 else。
+    if not list_if_stack:
+
+        # 空栈时忽略孤立 else begin。
+        return
+
+    # 顶层 if 链已经具备显式终止 else。
+    list_if_stack[-1]["has_terminal_else"] = True  # 当前最内层 if 链已命中终止 else
+
+# _fsm_missing_terminal_else_issue 在关闭 if 链时返回缺失终止 else 的 VG054 诊断。
+def _fsm_missing_terminal_else_issue(
+    list_if_stack: list[dict[str, Any]],
+    list_block_stack: list[str],
+    str_rel_path: str,
+    *,
+    strict: bool,
+) -> QualityIssue | None:
+    """
+    在 plain end 关闭作用域时返回缺失终止 else 的诊断。
+
+    :param list_if_stack: 当前打开的 if 链状态栈。
+    :param list_block_stack: 当前 begin/end 作用域栈。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param strict: 是否把结构问题升级为 error。
+    :return: 需要追加的 VG054 诊断，不需要时返回 None。
+    """
+
+    # 没有打开作用域时，plain end 不参与 if 链闭合判定。
+    if not list_block_stack:
+
+        # 空作用域栈不追加诊断。
+        return None
+
+    # str_block_kind 表示当前 plain end 正在关闭的最近作用域类型。
+    str_block_kind = list_block_stack.pop()  # 最近 begin/end 作用域类型
+
+    # 只有关闭 if 链本身时才判断是否缺少最终 else。
+    if str_block_kind != "if_chain" or not list_if_stack:
+
+        # 关闭 case item 或异常栈深时不产出 if 链诊断。
+        return None
+
+    # dict_if_chain 是当前被 plain end 关闭的 if 链状态。
+    dict_if_chain = list_if_stack.pop()  # 当前 if 链闭合状态
+
+    # 已命中终止 else 的 if 链满足完整闭合要求。
+    if dict_if_chain.get("has_terminal_else"):
+
+        # 当前 if 链已完整闭合。
+        return None
+
+    # 当前 if / else if 链没有以 else 收尾，会留下组合分支缺口。
+    return QualityIssue(
+        "VG054",
+        _style_severity(strict),
+        "FSM next-state if / else if chain must end with an explicit else branch.",
+        str_rel_path,
+        int(dict_if_chain["int_line_no"]),
+        rule="fsm.next_state_branch_closure",
+    )
+
+# _fsm_open_if_chain 记录新开启的 if 链上下文并同步 begin/end 作用域。
+def _fsm_open_if_chain(
+    int_line_no: int,
+    list_if_stack: list[dict[str, Any]],
+    list_block_stack: list[str],
+) -> None:
+    """
+    记录新开启的 if 链上下文，并把对应作用域压入 begin/end 栈。
+
+    :param int_line_no: 当前 if 链起始行的绝对源码行号。
+    :param list_if_stack: 当前打开的 if 链状态栈。
+    :param list_block_stack: 当前 begin/end 作用域栈。
+    :return: 本函数只更新传入栈状态，不返回业务值。
+    """
+
+    # dict_if_chain 只保存一个 if 链的起点和 else 覆盖位。
+    dict_if_chain = {"int_line_no": int_line_no, "has_terminal_else": False}  # 供 plain end 回收的 if 链上下文
+
+    # 先记录 if 链的诊断上下文。
+    list_if_stack.append(dict_if_chain)
+
+    # 再压入 begin/end 作用域，等待 plain end 回收。
+    list_block_stack.append("if_chain")
+
+    # 条件链上下文入栈后，本 helper 就可以把控制权交回调用方。
+    return None
+
+# _fsm_apply_nonclosing_next_state_action 处理不会直接产出诊断的 next-state 行动作。
+def _fsm_apply_nonclosing_next_state_action(
+    str_action: str,
+    int_line_no: int,
+    list_if_stack: list[dict[str, Any]],
+    list_block_stack: list[str],
+) -> None:
+    """
+    处理 case_branch、if_begin、else_begin 这类只更新栈状态的 next-state 行动作。
+
+    :param str_action: 当前行对应的闭合扫描动作。
+    :param int_line_no: 当前行的绝对源码行号。
+    :param list_if_stack: 当前打开的 if 链状态栈。
+    :param list_block_stack: 当前 begin/end 作用域栈。
+    :return: 本函数只更新传入栈状态，不返回业务值。
+    """
+
+    # 状态分支标签只需要把 case item 作用域压栈。
+    if str_action == "case_branch":
+
+        # 进入新的状态分支作用域，等待后续 plain end 回收。
+        list_block_stack.append("case_branch")
+
+        # case_branch 只更新作用域栈，不需要继续向上传递诊断。
+        return
+
+    # 普通 if 分支会开启一条新的闭合链。
+    if str_action == "if_begin":
+
+        # 把当前 if 链的起始位置和作用域状态同步压入两类栈。
+        _fsm_open_if_chain(int_line_no, list_if_stack, list_block_stack)
+
+        # if_begin 只负责登记新链，不直接产出诊断对象。
+        return
+
+    # 终止 else 命中后，当前最内层 if 链具备完整闭合语义。
+    if str_action == "else_begin":
+
+        # 显式标记最内层 if 链已经补齐最终 else。
+        _mark_terminal_else_for_top_if_chain(list_if_stack)
+
+        # else_begin 只补闭合状态，不直接返回质量问题。
+        return
+
+# _fsm_next_state_branch_closure_issues 检查 next-state if / else if 链是否显式闭合到 else。
+def _fsm_next_state_branch_closure_issues(
+    dict_always: dict[str, Any],
+    str_rel_path: str,
+    *,
+    strict: bool,
+) -> list[QualityIssue]:
+    """
+    检查 next-state 组合段中的 if / else if 链是否显式终止于 else 分支。
+
+    :param dict_always: formatter AST 中驱动 state_next 的组合 always 条目。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param strict: 是否把结构问题升级为 error。
+    :return: next-state if 链闭合诊断列表。
+    """
+
+    # int_block_line_start 是 next-state always 正文第一行的绝对行号。
+    int_block_line_start = _as_line(dict_always.get("line_start"))  # next-state always 正文起始行号
+
+    # 缺少绝对行号时无法把 VG054 精确落点到具体 if 链。
+    if int_block_line_start is None:
+
+        # 行号缺失时不伪造分支闭合诊断。
+        return []
+
+    # list_issues 保存当前 next-state always 的分支闭合诊断。
+    list_issues: list[QualityIssue] = []  # 当前 next-state always 的 if 链闭合诊断
+
+    # list_if_stack 记录每条 next-state if 链的起始行和终止 else 覆盖状态。
+    list_if_stack: list[dict[str, Any]] = []  # 当前打开的 if 链状态栈
+
+    # list_block_stack 只追踪 case_branch 与 if_chain 两类 begin/end 作用域归属。
+    list_block_stack: list[str] = []  # 当前 next-state begin/end 作用域栈
+
+    # 逐行扫描 next-state always 文本，按 begin/end 栈识别 if 链闭合。
+    for int_offset, str_raw_line in enumerate(dict_always.get("lines", []) or []):
+
+        # str_line 用于匹配 next-state 组合逻辑的 Erie 紧凑 begin/end 结构。
+        str_line = str(str_raw_line).strip()  # 当前 next-state 组合行文本
+
+        # int_line_no 把 block 内行偏移映射回源文件行号。
+        int_line_no = int_block_line_start + int_offset  # 当前行的绝对源码行号
+
+        # str_action 统一表达当前行对 if 链闭合扫描的影响。
+        str_action = _fsm_next_state_line_action(str_line)  # 当前 next-state 行的闭合扫描动作
+
+        # 非 plain end 动作只更新栈状态，不直接产出 VG054 诊断。
+        if str_action != "plain_end":
+
+            # case_branch、if_begin、else_begin 都在这里统一更新作用域状态。
+            _fsm_apply_nonclosing_next_state_action(
+                str_action,
+                int_line_no,
+                list_if_stack,
+                list_block_stack,
+            )
+
+            # 当前行没有关闭 if 链，不需要继续走 VG054 诊断分支。
+            continue
+
+        # obj_issue 只在 plain end 回收 if 链且缺少最终 else 时非空。
+        obj_issue = _fsm_missing_terminal_else_issue(  # 当前 plain end 关闭动作触发的 VG054 诊断
+            list_if_stack,  # 即将被 plain end 回收的 if 链状态栈
+            list_block_stack,  # plain end 当前面对的 begin/end 作用域栈
+            str_rel_path,  # 需要挂载诊断的相对路径
+            strict=strict,  # 是否按严格模式上报 VG054
+        )
+
+        # 非 plain end 或已完整闭合的场景不会返回诊断。
+        if obj_issue is None:
+
+            # 当前行没有产生新的 VG054 分支闭合问题。
+            continue
+
+        # 缺少终止 else 的 if 链在 plain end 关闭时追加诊断。
+        list_issues.append(obj_issue)
+
+    # 返回当前 next-state always 的 if 链闭合诊断。
     return list_issues
 
 # _next_state_always_blocks 提取 state_next 组合 always 块。

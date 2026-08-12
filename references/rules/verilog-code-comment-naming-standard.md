@@ -10,9 +10,11 @@
 
 - `VG001`、`VG003`、`VG004`、`VG005`、`VG025`：覆盖 ``timescale 1ns / 1ps``、行尾空白、Tab 缩进、文件末尾换行、控制语句显式 `begin/end`。
 - `VG010`、`VG011`、`VG012`、`VG013`、`VG014`、`VG024`：覆盖端口方向前缀、ANSI header 禁止 `wire/reg/logic` 与 `output reg`、`C_`/`ST_`/内部语义前缀、内部输出 `_o` 约束、输出桥接存在性、实例命名语义。
-- `VG021`、`VG023`、`VG053`、`VG054`、`VG057`：覆盖时钟/复位命名与低有效复位结构、FSM 三段式和 next-state 深语义、协议端口 section 顺序。
+- `VG021`、`VG023`、`VG053`、`VG054`、`VG057`：覆盖时钟/复位命名与低有效复位结构、FSM 三段式和 next-state 的 default、默认保持、`if / else if` 显式闭合，以及协议端口 section 顺序；生成侧新规范优先 `state_next <= ...;`，门禁过渡兼容历史 `=`.
 - `VG031`、`VG052`、`VG061`：覆盖固定区域 banner、output bridge 所属区域、参数/声明/过程块/实例的区域归属。
 - `VG040`、`VG041`、`VG055`、`VG056`、`VG060`、`VG066`：覆盖中文优先注释、占位注释、同线注释覆盖、尾随注释对齐、重复/近似重复注释。
+- `VG063`：覆盖过程块、实例以及 `case(state_current)` 下 `ST_*:begin`、`default:begin` 的前导纯注释贴邻、左对齐和空行布局。
+- `VG067`：覆盖 assign 纯分组注释的空行布局；写了分组注释就必须满足“上一段代码后恰好一行空行或区域横幅直连”。
 - `JSON/配置已覆盖`：`assets/verilog_style_rules.json` 中的 `profiles`、`files`、`comments`、`statements`、`protocols`、`known_differences` 已是现行机器真源；本文档只做解释，不再重复声明为独立 `VGxxx`。
 - `说明性规则`：注释增强双 `verify_comment_only` 流水线、版本号升级时机、人工评审输出要求、profile 选型建议、历史示例和最终检查清单仍是流程/治理规则，不是单个 `VGxxx`。
 
@@ -472,6 +474,7 @@ formatter 可吸收旧代码中的 `input wire` / `output reg`，但最终规范
 - 所有连续赋值使用显式 `assign lhs = rhs;`。
 - `assign` 一行一个；复杂表达式应优先拆出中间信号，避免长行难读。
 - assign 区按功能/来源分组，可有小组注释。
+- 若写纯分组注释引入后续 `assign` 小组，则该注释上方必须满足唯一空行，或直接紧跟区域横幅；不能直接贴在上一条代码后面。
 - `assign` 区不承载时序逻辑，不写阻塞/非阻塞赋值。
 
 ### 9.2 output assign 与 output bridge
@@ -528,6 +531,7 @@ end
 - 组合逻辑使用 `always@(*)begin`。
 - 组合 always 内使用阻塞赋值 `=`。
 - 必须覆盖所有分支，避免锁存器；必要时先给默认值。
+- 三段式 FSM 的 next-state 组合段属于项目特例：新生成模板优先使用 `state_next <= ...;`，门禁过渡期兼容历史 `state_next = ...;`。
 - formatter 对简单条件会标准化：
   - `if(flag)` -> `if(flag == 1'b1)`。
   - `if(!flag)`/`if(~flag)` -> `if(flag == 1'b0)`。
@@ -560,7 +564,9 @@ formatter 源码中的自动验证重点检查 state 参数/信号出现时是�
 - state signal：`state_current`、`state_next`。
 - reset 初始状态必须明确，例如 `state_current <= ST_IDLE;`。
 - `case(state_current)` 必须覆盖所有状态；必须有 `default`。
-- `state_next` 组合 always 要先设置默认值，通常为 `state_current`。
+- `state_next` 组合 always 要先设置默认值，通常为 `state_current`；新生成规范优先写成 `state_next <= state_current;`。
+- next-state 组合逻辑中的 `if / else if` 链必须显式闭合到最终 `else`。
+- `case(state_current)` 下的 `ST_*:begin` 与 `default:begin` 上方必须有纯注释，且该注释与分支标签左侧对齐。
 - 输出逻辑不要在 next-state 组合逻辑里混杂大量非状态赋值。
 
 推荐骨架：
@@ -586,18 +592,27 @@ formatter 源码中的自动验证重点检查 state 参数/信号出现时是�
     
     //主状态机
     always@(*)begin
-        state_next = state_current;
+        state_next <= state_current;
         case(state_current)
+            //空闲状态转移分支
             ST_IDLE:begin
                 if(i_start == 1'b1)begin
-                    state_next = ST_RUN;
+                    state_next <= ST_RUN;
+                end else begin
+                    state_next <= ST_IDLE;
                 end
             end
+            //运行状态转移分支
             ST_RUN:begin
-                state_next = ST_IDLE;
+                if(i_start == 1'b0)begin
+                    state_next <= ST_IDLE;
+                end else begin
+                    state_next <= ST_RUN;
+                end
             end
+            //默认状态转移分支
             default:begin
-                state_next = ST_IDLE;
+                state_next <= ST_IDLE;
             end
         endcase
     end
@@ -612,6 +627,7 @@ formatter 源码中的自动验证重点检查 state 参数/信号出现时是�
 - 必须使用显式 `begin/end`，即使分支只有一条语句。
 - 条件表达式要明确比较，不建议隐式 truthy。
 - `else if` 链保持 `end else if(...)begin` 风格。
+- next-state 组合逻辑中的 `if / else if` 链必须显式闭合到最终 `else`。
 - reset 条件统一低有效写法。
 
 ### 12.2 case
@@ -619,6 +635,7 @@ formatter 源码中的自动验证重点检查 state 参数/信号出现时是�
 - `case(expr)` 独立一行。
 - 每个 case item 使用 `LABEL:begin`，item 内缩进一级，最后 `end`。
 - 必须有 `default`，尤其是 FSM next-state。
+- 在 `case(state_current)` 下，`ST_*:begin` 与 `default:begin` 必须有正上方纯注释，且注释与标签左对齐。
 - 不要在 case item 中跨多个目标信号写复杂混合逻辑；必要时拆到不同 always 或任务区域。
 
 ### 12.3 for/while/generate

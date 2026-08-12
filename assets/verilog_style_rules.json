@@ -118,6 +118,8 @@
         "initial"
       ],
       "leading_comment_spacing": "A block, definition-group, or instance-purpose comment is immediately above its target, aligns to the target start column, and has exactly one blank line above unless it directly follows a region banner.",
+      "case_branch_leading_comments": "Inside `case(state_current)`, every `ST_*:begin` and `default:begin` branch uses a pure leading comment immediately above the branch label, aligned with the label column, and follows the same one-blank-line-or-region-banner rule as other leading comments.",
+      "assign_group_spacing": "If a pure comment introduces an assign subgroup, it is optional, but once written it must have exactly one blank line above when preceded by code; stacked pure comments or a directly preceding region banner remain valid exceptions.",
       "definition_group_comments": "Parameter and signal definition groups require a pure group comment above the group; a region banner does not satisfy this requirement.",
       "instance_comments": "Each module instance requires a pure function comment above it, and each .formal(actual) mapping requires a same-line semantic comment."
     },
@@ -174,6 +176,9 @@
     "always_single_target": true,
     "sequential_reset": "posedge clock or negedge active-low reset",
     "fsm": "project requires three-segment FSM; formatter enforcement is partial",
+    "fsm_next_state_hold": "Default `state_next <= state_current;` before branch overrides; legacy `state_next = state_current;` remains gate-compatible during migration.",
+    "fsm_next_state_branch_closure": "Every if / else if chain in next-state combinational logic must end with an explicit else branch.",
+    "fsm_next_state_operator_style": "Prefer `state_next <= ...;` for newly generated next-state combinational logic; do not mass-rewrite legacy `=` solely for gate compatibility.",
     "instances_last": true
   },
   "protocols": {

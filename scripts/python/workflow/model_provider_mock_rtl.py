@@ -259,43 +259,45 @@ def _mock_erie_rtl_source_text(spec: dict[str, Any]) -> str:
     raw_rtl = f"""`timescale 1ns / 1ps
 
 ////////////////////////////////////English///////////////////////////////////////
-// Company:\t\t\tErie
-// Engineer:\t\tErie
-// 
-// Create Date: \t2026/05/03 12:00:00
-// Design Name: \t{mock_port_layout_snapshot.top}
-// Module Name: \t{mock_port_layout_snapshot.top}
-// Description: \tDescription/{mock_port_layout_snapshot.top}_Design.pdf
-// Simulations:\t\tTestBench/Vivado/2021.1/{mock_port_layout_snapshot.top}
-// 
-// References:\t\tNone
+// Company:         Erie
+// Engineer:        Erie
 //
-// Dependencies:\tNone
+// Create Date:     2026/05/03 12:00:00
+// Design Name:     {mock_port_layout_snapshot.top}
+// Module Name:     {mock_port_layout_snapshot.top}
+// Description:     Description/{mock_port_layout_snapshot.top}_Design.pdf
+// Simulations:     TestBench/Vivado/2021.1/{mock_port_layout_snapshot.top}
 //
-// Version:\t\t\tV1.0
-// Revision Date:\t2026/05/03 12:00:00
+// References:     None
+//
+// Dependencies:    None
+//
+// Version:         V1.0
+// Revision Date:   2026/05/03 12:00:00
 // History:
-//    Time\t\t\t   Version\t   Revised by\t\t\tContents
-// 2026/05/03\t\tV1.0\t\tErie\t\tCreate file.
+// Time             Version     Revised by        Contents
+// 2026/05/03       V1.0        Erie              Create file.
 ///////////////////////////////////Chinese////////////////////////////////////////
-// 版权归属:\t\tErie
-// 开发人员:\t\tErie
-// 
-// 创建日期: \t\t2026年05月03日
-// 设计名称: \t\t{mock_port_layout_snapshot.top}
-// 模块名称: \t\t{mock_port_layout_snapshot.top}
-// 模块说明:\t\tDescription/{mock_port_layout_snapshot.top}_Design.pdf
-// 仿真工程: \t\tTestBench/Vivado/2021.1/{mock_port_layout_snapshot.top}
-//\t
-// 参考资料:\t\tNone
+// 版权归属:        Erie
+// 开发人员:        Erie
 //
-// 依赖文件:\t\tNone
+// 创建日期:        2026年05月03日
+// 设计名称:        {mock_port_layout_snapshot.top}
+// 模块名称:        {mock_port_layout_snapshot.top}
+// 模块说明:        Description/{mock_port_layout_snapshot.top}_Design.pdf
+// 仿真工程:        TestBench/Vivado/2021.1/{mock_port_layout_snapshot.top}
 //
-// 当前版本:\t\tV1.0
-// 修订日期:\t\t2026年05月03日
+// 参考资料:        None
+//
+// 依赖文件:        None
+//
+// 当前版本:        V1.0
+// 修订日期:        2026年05月03日
 // 修订历史:
-//\t时间\t\t\t    版本\t\t修订人\t\t\t\t修订内容\t
-// 2026年05月03日\t\tV1.0\t\t Erie\t\t创建文件
+// 时间             版本        修订人            修订内容
+// 2026年05月03日   V1.0        Erie              创建文件
+
+// 输入数据缓存与输出桥接控制模块
 module {mock_port_layout_snapshot.top}
 #(
 \tparameter C_DATA_WIDTH = {mock_rtl_parts.data_width}\t//数据总线位宽
@@ -707,43 +709,45 @@ def _mock_erie_comb_source_text(layout: MockPortLayout) -> str:
     raw_rtl = f"""`timescale 1ns / 1ps
 
 ////////////////////////////////////English///////////////////////////////////////
-// Company:\t\t\tErie
-// Engineer:\t\tErie
+// Company:         Erie
+// Engineer:        Erie
 //
-// Create Date: \t2026/05/03 12:00:00
-// Design Name: \t{layout.top}
-// Module Name: \t{layout.top}
-// Description: \tDescription/{layout.top}_Design.pdf
-// Simulations:\t\tTestBench/Vivado/2021.1/{layout.top}
+// Create Date:     2026/05/03 12:00:00
+// Design Name:     {layout.top}
+// Module Name:     {layout.top}
+// Description:     Description/{layout.top}_Design.pdf
+// Simulations:     TestBench/Vivado/2021.1/{layout.top}
 //
-// References:\t\tNone
+// References:     None
 //
-// Dependencies:\tNone
+// Dependencies:    None
 //
-// Version:\t\t\tV1.0
-// Revision Date:\t2026/05/03 12:00:00
+// Version:         V1.0
+// Revision Date:   2026/05/03 12:00:00
 // History:
-//    Time\t\t\t   Version\t   Revised by\t\t\tContents
-// 2026/05/03\t\tV1.0\t\tErie\t\tCreate file.
+// Time             Version     Revised by        Contents
+// 2026/05/03       V1.0        Erie              Create file.
 ///////////////////////////////////Chinese////////////////////////////////////////
-// 版权归属:\t\tErie
-// 开发人员:\t\tErie
+// 版权归属:        Erie
+// 开发人员:        Erie
 //
-// 创建日期: \t\t2026年05月03日
-// 设计名称: \t\t{layout.top}
-// 模块名称: \t\t{layout.top}
-// 模块说明:\t\tDescription/{layout.top}_Design.pdf
-// 仿真工程: \t\tTestBench/Vivado/2021.1/{layout.top}
+// 创建日期:        2026年05月03日
+// 设计名称:        {layout.top}
+// 模块名称:        {layout.top}
+// 模块说明:        Description/{layout.top}_Design.pdf
+// 仿真工程:        TestBench/Vivado/2021.1/{layout.top}
 //
-// 参考资料:\t\tNone
+// 参考资料:        None
 //
-// 依赖文件:\t\tNone
+// 依赖文件:        None
 //
-// 当前版本:\t\tV1.0
-// 修订日期:\t\t2026年05月03日
+// 当前版本:        V1.0
+// 修订日期:        2026年05月03日
 // 修订历史:
-//\t时间\t\t\t    版本\t\t修订人\t\t\t\t修订内容\t
-// 2026年05月03日\t\tV1.0\t\t Erie\t\t创建文件
+// 时间             版本        修订人            修订内容
+// 2026年05月03日   V1.0        Erie              创建文件
+
+// 输入选择与组合输出桥接模块
 module {layout.top}
 #(
 \tparameter C_DATA_WIDTH = {int_data_width}\t//数据总线位宽

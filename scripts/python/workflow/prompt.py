@@ -49,6 +49,23 @@ COMMENT_LANGUAGES: tuple[str, ...] = ("zh", "en")  # 允许注释语言代码
 # prompt 预算只影响上下文裁剪，不改变 manifest 合同。
 PROMPT_BUDGETS: tuple[str, ...] = ("normal", "compact", "repair")  # 支持的上下文预算档位
 
+# staged prompt 中嵌入 JSON 章节时统一使用双空格缩进，避免散落匿名常量。
+PROMPT_JSON_INDENT = 2  # prompt JSON 代码块的统一缩进宽度
+
+# _prompt_json_block_text 统一渲染 staged prompt 里的 JSON 小节。
+def _prompt_json_block_text(obj_payload: Any) -> str:
+    """
+    把 staged prompt 上下文片段转成统一缩进的 JSON 文本。
+
+    参数:
+        obj_payload: 需要嵌入 prompt 的任意 JSON 可序列化对象。
+    返回:
+        双空格缩进且保留中文的 JSON 文本。
+    """
+
+    # 返回统一格式的 JSON 段落，减少 `_staged_prompt_text` 中的重复序列化细节。
+    return json.dumps(obj_payload, indent=PROMPT_JSON_INDENT, ensure_ascii=False)
+
 # 路径后缀到 fenced-code 语言名的映射保持旧版输出命名。
 LANGUAGE_BY_SUFFIX: dict[str, str] = {  # 保证输出块使用抽取器可识别的围栏语言
     ".v": "verilog",  # RTL 和 testbench 围栏使用 Verilog 高亮
@@ -506,31 +523,31 @@ def _staged_prompt_text(dict_context: dict[str, Any]) -> str:
     """
 
     # str_spec_json 展示当前子功能范围内的计划。
-    str_spec_json = json.dumps(dict_context["plan"], indent=2, ensure_ascii=False)  # 子功能计划 JSON
+    str_spec_json = _prompt_json_block_text(dict_context["plan"])  # 子功能计划 JSON
 
     # str_manifest_json 是该阶段的输出清单合同。
-    str_manifest_json = json.dumps(dict_context["manifest"], indent=2, ensure_ascii=False)  # stage 文件清单示例 JSON
+    str_manifest_json = _prompt_json_block_text(dict_context["manifest"])  # stage 文件清单示例 JSON
 
     # str_context_json 展示上游 artifact 摘要。
-    str_context_json = json.dumps(dict_context["artifact_context"], indent=2, ensure_ascii=False)  # 产物上下文 JSON
+    str_context_json = _prompt_json_block_text(dict_context["artifact_context"])  # 产物上下文 JSON
 
     # str_evidence_json 展示当前 prompt 可用的证据摘要。
-    str_evidence_json = json.dumps(dict_context["evidence"], indent=2, ensure_ascii=False)  # 上游证据裁剪结果
+    str_evidence_json = _prompt_json_block_text(dict_context["evidence"])  # 上游证据裁剪结果
 
     # str_memory_json 展示历史失败经验约束。
-    str_memory_json = json.dumps(dict_context["memory"], indent=2, ensure_ascii=False)  # 历史失败约束 JSON
+    str_memory_json = _prompt_json_block_text(dict_context["memory"])  # 历史失败约束 JSON
 
     # str_vector_json 写入 Reference vector contract 章节，约束 RTL testbench 的 case_id 和 hash。
-    str_vector_json = json.dumps(dict_context["vector_contract"], indent=2, ensure_ascii=False)  # testbench case 对齐依据
+    str_vector_json = _prompt_json_block_text(dict_context["vector_contract"])  # testbench case 对齐依据
 
     # str_requirements_json 展示需求归一化上下文。
-    str_requirements_json = json.dumps(dict_context["requirements"], indent=2, ensure_ascii=False)  # 需求上下文 JSON
+    str_requirements_json = _prompt_json_block_text(dict_context["requirements"])  # 需求上下文 JSON
 
     # str_codegen_plan_json 写入 Code generation plan 章节，避免 RTL 阶段重新发明模块边界。
-    str_codegen_plan_json = json.dumps(dict_context["codegen_plan"], indent=2, ensure_ascii=False)  # 已确认模块边界依据
+    str_codegen_plan_json = _prompt_json_block_text(dict_context["codegen_plan"])  # 已确认模块边界依据
 
     # str_decision_json 展示人工决策约束。
-    str_decision_json = json.dumps(dict_context["decision"], indent=2, ensure_ascii=False)  # 人工决策 JSON
+    str_decision_json = _prompt_json_block_text(dict_context["decision"])  # 人工决策 JSON
 
     # str_interface_template_text 让模型看到本地总线端口合同或阻断原因。
     str_interface_template_text = _format_interface_template_section(dict_context.get("interface_template"))  # 总线模板说明
@@ -1058,6 +1075,14 @@ def _comment_rules_for(str_target: str, str_comment_language: str) -> list[str]:
             "same-line comment on ordinary code statements."
         ),
         (
+            "If you add a pure comment to introduce an `assign` subgroup, keep exactly one blank line "
+            "above it unless it directly follows a region banner or a stacked pure-comment group."
+        ),
+        (
+            "Inside `case(state_current)`, every `ST_*:begin` and `default:begin` branch must have a "
+            "pure leading comment immediately above it and aligned with the branch label."
+        ),
+        (
             "Do not use generic filler comments such as `逐行中文注释`, `泛泛注释`, `这里处理逻辑`, "
             "`reset`, `state task`, `bypass path`, or placeholder wording; every comment must name "
             "the target construct, signal, condition, or verification purpose."
@@ -1131,8 +1156,14 @@ def _rtl_style_rules(dict_spec: dict[str, Any], str_comment_language: str) -> li
         ),
         "Do not duplicate signal prefixes.",
         (
-            "When an FSM is present, prefer explicit `state_current` and `state_next` registers "
-            "and use `ST_*` localparams for every encoded state."
+            "When an FSM is present, use explicit `state_current` and `state_next` registers, "
+            "`ST_*` localparams for every encoded state, and pure leading comments above each "
+            "`ST_*:begin` and `default:begin` branch."
+        ),
+        (
+            "In generated next-state combinational logic, prefer `state_next <= ...;`, default "
+            "`state_next <= state_current;` before branch overrides, and close every `if / else if` "
+            "chain with an explicit final `else`."
         ),
         "Split sequential logic so that each `always` block assigns exactly one reg signal.",
         "Do not use `wire xxx = ...;`; declare the wire first and use a separate `assign` statement.",

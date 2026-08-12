@@ -1,43 +1,45 @@
 `timescale 1ns / 1ps
 
 ////////////////////////////////////English///////////////////////////////////////
-// Company:			Erie
-// Engineer:		Erie
-// 
-// Create Date: 	2026/05/17 15:11:57
-// Design Name: 	jesd_adc_system_top
-// Module Name: 	jesd_adc_system_top
-// Description: 	Description/jesd_adc_system_top_Design.pdf
-// Simulations:		TestBench/Vivado/2021.1/jesd_adc_system_top
-// 
-// References:		None
+// Company:         Erie
+// Engineer:        Erie
 //
-// Dependencies:	None
+// Create Date:     2026/05/17 15:11:57
+// Design Name:     jesd_adc_system_top
+// Module Name:     jesd_adc_system_top
+// Description:     Description/jesd_adc_system_top_Design.pdf
+// Simulations:     TestBench/Vivado/2021.1/jesd_adc_system_top
 //
-// Version:			V1.0
-// Revision Date:	2026/05/17 15:11:57
+// References:     None
+//
+// Dependencies:    None
+//
+// Version:         V1.0
+// Revision Date:   2026/05/17 15:11:57
 // History:
-//    Time			   Version	   Revised by			Contents
-// 2026/05/17			V1.0		 Erie		Create file.
+// Time             Version     Revised by        Contents
+// 2026/05/17       V1.0        Erie              Create file.
 ///////////////////////////////////Chinese////////////////////////////////////////
-// 版权归属:		Erie
-// 开发人员:		Erie
-// 
-// 创建日期: 		2026年05月17日
-// 设计名称: 		jesd_adc_system_top
-// 模块名称: 		jesd_adc_system_top
-// 模块说明:		Description/jesd_adc_system_top_Design.pdf
-// 仿真工程: 		TestBench/Vivado/2021.1/jesd_adc_system_top
-//	
-// 参考资料:		None
+// 版权归属:        Erie
+// 开发人员:        Erie
 //
-// 依赖文件:		None
+// 创建日期:        2026年05月17日
+// 设计名称:        jesd_adc_system_top
+// 模块名称:        jesd_adc_system_top
+// 模块说明:        Description/jesd_adc_system_top_Design.pdf
+// 仿真工程:        TestBench/Vivado/2021.1/jesd_adc_system_top
 //
-// 当前版本:		V1.0
-// 修订日期:		2026年05月17日
+// 参考资料:        None
+//
+// 依赖文件:        None
+//
+// 当前版本:        V1.0
+// 修订日期:        2026年05月17日
 // 修订历史:
-//	时间			    版本		修订人				修订内容	
-// 2026年05月17日		V1.0		 Erie		创建文件
+// 时间             版本        修订人            修订内容
+// 2026年05月17日   V1.0        Erie              创建文件
+
+// JESD ADC 采样数据接收与输出桥接系统顶层模块
 module jesd_adc_system_top
 (
 	//-----------------全局信号-----------------//

@@ -522,6 +522,9 @@ class HeaderMetadata:
     # 参考字段保存外部文档、IP 或规范链接说明。
     references: str = ""  # 文件头参考资料
 
+    # 多行参考资料表保留 table_mode 下的列头和数据行。
+    reference_lines: list[str] = field(default_factory=list)  # 文件头参考资料表格行
+
     # 版本字段保留用户维护的 RTL 版本号。
     version: str = ""  # 文件头版本文本
 
@@ -539,6 +542,9 @@ class HeaderMetadata:
 
     # 额外行保留当前解析器无法归入固定字段的头部内容。
     extra_lines: list[str] = field(default_factory=list)  # 文件头额外保留行
+
+    # 模块功能中文说明位于 header 之后、module 之前，需独立保真。
+    module_purpose_comment: str = ""  # 模块功能中文说明
 
 # 显式导出清单稳定 formatter backend 其它模块的导入边界。
 __all__ = [  # formatter_backend.models 对外类型名

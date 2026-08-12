@@ -1,43 +1,45 @@
 `timescale 1ns / 1ps
 
 ////////////////////////////////////English///////////////////////////////////////
-// Company:			Erie
-// Engineer:		Erie
+// Company:         Erie
+// Engineer:        Erie
 //
-// Create Date: 	2026/05/03 12:00:00
-// Design Name: 	pipeline_delay
-// Module Name: 	pipeline_delay
-// Description: 	Description/pipeline_delay_Design.pdf
-// Simulations:		TestBench/Vivado/2021.1/pipeline_delay
+// Create Date:     2026/05/03 12:00:00
+// Design Name:     pipeline_delay
+// Module Name:     pipeline_delay
+// Description:     Description/pipeline_delay_Design.pdf
+// Simulations:     TestBench/Vivado/2021.1/pipeline_delay
 //
-// References:		None
+// References:     None
 //
-// Dependencies:	None
+// Dependencies:    None
 //
-// Version:			V1.0
-// Revision Date:	2026/05/03 12:00:00
+// Version:         V1.0
+// Revision Date:   2026/05/03 12:00:00
 // History:
-//    Time			   Version	   Revised by			Contents
-// 2026/05/03		V1.0		Erie		Create file.
+// Time             Version     Revised by        Contents
+// 2026/05/03       V1.0        Erie              Create file.
 ///////////////////////////////////Chinese////////////////////////////////////////
-// 版权归属:		Erie
-// 开发人员:		Erie
+// 版权归属:        Erie
+// 开发人员:        Erie
 //
-// 创建日期: 		2026年05月03日
-// 设计名称: 		pipeline_delay
-// 模块名称: 		pipeline_delay
-// 模块说明:		Description/pipeline_delay_Design.pdf
-// 仿真工程: 		TestBench/Vivado/2021.1/pipeline_delay
+// 创建日期:        2026年05月03日
+// 设计名称:        pipeline_delay
+// 模块名称:        pipeline_delay
+// 模块说明:        Description/pipeline_delay_Design.pdf
+// 仿真工程:        TestBench/Vivado/2021.1/pipeline_delay
 //
-// 参考资料:		None
+// 参考资料:        None
 //
-// 依赖文件:		None
+// 依赖文件:        None
 //
-// 当前版本:		V1.0
-// 修订日期:		2026年05月03日
+// 当前版本:        V1.0
+// 修订日期:        2026年05月03日
 // 修订历史:
-//	时间			    版本		修订人				修订内容
-// 2026年05月03日		V1.0		 Erie		创建文件
+// 时间             版本        修订人            修订内容
+// 2026年05月03日   V1.0        Erie              创建文件
+
+// 输入数据单拍缓存与延迟输出桥接模块
 module pipeline_delay
 #(
 	parameter C_DATA_WIDTH = 8                  // 数据总线位宽

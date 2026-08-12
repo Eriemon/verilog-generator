@@ -143,11 +143,146 @@ class HeaderMixin:
             # 没有旧文件头时只返回清理后的正文。
             return None, str_clean_source
 
+        # 模块功能中文说明需要在 header 解析前从 preamble 尾部单独拆出。
+        tuple_purpose_preamble = self._extract_module_purpose_comment_from_preamble(  # 模块功能说明与纯 header preamble
+            str_preamble_text  # module 之前的完整注释区文本
+        )
+
+        # str_module_purpose_comment 是需在 include_header=True 路径单独保真的中文说明。
+        str_module_purpose_comment = tuple_purpose_preamble[0]  # header 后 module 前的中文功能说明
+
+        # str_header_preamble_text 去掉模块功能说明后，仅保留标准 header 候选区域。
+        str_header_preamble_text = tuple_purpose_preamble[1]  # 去掉模块功能说明后的 header 候选文本
+
         # 把旧头部文本解析成可重建的字段化元数据。
-        header_metadata_payload: HeaderMetadata | None = self._parse_header_metadata(str_preamble_text)  # 旧文件头字段解析结果
+        header_metadata_payload: HeaderMetadata | None = self._parse_header_metadata(str_header_preamble_text)  # 旧文件头字段解析结果
+
+        # 只有模块功能说明也应保留独立元数据容器，避免 include_header=True 时丢失说明。
+        if header_metadata_payload is None and str_module_purpose_comment:
+
+            # 缺少标准 header 时也创建最小元数据对象承载模块说明。
+            header_metadata_payload = HeaderMetadata(module_purpose_comment=str_module_purpose_comment)  # 承载孤立模块说明的最小元数据对象
+
+        # 成功解析 header 时，把模块功能说明一并挂到文件头元数据上。
+        elif header_metadata_payload is not None and str_module_purpose_comment:
+
+            # include_header=True 路径后续直接读取该字段输出中文说明。
+            header_metadata_payload.module_purpose_comment = str_module_purpose_comment  # 把模块说明补回解析成功的 header 元数据
 
         # 把元数据和正文一起交给后续 renderer 使用。
         return header_metadata_payload, str_clean_source
+
+    # 从 preamble 尾部拆出模块功能中文说明，避免被误解析成历史记录。
+    def _extract_module_purpose_comment_from_preamble(self, preamble: str) -> tuple[str, str]:
+        """
+        从 module 前导区尾部提取模块功能中文说明。
+
+        参数:
+            preamble: module 声明之前的完整前导文本。
+        返回:
+            tuple[str, str]: 模块功能说明正文，以及移除该说明后的 header 候选文本。
+        """
+
+        # list_preamble_lines 保留原始物理行序，便于只裁掉尾部一行说明。
+        list_preamble_lines = preamble.splitlines()  # module 前导区物理行列表
+
+        # 逆序定位最后一条非空白行，候选模块功能说明只可能落在这里。
+        int_last_nonempty = len(list_preamble_lines) - 1  # preamble 末尾非空行扫描游标
+
+        # 尾部空白行不携带功能说明语义，先全部跳过。
+        while int_last_nonempty >= 0 and not list_preamble_lines[int_last_nonempty].strip():
+
+            # 当前尾部空白行已跳过，继续向上寻找最后一条非空行。
+            int_last_nonempty -= 1  # 继续向上寻找最后一条非空白行
+
+        # preamble 全空时无需继续提取模块功能说明。
+        if int_last_nonempty < 0:
+
+            # 没有任何可见文本时返回空说明和原始空 preamble。
+            return "", preamble.rstrip()
+
+        # 最后一条非空白行只有在符合候选条件时才视为模块功能说明。
+        str_candidate_line = list_preamble_lines[int_last_nonempty].strip()  # 尾部候选说明行
+
+        # 不满足候选条件时，不应把历史记录或 header 字段误当成模块说明。
+        if not self._is_module_purpose_comment_candidate(str_candidate_line):
+
+            # 当前 preamble 尾部没有可拆出的模块功能说明。
+            return "", preamble.rstrip()
+
+        # 说明正文只保留 `//` 后的可见语义文本，后续由 renderer 统一补注释前缀。
+        str_comment_body = str_candidate_line[2:].strip()  # 模块功能说明正文
+
+        # header preamble 只移除尾部说明行，其余 header 注释和空白全部原样保留。
+        str_header_preamble = "\n".join(list_preamble_lines[:int_last_nonempty]).rstrip()  # 去掉模块说明后的 header 文本
+
+        # 返回模块功能说明正文和纯 header preamble。
+        return str_comment_body, str_header_preamble
+
+    # 判断尾部纯注释是否属于模块功能中文说明，而非 header 字段或历史表内容。
+    def _is_module_purpose_comment_candidate(self, stripped_line: str) -> bool:
+        """
+        判断一条尾部纯注释是否可视为模块功能中文说明。
+
+        参数:
+            stripped_line: 去掉左右空白后的完整源码行。
+        返回:
+            bool: True 表示该行应作为模块功能说明独立保留。
+        """
+
+        # 模块功能说明必须是普通 `//` 注释，横幅、空行和正文都不符合候选条件。
+        if not stripped_line.startswith("//") or is_banner_line(stripped_line):
+
+            # 非普通注释或装饰横幅都不应被当成模块功能说明。
+            return False
+
+        # str_comment_body 只保留注释正文，便于检查 header 字段和历史记录特征。
+        str_comment_body = stripped_line[2:].strip()  # 候选注释正文
+
+        # 空注释或纯分隔斜杠行都不携带模块功能语义。
+        if not str_comment_body or set(str_comment_body) == {"/"}:
+
+            # 当前注释正文没有功能说明价值。
+            return False
+
+        # 明确的字段名行一定属于标准 header，而非模块功能说明。
+        tuple_header_labels = (  # 标准 header 字段标签集合
+            "Company", "Engineer", "Create Date", "Design Name", "Module Name",  # 英文基础身份字段
+            "Description", "Simulations", "References", "Dependencies",  # 英文说明与交付字段
+            "Version", "Revision Date", "History", "Referrences",  # 英文版本与历史字段
+            "版权归属", "开发人员", "创建日期", "设计名称", "模块名称",  # 中文基础身份字段
+            "模块说明", "仿真工程", "参考资料", "依赖文件", "当前版本", "修订日期", "修订历史",  # 中文说明与历史字段
+        )  # header 字段和段标题全集
+
+        # 任何显式字段标签都属于 header 内部内容。
+        if any(str_comment_body.startswith(f"{str_label}:") for str_label in tuple_header_labels):
+
+            # 当前注释是 header 字段或段标题，不能视为模块功能说明。
+            return False
+
+        # 历史表头、参考资料表头和依赖表头也都不应被误判成模块功能说明。
+        if (
+            str_comment_body.lower().startswith(("time", "file format", "module name"))
+            or str_comment_body.startswith(("时间", "文件格式", "模块名称"))
+        ):
+
+            # 表头文本只属于 header 表格块，不属于模块功能说明。
+            return False
+
+        # 类似 2026/05/03 V1.0 Erie Create file. 的历史记录也必须排除。
+        if re.match(r"^\d{4}(?:/|年)\d{1,2}", str_comment_body):
+
+            # 修订历史记录位于 header 内部，不属于模块功能说明。
+            return False
+
+        # table_mode 参考资料行形如 1.Book xxx，同样不是模块功能说明。
+        if re.match(r"^\d+\.(?:Book|Journal|Paper)\b", str_comment_body, re.IGNORECASE):
+
+            # 参考资料数据行只属于 header 表格块。
+            return False
+
+        # 剩余的单行普通注释可视为模块功能中文说明候选。
+        return True
 
     # 收集 preamble 中真正可能承载 Vivado 头字段的注释行。
     def _collect_header_comment_lines(self, preamble: str) -> list[str]:
@@ -190,6 +325,8 @@ class HeaderMixin:
             "Module Name:",  # 英文模块名称字段标记
             "Description:",  # 英文模块说明字段标记
             "Simulations:",  # 英文仿真工程字段标记
+            "References:",  # 英文参考资料字段标记
+            "Dependencies:",  # 英文依赖文件字段标记
             "Version:",  # 英文版本字段标记
             "History:",  # 英文修订历史字段标记
             "Project Name:",  # 英文工程名称字段标记
@@ -208,6 +345,8 @@ class HeaderMixin:
             "模块名称:",  # 中文模块名称字段标记
             "模块说明:",  # 中文模块说明字段标记
             "仿真工程:",  # 中文仿真工程字段标记
+            "参考资料:",  # 中文参考资料字段标记
+            "依赖文件:",  # 中文依赖文件字段标记
             "当前版本:",  # 中文版本字段标记
             "修订历史:",  # 中文修订历史字段标记
         )
@@ -310,12 +449,6 @@ class HeaderMixin:
             # 仿真工程统一写入 HeaderMetadata.simulations。
             return "simulations"
 
-        # 参考资料字段需要兼容 Erie 旧模板里的拼写错误。
-        if normalized_key in {"referrences", "references", "参考资料"}:
-
-            # 参考资料统一写入 HeaderMetadata.references。
-            return "references"
-
         # 当前版本字段在双语头里都映射到 version。
         if normalized_key in {"version", "当前版本"}:
 
@@ -409,13 +542,25 @@ class HeaderMixin:
             str_next_section = "dependencies"  # 当前字段切换到依赖段上下文
 
             # 首行依赖值既可能是 None，也可能已经包含一个实际文件名。
-            if value and value != "None":
+            if value:
 
-                # 仅在依赖值不是占位 None 时，才把首行写入依赖列表。
+                # None 占位也要保留下来，供后续 none_mode/table_mode 归一化判断。
                 self._append_unique_header_line(metadata.dependency_lines, value)
 
             # 依赖字段会把后续自由文本继续留在依赖段中。
             return str_next_section
+
+        # References / 参考资料 段既支持单行 None，也支持 table_mode 多行块。
+        if normalized_key in {"referrences", "references", "参考资料"}:
+
+            # 显式值优先保留在兼容入口 references 中，后续 renderer 再归一成两种总模板。
+            if value and not metadata.references:
+
+                # 单行 None 或历史摘要文本都先落入兼容入口。
+                metadata.references = value  # 兼容入口里的单值参考资料文本
+
+            # References 字段后的自由文本继续视为参考资料段。
+            return "references"
 
         # History / 修订历史 开启历史段落，后续自由文本会按语言落桶。
         if normalized_key in {"history", "修订历史"}:
@@ -470,17 +615,17 @@ class HeaderMixin:
             None: 该辅助函数只更新 metadata，不返回业务值。
         """
 
-        # 依赖段落允许多行列出依赖文件，但要跳过被误收进来的标题行。
-        if current_section == "dependencies":
+        # 参考资料段允许 table_mode 的列头和数据行全部进入 reference_lines。
+        if current_section == "references":
 
-            # 这些标题样式属于旧头部残留，不应被当成真实依赖文件名。
-            bool_is_dependency_heading = body.lower().startswith(("module name", "版本", "time", "时间"))  # 依赖段中的误判标题
+            # References 多行块统一去重保留，供后续 renderer/quality gate 归一化。
+            self._append_unique_header_line(metadata.reference_lines, body)
 
-            # 只有真实依赖内容才会进入 dependency_lines 列表。
-            if not bool_is_dependency_heading:
+        # 依赖段落同样要保留 table_mode 的列头和数据行，而不是提前裁剪。
+        elif current_section == "dependencies":
 
-                # 依赖行需要去重写入，避免中英文头部重复收录同一条目。
-                self._append_unique_header_line(metadata.dependency_lines, body)
+            # Dependencies 段需要原样保留候选数据行，后续才能区分表头、None 占位和真实依赖项。
+            self._append_unique_header_line(metadata.dependency_lines, body)
 
         # 修订历史段会按当前语言上下文分别写入英中历史列表。
         elif current_section == "history":
@@ -557,8 +702,10 @@ class HeaderMixin:
         # 依赖与额外保留行代表头部里还有无法丢弃的附属信息。
         bool_has_supporting_lines = any(  # 旧头部是否携带依赖或额外保留文本
             (
+                metadata.reference_lines,  # 参考资料表格行存在
                 metadata.dependency_lines,  # 依赖文件列表存在
                 metadata.extra_lines,  # 额外保留行存在
+                metadata.module_purpose_comment,  # 模块功能中文说明存在
             )
         )
 
@@ -1375,11 +1522,362 @@ class HeaderMixin:
         # compat 段缺失时默认关闭示例兼容模式。
         return bool(self.config.get("compat", {}).get("example_compat", False))
 
-    # 生成英文双语文件头段落，保持 Erie 模板输出结构不变。
+    # 返回 header 布局配置；缺少显式 layout 时回退到内置空格版式默认值。
+    def _header_layout_config(self) -> dict[str, object]:
+        """
+        返回当前 formatter 使用的 header 布局配置。
+
+        参数:
+            无外部业务参数。
+        返回:
+            dict[str, object]: 英文/中文字段前缀、表头与分隔策略配置。
+        """
+
+        # 先读取 header 配置段，layout 子段缺失时再回退到内置默认值。
+        dict_header_config = self.config.get("header", {})  # 用于判定是否存在显式 layout 子段的原始 header 配置
+
+        # 只有 layout 子段是字典时，才把它视为合法的结构化布局配置。
+        if isinstance(dict_header_config, dict) and isinstance(dict_header_config.get("layout"), dict):
+
+            # 调用方显式提供 layout 时优先复用该结构化配置。
+            return dict_header_config["layout"]
+
+        # 缺省时统一使用新的空格版式双语 header 默认布局。
+        return {
+            "english": {
+                "separator": "////////////////////////////////////English///////////////////////////////////////",
+                "company_prefix": "// Company:         ",
+                "engineer_prefix": "// Engineer:        ",
+                "blank_after_identity": "//",
+                "create_date_prefix": "// Create Date:     ",
+                "design_name_prefix": "// Design Name:     ",
+                "module_name_prefix": "// Module Name:     ",
+                "description_prefix": "// Description:     ",
+                "simulations_prefix": "// Simulations:     ",
+                "blank_before_references": "//",
+                "references_prefix": "// References:     ",
+                "references_table_header": "File Format      File Name",
+                "dependencies_prefix": "// Dependencies:    ",
+                "dependencies_table_header": "Module Name      Version",
+                "section_blank": "//",
+                "version_prefix": "// Version:         ",
+                "revision_date_prefix": "// Revision Date:   ",
+                "history_title": "// History:",
+                "history_header": "// Time             Version     Revised by        Contents",
+            },
+            "chinese": {
+                "separator": "///////////////////////////////////Chinese////////////////////////////////////////",
+                "company_prefix": "// 版权归属:        ",
+                "engineer_prefix": "// 开发人员:        ",
+                "blank_after_identity": "//",
+                "create_date_prefix": "// 创建日期:        ",
+                "design_name_prefix": "// 设计名称:        ",
+                "module_name_prefix": "// 模块名称:        ",
+                "description_prefix": "// 模块说明:        ",
+                "simulations_prefix": "// 仿真工程:        ",
+                "blank_before_references": "//",
+                "references_prefix": "// 参考资料:        ",
+                "references_table_header": "文件格式         文件名称",
+                "dependencies_prefix": "// 依赖文件:        ",
+                "dependencies_table_header": "模块名称         版本",
+                "section_blank": "//",
+                "version_prefix": "// 当前版本:        ",
+                "revision_date_prefix": "// 修订日期:        ",
+                "history_title": "// 修订历史:",
+                "history_header": "// 时间             版本        修订人            修订内容",
+            },
+        }
+
+    # 用 header 配置里的模板文本渲染默认字段，并兼容 `$module$` 与 `{module_name}` 占位。
+    def _render_header_template_text(self, template: str, module_name: str) -> str:
+        """
+        渲染 header 默认模板文本。
+
+        参数:
+            template: header 配置中的模板字符串。
+            module_name: 当前 module 名称。
+        返回:
+            str: 用 module 名称替换后的 header 默认文本。
+        """
+
+        # 先把 `$module$` 与 `{module}` 兼容占位统一替换掉。
+        str_template = str(template).replace("$module$", module_name).replace("{module}", module_name)  # 兼容占位替换后的模板文本
+
+        # `{module_name}` 继续沿用 Python format 风格，未命中时原样回退。
+        try:
+
+            # 标准模板允许显式使用 `{module_name}` 占位。
+            return str_template.format(module_name=module_name, module=module_name)
+
+        # 模板若包含其他花括号，不应让 header 渲染流程直接失败。
+        except (IndexError, KeyError, ValueError):
+
+            # 保守回退到仅做兼容占位替换后的文本。
+            return str_template
+
+    # 统一规整 header 版式比较文本，便于识别中英文表头和旧版混合残留。
+    def _normalize_header_compare_text(self, text: str) -> str:
+        """
+        规整 header 比较文本，折叠空白并统一大小写。
+
+        参数:
+            text: 待规整的 header 文本。
+        返回:
+            str: 适合比较的规整文本。
+        """
+
+        # 先把 tab 折叠成空格，再做首尾裁剪和连续空白折叠。
+        return re.sub(r"\s+", " ", text.replace("\t", " ").strip()).lower()
+
+    # 规范化 header 多行块，保留原顺序并去掉纯空行和重复项。
+    def _normalize_header_block_lines(self, lines: list[str]) -> list[str]:
+        """
+        规范化 header 多行块内容。
+
+        参数:
+            lines: 原始多行块文本列表。
+        返回:
+            list[str]: 去空白、保序且去重后的行列表。
+        """
+
+        # list_normalized_lines 保存当前多行块的稳定工作副本。
+        list_normalized_lines: list[str] = []  # header 多行块规范化结果
+
+        # 逐条规整输入行，避免把空白或重复项继续带入渲染阶段。
+        for str_line in lines:
+
+            # 仅裁掉两端空白并去掉外层 `//`，内部空格保留给表格列宽使用。
+            str_candidate_line = str_line.strip()  # 当前候选多行文本
+
+            # 头部多行块中的纯空行没有结构意义，直接跳过。
+            if not str_candidate_line:
+
+                # 空行不进入最终多行块结果。
+                continue
+
+            # 兼容历史解析结果意外保留 `//` 前缀的情况。
+            if str_candidate_line.startswith("//"):
+
+                # 去掉注释前缀后只保留正文内容。
+                str_candidate_line = str_candidate_line[2:].strip()  # 去掉历史残留注释前缀后的正文
+
+            # 去掉前缀后的空正文也不保留。
+            if not str_candidate_line:
+
+                # 没有正文的候选项直接跳过。
+                continue
+
+            # 保持首次出现顺序，避免双语扫描或旧 Revision 残留重复灌入。
+            if str_candidate_line not in list_normalized_lines:
+
+                # 首次出现的正文进入最终规范化结果。
+                list_normalized_lines.append(str_candidate_line)
+
+        # 返回保序去重后的 header 多行块行列表。
+        return list_normalized_lines
+
+    # 从参考资料/依赖文件多行块里去掉 table header，占位行和无效空白。
+    def _strip_header_table_headings(self, lines: list[str], headings: list[str]) -> list[str]:
+        """
+        去掉 header 表格块中的表头和 None 占位。
+
+        参数:
+            lines: 已规范化的表格块正文行。
+            headings: 当前表格块允许出现的表头文本集合。
+        返回:
+            list[str]: 去掉表头后的真实数据行列表。
+        """
+
+        # set_heading_keys 把允许的表头文本规整成比较键，便于统一过滤。
+        set_heading_keys = {self._normalize_header_compare_text(str_heading) for str_heading in headings}  # 表头比较键集合
+
+        # 只保留不属于表头也不是 None 占位的真实数据行。
+        return [
+            str_line
+            for str_line in lines  # 当前表格块规范化正文行
+            if self._normalize_header_compare_text(str_line) not in set_heading_keys | {"none"}  # 跳过表头和占位
+        ]
+
+    # 把 references / dependencies 兼容数据统一归一到 none_mode 或 table_mode。
+    def _build_header_reference_dependency_blocks(self, metadata: HeaderMetadata) -> dict[str, object]:
+        """
+        根据 header 元数据构造统一的 References/Dependencies 渲染块。
+
+        参数:
+            metadata: 当前 header 元数据对象。
+        返回:
+            dict[str, object]: mode、reference_rows 和 dependency_rows 的结构化结果。
+        """
+
+        # layout 配置同时提供英中两套表头文本，便于过滤历史输入中的 heading 行。
+        dict_layout = self._header_layout_config()  # header 结构化布局配置
+
+        # 兼容入口 references 只在非空时参与 two-mode 归一化。
+        str_reference_scalar = (metadata.references or "").strip()  # 单值参考资料兼容入口
+
+        # 多行参考资料表先统一规范化，后续再去掉英中文表头。
+        list_reference_lines = self._normalize_header_block_lines(metadata.reference_lines)  # 参考资料多行块
+
+        # 依赖文件多行块同样先统一规范化。
+        list_dependency_lines = self._normalize_header_block_lines(metadata.dependency_lines)  # 依赖文件多行块
+
+        # 依赖块要先去掉 None 占位，后续才能准确判断是否真的存在依赖数据。
+        list_real_dependency_lines = [
+            str_line for str_line in list_dependency_lines  # 逐条扫描归一后的依赖块
+            if self._normalize_header_compare_text(str_line) != "none"  # 过滤掉 None 占位行
+        ]  # 去掉 None 占位后的依赖数据行
+
+        # 只要任一侧出现表格块或单值参考摘要，就统一切换到 table_mode。
+        bool_table_mode = bool(  # 是否进入 references/dependencies 的表格渲染模式
+            list_reference_lines  # 任一参考资料表格块都会触发表格模式
+            or list_real_dependency_lines  # 真实依赖数据行同样需要进入表格模式
+            or (str_reference_scalar and str_reference_scalar != "None")  # 旧单值 references 也视作表格线索
+        )
+
+        # 缺少任何表格线索时，直接回退到统一 none_mode。
+        if not bool_table_mode:
+
+            # none_mode 下两段都只渲染单行 None。
+            return {
+                "mode": "none",
+                "reference_rows": [],
+                "dependency_rows": [],
+            }
+
+        # 参考资料真实数据行要去掉英中表头和 None 占位。
+        list_reference_rows = self._strip_header_table_headings(  # 去掉参考资料表头后的真实数据行
+            list_reference_lines,  # 归一后的参考资料多行块
+            [
+                str(dict_layout["english"]["references_table_header"]),  # 英文 references 表头
+                str(dict_layout["chinese"]["references_table_header"]),  # 中文 references 表头
+            ],
+        )
+
+        # 旧版单值 references 摘要没有多行表格时，自动归一成一条 Book 样式数据行。
+        if not list_reference_rows and str_reference_scalar and str_reference_scalar != "None":
+
+            # 兼容旧数据时至少保留一条稳定的参考资料数据行。
+            list_reference_rows = [f"1.Book           {str_reference_scalar}"]  # 兼容旧单值 references 的默认表格行
+
+        # 依赖文件真实数据行同样要去掉英中表头和 None 占位。
+        list_dependency_rows = self._strip_header_table_headings(  # 去掉依赖文件表头后的真实数据行
+            list_dependency_lines,  # 归一后的依赖文件多行块
+            [
+                str(dict_layout["english"]["dependencies_table_header"]),  # 旧英文依赖表头
+                str(dict_layout["chinese"]["dependencies_table_header"]),  # 中文依赖列标题
+            ],
+        )
+
+        # 返回统一 table_mode 结构，允许某一侧只有表头而无真实数据行。
+        return {
+            "mode": "table",
+            "reference_rows": list_reference_rows,
+            "dependency_rows": list_dependency_rows,
+        }
+
+    # 把英中双语字段和统一的 none/table mode 结构渲染成一侧 header 段落。
+    def _build_header_section(
+        self,
+        section_values: dict[str, str],
+        history_lines: list[str],
+        reference_dependency_blocks: dict[str, object],
+        *,
+        language: str,
+    ) -> list[str]:
+        """
+        生成指定语言的 header 段落。
+
+        参数:
+            section_values: 当前语言下的头字段值字典。
+            history_lines: 当前语言的修订历史正文行。
+            reference_dependency_blocks: 统一的 none/table mode 参考资料与依赖块。
+            language: `en` 或 `cn`。
+        返回:
+            list[str]: 指定语言的完整 header 段落文本行列表。
+        """
+
+        # section_layout 读取当前语言的精确前缀和表头版式。
+        section_layout = self._header_layout_config()["english" if language == "en" else "chinese"]  # 当前语言布局配置
+
+        # list_history_block 统一给历史正文补注释前缀。
+        list_history_block = [f"// {str_line}" for str_line in history_lines]  # 当前语言修订历史正文行
+
+        # list_section 先写出固定字段，再按 mode 追加 References/Dependencies。
+        list_section = [  # 当前语言 header 固定字段区
+            str(section_layout["separator"]),  # 头部横向分隔线
+            f"{section_layout['company_prefix']}{section_values['copyright_owner']}",  # 版权归属字段
+            f"{section_layout['engineer_prefix']}{section_values['developer']}",  # 开发人员字段
+            str(section_layout["blank_after_identity"]),  # 身份字段后的空白行
+            f"{section_layout['create_date_prefix']}{section_values['create_date']}",  # 创建日期字段
+            f"{section_layout['design_name_prefix']}{section_values['design_name']}",  # 设计名称字段
+            f"{section_layout['module_name_prefix']}{section_values['module_name']}",  # 模块名称字段
+            f"{section_layout['description_prefix']}{section_values['description']}",  # 模块说明字段
+            f"{section_layout['simulations_prefix']}{section_values['simulations']}",  # 仿真工程字段
+            str(section_layout["blank_before_references"]),  # References 前的空白行
+        ]
+
+        # none_mode 下两段都只允许单行 None。
+        if reference_dependency_blocks["mode"] == "none":
+
+            # References 和 Dependencies 同时使用新的空格前缀与单行 None 占位。
+            list_section.extend(
+                [
+                    f"{section_layout['references_prefix']}None",
+                    str(section_layout["section_blank"]),
+                    f"{section_layout['dependencies_prefix']}None",
+                ]
+            )
+
+        # table_mode 下两段都必须使用表格块，允许另一侧只有表头零数据行。
+        else:
+
+            # References table block 先输出段标题，后续再集中追加列头和数据行。
+            list_section.append(str(section_layout["references_prefix"]).rstrip())
+
+            # References 表格块要把列头、真实数据行和段间空白一次组装完成。
+            list_reference_block = [  # 完整 References 表格块
+                f"// {section_layout['references_table_header']}",  # References 段列头行
+                *[f"// {str_line}" for str_line in reference_dependency_blocks["reference_rows"]],  # References 真实数据行
+                str(section_layout["section_blank"]),  # References 与 Dependencies 之间的空白行
+            ]
+
+            # 组装完成后再把整个 References 表格块并回当前语言段。
+            list_section.extend(list_reference_block)
+
+            # Dependencies table block 单独输出标题，再拼装依赖表格正文。
+            list_section.append(str(section_layout["dependencies_prefix"]).rstrip())
+
+            # Dependencies 段要把依赖表头和真实依赖文件名重新拼回输出注释块。
+            list_dependency_block = [  # 仅含依赖列头与依赖条目的输出块
+                f"// {section_layout['dependencies_table_header']}",  # 依赖文件表格的列名行
+                *[f"// {str_line}" for str_line in reference_dependency_blocks["dependency_rows"]],  # 原始依赖文件条目列表
+            ]
+
+            # 完整依赖块组装完毕后，再接到当前语言段尾部。
+            list_section.extend(list_dependency_block)
+
+        # References/Dependencies 之后固定空出一条注释空行，再进入版本与历史段。
+        list_section.extend(
+            [
+                str(section_layout["section_blank"]),
+                f"{section_layout['version_prefix']}{section_values['version']}",
+                f"{section_layout['revision_date_prefix']}{section_values['revision_date']}",
+                str(section_layout["history_title"]),
+                str(section_layout["history_header"]),
+            ]
+        )
+
+        # 版本与历史表头之后再追加真实修订历史正文。
+        list_section.extend(list_history_block)
+
+        # 返回当前语言完整的 header 段落。
+        return list_section
+
+    # 生成英文双语文件头段落，统一复用结构化 layout 和 none/table mode 渲染。
     def _build_english_header_section(
         self,
         section_values: dict[str, str],
-        dependency_lines: list[str],
+        reference_dependency_blocks: dict[str, object],
         history_lines_en: list[str],
     ) -> list[str]:
         """
@@ -1387,75 +1885,25 @@ class HeaderMixin:
 
         参数:
             section_values: 英文头部所需字段值字典。
-            dependency_lines: 依赖文件行列表。
+            reference_dependency_blocks: 统一的 References/Dependencies 结构。
             history_lines_en: 英文修订历史行列表。
         返回:
             list[str]: 英文文件头段落文本行列表。
         """
 
-        # 依赖段需要区分占位 None 与真实依赖列表两种渲染形态。
-        if dependency_lines == ["None"]:
+        # 英文段直接复用通用 header section builder。
+        return self._build_header_section(
+            section_values,
+            history_lines_en,
+            reference_dependency_blocks,
+            language="en",
+        )
 
-            # 没有真实依赖文件时输出单行 None 占位。
-            list_dependency_block = ["// Dependencies:\tNone"]  # 英文依赖段占位行
-
-        # 真实依赖列表需要先输出标题，再逐条输出依赖文件行。
-        else:
-
-            # 多行依赖块保留标题和每条依赖的独立行。
-            list_dependency_block = [  # 英文依赖段完整文本块
-                "// Dependencies:",  # 英文依赖段标题
-                *[f"// {str_line}" for str_line in dependency_lines],  # 英文依赖文件明细行
-            ]
-
-        # 英文修订历史区把每条历史行统一补上 // 前缀。
-        list_history_block = [f"// {str_line}" for str_line in history_lines_en]  # 英文修订历史正文行
-
-        # 英文头部前半段承载身份、日期和参考资料等基础字段。
-        list_english_prefix = [  # 英文头部基础字段块
-            "////////////////////////////////////English///////////////////////////////////////",  # 英文头部分隔横幅
-            f"// Company:\t\t\t{section_values['copyright_owner']}",  # 英文公司字段
-            f"// Engineer:\t\t{section_values['developer']}",  # 英文开发人员字段
-            "// ",  # 英文头部空白分隔行
-            f"// Create Date: \t{section_values['create_date']}",  # 英文创建日期字段
-            f"// Design Name: \t{section_values['design_name']}",  # 英文设计名称字段
-            f"// Module Name: \t{section_values['module_name']}",  # 英文模块名称字段
-            f"// Description: \t{section_values['description']}",  # 英文模块说明字段
-        ]
-
-        # 英文头部后半段承载仿真工程、版本和修订历史表头。
-        list_english_suffix = [  # 英文头部版本与历史字段块
-            f"// Simulations:\t\t{section_values['simulations']}",  # 英文仿真工程字段
-            "// ",  # 英文仿真工程与参考资料之间的空白分隔行
-            f"// References:\t\t{section_values['references']}",  # 英文参考资料字段
-            "//",  # 英文参考资料与依赖段之间的分隔行
-            "//",  # 英文依赖段与版本历史之间的分隔行
-            f"// Version:\t\t\t{section_values['version']}",  # 英文当前版本字段
-            f"// Revision Date:\t{section_values['revision_date']}",  # 英文修订日期字段
-            "// History:",  # 英文修订历史标题
-            "//    Time\t\t\t   Version\t   Revised by\t\t\tContents",  # 英文修订历史表头
-        ]
-
-        # 先复制英文基础字段块，后续再按模板顺序追加依赖、历史表头和正文。
-        list_english_section = [*list_english_prefix]  # 英文文件头工作列表
-
-        # 先插入依赖段，保持依赖说明位于版本信息之前。
-        list_english_section.extend(list_dependency_block)
-
-        # 再补上版本字段和英文历史表头。
-        list_english_section.extend(list_english_suffix)
-
-        # 最后追加真正的英文修订历史正文。
-        list_english_section.extend(list_history_block)
-
-        # 返回完整的英文文件头段落。
-        return list_english_section
-
-    # 生成中文双语文件头段落，保持 Erie 模板输出结构不变。
+    # 生成中文双语文件头段落，保留中文标签、历史内容和结构化布局约束。
     def _build_chinese_header_section(
         self,
         section_values: dict[str, str],
-        dependency_lines: list[str],
+        reference_dependency_blocks: dict[str, object],
         history_lines_cn: list[str],
     ) -> list[str]:
         """
@@ -1463,69 +1911,19 @@ class HeaderMixin:
 
         参数:
             section_values: 中文头部所需字段值字典。
-            dependency_lines: 依赖文件行列表。
+            reference_dependency_blocks: 统一的 References/Dependencies 结构。
             history_lines_cn: 中文修订历史行列表。
         返回:
             list[str]: 中文文件头段落文本行列表。
         """
 
-        # 中文依赖段同样要区分占位 None 和真实依赖列表。
-        if dependency_lines == ["None"]:
-
-            # 没有真实依赖文件时，中文头部输出单行 None 占位。
-            list_dependency_block = ["// 依赖文件:\t\tNone"]  # 中文依赖段占位行
-
-        # 真实依赖存在时，中文依赖段按标题加列表明细输出。
-        else:
-
-            # 多行中文依赖段保留标题和逐条依赖说明。
-            list_dependency_block = [  # 中文依赖段完整文本块
-                "// 依赖文件:",  # 中文依赖段标题
-                *[f"// {str_line}" for str_line in dependency_lines],  # 中文依赖文件明细行
-            ]
-
-        # 中文修订历史区把每条历史记录统一补上注释前缀。
-        list_history_block = [f"// {str_line}" for str_line in history_lines_cn]  # 中文修订历史正文行
-
-        # 中文头部前半段承载归属、作者、日期和模块描述等基础字段。
-        list_chinese_prefix = [  # 中文头部基础字段块
-            "///////////////////////////////////Chinese////////////////////////////////////////",  # 中文头部分隔横幅
-            f"// 版权归属:\t\t{section_values['copyright_owner']}",  # 中文版权归属字段
-            f"// 开发人员:\t\t{section_values['developer']}",  # 中文开发人员字段
-            "// ",  # 中文头部空白分隔行
-            f"// 创建日期: \t\t{section_values['create_date']}",  # 中文创建日期字段
-            f"// 设计名称: \t\t{section_values['design_name']}",  # 中文设计名称字段
-            f"// 模块名称: \t\t{section_values['module_name']}",  # 中文模块名称字段
-            f"// 模块说明:\t\t{section_values['description']}",  # 中文模块说明字段
-        ]
-
-        # 中文头部后半段承载仿真环境、版本信息和历史表头。
-        list_chinese_suffix = [  # 中文头部版本与历史字段块
-            f"// 仿真工程: \t\t{section_values['simulations']}",  # 中文仿真工程字段
-            "//\t",  # 中文仿真工程与参考资料之间的空白分隔行
-            f"// 参考资料:\t\t{section_values['references']}",  # 中文参考资料字段
-            "//",  # 中文参考资料与依赖段之间的分隔行
-            "//",  # 中文依赖段与版本历史之间的分隔行
-            f"// 当前版本:\t\t{section_values['version']}",  # 中文当前版本字段
-            f"// 修订日期:\t\t{section_values['revision_date']}",  # 中文修订日期字段
-            "// 修订历史:",  # 中文修订历史标题
-            "//\t时间\t\t\t    版本\t\t修订人\t\t\t\t修订内容\t",  # 中文修订历史表头
-        ]
-
-        # 先复制中文基础字段块，后续再按模板顺序补齐依赖和历史内容。
-        list_chinese_section = [*list_chinese_prefix]  # 中文文件头工作列表
-
-        # 先插入中文依赖段，保持中文模板的段落顺序。
-        list_chinese_section.extend(list_dependency_block)
-
-        # 再补上中文版本字段和修订历史表头。
-        list_chinese_section.extend(list_chinese_suffix)
-
-        # 最后追加真正的中文修订历史正文。
-        list_chinese_section.extend(list_history_block)
-
-        # 返回完整的中文文件头段落。
-        return list_chinese_section
+        # 中文段同样复用通用 header section builder。
+        return self._build_header_section(
+            section_values,
+            history_lines_cn,
+            reference_dependency_blocks,
+            language="cn",
+        )
 
     # 根据元数据和默认配置重建 Erie 双语文件头文本。
     def _render_header(self, module_name: str, version: str, metadata: HeaderMetadata | None = None) -> list[str]:
@@ -1601,17 +1999,32 @@ class HeaderMixin:
         # 模块名称缺失时，同样回退到当前 module 名称。
         str_rendered_module_name = header_metadata_current.module_name or module_name  # 文件头模块名称
 
-        # 模块说明缺失时，按 Erie 模板生成默认的说明文档路径。
-        str_description = header_metadata_current.description or f"Description/{module_name}_Design.pdf"  # 文件头模块说明
+        # 模块说明默认模板支持通过配置参数化 module 名称占位。
+        str_description_template = str(  # 模块说明缺失时回退使用的模板文本
+            dict_header_config.get("description_template") or "Description/{module_name}_Design.pdf"  # 缺省模块说明模板正文
+        )
 
-        # 仿真工程缺失时，按 Erie 模板生成默认的 testbench 路径。
-        str_simulations = header_metadata_current.simulations or f"TestBench/Vivado/2021.1/{module_name}"  # 文件头仿真工程
+        # 模块说明缺失时，按配置模板生成默认的说明文档路径。
+        str_description = header_metadata_current.description or self._render_header_template_text(  # 最终写回文件头的模块说明
+            str_description_template,  # 参与占位符替换的说明模板
+            str_rendered_module_name,  # 用于替换 {module_name} 占位
+        )
 
-        # 参考资料缺失时，沿用 Erie 双语头部里的 None 占位。
-        str_references = header_metadata_current.references or "None"  # 文件头参考资料
+        # 仿真工程默认模板同样通过配置承载可变项目名。
+        str_simulations_template = str(  # 仿真工程缺失时回退使用的模板文本
+            dict_header_config.get("simulations_template") or "TestBench/Vivado/2021.1/{module_name}"  # 缺省仿真工程模板正文
+        )
 
-        # 依赖、版本和历史三类字段需要成组准备，便于后续整体渲染头部结构。
-        list_dependency_lines = header_metadata_current.dependency_lines or ["None"]  # 文件头依赖文件列表
+        # 仿真工程缺失时，按配置模板生成默认的 testbench 路径。
+        str_simulations = header_metadata_current.simulations or self._render_header_template_text(  # 最终写回文件头的仿真工程路径
+            str_simulations_template,  # 参与占位符替换的仿真模板
+            str_rendered_module_name,  # 用于替换仿真工程模板里的 {module_name}
+        )
+
+        # 参考资料与依赖文件统一先归一成 none_mode 或 table_mode 两种结构。
+        dict_reference_dependency_blocks = self._build_header_reference_dependency_blocks(  # References/Dependencies 统一结构
+            header_metadata_current  # 当前 header 元数据中的旧版兼容入口和多行块
+        )
 
         # 版本号优先沿用旧头部提取结果，否则回退到当前 formatter 版本输入。
         str_rendered_version = header_metadata_current.version or version  # 文件头当前版本文本
@@ -1634,7 +2047,6 @@ class HeaderMixin:
             "module_name": str_rendered_module_name,  # 英文模块名称字段值
             "description": str_description,  # 英文模块说明字段值
             "simulations": str_simulations,  # 英文仿真工程字段值
-            "references": str_references,  # 英文参考资料字段值
             "version": str_rendered_version,  # 英文版本字段值
             "revision_date": str_revision_date_en,  # 英文修订日期字段值
         }
@@ -1648,22 +2060,21 @@ class HeaderMixin:
             "module_name": str_rendered_module_name,  # 中文模块名称字段值
             "description": str_description,  # 中文模块说明字段值
             "simulations": str_simulations,  # 中文仿真工程字段值
-            "references": str_references,  # 中文参考资料字段值
             "version": str_rendered_version,  # 中文版本字段值
             "revision_date": str_revision_date_cn,  # 中文修订日期字段值
         }
 
-        # 先生成英文文件头段落，后续再按顺序拼到中文头部之前。
+        # 先生成英文文件头段落，保持双语输出时英文块位于前半段。
         list_english_section = self._build_english_header_section(  # 英文头部段落
             dict_english_section_values,  # 供英文模板取值的字段包
-            list_dependency_lines,  # 英中共享的依赖文件明细
+            dict_reference_dependency_blocks,  # 英文段复用已归一的 references/dependencies 数据
             list_history_lines_en,  # 需要写回英文历史表的正文行
         )
 
-        # 再生成中文文件头段落，保持 Erie 既有双语顺序。
+        # 再生成中文文件头段落，补齐中文标签和中文修订历史内容。
         list_chinese_section = self._build_chinese_header_section(  # 中文头部段落
             dict_chinese_section_values,  # 中文标签到字段文本的映射包
-            list_dependency_lines,  # 中文头部也要复用同一份依赖明细
+            dict_reference_dependency_blocks,  # 中文段沿用同一份 references/dependencies 内容
             list_history_lines_cn,  # 最终贴到中文修订表的历史内容
         )
 
@@ -1683,6 +2094,75 @@ class HeaderMixin:
 
         # 只要出现任意一个中文字符，就把该历史行视为中文记录。
         return any("\u4e00" <= str_char <= "\u9fff" for str_char in text)
+
+    # 按英中模板列宽生成统一的修订历史记录行。
+    def _format_history_table_row(
+        self, date_text: str, version: str,
+        reviser: str, contents: str,
+        *,
+        language: str,
+    ) -> str:
+        """
+        按当前语言模板列宽格式化一条修订历史记录。
+
+        参数:
+            date_text: 历史记录日期文本。
+            version: 历史记录版本号。
+            reviser: 历史记录修订人。
+            contents: 历史记录修订内容。
+            language: `en` 或 `cn`。
+        返回:
+            str: 按空格列宽格式化后的历史记录行。
+        """
+
+        # 英文日期列更宽，中文日期列相对紧凑，其余列宽保持一致。
+        int_date_width = 17 if language == "en" else 14  # 英中日期列宽
+
+        # 统一以空格列宽拼出日期、版本、修订人和内容四列。
+        return f"{date_text:<{int_date_width}}{version:<12}{reviser:<18}{contents}"
+
+    # 尝试把一条历史自由文本解析成结构化的日期/版本/修订人/内容四元组。
+    def _parse_structured_history_row(
+        self,
+        text: str,
+        *,
+        language: str,
+    ) -> tuple[str, str, str, str] | None:
+        """
+        解析显式历史记录行。
+
+        参数:
+            text: 去空白后的历史记录文本。
+            language: 当前目标历史表语言。
+        返回:
+            tuple[str, str, str, str] | None: 成功时返回日期、版本、修订人和内容。
+        """
+
+        # 不同语言历史表的日期形态不同，先按目标语言选择记录正则。
+        str_pattern = (  # 当前语言对应的结构化历史记录匹配正则
+            r"^(?P<date>\d{4}/\d{1,2}/\d{1,2})(?:\s+\d{2}:\d{2}:\d{2})?\s+"
+            r"(?P<version>V?\d+(?:\.\d+)*)\s+(?P<reviser>\S+)\s+(?P<contents>.+)$"
+            if language == "en"  # 英文历史表采用斜杠日期格式
+            else r"^(?P<date>\d{4}年\d{1,2}月\d{1,2}日)\s+"
+            r"(?P<version>V?\d+(?:\.\d+)*)\s+(?P<reviser>\S+)\s+(?P<contents>.+)$"
+        )  # 当前语言历史记录结构正则
+
+        # obj_match 是当前历史文本的结构化匹配结果。
+        obj_match = re.match(str_pattern, text)  # 历史记录结构匹配结果
+
+        # 不满足标准结构时返回 None，让上层继续走自由文本回退逻辑。
+        if obj_match is None:
+
+            # 当前历史文本无法稳定拆成四列结构。
+            return None
+
+        # 返回规范化后的日期、版本、修订人和内容四元组。
+        return (
+            obj_match.group("date"),
+            self._normalize_header_version_text(obj_match.group("version")),
+            obj_match.group("reviser"),
+            obj_match.group("contents").strip(),
+        )
 
     # 在历史记录缺失时生成 Erie 模板默认的首条修订记录。
     def _default_header_history_line(
@@ -1708,14 +2188,14 @@ class HeaderMixin:
         # 默认历史记录在英文里写 Create file.，中文里写 创建文件。
         str_contents = "Create file." if language == "en" else "创建文件"  # 默认修订内容文本
 
-        # 英文历史表的日期列更宽，需要保留与旧模板一致的制表布局。
-        if language == "en":
-
-            # 英文历史表按旧模板列宽拼出首条默认修订记录。
-            return f"{date_text}\t\t\t{version}\t\t {reviser}\t\t{str_contents}"
-
-        # 中文历史表沿用中文模板下更紧凑的日期列宽。
-        return f"{date_text}\t\t{version}\t\t {reviser}\t\t{str_contents}"
+        # 默认历史记录统一走新的空格列宽格式。
+        return self._format_history_table_row(
+            date_text,
+            version,
+            reviser,
+            str_contents,
+            language=language,
+        )
 
     # 把通用或 Revision 风格的历史行转换成英中文历史表可用文本。
     def _render_history_fallback_line(
@@ -1770,11 +2250,23 @@ class HeaderMixin:
             # 目标历史表是英文时，使用英文日期与英文修订内容。
             if language == "en":
 
-                # 英文历史表日期只保留 yyyy/mm/dd，保持旧模板列宽。
-                return f"{fallback_date_en[:10]}\t\t\t{str_history_version}\t\t {reviser}\t\t{str_contents_en}"
+                # Revision 风格统一按新的空格列宽格式输出。
+                return self._format_history_table_row(
+                    fallback_date_en[:10],
+                    str_history_version,
+                    reviser,
+                    str_contents_en,
+                    language="en",
+                )
 
-            # 中文历史表使用中文日期文本与中文修订内容。
-            return f"{fallback_date_cn}\t\t{str_history_version}\t\t {reviser}\t\t{str_contents_cn}"
+            # 中文历史表使用中文日期文本与中文修订内容，并统一成空格列宽。
+            return self._format_history_table_row(
+                fallback_date_cn,
+                str_history_version,
+                reviser,
+                str_contents_cn,
+                language="cn",
+            )
 
         # 非 Revision 风格文本需要先判断它是否适合当前语言历史表。
         bool_contains_cjk = self._history_line_contains_cjk(str_stripped_line)  # 当前历史文本是否包含中文字符
@@ -1791,7 +2283,25 @@ class HeaderMixin:
             # 英文历史记录不应被混进中文历史表。
             return None
 
-        # 通过语言过滤的自由文本按原样保留。
+        # 已具备结构化日期/版本/修订人/内容的记录需统一归一成新的空格列宽。
+        tuple_structured_history_row = self._parse_structured_history_row(  # 自由文本里可识别的结构化历史记录
+            str_stripped_line,  # 当前待解析的历史正文
+            language=language,  # 当前目标历史表语言
+        )
+
+        # 命中结构化历史记录时，统一按新模板列宽输出。
+        if tuple_structured_history_row is not None:
+
+            # 解包四元组后走统一的空格列宽格式化。
+            return self._format_history_table_row(
+                tuple_structured_history_row[0],
+                tuple_structured_history_row[1] or default_version,
+                tuple_structured_history_row[2] or reviser,
+                tuple_structured_history_row[3],
+                language=language,
+            )
+
+        # 通过语言过滤但无法结构化拆列的自由文本按原样保留。
         return str_stripped_line
 
     # 把通用历史列表转换成某种语言可直接写入头部的历史记录列表。
