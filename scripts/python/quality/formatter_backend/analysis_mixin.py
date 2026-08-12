@@ -1860,8 +1860,15 @@ class AnalysisMixin:
                 # 跳过没有目标赋值的 case item。
                 continue
 
-            # 保留标签和 block label，避免改变原 case 分支标识。
-            list_case_items.append(CaseItem(item.label, list_item_children, item.block_label))
+            # 保留标签、block label 和前导注释，避免拆分过程破坏分支语义说明。
+            list_case_items.append(
+                CaseItem(
+                    label=item.label,
+                    children=list_item_children,
+                    block_label=item.block_label,
+                    leading_comments=list(item.leading_comments),
+                )
+            )
 
         # 所有分支都被过滤掉时删除整个 case。
         if not list_case_items:

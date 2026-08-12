@@ -13,6 +13,8 @@ The comment gate checks placement and basic usefulness at the code-entity level.
 - Instance `.formal(actual)` parameter and port mappings require same-line right-side comments.
 - Same-line `//` markers align to the current region banner right-side `//` display column. If the code is too long, the marker may move right, but it must not be left of that anchor.
 - Leading comments for `always`, `function`, `task`, `generate`, `initial`, `case(state_current)` branches (`ST_*:begin` and `default:begin`), definition groups, and instances sit immediately above the target, align with the target start column, and have exactly one blank line above unless they directly follow a region banner.
+- The formatter binds pure comments immediately before a `case` item to that item and emits them before the label at the item indentation. A same-line label comment is normalized to the same leading position, while a comment between a label-only item and its first body statement remains the first child of that body. Comments that cannot be bound before `endcase` fail closed instead of being discarded.
+- Formatting a `case` statement must converge in one pass: a second formatter pass produces byte-identical output, including the leading comments for `ST_*` and `default` items.
 - If a pure comment introduces an `assign` subgroup, it is optional, but once written it must follow the same one-blank-line rule above the comment unless it directly follows a region banner or a stacked pure-comment group.
 - Parameter and signal definition sections require a pure group comment above each group. A region banner is only an anchor and does not satisfy the group-comment requirement. Module instances require a pure function comment above the instance.
 - When a `parameter_check` region exists, place it as the final internal region before `endmodule`, and keep each parameter-check branch comment adjacent to the concrete constraint it explains.
@@ -21,6 +23,7 @@ The comment gate checks placement and basic usefulness at the code-entity level.
 ## Gate Ownership
 
 - `VG063` keeps ownership of leading-comment adjacency, alignment, and blank-line layout for procedural blocks, instances, and `case(state_current)` branches via `comments.case_branch_leading_comment`.
+- The formatter AST stores comments bound before a branch label on the corresponding `CaseItem.leading_comments`; renderers must preserve that field before the item label so formatter output cannot create a later `VG063` violation.
 - `VG067` owns pure `assign` subgroup spacing via `comments.assign_group_spacing`. The gate does not require every `assign` subgroup to exist; it only constrains the layout when such a pure comment is present.
 - `VG054` keeps ownership of next-state structure via `fsm.next_state_default`, `fsm.next_state_hold`, and `fsm.next_state_branch_closure`. Generated next-state logic should prefer `state_next <= ...;`, while the gate remains compatible with legacy `state_next = ...;` during migration.
 

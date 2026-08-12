@@ -1529,6 +1529,7 @@ class RenameMixin:
                     label=self._rename_text(item.label, rename_map),  # case 标签表达式
                     children=self._rename_control_nodes(item.children, rename_map),  # case 分支语句树
                     block_label=self._rename_text(item.block_label, rename_map),  # 分支命名块标签
+                    leading_comments=list(item.leading_comments),  # 保留分支标签前的语义注释
                 )
 
                 # 当前 case 分支写入控制节点副本。

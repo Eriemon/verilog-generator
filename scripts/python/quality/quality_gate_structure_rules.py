@@ -4340,8 +4340,8 @@ def _fsm_case_branch_leading_comment_issues_for_block(
             # 当前行不是直属状态分支标签。
             continue
 
-        # int_branch_line_no 把 block 内偏移换算成源码绝对行号。
-        int_branch_line_no = int_block_line_start + int_offset  # 状态分支标签绝对行号
+        # always.lines 从头部下一行开始，换算源码行号时需要补一行偏移。
+        int_branch_line_no = int_block_line_start + int_offset + 1  # 状态分支标签绝对行号
 
         # 直接借用通用布局检查，评估当前状态标签前导注释。
         list_branch_issues = _leading_comment_layout_issues_for_line_no(  # 当前状态分支标签的 VG063 扩展诊断

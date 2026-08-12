@@ -1488,6 +1488,15 @@ class StatementRenderMixin:
             # str_suffix 决定 case 标签后是否打开带命名 label 的 begin 块。
             str_suffix = f"begin:{item.block_label}" if item.block_label else "begin"  # case 分支作用域声明
 
+            # VG063 要求分支前导注释上方保留唯一空行。
+            if item.leading_comments and list_lines[-1] != "":
+
+                # 空字符串渲染为不带缩进的规范空行，第二次 formatter 不会继续累加。
+                list_lines.append("")
+
+            # case item 前导注释与标签使用同一级缩进并保持源码顺序。
+            list_lines.extend(self._render_leading_comments(item.leading_comments, indent_level + 1))
+
             # case item 标签缩进比 case 头部深一级。
             list_lines.append(f"{self._indent(indent_level + 1)}{item.label}:{str_suffix}")
 

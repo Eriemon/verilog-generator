@@ -307,6 +307,9 @@ class CaseItem:
     # 块标签记录 begin/end 命名块或 formatter 推导的小节名。
     block_label: str = ""  # case 分支块标签
 
+    # 前导注释属于当前 case 分支，不能在控制树重建时丢失。
+    leading_comments: list[str] = field(default_factory=list)  # case 分支标签前的语义注释
+
 # 控制节点模型表示 always、initial、generate 内部的控制流树。
 @dataclass
 class ControlNode:

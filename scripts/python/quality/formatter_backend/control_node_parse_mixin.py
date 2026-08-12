@@ -997,6 +997,141 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
             )
         ], int_next_index
 
+    # 合并 case 标签前纯注释与标签同行注释，统一交给 item 模型持有。
+    def _case_item_leading_comments(self, pending_comments: list[str], inline_comment: str) -> list[str]:
+        """
+        构造单个 case item 的前导注释列表。
+
+        参数:
+            pending_comments: 标签前连续出现且尚未绑定的纯行注释。
+            inline_comment: 从 case 标签行拆出的同行注释正文。
+        返回:
+            list[str]: 按源码顺序排列并带行注释标记的注释列表。
+        """
+
+        # 创建独立列表，避免清空 pending 队列时修改已经绑定到 AST 的内容。
+        list_leading_comments = list(pending_comments)  # 当前 case item 独占的注释副本
+
+        # 标签同行注释被规范化到标签正上方，保留其分支级语义归属。
+        if inline_comment:
+
+            # split_comment 只返回正文，因此在写入模型前恢复 Verilog 行注释标记。
+            list_leading_comments.append(f"//{inline_comment}")
+
+        # 调用方把完整列表写入 CaseItem.leading_comments。
+        return list_leading_comments
+
+    # 解析标签与主体分行书写的 case item，并隔离下一分支的前导注释。
+    def _parse_label_only_case_item(
+        self, lines: list[str], item_index: int,
+        statement: str, label: str,
+        leading_comments: list[str], context: str,
+    ) -> tuple[CaseItem, int, list[str]]:
+        """
+        解析 label-only case item 的主体与后续注释边界。
+
+        参数:
+            lines: 当前控制流源码行列表。
+            item_index: label-only item 标签行下标。
+            statement: 已规范化的标签行正文，用于错误诊断。
+            label: 冒号左侧的 case 选择标签。
+            leading_comments: 已归属当前标签的分支前导注释。
+            context: 当前 procedural 或 generate 上下文。
+        返回:
+            tuple[CaseItem, int, list[str]]: 解析后的 item、下一源码下标和下一分支注释。
+        异常:
+            VerilogFormatterError: item 主体缺失或无法完整解析时抛出。
+        """
+
+        # 跳过标签后的布局行，但保留其中注释作为分支主体入口节点。
+        int_body_start = self._skip_ignorable_control_lines(lines, item_index + 1)  # label-only item 主体起点
+
+        # 这里只收集被 skip helper 跨过的纯注释，空行仍交由 renderer 统一布局。
+        list_body_prefix_comments = [  # 当前分支主体入口的纯注释
+            self._normalize_statement_line(line.strip())  # 规范化当前候选入口行
+            for line in lines[item_index + 1 : int_body_start]  # 遍历标签与主体之间的物理行
+            if self._normalize_statement_line(line.strip()).startswith("//")  # 过滤空行并保留纯注释
+        ]
+
+        # 没有可见主体时，formatter 无法建立有效 CaseItem。
+        if int_body_start >= len(lines):
+
+            # 缺少主体时不能猜测下一标签是否属于当前分支。
+            self._raise_control_error(
+                "case_normalization_violation",
+                statement,
+                "Each case item must contain at least one statement.",
+            )
+
+        # 收集器以下一标签为边界，但会暂时包含该标签前的注释和空行。
+        list_body_lines, int_next_index = self._collect_case_item_lines(lines, int_body_start)  # 当前 item 候选主体与续扫位置
+
+        # 下一分支注释从尾部回收后暂存在独立列表中。
+        list_next_item_comments: list[str] = []  # 从主体尾部转交下一分支的注释
+
+        # 仅回收尾部的注释布局区，遇到可见语句立即停止，避免移动主体内部注释。
+        while list_body_lines:
+
+            # 尾行分类决定继续回收布局区，还是抵达当前主体的真实边界。
+            str_body_tail = self._normalize_statement_line(list_body_lines[-1].strip())  # 当前候选主体尾行
+
+            # 纯注释先从当前主体移出，再保序转交下一标签。
+            if str_body_tail.startswith("//"):
+
+                # 逆向弹出时插入列表头部，以维持源码注释顺序。
+                list_next_item_comments.insert(0, str_body_tail)
+
+                # 同一物理行不能同时留在当前主体和下一标签注释队列中。
+                list_body_lines.pop()
+
+                # 继续向上检查同一注释组的其余行。
+                continue
+
+            # 只由布局产生的空行既不进入 AST，也不转交为注释。
+            if not str_body_tail:
+
+                # 分支间空行由 renderer 重建，不属于任一分支的控制节点。
+                list_body_lines.pop()
+
+                # 回收空行后继续定位最后一条可见主体语句。
+                continue
+
+            # 首条可见尾行标志当前分支主体边界已经稳定。
+            break
+
+        # 主体入口注释必须作为当前 item 的首批 child 节点参与递归解析。
+        list_body_lines = [*list_body_prefix_comments, *list_body_lines]  # 已恢复入口注释的完整主体
+
+        # 空列表不能建立有意义的 CaseItem 控制树。
+        if not list_body_lines:
+
+            # 与文件尾缺失主体共用同一安全错误合同。
+            self._raise_control_error(
+                "case_normalization_violation",
+                statement,
+                "Each case item must contain at least one statement.",
+            )
+
+        # 局部控制树解析必须完整消费主体，剩余片段意味着边界仍不稳定。
+        list_children, int_consumed = self._parse_control_nodes(list_body_lines, 0, set(), context)  # 当前 item 控制节点与消费数
+
+        # 局部 parser 必须精确停在当前 item 边界。
+        if int_consumed != len(list_body_lines):
+
+            # 剩余片段可能被错误归入相邻标签，因此阻断格式化。
+            self._raise_control_error(
+                "case_normalization_violation",
+                statement,
+                "Use '<item>: begin ... end' or a stable single-statement case item before formatting.",
+            )
+
+        # 返回结构化 item，并把下一标签前注释交还外层扫描循环。
+        return (
+            CaseItem(label=label, children=list_children, leading_comments=leading_comments),
+            int_next_index,
+            list_next_item_comments,
+        )
+
     # 解析 case/casez/casex 节点及其 item 列表。
     def _parse_case_node(self, lines: list[str], start: int, context: str) -> tuple[ControlNode, int]:
         """
@@ -1021,17 +1156,35 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
         # index 指向下一个待分析的 case item 行。
         int_index = start + 1  # case item 扫描游标
 
+        # pending comments 暂存尚未绑定到分支标签的纯行注释。
+        list_pending_comments: list[str] = []  # 下一条 case item 的前导注释
+
         # 逐行解析 case item，直到命中 endcase。
         while int_index < len(lines):
 
             # 当前行先做控制流层面的规范化。
             str_statement = self._normalize_statement_line(lines[int_index].strip())  # case item 原始语句文本
 
+            # 纯行注释必须在拆分同行注释前捕获，否则代码部分会变成空字符串。
+            if str_statement.startswith("//"):
+
+                # 当前注释按源码顺序等待下一条 case item 标签认领。
+                list_pending_comments.append(str_statement)
+
+                # 继续寻找当前注释所属的分支标签。
+                int_index += 1  # 纯注释后的下一行位置
+
+                # 当前物理行不再进入 case item 语法判断。
+                continue
+
             # 去掉行尾注释后再判断真正的 case item 语义。
             tuple_comment_split = self._split_comment(str_statement)  # case item 去注释后的文本
 
             # 取出去注释后的正文部分。
             str_statement = tuple_comment_split[0].strip()  # case item 正文文本
+
+            # 同行注释正文稍后按具体 item 形态绑定到标签或单语句主体。
+            str_inline_comment = tuple_comment_split[1].strip()  # case item 行上的同行注释正文
 
             # 空白行不构成 item 主体，直接跳过。
             if not str_statement:
@@ -1042,17 +1195,18 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
                 # 空白行不产生任何节点。
                 continue
 
-            # 纯行注释不参与 case item 解析。
-            if str_statement.startswith("//"):
-
-                # 注释行直接略过。
-                int_index += 1  # 行注释后的下一行位置
-
-                # 当前 case item 仍未开始。
-                continue
-
             # 遇到 endcase 时结束当前 case 节点。
             if str_statement.startswith("endcase"):
+
+                # endcase 前仍有待绑定注释时无法确定其语义归属，必须安全阻断。
+                if list_pending_comments:
+
+                    # 孤立注释不能通过 formatter 静默删除或猜测移动。
+                    self._raise_control_error(
+                        "case_normalization_violation",
+                        list_pending_comments[-1],
+                        "Move each case-scope comment directly above its owning item before formatting.",
+                    )
 
                 # 返回构造完成的 case 节点和 endcase 之后的位置。
                 return node_case, int_index + 1
@@ -1062,6 +1216,12 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
 
             # 命中 <item>: begin[:label] 形态时进入 begin/end 分支。
             if match_begin_item:
+
+                # 注释副本先绑定当前 begin item，外层队列随后可以安全清空。
+                list_item_leading_comments = self._case_item_leading_comments(  # 当前 begin item 的前导注释
+                    list_pending_comments,  # 标签前已经捕获的纯行注释
+                    str_inline_comment,  # begin 标签行拆出的同行注释正文
+                )
 
                 # 递归提取当前 begin 形态 case item 内部的控制流节点。
                 list_children, int_next_index = self._parse_control_nodes(lines, int_index + 1, {"end"}, context)  # case item begin 子树与结束位置
@@ -1094,11 +1254,15 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
                 # 把 begin item 的 label 与子节点封装成 CaseItem。
                 node_case.items.append(
                     CaseItem(
-                        match_begin_item.group(1),
-                        list_children,
-                        match_begin_item.group(2) or "",
+                        label=match_begin_item.group(1),
+                        children=list_children,
+                        block_label=match_begin_item.group(2) or "",
+                        leading_comments=list_item_leading_comments,
                     )
                 )
+
+                # 当前注释已写入 AST，后续扫描从空队列重新收集。
+                list_pending_comments = []  # begin item 完成后的空注释队列
 
                 # 跳到这个 begin case item 结束后的下一条源码继续扫描。
                 int_index = int_next_index + 1  # 当前 begin case item 收尾后的下一行位置
@@ -1121,6 +1285,12 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
                 # 控制流主体需要交给单控制节点解析器处理。
                 if str_item_body.startswith(("if ", "if(", "case", "for", "while", "else")):
 
+                    # 控制树递归只接收正文，标签注释独立保存在 CaseItem 上。
+                    list_item_leading_comments = self._case_item_leading_comments(  # inline 控制 item 的前导注释
+                        list_pending_comments,  # 控制流标签继承的纯行注释队列
+                        str_inline_comment,  # 控制流标签行拆出的同行注释正文
+                    )
+
                     # 把 inline case item 主体和后续源码拼成虚拟片段数组，供控制节点解析器复用。
                     list_item_fragments = [str_item_body, *lines[int_index + 1 :]]  # inline 控制流 case item 的虚拟源码片段
 
@@ -1128,7 +1298,16 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
                     list_child_nodes, int_consumed = self._parse_single_control_node(list_item_fragments, 0, context)  # inline 控制流 case item 的子节点与消费数
 
                     # 把控制流主体包装为对应的 CaseItem。
-                    node_case.items.append(CaseItem(str_label, list_child_nodes))
+                    node_case.items.append(
+                        CaseItem(
+                            label=str_label,
+                            children=list_child_nodes,
+                            leading_comments=list_item_leading_comments,
+                        )
+                    )
+
+                    # AST 已持有这些注释，避免后续分支重复继承。
+                    list_pending_comments = []  # inline 控制 item 完成后的空注释队列
 
                     # 把虚拟消费数换算为原始源码游标。
                     int_index += int_consumed  # inline 控制流 case item 结束后的下一行位置
@@ -1141,6 +1320,12 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
 
                 # 在统一片段数组里收敛出一条可独立落地的 case item 单语句文本。
                 str_statement_text, int_consumed = self._collect_statement_text_from_fragments(list_item_fragments, 0)  # inline case item 收敛出的完整单语句
+
+                # inline 单语句的同行注释属于具体语句，不能改挂到分支标签上。
+                if str_inline_comment:
+
+                    # 在规范语句末尾恢复同行注释，保留赋值或调用的语义说明。
+                    str_statement_text = f"{str_statement_text} //{str_inline_comment}"  # 恢复同行注释后的单语句文本
 
                 # 单语句 case item 必须以顶层分号稳定结束。
                 if not self._statement_has_top_level_semicolon(str_statement_text):
@@ -1155,10 +1340,14 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
                 # 把单语句主体封装成 CaseItem。
                 node_case.items.append(
                     CaseItem(
-                        str_label,
-                        [ControlNode(kind="statement", text=str_statement_text)],
+                        label=str_label,
+                        children=[ControlNode(kind="statement", text=str_statement_text)],
+                        leading_comments=list(list_pending_comments),
                     )
                 )
+
+                # 单语句 item 已接管 pending 注释，清空后再扫描下一标签。
+                list_pending_comments = []  # inline 单语句完成后的空注释队列
 
                 # 更新原始源码游标到当前 item 结束之后。
                 int_index += int_consumed  # 单语句 case item 结束后的下一行位置
@@ -1172,50 +1361,23 @@ class ControlNodeParseMixin(ControlNodeClassifierMixin, ControlNodeCollectorsMix
             # 命中 label-only item 时，再向后收集其主体块。
             if match_label_only:
 
-                # 保存冒号左侧单独占行的 case item 标签。
-                str_label = match_label_only.group(1)  # label-only case item 的选择标签
+                # label-only 解析器负责区分当前主体与下一标签前的注释布局区。
+                list_item_leading_comments = self._case_item_leading_comments(  # label-only item 的前导注释
+                    list_pending_comments,  # 分行主体标签继承的纯行注释队列
+                    str_inline_comment,  # 分行主体标签行拆出的同行注释正文
+                )
 
-                # 跳过空白和注释，定位真正的 item 主体。
-                int_lookahead = self._skip_ignorable_control_lines(lines, int_index + 1)  # label-only item 主体起点
+                # 使用位置参数压缩调用布局，避免参数清单遮蔽解析主流程。
+                node_item, int_next_index, list_next_item_comments = self._parse_label_only_case_item(  # item、续扫位置与边界注释
+                    lines, int_index, str_statement,  # 当前标签所在源码与诊断正文
+                    match_label_only.group(1), list_item_leading_comments, context,  # 标签、已绑定注释与解析上下文
+                )
 
-                # 紧跟 endcase 或文件结束都意味着当前 item 没有主体。
-                if int_lookahead >= len(lines):
+                # 将解析结果写入 case 树，保持源码 item 顺序。
+                node_case.items.append(node_item)
 
-                    # case item 至少要有一条稳定主体语句。
-                    self._raise_control_error(
-                        "case_normalization_violation",
-                        str_statement,
-                        "Each case item must contain at least one statement.",
-                    )
-
-                # 收集 label-only case item 对应的整段主体源码片段。
-                list_body_lines, int_next_index = self._collect_case_item_lines(lines, int_lookahead)  # label-only item 片段与结束位置
-
-                # 主体片段为空时说明当前 item 仍然不完整。
-                if not list_body_lines:
-
-                    # 空主体 item 不能继续进入 control parser。
-                    self._raise_control_error(
-                        "case_normalization_violation",
-                        str_statement,
-                        "Each case item must contain at least one statement.",
-                    )
-
-                # 在局部片段数组里递归恢复 label-only case item 的控制流节点。
-                list_children, int_consumed = self._parse_control_nodes(list_body_lines, 0, set(), context)  # label-only item 的节点列表与消费数
-
-                # 未完全消费 body 片段时说明 item 仍有不稳定结构。
-                if int_consumed != len(list_body_lines):
-
-                    # 当前 item 必须先改写成稳定 begin/end 或单语句形态。
-                    self._raise_control_error(
-                        "case_normalization_violation",
-                        str_statement,
-                        "Use '<item>: begin ... end' or a stable single-statement case item before formatting.",
-                    )
-
-                # 把多行主体封装成当前 label 的 CaseItem。
-                node_case.items.append(CaseItem(str_label, list_children))
+                # 只有边界回收出的注释可以进入下一轮分支认领。
+                list_pending_comments = list_next_item_comments  # 下一 label-only item 的待绑定注释
 
                 # 把局部片段消费位置折返为原始源码数组里的下一个 item 起点。
                 int_index = int_next_index  # label-only item 对应的原始源码续扫位置
