@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 ////////////////////////////////////English///////////////////////////////////////
 // Company:         Erie
 // Engineer:        Erie
@@ -5,12 +7,12 @@
 // Create Date:     YYYY/MM/DD HH:MM:SS
 // Design Name:     <Design Name>
 // Module Name:     <Module Name>
-// Description:     Description/<Module Name>_Design.pdf
-// Simulations:     TestBench/Vivado/2021.1/<Module Name>
+// Description:     description/<Module Name>_Design.pdf
+// Simulations:     testbench/vivado/2021.1/<Module Name>
 //
-// References:
+// Referrences:
 // File Format      File Name
-// 1.Book           <Reference File>
+// 1.Book           <Reference File>.pdf
 //
 // Dependencies:
 // Module Name      Version
@@ -33,7 +35,7 @@
 //
 // 参考资料:
 // 文件格式         文件名称
-// 1.Book           <Reference File>
+// 1.Book           <Reference File>.pdf
 //
 // 依赖文件:
 // 模块名称         版本
@@ -44,5 +46,3 @@
 // 修订历史:
 // 时间             版本        修订人            修订内容
 // YYYY年MM月DD日   Vx.y        Erie              <修订内容>
-
-// <Module Purpose Comment>

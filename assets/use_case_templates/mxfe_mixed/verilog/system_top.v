@@ -7,10 +7,10 @@
 // Create Date:     2026/05/17 15:11:57
 // Design Name:     mxfe_mixed_system_top
 // Module Name:     mxfe_mixed_system_top
-// Description:     Description/mxfe_mixed_system_top_Design.pdf
-// Simulations:     TestBench/Vivado/2021.1/mxfe_mixed_system_top
+// Description:     description/mxfe_mixed_system_top_Design.pdf
+// Simulations:     testbench/vivado/2021.1/mxfe_mixed_system_top
 //
-// References:     None
+// Referrences:     None
 //
 // Dependencies:    None
 //
@@ -38,8 +38,6 @@
 // 修订历史:
 // 时间             版本        修订人            修订内容
 // 2026年05月17日   V1.0        Erie              创建文件
-
-// MXFE 混合收发数据桥接与时钟输出系统顶层模块
 module mxfe_mixed_system_top
 (
 	//-----------------全局信号-----------------//

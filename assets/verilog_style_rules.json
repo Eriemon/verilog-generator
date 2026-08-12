@@ -201,6 +201,7 @@
   "statements": {
     "port_kind_keywords_in_header": "forbidden in final style",
     "inline_wire_assign": "forbidden; split into wire declaration plus assign",
+    "internal_reg_default_init": "module-internal non-array reg declarations must carry an explicit initializer; missing-init normalize path uses exact ` = 0;`",
     "always_single_target": true,
     "sequential_reset": "posedge clock or negedge active-low reset",
     "fsm": "project requires three-segment FSM; formatter enforcement is partial",

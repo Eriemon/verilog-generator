@@ -1,0 +1,42 @@
+`timescale 1ns / 1ps
+
+////////////////////////////////////English///////////////////////////////////////
+// Company:         $公司名,默认Erie$
+// Engineer:        $开发工程师名,默认Erie,允许多人$
+// 
+// Create Date:     $创建日期(英文,例如:2024/06/03)$ $小时(例如:23):分钟(05):秒(48)$
+// Design Name:     $设计名称(英文)$
+// Module Name:     $模块名称(英文)$
+// Description:     description/$模块名称$_Design.$文件后缀,默认pdf$
+// Simulations:     testbench/$软件名,默认vivado$/$软件版本,默认2021.1$/$模块名称$
+// 
+// Referrences:     None
+//
+// Dependencies:    None
+//
+// Version:         $版本号(例如:V1.0)$
+// Revision Date:   $xxxx/xx/xx xx:xx:xx$
+// History:        
+// Time             Version     Revised by        Contents
+// $xxxx/xx/xx$     $版本$      Erie              $修订内容记录(英文,例如:Create file, write AXI-Stream read interface(AXIS_Read_Interface).)$
+// 2026/03/03       V1.0        Erie              Create file, write xxxxxxxxxxxxx.$这一行是示例$
+///////////////////////////////////Chinese////////////////////////////////////////
+// 版权归属:        $公司名,默认Erie$
+// 开发人员:        $开发工程师名,默认Erie,允许多人$
+// 
+// 创建日期:        $创建日期(中文,例如:2024年06月03日)$
+// 设计名称:        $设计名称(英文)$
+// 模块名称:        $模块名称(英文)$
+// 模块说明:        Description/$模块名称$_Design.$文件后缀,默认pdf$
+// 仿真工程:        TestBench/Vivado/2021.1/$模块名称$
+//    
+// 参考资料:        None
+//
+// 依赖文件:        None
+//
+// 当前版本:        $版本号(例如:V1.0)$
+// 修订日期:        $xxxx年xx月xx日$
+// 修订历史:
+// 时间             版本        修订人            修订内容
+// $xxxx年xx月xx日$ $版本$      Erie              $修订内容记录(中文,例如:创建文件,编写AXI-Stream读接口(AXIS_Read_Interface)).)$
+// 2026年03月03日   V1.0        Erie              创建文件,编写xxxxxxxxxxxxxxxxxxxx$这一行是示例$

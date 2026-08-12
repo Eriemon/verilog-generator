@@ -10,6 +10,9 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, cast
 
+# 共享 header 合同用于统一 mock provider、formatter 与测试夹具的字面输出。
+from ..header_contract import default_header_paths, reference_dependency_blocks, render_bilingual_header
+
 # 文本宽度对齐沿用 formatter backend 的现有实现
 from scripts.python.quality.formatter_backend.banners import display_width
 
@@ -79,19 +82,69 @@ class MockPortLayout:
     valid_output_internal: str  # valid 输出桥接前的内部寄存器名
 
     # 外部数据输出端口名。
-    data_output_name: str  # 模块数据输出口名
+    str_data_output_name: str  # 模块数据输出口名
 
     # 外部 valid 输出端口名。
-    valid_output_name: str  # 模块 valid 输出口名
+    str_valid_output_name: str  # 模块 valid 输出口名
 
     # 是否需要独立 valid 输出。
-    has_distinct_valid_output: bool  # data 输出与 valid 输出是否分离
+    bool_has_distinct_valid_output: bool  # data 输出与 valid 输出是否分离
 
     # 输入数据缓存寄存器名。
-    data_register_name: str = "reg_data_hold"  # 输入数据保持寄存器
+    str_data_register_name: str = "reg_data_hold"  # 输入数据保持寄存器
 
     # 输入 valid 缓存寄存器名。
-    valid_register_name: str = "flag_valid_hold"  # 输入有效保持寄存器
+    str_valid_register_name: str = "flag_valid_hold"  # 输入有效保持寄存器
+
+# mock provider 的双语 header 统一复用共享合同，避免 fixture 和 formatter 再次分叉。
+def _mock_erie_header_text(str_module_name: str) -> str:
+    """
+    返回 mock provider 使用的固定双语 header 文本。
+
+    参数:
+        str_module_name: 当前 mock RTL 的模块名称。
+    返回:
+        返回不带尾随空行的稳定 header 文本。
+    """
+
+    # 先按模块名重建英中双语的固定 Description/Simulations 路径。
+    dict_header_paths = default_header_paths(str_module_name)  # 双语 header 固定路径集合
+
+    # mock provider 默认输出 None 模式的 References/Dependencies 区块。
+    dict_reference_dependency_block = reference_dependency_blocks(mode="none")  # mock provider 缺省使用 None 模式头部区块
+
+    # 统一用共享 header renderer 生成 mock RTL 的稳定头部行列表。
+    list_header_lines = render_bilingual_header(  # 共享 header renderer 输出行列表
+        english_values={  # English 段固定字段取值
+            "copyright_owner": "Erie",  # English 段 Company 默认公司名
+            "developer": "Erie",  # English 段 Engineer 默认开发人员
+            "create_date": "2026/05/03 12:00:00",  # English 段 Create Date 示例时间
+            "design_name": str_module_name,  # English 段 Design Name 使用当前模块名
+            "module_name": str_module_name,  # 让 Module Name 与最终 module 声明共享同一名称
+            "description": str(dict_header_paths["english"]["description"]),  # English 段 Description 固定路径
+            "simulations": str(dict_header_paths["english"]["simulations"]),  # English 段 Simulations 固定小写路径
+            "version": "V1.0",  # English 段 Version 示例值
+            "revision_date": "2026/05/03 12:00:00",  # 固定英文修订时间以验证 Revision Date 行格式
+        },
+        chinese_values={  # 中文段与英文段对照的固定字段取值
+            "copyright_owner": "Erie",  # 中文段版权归属默认公司名
+            "developer": "Erie",  # 中文段开发人员默认署名
+            "create_date": "2026年05月03日",  # 中文段创建日期示例值
+            "design_name": str_module_name,  # 中文段设计名称使用当前模块名
+            "module_name": str_module_name,  # 中文段模块名称使用当前模块名
+            "description": str(dict_header_paths["chinese"]["description"]),  # 中文段模块说明固定路径
+            "simulations": str(dict_header_paths["chinese"]["simulations"]),  # 中文段仿真工程固定路径
+            "version": "V1.0",  # 中文段当前版本示例值
+            "revision_date": "2026年05月03日",  # 中文段修订日期示例值
+        },
+        english_history_lines=["2026/05/03       V1.0        Erie              Create file."],  # English 历史示例行
+        chinese_history_lines=["2026年05月03日   V1.0        Erie              创建文件"],  # 中文历史示例行
+        reference_dependency_block=dict_reference_dependency_block,  # None 模式参考资料与依赖区块
+        include_timescale=True,  # mock provider 头部保留首行 timescale
+    )
+
+    # 返回不带尾随空行的稳定双语 header 文本。
+    return "\n".join(list_header_lines)
 
 # 时序型 mock RTL 模板所需的派生文本。
 @dataclass(frozen=True)
@@ -169,13 +222,13 @@ def _mock_rtl_parts(layout: MockPortLayout) -> MockSequentialRtlParts:
 
     # str_data_register_decl 是输入数据缓存的完整声明行。
     str_data_register_decl = (  # 输入数据缓存寄存器 RTL 声明
-        f"\treg {str_data_register_width}{layout.data_register_name} = DATA_RESET_VALUE;"
+        f"\treg {str_data_register_width}{layout.str_data_register_name} = DATA_RESET_VALUE;"
         "\t//输入数据缓存寄存器"
     )
 
     # str_valid_register_decl 是输入 valid 缓存的完整声明行。
     str_valid_register_decl = (  # 输入有效缓存寄存器 RTL 声明
-        f"\treg {str_valid_register_width}{layout.valid_register_name} = 1'b0;"
+        f"\treg {str_valid_register_width}{layout.str_valid_register_name} = 1'b0;"
         "\t//输入有效缓存标志"
     )
 
@@ -254,49 +307,15 @@ def _mock_erie_rtl_source_text(spec: dict[str, Any]) -> str:
     # 三引号模板内部使用短别名，避免 Verilog 占位符行过长。
     mock_rtl_parts = mock_sequential_rtl_parts_mock_rtl_parts  # RTL 模板插值短别名
 
+    # 数据缓存寄存器名单独缩短，避免模板中的占位符物理行过长。
+    str_data_register_name = mock_port_layout_snapshot.str_data_register_name  # 输入数据缓存寄存器短别名
+
+    # valid 缓存寄存器名也缩成局部别名，保持模板段落可读。
+    str_valid_register_name = mock_port_layout_snapshot.str_valid_register_name  # 输入有效缓存寄存器短别名
+
     # 拼接完整的原始 RTL 模板。
-    raw_rtl = f"""`timescale 1ns / 1ps
+    raw_rtl = f"""{_mock_erie_header_text(mock_port_layout_snapshot.top)}
 
-////////////////////////////////////English///////////////////////////////////////
-// Company:         Erie
-// Engineer:        Erie
-//
-// Create Date:     2026/05/03 12:00:00
-// Design Name:     {mock_port_layout_snapshot.top}
-// Module Name:     {mock_port_layout_snapshot.top}
-// Description:     Description/{mock_port_layout_snapshot.top}_Design.pdf
-// Simulations:     TestBench/Vivado/2021.1/{mock_port_layout_snapshot.top}
-//
-// References:     None
-//
-// Dependencies:    None
-//
-// Version:         V1.0
-// Revision Date:   2026/05/03 12:00:00
-// History:
-// Time             Version     Revised by        Contents
-// 2026/05/03       V1.0        Erie              Create file.
-///////////////////////////////////Chinese////////////////////////////////////////
-// 版权归属:        Erie
-// 开发人员:        Erie
-//
-// 创建日期:        2026年05月03日
-// 设计名称:        {mock_port_layout_snapshot.top}
-// 模块名称:        {mock_port_layout_snapshot.top}
-// 模块说明:        Description/{mock_port_layout_snapshot.top}_Design.pdf
-// 仿真工程:        TestBench/Vivado/2021.1/{mock_port_layout_snapshot.top}
-//
-// 参考资料:        None
-//
-// 依赖文件:        None
-//
-// 当前版本:        V1.0
-// 修订日期:        2026年05月03日
-// 修订历史:
-// 时间             版本        修订人            修订内容
-// 2026年05月03日   V1.0        Erie              创建文件
-
-// 输入数据缓存与输出桥接控制模块
 module {mock_port_layout_snapshot.top}
 #(
 \tparameter C_DATA_WIDTH = {mock_rtl_parts.data_width}\t//数据总线位宽
@@ -328,20 +347,20 @@ module {mock_port_layout_snapshot.top}
 \t//输入数据缓存寄存器更新逻辑
 \talways@(posedge {mock_port_layout_snapshot.clock_name} or negedge {mock_port_layout_snapshot.reset_name})begin
 \t\tif({mock_port_layout_snapshot.reset_name} == 1'b0)begin
-\t\t\t{mock_port_layout_snapshot.data_register_name} <= DATA_RESET_VALUE;\t//复位时清空输入数据缓存
+\t\t\t{str_data_register_name} <= DATA_RESET_VALUE;\t//复位时清空输入数据缓存
 \t\tend else if({mock_rtl_parts.valid_sample_expr} == 1'b1)begin
-\t\t\t{mock_port_layout_snapshot.data_register_name} <= {mock_rtl_parts.data_sample_expr};\t//输入有效时缓存输入数据
+\t\t\t{str_data_register_name} <= {mock_rtl_parts.data_sample_expr};\t//输入有效时缓存输入数据
 \t\tend else begin
-\t\t\t{mock_port_layout_snapshot.data_register_name} <= {mock_port_layout_snapshot.data_register_name};\t//输入无效时保持缓存数据
+\t\t\t{str_data_register_name} <= {str_data_register_name};\t//输入无效时保持缓存数据
 \t\tend
 \tend
 
 \t//输入有效缓存标志更新逻辑
 \talways@(posedge {mock_port_layout_snapshot.clock_name} or negedge {mock_port_layout_snapshot.reset_name})begin
 \t\tif({mock_port_layout_snapshot.reset_name} == 1'b0)begin
-\t\t\t{mock_port_layout_snapshot.valid_register_name} <= 1'b0;\t//复位时清除输入有效缓存
+\t\t\t{str_valid_register_name} <= 1'b0;\t//复位时清除输入有效缓存
 \t\tend else begin
-\t\t\t{mock_port_layout_snapshot.valid_register_name} <= {mock_rtl_parts.valid_sample_expr};\t//锁存当前输入有效状态
+\t\t\t{str_valid_register_name} <= {mock_rtl_parts.valid_sample_expr};\t//锁存当前输入有效状态
 \t\tend
 \tend
 
@@ -423,13 +442,13 @@ def _build_mock_port_layout(spec: dict[str, Any]) -> MockPortLayout:
     )  # valid 输出的内部寄存器名
 
     # 推导外部数据端口名称。
-    data_output_name = str(data_output["name"]) if data_output else "o_data"  # 数据输出端口名
+    str_data_output_name = str(data_output["name"]) if data_output else "o_data"  # 数据输出端口名
 
     # 推导外部 valid 端口名称。
-    valid_output_name = str(dict_valid_output_port["name"]) if dict_valid_output_port else "o_valid"  # valid 输出端口名
+    str_valid_output_name = str(dict_valid_output_port["name"]) if dict_valid_output_port else "o_valid"  # valid 输出端口名
 
     # 判断是否需要独立 valid 输出。
-    bool_has_distinct_valid_output = bool(dict_valid_output_port and valid_output_name != data_output_name)  # data 与 valid 是否分离
+    bool_has_distinct_valid_output = bool(dict_valid_output_port and str_valid_output_name != str_data_output_name)  # data 与 valid 是否分离
 
     # 返回源文件和 testbench 复用的完整端口布局对象。
     return MockPortLayout(
@@ -449,9 +468,9 @@ def _build_mock_port_layout(spec: dict[str, Any]) -> MockPortLayout:
         # 这一组字段供 mock RTL 生成阶段构造内部寄存器与桥接命名。
         data_output_internal=data_output_internal,
         valid_output_internal=str_valid_output_internal,
-        data_output_name=data_output_name,
-        valid_output_name=valid_output_name,
-        has_distinct_valid_output=bool_has_distinct_valid_output,
+        str_data_output_name=str_data_output_name,
+        str_valid_output_name=str_valid_output_name,
+        bool_has_distinct_valid_output=bool_has_distinct_valid_output,
     )
 
 # 生成用于端口布局推断的最小 module 骨架文本。
@@ -838,48 +857,8 @@ def _mock_erie_comb_source_text(layout: MockPortLayout) -> str:
         list_assign_lines.append(f"\tassign {str_output_name} = {str_zero_literal};\t//未使用输出固定为低电平")
 
     # 拼接组合型原始 RTL 模板。
-    raw_rtl = f"""`timescale 1ns / 1ps
+    raw_rtl = f"""{_mock_erie_header_text(layout.top)}
 
-////////////////////////////////////English///////////////////////////////////////
-// Company:         Erie
-// Engineer:        Erie
-//
-// Create Date:     2026/05/03 12:00:00
-// Design Name:     {layout.top}
-// Module Name:     {layout.top}
-// Description:     Description/{layout.top}_Design.pdf
-// Simulations:     TestBench/Vivado/2021.1/{layout.top}
-//
-// References:     None
-//
-// Dependencies:    None
-//
-// Version:         V1.0
-// Revision Date:   2026/05/03 12:00:00
-// History:
-// Time             Version     Revised by        Contents
-// 2026/05/03       V1.0        Erie              Create file.
-///////////////////////////////////Chinese////////////////////////////////////////
-// 版权归属:        Erie
-// 开发人员:        Erie
-//
-// 创建日期:        2026年05月03日
-// 设计名称:        {layout.top}
-// 模块名称:        {layout.top}
-// 模块说明:        Description/{layout.top}_Design.pdf
-// 仿真工程:        TestBench/Vivado/2021.1/{layout.top}
-//
-// 参考资料:        None
-//
-// 依赖文件:        None
-//
-// 当前版本:        V1.0
-// 修订日期:        2026年05月03日
-// 修订历史:
-// 时间             版本        修订人            修订内容
-// 2026年05月03日   V1.0        Erie              创建文件
-
-// 输入选择与组合输出桥接模块
 module {layout.top}
 #(
 \tparameter C_DATA_WIDTH = {int_data_width}\t//数据总线位宽
@@ -1516,19 +1495,19 @@ def _mock_output_decl_block(
 
     # dict_output_decl_lines 按外部输出口名缓存内部寄存器声明。
     dict_output_decl_lines: dict[str, str] = {  # 输出口到内部寄存器声明的映射
-        layout.data_output_name: (  # 以主数据输出口名作为默认寄存器声明的索引键
+        layout.str_data_output_name: (  # 以主数据输出口名作为默认寄存器声明的索引键
             f"\treg {data_register_width}{layout.data_output_internal} = DATA_RESET_VALUE;\t//"
-            f"{_mock_internal_output_comment(layout.data_output_name)}"
+            f"{_mock_internal_output_comment(layout.str_data_output_name)}"
         )
     }
 
     # 独立 valid 输出要沿外部接口名单独缓存一条寄存器声明。
-    if layout.has_distinct_valid_output:
+    if layout.bool_has_distinct_valid_output:
 
         # 记录独立 valid 输出寄存器声明，后续按接口顺序取出。
-        dict_output_decl_lines[layout.valid_output_name] = (
+        dict_output_decl_lines[layout.str_valid_output_name] = (
             f"\treg {valid_register_width}{layout.valid_output_internal} = 1'b0;\t//"
-            f"{_mock_internal_output_comment(layout.valid_output_name)}"
+            f"{_mock_internal_output_comment(layout.str_valid_output_name)}"
         )
 
     # list_output_lines 负责按接口顺序和分组标签拼接声明区。
@@ -1613,21 +1592,21 @@ def _mock_output_assign_block(layout: MockPortLayout) -> str:
             str_current_group_label = str_group_label  # assign 区最新分组标签
 
         # 数据输出口使用内部保持寄存器桥接。
-        if str_output_name == layout.data_output_name:
+        if str_output_name == layout.str_data_output_name:
 
             # 生成数据输出口的桥接语句。
             str_assign_line = (
-                f"\tassign {layout.data_output_name} = {layout.data_output_internal};\t//"
-                f"{_mock_output_bridge_comment(layout.data_output_name)}"
+                f"\tassign {layout.str_data_output_name} = {layout.data_output_internal};\t//"
+                f"{_mock_output_bridge_comment(layout.str_data_output_name)}"
             )
 
         # 独立 valid 输出口使用各自的保持寄存器桥接。
-        elif layout.has_distinct_valid_output and str_output_name == layout.valid_output_name:
+        elif layout.bool_has_distinct_valid_output and str_output_name == layout.str_valid_output_name:
 
             # 生成独立 valid 输出的桥接语句。
             str_assign_line = (
-                f"\tassign {layout.valid_output_name} = {layout.valid_output_internal};\t//"
-                f"{_mock_output_bridge_comment(layout.valid_output_name)}"
+                f"\tassign {layout.str_valid_output_name} = {layout.valid_output_internal};\t//"
+                f"{_mock_output_bridge_comment(layout.str_valid_output_name)}"
             )
 
         # 其余输出统一拉到固定零值，保持 mock 交付闭合。
@@ -1692,8 +1671,8 @@ def _mock_output_processing_block(layout: MockPortLayout, data_hold_assignment: 
 \talways@(posedge {layout.clock_name} or negedge {layout.reset_name})begin
 \t\tif({layout.reset_name} == 1'b0)begin
 \t\t\t{layout.data_output_internal} <= DATA_RESET_VALUE;\t//复位时输出数据清零
-\t\tend else if({layout.valid_register_name} == 1'b1)begin
-\t\t\t{layout.data_output_internal} <= {layout.data_register_name};\t//缓存有效时更新输出数据
+\t\tend else if({layout.str_valid_register_name} == 1'b1)begin
+\t\t\t{layout.data_output_internal} <= {layout.str_data_register_name};\t//缓存有效时更新输出数据
 \t\tend else begin
 {data_hold_assignment}
 \t\tend
@@ -1701,18 +1680,18 @@ def _mock_output_processing_block(layout: MockPortLayout, data_hold_assignment: 
 
     # dict_output_blocks_by_name 让 always 块顺序跟外部接口输出顺序对齐。
     dict_output_blocks_by_name = {  # 输出口到处理区文本的映射
-        layout.data_output_name: str_data_output_block,  # 先登记主数据输出对应的 always 文本
+        layout.str_data_output_name: str_data_output_block,  # 先登记主数据输出对应的 always 文本
     }
 
     # 独立 valid 输出时再补一条对应的输出处理逻辑。
-    if layout.has_distinct_valid_output:
+    if layout.bool_has_distinct_valid_output:
 
         # 按外部 valid 输出口名注册对应的时序更新逻辑。
-        dict_output_blocks_by_name[layout.valid_output_name] = f"""\t//输出有效标志寄存器更新逻辑
+        dict_output_blocks_by_name[layout.str_valid_output_name] = f"""\t//输出有效标志寄存器更新逻辑
 \talways@(posedge {layout.clock_name} or negedge {layout.reset_name})begin
 \t\tif({layout.reset_name} == 1'b0)begin
 \t\t\t{layout.valid_output_internal} <= 1'b0;\t//复位时清除输出有效标志
-\t\tend else if({layout.valid_register_name} == 1'b1)begin
+\t\tend else if({layout.str_valid_register_name} == 1'b1)begin
 \t\t\t{layout.valid_output_internal} <= 1'b1;\t//输入缓存有效时拉高输出有效
 \t\tend else begin
 \t\t\t{layout.valid_output_internal} <= 1'b0;\t//无有效输入时拉低输出有效

@@ -7,10 +7,10 @@
 // Create Date:     2026/05/03 12:00:00
 // Design Name:     comb_parity_mux
 // Module Name:     comb_parity_mux
-// Description:     Description/comb_parity_mux_Design.pdf
-// Simulations:     TestBench/Vivado/2021.1/comb_parity_mux
+// Description:     description/comb_parity_mux_Design.pdf
+// Simulations:     testbench/vivado/2021.1/comb_parity_mux
 //
-// References:     None
+// Referrences:     None
 //
 // Dependencies:    None
 //
@@ -39,7 +39,6 @@
 // 时间             版本        修订人            修订内容
 // 2026年05月03日   V1.0        Erie              创建文件
 
-// 双路数据选择与奇偶校验组合输出模块
 module comb_parity_mux
 #(
 	parameter C_DATA_WIDTH = 8	//数据总线位宽

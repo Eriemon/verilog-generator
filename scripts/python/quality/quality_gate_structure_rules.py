@@ -2907,6 +2907,21 @@ def _signal_decl_issues(
             )
         )
 
+    # 模块内部非 array 的 reg 标量/向量声明必须显式初始化。
+    quality_issue_default_init = _internal_reg_default_init_issue(  # 当前声明对应的 VG015 诊断对象
+        dict_decl,  # 用于读取 init 与 unpacked 状态的声明节点
+        str_kind,  # 决定是否属于 reg 的类型文本
+        str_name,  # 写入诊断报文的寄存器成员名
+        str_rel_path,  # 绑定 issue 的源码相对路径
+        strict=strict,  # 继承当前 strict 与 non-strict 严格度
+    )
+
+    # 命中缺省初始化门禁时追加成员级 VG015。
+    if quality_issue_default_init is not None:
+
+        # 该诊断与命名诊断并列存在，不能互相覆盖。
+        list_issues.append(quality_issue_default_init)
+
     # 追加计数、flag、编码和译码语义命名诊断。
     list_issues.extend(_signal_semantic_name_issues(str_name, str_rel_path, strict=strict))
 
@@ -3011,6 +3026,63 @@ def _signal_naming_issue(
 
     # 返回统一 VG013 诊断对象。
     return QualityIssue("VG013", _style_severity(strict), str_message, str_rel_path, rule=str_rule)
+
+# 供 `_signal_decl_issues` 复用的拆分 helper，专门处理模块内部非 array reg 缺省初始化门禁。
+def _internal_reg_default_init_issue(
+    dict_decl: dict[str, Any],
+    str_kind: str,
+    str_name: str,
+    str_rel_path: str,
+    *,
+    strict: bool,
+) -> QualityIssue | None:
+    """
+    检查模块内部非 array reg 标量/向量声明是否显式初始化。
+
+    :param dict_decl: formatter AST 中的内部声明条目。
+    :param str_kind: 当前内部声明类型。
+    :param str_name: 当前内部声明名称。
+    :param str_rel_path: 报告中使用的相对文件路径。
+    :param strict: 是否把样式问题升级为 error。
+    :return: 命中缺省初始化门禁时返回 VG015，否则返回 None。
+    """
+
+    # 只有模块内部 reg 声明进入本门禁。
+    if str_kind != "reg":
+
+        # wire/logic/integer 等其他类型不在本轮治理范围内。
+        return None
+
+    # unpacked array 继续豁免当前缺省初始化门禁。
+    if str(dict_decl.get("unpacked") or "").strip():
+
+        # array 声明允许维持原始未初始化形态。
+        return None
+
+    # 已显式初始化的声明保持现状，不重复报缺省初始化问题。
+    if str(dict_decl.get("init") or "").strip():
+
+        # 只有原始缺少 init 的声明才需要命中 VG015。
+        return None
+
+    # int_line_no 尽量把诊断锚到内部声明起始行。
+    int_line_no = _as_line(dict_decl.get("line_start"))  # VG015 报告使用的声明起始行号
+
+    # 缺省修复合同必须明确要求精确 ` = 0;` 文本。
+    str_message = (
+        f"Internal non-array reg declaration `{str_name}` must be explicitly initialized inside the module; "
+        "when backfilling a missing initializer, use exact ` = 0;`."
+    )
+
+    # 返回统一的 VG015 诊断对象。
+    return QualityIssue(
+        "VG015",
+        _style_severity(strict),
+        str_message,
+        str_rel_path,
+        int_line_no,
+        rule="declaration.internal_reg_default_init",
+    )
 
 # 供 `_assign_rules` 复用的拆分 helper，专门处理检查 assign 写法和 top-level output 桥接约束。
 def _assign_rules(

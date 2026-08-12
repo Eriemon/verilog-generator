@@ -8,6 +8,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+# erie_strict header 合同需要逐字注入 prompt，避免模型回退到旧模板。
+from ..header_contract import prompt_header_contract_text
+
 # 运行时模块提供人工决策、模板选择、计划分解和约束摘要。
 from scripts.python.existing_rtl.intervention import decision_applies
 
@@ -1134,7 +1137,9 @@ def _rtl_style_rules(dict_spec: dict[str, Any], str_comment_language: str) -> li
     return [
         "Apply the `erie_strict` RTL style profile as a hard generation constraint.",
         "Use Tab characters for all RTL indentation; do not use four-space indentation for code blocks.",
-        "Use a fixed bilingual header template: preserve both the English and Chinese header sections.",
+        "Use the fixed bilingual header literal contract below exactly; keep spelling, alignment, blank lines, "
+        "path casing, and choose only one global Referrences/Dependencies mode:\n"
+        + prompt_header_contract_text(),
         f"Use `{str_inline_language}` as the default language for inline explanatory prose outside the header.",
         (
             "Use low-active reset naming and conventions such as `i_rstn`, `i_axi_arstn`, "

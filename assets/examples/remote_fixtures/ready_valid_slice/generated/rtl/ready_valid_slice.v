@@ -7,10 +7,10 @@
 // Create Date:     2026/05/03 12:00:00
 // Design Name:     ready_valid_slice
 // Module Name:     ready_valid_slice
-// Description:     Description/ready_valid_slice_Design.pdf
-// Simulations:     TestBench/Vivado/2021.1/ready_valid_slice
+// Description:     description/ready_valid_slice_Design.pdf
+// Simulations:     testbench/vivado/2021.1/ready_valid_slice
 //
-// References:     None
+// Referrences:     None
 //
 // Dependencies:    None
 //
@@ -39,7 +39,6 @@
 // 时间             版本        修订人            修订内容
 // 2026年05月03日   V1.0        Erie              创建文件
 
-// Ready/Valid 单拍缓存切片与握手桥接模块
 module ready_valid_slice
 #(
 	parameter C_DATA_WIDTH = 8                  // 数据总线位宽

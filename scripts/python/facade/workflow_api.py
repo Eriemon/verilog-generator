@@ -696,10 +696,17 @@ def _resume_workflow_run(
             model_timeout_s=dict_runtime_options["model_timeout_s"],  # 恢复态继续使用的模型超时
         )
 
+    # 恢复态同样只对外 surfaced 已解析过的最终 artifact 目录。
+    path_artifact_dir = _resolved_latest_artifact_dir(  # 恢复态最终 surfaced artifact 根目录
+        path_run_dir,  # 当前 workflow 运行根目录
+        dict_workflow_result,  # runtime 返回的完整 workflow 结果字典
+    )
+
     # 对外只返回 facade 约定的稳定恢复结果结构。
     return {
         "status": dict_workflow_result["status"],
         "run_dir": str(path_run_dir),
+        "artifact_dir": path_artifact_dir.as_posix() if path_artifact_dir is not None else None,
         "result_path": str(path_run_dir / "workflow_result.json"),
         "workflow_result": dict_workflow_result,
     }
@@ -723,10 +730,17 @@ def _new_workflow_result_payload(
         返回新运行 facade 的稳定结果字典。
     """
 
+    # 顶层 facade 结果统一 surfaced 已解析过的最终 artifact 目录。
+    path_artifact_dir = _resolved_latest_artifact_dir(  # 新运行最终 surfaced artifact 根目录
+        path_run_dir,  # 供 artifact 相对路径回映到本地目录的 run 根
+        dict_workflow_result,  # 新运行阶段产出的 attempts 与工件记录
+    )
+
     # 新运行的结果字段在这里统一收口成 facade 合同。
     return {
         "status": dict_workflow_result["status"],
         "run_dir": str(path_run_dir),
+        "artifact_dir": path_artifact_dir.as_posix() if path_artifact_dir is not None else None,
         "result_path": str(path_run_dir / "workflow_result.json"),
         "requirements_path": str(path_requirements),
         "codegen_plan_path": str(path_codegen_plan),
@@ -960,6 +974,110 @@ def _resolve_result_path(path_run_dir: Path, value: Any) -> Path | None:
     # 其余相对路径按 run_dir 下的工件路径处理。
     return path_run_dir / path_value
 
+# _resolved_latest_artifact_dir 统一解析 facade 顶层需要 surfaced 的最终 artifact 目录。
+def _resolved_latest_artifact_dir(
+    path_run_dir: Path,
+    dict_workflow_result: dict[str, Any],
+) -> Path | None:
+    """统一解析 facade 顶层需要 surfaced 的最终 artifact 目录。
+
+    参数:
+        path_run_dir: 当前 workflow run 的根目录。
+        dict_workflow_result: runtime 返回的完整 workflow 结果字典。
+
+    返回:
+        返回已解析的最终 artifact 目录；无法映射到本地路径时返回 None。
+    """
+
+    # attempts 只在 workflow_result 是字典时才允许继续读取。
+    if not isinstance(dict_workflow_result, dict):
+
+        # 坏形状的 workflow_result 直接视为没有可 surfaced 的本地 artifact。
+        return None
+
+    # attempts 列表缺失时回退为空列表，避免越界访问。
+    list_attempts = dict_workflow_result.get("attempts") or []  # runtime 记录的所有 workflow attempts
+
+    # 没有 attempt 时，说明当前 workflow 还没有最终 artifact 可以对外 surfaced。
+    if not list_attempts:
+
+        # 直接返回 None，保持 facade 顶层结果稳定。
+        return None
+
+    # 最后一次 attempt 才代表当前 workflow 对外 surfaced 的最终 artifact。
+    dict_latest_attempt = list_attempts[-1]  # 当前 workflow 的最后一次 attempt 记录
+
+    # 坏形状 attempt 不参与路径解析，避免把非字典对象误当成工件信息。
+    if not isinstance(dict_latest_attempt, dict):
+
+        # 直接返回 None，表示当前 surfaced artifact 不可解析。
+        return None
+
+    # 最终 artifact_dir 统一按 attempt 布局解析，兼容 external 脱敏占位值。
+    return _resolved_attempt_artifact_dir(path_run_dir, dict_latest_attempt)
+
+# _resolved_attempt_artifact_dir 兼容 external 占位值并重建 attempt 的本地 artifact 目录。
+def _resolved_attempt_artifact_dir(
+    path_run_dir: Path,
+    dict_attempt: dict[str, Any],
+) -> Path | None:
+    """兼容 external 占位值并重建 attempt 的本地 artifact 目录。
+
+    参数:
+        path_run_dir: 当前 workflow run 的根目录。
+        dict_attempt: 单个 workflow attempt 的结果字典。
+
+    返回:
+        返回已解析的 attempt artifact 目录；无法映射到本地目录时返回 None。
+    """
+
+    # artifact_dir 原始值优先按通用路径解析规则处理。
+    raw_artifact_dir = dict_attempt.get("artifact_dir")  # attempt 记录里的 artifact_dir 原始值
+
+    # 非 external 路径直接沿用现有解析结果。
+    path_direct = _resolve_result_path(path_run_dir, raw_artifact_dir)  # artifact_dir 的直接解析结果
+
+    # 已经拿到本地目录时，无需再走 attempt 布局重建。
+    if path_direct is not None:
+
+        # 返回已解析的本地 artifact 目录。
+        return path_direct
+
+    # 非字符串或非 external 占位值无法继续重建。
+    if not isinstance(raw_artifact_dir, str) or not raw_artifact_dir.startswith("<external>/"):
+
+        # 返回 None，保持 external 之外的坏形状显式暴露。
+        return None
+
+    # attempt_id 决定最终 artifact 所在的 attempt 子目录。
+    value_attempt_id = dict_attempt.get("attempt_id")  # attempt 记录里的稳定编号
+
+    # stage 决定最终 artifact 所在的最终阶段目录。
+    value_stage = dict_attempt.get("stage")  # attempt 记录里的最终阶段名称
+
+    # attempt_id 或 stage 缺失时不能可靠重建最终 artifact 目录。
+    if (
+        not isinstance(value_attempt_id, str)
+        or not value_attempt_id
+        or not isinstance(value_stage, str)
+        or not value_stage
+    ):
+
+        # 返回 None，避免拼出没有证据支持的伪路径。
+        return None
+
+    # safe_path 的 external 占位只保留 basename，这里按固定 stage 布局回推真实目录。
+    path_candidate = path_run_dir / value_attempt_id / value_stage / Path(raw_artifact_dir).name  # 按 stage 固定布局回推的本地 artifact 目录
+
+    # 目录真实存在时，说明 external 占位已成功映射回本地目录。
+    if path_candidate.exists():
+
+        # 返回重建成功的本地 artifact 目录。
+        return path_candidate
+
+    # 目录不存在则说明当前 attempt 记录无法映射到本地可访问工件。
+    return None
+
 # _batch_case_summary 从单 case workflow 结果中提取批量摘要字段。
 def _batch_case_summary(
     case_id: str,
@@ -987,9 +1105,6 @@ def _batch_case_summary(
 
     # 最新一次 attempt 单独提取出来，缺失时回退为空字典。
     dict_latest_attempt: dict[str, Any] = list_attempts[-1] if list_attempts else {}  # 最新一次 workflow attempt
-
-    # artifact_dir 原始值后面还要参与本地路径解析。
-    raw_artifact_dir = dict_latest_attempt.get("artifact_dir")  # 最新 attempt 记录的 artifact_dir 原始值
 
     # validation 默认先记为未通过，只有文件存在时再覆盖。
     bool_validation_ok = False  # 当前单 case 的 validation 结果
@@ -1027,8 +1142,8 @@ def _batch_case_summary(
         # 最后把 ready 字段收进 batch 摘要。
         value_semantic_gate_ready = dict_stage_verification_payload.get("ready")  # 语义门 ready 状态
 
-    # artifact_dir 原始值在这里解析成本地路径或空值。
-    path_artifact_dir = _resolve_result_path(path_case_run_dir, raw_artifact_dir)  # artifact_dir 解析后的本地目录
+    # artifact_dir 在这里解析成本地路径，external 占位值则按 attempt 布局回推。
+    path_artifact_dir = _resolved_attempt_artifact_dir(path_case_run_dir, dict_latest_attempt)  # artifact_dir 解析后的本地目录
 
     # 返回供 batch summary 复用的稳定摘要结构。
     return {

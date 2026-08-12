@@ -11,6 +11,9 @@ import unicodedata
 from pathlib import Path
 from typing import Any
 
+# 双语 header 的字面合同与固定路径统一从共享模块读取。
+from ..header_contract import default_header_paths, header_layout_config as shared_header_layout_config
+
 # formatter_ast 与 rulebook 仍是这些子模块依赖的唯一结构化入口。
 from .formatter_backend.banners import display_width
 from .formatter_ast import build_ast_report_for_path, iter_verilog_sources, read_verilog_source
@@ -687,8 +690,11 @@ def _header_rules(str_text: str, str_rel_path: str, *, strict: bool) -> list[Qua
     # References/Dependencies 只能命中两种合法 header 形态，并且不允许 tab 与旧拼写。
     list_issues.extend(_header_reference_dependency_issues(str_pre_module, str_rel_path, str_severity))
 
-    # header 结束后必须保留模块功能说明，并满足空行与说明质量合同。
-    list_issues.extend(_header_module_purpose_comment_issues(str_text, str_pre_module, str_rel_path, str_severity))
+    # Description/Simulations 字段必须回到固定路径合同，不能保留自由摘要或 tb 简写。
+    list_issues.extend(_header_document_path_issues(str_text, str_pre_module, str_rel_path, str_severity))
+
+    # header 结束后只允许保留一个空行再进入 module，不能再泄露额外摘要注释。
+    list_issues.extend(_header_postamble_issues(str_text, str_pre_module, str_rel_path, str_severity))
 
     # 当前版本和历史记录必须具备真实可追溯内容。
     list_issues.extend(_header_version_history_issues(str_pre_module, str_rel_path, str_severity))
@@ -769,7 +775,7 @@ def _header_reference_dependency_legacy_layout_issues(
     list_issues: list[QualityIssue] = []  # header 历史版式残留诊断
 
     # 旧拼写必须走新规则码 VG068，而不是继续混在 VG007 中。
-    str_legacy_references_field = "Refer" + "rences:"  # 拆分保留旧拼写兼容检测
+    str_legacy_references_field = "Reference" + "s:"  # 拆分保留旧拼写兼容检测
 
     # 只要 header 区出现 tab，就说明仍在依赖历史制表布局。
     if "\t" in str_pre_module:
@@ -790,12 +796,12 @@ def _header_reference_dependency_legacy_layout_issues(
     # References 的旧拼写必须被统一阻断。
     if str_legacy_references_field in str_pre_module:
 
-        # 英文标签只能是 References，不能回落到旧模板拼写。
+        # 英文标签只能是 Referrences，不能回落到历史标准拼写。
         list_issues.append(
             QualityIssue(
                 "VG068",
                 str_severity,
-                "Header must use exact `References` spelling in the English section.",
+                "Header must use exact `Referrences` spelling in the English section.",
                 str_rel_path,
                 1,
                 "header.references_spelling",
@@ -815,26 +821,29 @@ def _header_reference_dependency_layouts() -> dict[str, dict[str, str]]:
     :return: 以语言名为键的 header 布局定义字典。
     """
 
-    # dict_layouts 描述英中两段 References/Dependencies 的精确空格版式。
+    # 读取共享 header 合同布局，后续只抽取 References/Dependencies 相关字段。
+    dict_layout = shared_header_layout_config()  # 共享 header 合同布局副本
+
+    # 返回英中双语的 References/Dependencies 精确版式映射。
     return {
-        "english": {  # 英文 header 布局定义
+        "english": {
             "separator_marker": HEADER_ENGLISH_SEPARATOR,
-            "references_line_none": "// References:     None",
-            "references_line_table": "// References:",
-            "references_heading": "// File Format      File Name",
-            "dependencies_line_none": "// Dependencies:    None",
-            "dependencies_line_table": "// Dependencies:",
-            "dependencies_heading": "// Module Name      Version",
+            "references_line_none": str(dict_layout["english"]["references_line_none"]),
+            "references_line_table": str(dict_layout["english"]["references_line_table"]),
+            "references_heading": f"// {dict_layout['english']['references_table_header']}",
+            "dependencies_line_none": str(dict_layout["english"]["dependencies_line_none"]),
+            "dependencies_line_table": str(dict_layout["english"]["dependencies_line_table"]),
+            "dependencies_heading": f"// {dict_layout['english']['dependencies_table_header']}",
             "version_prefix": "// Version:",
         },
-        "chinese": {  # 中文 header 布局定义
+        "chinese": {
             "separator_marker": HEADER_CHINESE_SEPARATOR,
-            "references_line_none": "// 参考资料:        None",
-            "references_line_table": "// 参考资料:",
-            "references_heading": "// 文件格式         文件名称",
-            "dependencies_line_none": "// 依赖文件:        None",
-            "dependencies_line_table": "// 依赖文件:",
-            "dependencies_heading": "// 模块名称         版本",
+            "references_line_none": str(dict_layout["chinese"]["references_line_none"]),
+            "references_line_table": str(dict_layout["chinese"]["references_line_table"]),
+            "references_heading": f"// {dict_layout['chinese']['references_table_header']}",
+            "dependencies_line_none": str(dict_layout["chinese"]["dependencies_line_none"]),
+            "dependencies_line_table": str(dict_layout["chinese"]["dependencies_line_table"]),
+            "dependencies_heading": f"// {dict_layout['chinese']['dependencies_table_header']}",
             "version_prefix": "// 当前版本:",
         },
     }
@@ -1034,7 +1043,7 @@ def _header_reference_dependency_order_issue(
     return QualityIssue(
         "VG068",
         str_severity,
-        f"{str_language.capitalize()} header must keep `References`, "
+        f"{str_language.capitalize()} header must keep `Referrences`, "
         "`Dependencies`, and version fields in the canonical order.",
         str_rel_path,
         1,
@@ -1354,271 +1363,162 @@ def _classify_header_section_block(
             # 返回合法 table_mode 以及真实数据行数量。
             return "table_mode", len(list_data_rows)
 
-    # 既不是合法 none_mode，也不是合法 table_mode。
+# 既不是合法 none_mode，也不是合法 table_mode。
+
+    # 返回空模式标记，提示调用方当前块不满足任一合法版式。
     return None, 0
 
-# 供 `_header_module_purpose_comment_issues` 复用的拆分 helper，专门处理检查标准 header 结束后到 module 声明前的中文模块功能说明合同。
-def _header_module_purpose_comment_issues(
+# 供 `_header_document_path_issues` 复用的拆分 helper，专门处理检查 Description/Simulations 是否回到固定路径合同。
+def _header_document_path_issues(
     str_text: str,
     str_pre_module: str,
     str_rel_path: str,
     str_severity: str,
 ) -> list[QualityIssue]:
     """
-    检查标准 header 结束后到 module 声明前的中文模块功能说明合同。
+    检查双语 header 的说明文档与仿真工程字段是否保持固定路径合同。
 
     :param str_text: 当前 Verilog 源码文本。
     :param str_pre_module: module 声明之前的源码文本。
     :param str_rel_path: 报告中使用的相对文件路径。
     :param str_severity: 当前 header 规则严重级别。
-    :return: 模块功能说明相关诊断列表。
+    :return: Description/Simulations 路径相关诊断列表。
     """
 
-    # list_issues 保存 VG067 header->purpose->module 合同诊断。
-    list_issues: list[QualityIssue] = []  # header 后模块功能说明合同诊断
+    # 先定位首个 module 锚点，后续用模块名重建固定文档路径合同。
+    tuple_module_anchor = _first_module_anchor(str_text)  # 首个 module 锚点
 
-    # 只有标准双语 header 存在时，才强制执行本合同。
-    if HEADER_ENGLISH_SEPARATOR not in str_pre_module or HEADER_CHINESE_SEPARATOR not in str_pre_module:
-
-        # 双语 header 缺失时由 VG007 处理，这里不重复报告 VG067。
-        return list_issues
-
-    # list_lines 保留全文物理行，便于直接定位 module 上一行与历史上一行。
-    list_lines = str_text.splitlines()  # 当前文件完整源码行列表
-
-    # tuple_module_anchor 给出首个 module 的源码行号和模块名。
-    tuple_module_anchor = _first_module_anchor(str_text)  # 首个 module 声明锚点
-
-    # 没有 module 声明时由 formatter/解析规则负责报错。
+    # 缺少 module 声明时无法推导 `{module_name}` 的目标值，直接跳过本规则。
     if tuple_module_anchor is None:
 
-        # 缺少 module 时当前规则不伪造 VG067。
-        return list_issues
+        # 无 module 锚点时不生成路径合同诊断。
+        return []
 
-    # int_module_line_no 与 str_module_name 供模块说明邻接和质量诊断复用。
-    int_module_line_no, str_module_name = tuple_module_anchor  # 首个 module 行号与模块名
+    # 从锚点里提取模块名，供 Description/Simulations 固定路径模板实例化。
+    _, str_module_name = tuple_module_anchor  # 当前 header 对应的模块名
 
-    # 先确认 module 正上方那一行是否真的是功能说明锚点。
-    tuple_anchor_scan = _header_module_purpose_anchor_scan(  # 模块功能说明锚点扫描结果
-        list_lines,  # 本次要扫描的完整源码行列表
-        int_module_line_no,  # 首个 module 的一基行号
-        str_rel_path,  # 功能说明诊断落点路径
-        str_severity,  # 功能说明合同严重级别
+    # 按模块名重建双语固定路径，避免沿用旧 header 的自由文本。
+    dict_header_paths = default_header_paths(str_module_name)  # 双语固定路径集合
+
+    # 读取共享布局前缀，拼出四条必须逐字出现的目标行。
+    dict_layout = shared_header_layout_config()  # 双语 header 共享布局
+
+    # 组装英中四条精确路径行，后续统一检查是否全部存在。
+    tuple_expected_lines = (  # Description/Simulations 精确合同行
+        f"{dict_layout['english']['description_prefix']}{dict_header_paths['english']['description']}",  # English Description 固定路径行
+        f"{dict_layout['english']['simulations_prefix']}{dict_header_paths['english']['simulations']}",  # English 仿真字段必须保留小写 testbench/vivado 路径
+        f"{dict_layout['chinese']['description_prefix']}{dict_header_paths['chinese']['description']}",  # Chinese 模块说明固定路径行
+        f"{dict_layout['chinese']['simulations_prefix']}{dict_header_paths['chinese']['simulations']}",  # Chinese 仿真工程固定路径行
     )
 
-    # str_purpose_line 只有在 module 正上方确实存在纯注释说明时才非空。
-    str_purpose_line = tuple_anchor_scan[0]  # module 正上方模块功能说明行
+    # 四条路径行全部命中时，说明 header 已满足 Description/Simulations 路径合同。
+    if all(str_expected_line in str_pre_module for str_expected_line in tuple_expected_lines):
 
-    # 先合并 module 功能说明存在性相关诊断。
-    list_issues.extend(tuple_anchor_scan[1])
+        # 已满足固定路径合同，不再追加任何 VG068。
+        return []
 
-    # 没有纯注释说明时，后续正文与历史间距检查都没有意义。
-    if str_purpose_line is None:
-
-        # 缺少纯注释时直接结束当前合同检查。
-        return list_issues
-
-    # str_comment_body 是去掉 `//` 后的模块功能说明正文。
-    str_comment_body = _line_comment(str_purpose_line)  # 模块功能说明正文
-
-    # 说明正文必须有真实中文 RTL 语义，不能是空洞模板句。
-    if _is_hollow_module_purpose_comment(str_comment_body, str_module_name):
-
-        # 空洞模块说明无法满足“从 RTL 语义推断”的新合同。
-        list_issues.append(
-            QualityIssue(
-                "VG067",
-                str_severity,
-                "Module purpose comment must be Chinese-first, semantic, and cannot be a hollow template sentence.",
-                str_rel_path,
-                int_module_line_no - 1,
-                "header.module_purpose_comment_quality",
-            )
-        )
-
-    # 模块说明之前的空行与中文历史承接关系由独立 helper 统一检查。
-    list_issues.extend(
-        _header_module_purpose_history_spacing_issues(
-            list_lines,
-            int_module_line_no,
-            str_rel_path,
+    # 任意一条固定路径行缺失时，统一追加 Description/Simulations 合同诊断。
+    return [
+        QualityIssue(
+            "VG068",
             str_severity,
+            "Header Description/Simulations fields must use the fixed bilingual path contract "
+            "(`description/testbench` in English and `Description/TestBench` in Chinese).",
+            str_rel_path,
+            1,
+            "header.description_simulations_paths",
         )
-    )
+    ]
 
-    # 返回 header 后模块功能说明合同诊断。
-    return list_issues
-
-# 供 `_header_module_purpose_anchor_scan` 复用的拆分 helper，专门处理module 前一行的模块功能说明锚点，以及说明存在性相关诊断。
-def _header_module_purpose_anchor_scan(
-    list_lines: list[str],
-    int_module_line_no: int,
-    str_rel_path: str,
-    str_severity: str,
-) -> tuple[str | None, list[QualityIssue]]:
-    """
-    返回 module 前一行的模块功能说明锚点，以及说明存在性相关诊断。
-
-    :param list_lines: 当前文件完整源码行列表。
-    :param int_module_line_no: 首个 module 的 1 基行号。
-    :param str_rel_path: 报告中使用的相对文件路径。
-    :param str_severity: 当前 header 规则严重级别。
-    :return: 模块功能说明行，以及对应诊断列表。
-    """
-
-    # list_issues 保存 module 功能说明存在性相关诊断。
-    list_issues: list[QualityIssue] = []  # 模块功能说明存在性诊断
-
-    # module 之前至少还需要存在一行模块功能说明。
-    if int_module_line_no <= 1:
-
-        # module 在首行时不可能满足 header 后模块说明合同。
-        list_issues.append(
-            QualityIssue(
-                "VG067",
-                str_severity,
-                "Standard header must be followed by one Chinese module purpose "
-                "comment immediately before `module`.",
-                str_rel_path,
-                int_module_line_no,
-                "header.module_purpose_comment",
-            )
-        )
-
-        # 缺少上文时无法继续检查空行合同。
-        return None, list_issues
-
-    # str_purpose_line 是 module 正上方一行，必须是纯注释模块说明。
-    str_purpose_line = list_lines[int_module_line_no - 2]  # module 正上方一行源码
-
-    # module 功能说明必须是紧贴 module 的纯注释行。
-    if not _is_pure_line_comment(str_purpose_line):
-
-        # 缺少纯注释时，说明 header 结束后直接贴到了 module。
-        list_issues.append(
-            QualityIssue(
-                "VG067",
-                str_severity,
-                "Standard header must keep one Chinese module purpose comment "
-                "immediately above `module`.",
-                str_rel_path,
-                int_module_line_no,
-                "header.module_purpose_comment",
-            )
-        )
-
-        # 没有纯注释时无法继续判断说明正文和空行合同。
-        return None, list_issues
-
-    # 返回当前 module 前一行的合法纯注释说明锚点。
-    return str_purpose_line, list_issues
-
-# 供 `_header_module_purpose_history_spacing_issues` 复用的拆分 helper，专门处理检查中文历史末行与模块功能说明之间的空行数量和承接锚点。
-def _header_module_purpose_history_spacing_issues(
-    list_lines: list[str],
-    int_module_line_no: int,
+# 供 `_header_postamble_issues` 复用的拆分 helper，专门处理检查标准 header 后只能保留一个空行再进入 module。
+def _header_postamble_issues(
+    str_text: str,
+    str_pre_module: str,
     str_rel_path: str,
     str_severity: str,
 ) -> list[QualityIssue]:
     """
-    检查中文历史末行与模块功能说明之间的空行数量和承接锚点。
+    检查标准 header 结束后只能保留一个空行再进入 module。
 
-    :param list_lines: 当前文件完整源码行列表。
-    :param int_module_line_no: 首个 module 的 1 基行号。
+    :param str_text: 当前 Verilog 源码文本。
+    :param str_pre_module: module 声明之前的源码文本。
     :param str_rel_path: 报告中使用的相对文件路径。
     :param str_severity: 当前 header 规则严重级别。
-    :return: 模块功能说明与历史承接关系的诊断列表。
+    :return: header 收尾与 module 邻接关系的诊断列表。
     """
 
-    # list_issues 保存模块说明与中文历史之间的承接关系诊断。
-    list_issues: list[QualityIssue] = []  # 模块功能说明承接诊断
+    # 只有双语标准 header 已经出现时，才继续检查 header 收尾与 module 邻接合同。
+    if HEADER_ENGLISH_SEPARATOR not in str_pre_module or HEADER_CHINESE_SEPARATOR not in str_pre_module:
 
-    # 继续抽取模块说明前的空白数量与历史末行位置。
-    tuple_blank_context = _header_module_purpose_blank_line_context(  # 模块说明之前的空白与历史锚点上下文
-        list_lines,  # 用来回溯历史末行的完整源码行列表
-        int_module_line_no,  # 需要向上回溯的 module 行号
-    )
+        # 没有完整双语 header 锚点时，不在这里补充 postamble 诊断。
+        return []
 
-    # int_blank_line_count 统计中文历史最后一行与说明之间的空白物理行数。
-    int_blank_line_count = tuple_blank_context[0]  # 模块功能说明之前的连续空白行数量
+    # 为 postamble 检查重新抓取 module 锚点，后续据此回溯 header 尾部。
+    tuple_module_anchor = _first_module_anchor(str_text)  # postamble 检查使用的 module 锚点
 
-    # int_scan_index 指向模块功能说明之前最近一条非空行的零基索引。
-    int_scan_index = tuple_blank_context[1]  # 中文历史末行候选索引
+    # 缺少 module 声明时无法判断 header 收尾位置，直接返回空结果。
+    if tuple_module_anchor is None:
 
-    # 模块功能说明前必须恰好保留一个空行。
-    if int_blank_line_count != 1:
+        # 无 module 锚点时跳过 postamble 邻接检查。
+        return []
 
-        # 多空行、零空行都违反“历史最后一行 -> 空行 -> 模块说明”的固定合同。
-        list_issues.append(
-            QualityIssue(
-                "VG067",
-                str_severity,
-                "Chinese header history must be followed by exactly one blank "
-                "line before the module purpose comment.",
-                str_rel_path,
-                int_module_line_no - 1,
-                "header.module_purpose_comment_spacing",
-            )
-        )
+    # 取出首个 module 的一基行号，作为回溯 header 末尾的起点。
+    int_module_line_no, _ = tuple_module_anchor  # 首个 module 的一基行号
 
-    # 缺少上一条非空行时无法证明模块说明确实承接中文历史末行。
-    if int_scan_index < 0:
+    # 按物理行拆分源码，供零基索引回溯连续空白区。
+    list_lines = str_text.splitlines()  # 当前文件物理行列表
 
-        # 没有历史末行锚点时直接结束当前合同检查。
-        return list_issues
+    # 从 module 上一行开始向上扫描，定位 header 尾部空白段。
+    int_scan_index = int_module_line_no - 2  # 从 module 上一行开始回溯的零基索引
 
-    # str_history_tail_line 是模块功能说明之前的上一条非空行，应是中文历史记录。
-    str_history_tail_line = list_lines[int_scan_index]  # 中文历史末行候选
+    # 连续空白计数器用于验证是否恰好只保留一个空行。
+    int_blank_line_count = 0  # header 末尾到 module 之间的连续空白行数量
 
-    # 上一条非空行必须是中文历史记录，而不是字段标题、表头或其他注释。
-    if not _is_chinese_history_record_line(str_history_tail_line):
-
-        # 若上一条非空行不是中文历史记录，说明 header 末尾结构已偏离固定合同。
-        list_issues.append(
-            QualityIssue(
-                "VG067",
-                str_severity,
-                "Module purpose comment must be placed after the last Chinese "
-                "history record, not after another header field or heading.",
-                str_rel_path,
-                int_module_line_no - 1,
-                "header.module_purpose_comment_anchor",
-            )
-        )
-
-    # 返回模块说明与历史承接诊断。
-    return list_issues
-
-# 供 `_header_module_purpose_blank_line_context` 复用的拆分 helper，专门处理统计模块功能说明前连续空白行数量，并返回最近一条非空行索引。
-def _header_module_purpose_blank_line_context(
-    list_lines: list[str],
-    int_module_line_no: int,
-) -> tuple[int, int]:
-    """
-    统计模块功能说明前连续空白行数量，并返回最近一条非空行索引。
-
-    :param list_lines: 当前文件完整源码行列表。
-    :param int_module_line_no: 首个 module 的 1 基行号。
-    :return: 连续空白行数量，以及最近一条非空行的零基索引。
-    """
-
-    # int_scan_index 从模块功能说明上一行开始向上回溯最近一条非空记录。
-    int_scan_index = int_module_line_no - 3  # 从模块说明上一行向上扫描的零基索引
-
-    # int_blank_line_count 记录模块说明之前连续空白的累计数量。
-    int_blank_line_count = 0  # 模块功能说明之前累计的空白行数
-
-    # 先向上消费空白行，计算说明与上一条非空行之间的空行数。
+    # 逐行回溯 module 前的空白区，统计 header 结束到 module 之间的真实空行数。
     while int_scan_index >= 0 and not list_lines[int_scan_index].strip():
 
-        # 这条空白行属于历史末行与模块说明之间的固定缓冲区。
-        int_blank_line_count += 1  # 模块说明之前累计的空白行数量
+        # 每遇到一条空白行就递增间隔计数。
+        int_blank_line_count += 1  # 已统计到的连续空白行数量
 
-        # 继续向上寻找最近一条非空历史记录或字段行。
-        int_scan_index -= 1  # 向上推进到下一条待检查行
+        # 继续向上检查上一条物理行是否仍为空白。
+        int_scan_index -= 1  # 下一次 while 判断使用的零基索引
 
-    # 返回模块说明前的空白数量和历史末行候选位置。
-    return int_blank_line_count, int_scan_index
+    # 初始化诊断容器，统一收集 spacing 与 trailing-summary 两类问题。
+    list_issues: list[QualityIssue] = []  # 当前 header 收尾合同诊断列表
+
+    # 先验证标准 header 与 module 之间是否恰好只有一个空行。
+    if int_blank_line_count != 1:
+
+        # 空白行数量不符合合同就追加 module spacing 诊断。
+        list_issues.append(
+            QualityIssue(
+                "VG067",
+                str_severity,
+                "Standard header must be followed by exactly one blank line before `module`.",
+                str_rel_path,
+                max(int_module_line_no - 1, 1),
+                "header.module_spacing",
+            )
+        )
+
+    # 再验证 header 最后一条非空白内容是否就是中文历史记录正文。
+    if int_scan_index < 0 or not _is_chinese_history_record_line(list_lines[int_scan_index]):
+
+        # 中文历史记录后若还残留摘要注释或其他内容，就追加 trailing-summary 诊断。
+        list_issues.append(
+            QualityIssue(
+                "VG067",
+                str_severity,
+                "Header must end at the last Chinese history record; do not keep extra summary comments "
+                "between the header and `module`.",
+                str_rel_path,
+                max(int_module_line_no - 1, 1),
+                "header.trailing_summary_comment",
+            )
+        )
+
+    # 返回 header 收尾合同阶段收集到的全部诊断。
+    return list_issues
 
 # 供 `_first_module_anchor` 复用的拆分 helper，专门处理首个 module 声明的一基行号和模块名。
 def _first_module_anchor(str_text: str) -> tuple[int, str] | None:
@@ -1643,39 +1543,6 @@ def _first_module_anchor(str_text: str) -> tuple[int, str] | None:
 
     # 未找到 module 声明。
     return None
-
-# 供 `_is_hollow_module_purpose_comment` 复用的拆分 helper，专门处理模块功能说明是否为空洞模板句、机械模块名复述或缺少中文语义。
-def _is_hollow_module_purpose_comment(str_comment_body: str, str_module_name: str) -> bool:
-    """
-    判断模块功能说明是否为空洞模板句、机械模块名复述或缺少中文语义。
-
-    :param str_comment_body: 去掉 `//` 后的模块功能说明正文。
-    :param str_module_name: 当前 module 名称。
-    :return: 说明空洞或机械时返回 True。
-    """
-
-    # str_normalized 统一去掉常见空白和标点，便于精确比较模板句。
-    str_normalized = re.sub(r"[\s_，。,.;；:：`-]+", "", str_comment_body.strip())  # 规范化模块功能说明文本
-
-    # str_module_normalized 用于识别“模块名 + 模块”这类机械重复句。
-    str_module_normalized = re.sub(r"[_\s]+", "", str_module_name.strip()).lower()  # 规范化模块名文本
-
-    # 空文本、缺中文、或命中既有空洞注释规则时都不满足交付合同。
-    if (
-        not str_normalized
-        or not _comment_has_meaningful_chinese(str_comment_body)
-        or _is_hollow_chinese_comment(str_comment_body)
-    ):
-
-        # 模块说明必须具备真实中文 RTL 语义。
-        return True
-
-    # 明确的模板句与机械模块名复述必须被阻断。
-    return str_normalized in {
-        "模块说明",
-        "模块功能说明",
-        f"{str_module_normalized}模块",
-    }
 
 # 供 `_is_chinese_history_record_line` 复用的拆分 helper，专门处理一行 header 注释是否为中文历史记录正文。
 def _is_chinese_history_record_line(str_line: str) -> bool:

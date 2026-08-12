@@ -86,13 +86,15 @@
 
 交付文件必须使用标准双语文件头；标准 preamble 包含 ``timescale 1ns / 1ps`。formatter 当前会重建如下字段：
 
-- 英文段：`Company`、`Engineer`、`Create Date`、`Design Name`、`Module Name`、`Description`、`Simulations`、`References`、`Dependencies`、`Version`、`Revision Date`、`History`。
+- 英文段：`Company`、`Engineer`、`Create Date`、`Design Name`、`Module Name`、`Description`、`Simulations`、`Referrences`、`Dependencies`、`Version`、`Revision Date`、`History`。
 - 中文段：`版权归属`、`开发人员`、`创建日期`、`设计名称`、`模块名称`、`模块说明`、`仿真工程`、`参考资料`、`依赖文件`、`当前版本`、`修订日期`、`修订历史`。
 - 默认身份字段：`Erie`。
 - 默认版本：`V1.0`。
-- 默认说明路径：`Description/<module>_Design.pdf`。
-- 默认仿真路径：`TestBench/Vivado/2021.1/<module>`。
-- formatter 当前英文 header 中使用拼写 `References`。为了与工具输出一致，不要在被 formatter 接管的文件中手动改成 `References`，除非同步修改工具。
+- 英文默认说明路径：`description/<module>_Design.pdf`。
+- 英文默认仿真路径：`testbench/vivado/2021.1/<module>`。
+- 中文默认说明路径：`Description/<module>_Design.pdf`。
+- 中文默认仿真路径：`TestBench/Vivado/2021.1/<module>`。
+- formatter 当前英文 header 中固定使用拼写 `Referrences`。为了与工具输出一致，不要在被 formatter 接管的文件中手动改成 `References`。
 
 ### 3.2 版本号规范
 
@@ -447,7 +449,7 @@ formatter 默认启用 `enforce_region_order = true`。综合 `defaults.json`、
 
 - 内部声明允许 `wire`、`reg`、`integer`、`real`、`genvar`；`logic` 会被标准化为 `reg`。
 - 每行只声明一个主要信号，避免多信号合并声明。
-- `reg` 未显式初始化且不是 unpacked array 时，formatter 会倾向补 `= 0`。
+- `VG015`：模块内部 `reg` 标量/向量声明（非 unpacked array）必须显式初始化；若原始声明缺少初值，规范化/修复时必须补成精确 ` = 0;`。
 - `wire` 不能 inline assign：禁止 `wire x = expr;`，必须拆成：
 
 ```verilog
@@ -820,33 +822,33 @@ assign o_done = done_o;                     // 输出完成标志
 `timescale 1ns / 1ps
 
 ////////////////////////////////////English///////////////////////////////////////
-// Company:            Erie
+// Company:         Erie
 // Engineer:        Erie
 // 
 // Create Date:     YYYY/MM/DD HH:MM:SS
 // Design Name:     module_name
 // Module Name:     module_name
-// Description:     Description/module_name_Design.pdf
-// Simulations:     TestBench/Vivado/2021.1/module_name
+// Description:     description/module_name_Design.pdf
+// Simulations:     testbench/vivado/2021.1/module_name
 // 
-// References:      None
+// Referrences:     None
 //
 // Dependencies:    None
 //
 // Version:         V1.0
 // Revision Date:   YYYY/MM/DD HH:MM:SS
 // History:
-// Time             Version      Revised by            Contents
-// YYYY/MM/DD       V1.0         Erie                  Create file.
+// Time             Version     Revised by        Contents
+// YYYY/MM/DD       V1.0        Erie              Create file.
 ///////////////////////////////////Chinese////////////////////////////////////////
 // 版权归属:        Erie
 // 开发人员:        Erie
 // 
-// 创建日期:         YYYY年MM月DD日
-// 设计名称:         module_name
-// 模块名称:         module_name
+// 创建日期:        YYYY年MM月DD日
+// 设计名称:        module_name
+// 模块名称:        module_name
 // 模块说明:        Description/module_name_Design.pdf
-// 仿真工程:         TestBench/Vivado/2021.1/module_name
+// 仿真工程:        TestBench/Vivado/2021.1/module_name
 //    
 // 参考资料:        None
 //
@@ -855,8 +857,8 @@ assign o_done = done_o;                     // 输出完成标志
 // 当前版本:        V1.0
 // 修订日期:        YYYY年MM月DD日
 // 修订历史:
-// 时间             版本        修订人                 修订内容    
-// YYYY年MM月DD日   V1.0        Erie                   创建文件
+// 时间             版本        修订人            修订内容
+// YYYY年MM月DD日   V1.0        Erie              创建文件
 
 //xxx模块
 module module_name
@@ -937,7 +939,7 @@ endmodule
 这些是“读源码后确认的现状”，交付和后续维护时要特别注意：
 
 1. **端口/信号 packed width 与 name 当前可能无空格。** 这是渲染实现事实；不影响语义，但会影响人工期待。
-2. **`References` 拼写按实现输出。** 若要求英文正确拼写，需要改 header 渲染代码。
+2. **`Referrences` 拼写按实现输出。** 这是当前字面合同；不要在 formatter 接管文件中手动改回 `References`。
 3. **三段式 FSM 的项目规范强于工具自动验证。** 工具能检查一部分状态机结构，但不能证明完整三段式语义。
 4. **`end/req/ack/done/valid` 等 flag 语义不一定全部自动加 `flag_`。** 生成器必须主动遵守。
 5. **协议专用 clock/reset 名不一定由 formatter 自动推断。** `i_axi_aclk`、`i_axis_arstn` 等要由生成器或人工指定。

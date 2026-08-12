@@ -9,6 +9,14 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+# 双语 header 合同统一从共享模块读取，避免 formatter 与 workflow/test 分叉。
+from ...header_contract import (
+    default_header_paths,
+    header_layout_config as shared_header_layout_config,
+    render_bilingual_header,
+    render_header_template_text,
+)
+
 # banner 工具仅用于识别需要避开的装饰性横幅注释。
 from .banners import is_banner_line
 
@@ -325,7 +333,7 @@ class HeaderMixin:
             "Module Name:",  # 英文模块名称字段标记
             "Description:",  # 英文模块说明字段标记
             "Simulations:",  # 英文仿真工程字段标记
-            "References:",  # 英文参考资料字段标记
+            "Referrences:",  # 英文参考资料字段标记
             "Dependencies:",  # 英文依赖文件字段标记
             "Version:",  # 英文版本字段标记
             "History:",  # 英文修订历史字段标记
@@ -1533,60 +1541,8 @@ class HeaderMixin:
             dict[str, object]: 英文/中文字段前缀、表头与分隔策略配置。
         """
 
-        # 先读取 header 配置段，layout 子段缺失时再回退到内置默认值。
-        dict_header_config = self.config.get("header", {})  # 用于判定是否存在显式 layout 子段的原始 header 配置
-
-        # 只有 layout 子段是字典时，才把它视为合法的结构化布局配置。
-        if isinstance(dict_header_config, dict) and isinstance(dict_header_config.get("layout"), dict):
-
-            # 调用方显式提供 layout 时优先复用该结构化配置。
-            return dict_header_config["layout"]
-
-        # 缺省时统一使用新的空格版式双语 header 默认布局。
-        return {
-            "english": {
-                "separator": "////////////////////////////////////English///////////////////////////////////////",
-                "company_prefix": "// Company:         ",
-                "engineer_prefix": "// Engineer:        ",
-                "blank_after_identity": "//",
-                "create_date_prefix": "// Create Date:     ",
-                "design_name_prefix": "// Design Name:     ",
-                "module_name_prefix": "// Module Name:     ",
-                "description_prefix": "// Description:     ",
-                "simulations_prefix": "// Simulations:     ",
-                "blank_before_references": "//",
-                "references_prefix": "// References:     ",
-                "references_table_header": "File Format      File Name",
-                "dependencies_prefix": "// Dependencies:    ",
-                "dependencies_table_header": "Module Name      Version",
-                "section_blank": "//",
-                "version_prefix": "// Version:         ",
-                "revision_date_prefix": "// Revision Date:   ",
-                "history_title": "// History:",
-                "history_header": "// Time             Version     Revised by        Contents",
-            },
-            "chinese": {
-                "separator": "///////////////////////////////////Chinese////////////////////////////////////////",
-                "company_prefix": "// 版权归属:        ",
-                "engineer_prefix": "// 开发人员:        ",
-                "blank_after_identity": "//",
-                "create_date_prefix": "// 创建日期:        ",
-                "design_name_prefix": "// 设计名称:        ",
-                "module_name_prefix": "// 模块名称:        ",
-                "description_prefix": "// 模块说明:        ",
-                "simulations_prefix": "// 仿真工程:        ",
-                "blank_before_references": "//",
-                "references_prefix": "// 参考资料:        ",
-                "references_table_header": "文件格式         文件名称",
-                "dependencies_prefix": "// 依赖文件:        ",
-                "dependencies_table_header": "模块名称         版本",
-                "section_blank": "//",
-                "version_prefix": "// 当前版本:        ",
-                "revision_date_prefix": "// 修订日期:        ",
-                "history_title": "// 修订历史:",
-                "history_header": "// 时间             版本        修订人            修订内容",
-            },
-        }
+        # 返回共享模块生成的布局副本，供当前 mixin 直接读取字段前缀和列头。
+        return shared_header_layout_config()
 
     # 用 header 配置里的模板文本渲染默认字段，并兼容 `$module$` 与 `{module_name}` 占位。
     def _render_header_template_text(self, template: str, module_name: str) -> str:
@@ -1600,20 +1556,8 @@ class HeaderMixin:
             str: 用 module 名称替换后的 header 默认文本。
         """
 
-        # 先把 `$module$` 与 `{module}` 兼容占位统一替换掉。
-        str_template = str(template).replace("$module$", module_name).replace("{module}", module_name)  # 兼容占位替换后的模板文本
-
-        # `{module_name}` 继续沿用 Python format 风格，未命中时原样回退。
-        try:
-
-            # 标准模板允许显式使用 `{module_name}` 占位。
-            return str_template.format(module_name=module_name, module=module_name)
-
-        # 模板若包含其他花括号，不应让 header 渲染流程直接失败。
-        except (IndexError, KeyError, ValueError):
-
-            # 保守回退到仅做兼容占位替换后的文本。
-            return str_template
+        # 返回共享 helper 渲染后的模板文本，统一处理 `$module$` 与 `{module_name}` 占位。
+        return render_header_template_text(template, module_name)
 
     # 统一规整 header 版式比较文本，便于识别中英文表头和旧版混合残留。
     def _normalize_header_compare_text(self, text: str) -> str:
@@ -1999,27 +1943,14 @@ class HeaderMixin:
         # 模块名称缺失时，同样回退到当前 module 名称。
         str_rendered_module_name = header_metadata_current.module_name or module_name  # 文件头模块名称
 
-        # 模块说明默认模板支持通过配置参数化 module 名称占位。
-        str_description_template = str(  # 模块说明缺失时回退使用的模板文本
-            dict_header_config.get("description_template") or "Description/{module_name}_Design.pdf"  # 缺省模块说明模板正文
-        )
+        # 文档与仿真路径统一重建为固定合同，不再保留自由文本或 tb 简写。
+        dict_header_paths = default_header_paths(str_rendered_module_name)  # 双语 header 固定路径集合
 
-        # 模块说明缺失时，按配置模板生成默认的说明文档路径。
-        str_description = header_metadata_current.description or self._render_header_template_text(  # 最终写回文件头的模块说明
-            str_description_template,  # 参与占位符替换的说明模板
-            str_rendered_module_name,  # 用于替换 {module_name} 占位
-        )
+        # 拆出 English 段路径字典，后续直接写回英文 Description/Simulations 字段。
+        dict_english_paths = dict_header_paths["english"]  # 英文段固定路径
 
-        # 仿真工程默认模板同样通过配置承载可变项目名。
-        str_simulations_template = str(  # 仿真工程缺失时回退使用的模板文本
-            dict_header_config.get("simulations_template") or "TestBench/Vivado/2021.1/{module_name}"  # 缺省仿真工程模板正文
-        )
-
-        # 仿真工程缺失时，按配置模板生成默认的 testbench 路径。
-        str_simulations = header_metadata_current.simulations or self._render_header_template_text(  # 最终写回文件头的仿真工程路径
-            str_simulations_template,  # 参与占位符替换的仿真模板
-            str_rendered_module_name,  # 用于替换仿真工程模板里的 {module_name}
-        )
+        # 拆出 Chinese 段路径字典，后续直接写回中文模块说明/仿真工程字段。
+        dict_chinese_paths = dict_header_paths["chinese"]  # 中文段固定路径
 
         # 参考资料与依赖文件统一先归一成 none_mode 或 table_mode 两种结构。
         dict_reference_dependency_blocks = self._build_header_reference_dependency_blocks(  # References/Dependencies 统一结构
@@ -2045,8 +1976,8 @@ class HeaderMixin:
             "create_date": str_create_date_en,  # 英文创建日期字段值
             "design_name": str_design_name,  # 英文设计名称字段值
             "module_name": str_rendered_module_name,  # 英文模块名称字段值
-            "description": str_description,  # 英文模块说明字段值
-            "simulations": str_simulations,  # 英文仿真工程字段值
+            "description": str(dict_english_paths["description"]),  # 英文模块说明字段值
+            "simulations": str(dict_english_paths["simulations"]),  # 英文仿真工程字段值
             "version": str_rendered_version,  # 英文版本字段值
             "revision_date": str_revision_date_en,  # 英文修订日期字段值
         }
@@ -2058,28 +1989,21 @@ class HeaderMixin:
             "create_date": str_create_date_cn,  # 中文创建日期字段值
             "design_name": str_design_name,  # 中文设计名称字段值
             "module_name": str_rendered_module_name,  # 中文模块名称字段值
-            "description": str_description,  # 中文模块说明字段值
-            "simulations": str_simulations,  # 中文仿真工程字段值
+            "description": str(dict_chinese_paths["description"]),  # 中文模块说明字段值
+            "simulations": str(dict_chinese_paths["simulations"]),  # 中文仿真工程字段值
             "version": str_rendered_version,  # 中文版本字段值
             "revision_date": str_revision_date_cn,  # 中文修订日期字段值
         }
 
-        # 先生成英文文件头段落，保持双语输出时英文块位于前半段。
-        list_english_section = self._build_english_header_section(  # 英文头部段落
-            dict_english_section_values,  # 供英文模板取值的字段包
-            dict_reference_dependency_blocks,  # 英文段复用已归一的 references/dependencies 数据
-            list_history_lines_en,  # 需要写回英文历史表的正文行
+        # 按共享字面合同渲染最终双语 header 输出行，不再拼接自由文本摘要。
+        return render_bilingual_header(
+            english_values=dict_english_section_values,
+            chinese_values=dict_chinese_section_values,
+            english_history_lines=list_history_lines_en,
+            chinese_history_lines=list_history_lines_cn,
+            reference_dependency_block=dict_reference_dependency_blocks,
+            include_timescale=False,
         )
-
-        # 再生成中文文件头段落，补齐中文标签和中文修订历史内容。
-        list_chinese_section = self._build_chinese_header_section(  # 中文头部段落
-            dict_chinese_section_values,  # 中文标签到字段文本的映射包
-            dict_reference_dependency_blocks,  # 中文段沿用同一份 references/dependencies 内容
-            list_history_lines_cn,  # 最终贴到中文修订表的历史内容
-        )
-
-        # 双语头部最终按英文在前、中文在后的既有模板顺序输出。
-        return [*list_english_section, *list_chinese_section]
 
     # 判断修订历史行里是否包含中文字符，用于英文/中文历史分流。
     def _history_line_contains_cjk(self, text: str) -> bool:

@@ -7,10 +7,10 @@
 // Create Date:     2026/05/17 15:11:57
 // Design Name:     jesd_adc_system_top
 // Module Name:     jesd_adc_system_top
-// Description:     Description/jesd_adc_system_top_Design.pdf
-// Simulations:     TestBench/Vivado/2021.1/jesd_adc_system_top
+// Description:     description/jesd_adc_system_top_Design.pdf
+// Simulations:     testbench/vivado/2021.1/jesd_adc_system_top
 //
-// References:     None
+// Referrences:     None
 //
 // Dependencies:    None
 //
@@ -38,8 +38,6 @@
 // 修订历史:
 // 时间             版本        修订人            修订内容
 // 2026年05月17日   V1.0        Erie              创建文件
-
-// JESD ADC 采样数据接收与输出桥接系统顶层模块
 module jesd_adc_system_top
 (
 	//-----------------全局信号-----------------//

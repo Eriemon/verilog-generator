@@ -12,6 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+# 双语 header 锚点直接复用共享字面合同。
+from ..header_contract import HEADER_CHINESE_SEPARATOR, HEADER_ENGLISH_SEPARATOR
+
 # formatter_ast 是唯一结构化 Verilog 解析入口，正则只承担行级样式判断。
 from .formatter_backend.banners import display_width
 from .formatter_ast import build_ast_report_for_path, iter_verilog_sources, read_verilog_source
@@ -141,12 +144,6 @@ IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")  # 小写 snake 风格标�
 
 # localparam 等常量名使用全大写格式。
 UPPER_IDENTIFIER_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")  # 大写常量标识符模式
-
-# 双语文件头横幅用拼接构造，避免可读性工具误判为文件路径。
-HEADER_ENGLISH_SEPARATOR = "/" * 36 + "English"  # 标准头部英文段横幅文本
-
-# 中文文件头横幅与英文横幅分开声明，便于头部规则分别报错。
-HEADER_CHINESE_SEPARATOR = "/" * 35 + "Chinese"  # 标准头部中文段横幅文本
 
 # 协议分组 token 集合用于构造 header 分组正则。
 PORT_GROUP_PROTOCOL_NAMES = "AXI|AXIS|APB|AHB|Wishbone|UART|SPI|I2C|GMII|RGMII"  # 已知协议接口名称集合
@@ -356,7 +353,7 @@ VITIS_PORT_PATTERNS = (  # Vitis wrapper 固定端口名模式
     re.compile(r"^m_axi_.*_"),  # Vitis m_axi bundle 端口前缀
 )
 
-# 英文文件头字段使用 formatter 当前 References 拼写。
+# 英文文件头字段必须使用用户样例中的 Referrences 拼写。
 REQUIRED_ENGLISH_HEADER_FIELDS = (  # 标准英文文件头必填字段
     "Company",  # 英文版权归属字段
     "Engineer",  # 英文开发人员字段
@@ -365,7 +362,7 @@ REQUIRED_ENGLISH_HEADER_FIELDS = (  # 标准英文文件头必填字段
     "Module Name",  # 英文模块名称字段
     "Description",  # 英文模块说明字段
     "Simulations",  # 英文仿真工程字段
-    "References",  # formatter 兼容英文参考资料字段
+    "Referrences",  # 英文参考资料字段固定拼写
     "Dependencies",  # 英文依赖文件字段
     "Version",  # 英文当前版本字段
     "Revision Date",  # 英文修订日期字段
