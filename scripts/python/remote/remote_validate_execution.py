@@ -268,13 +268,14 @@ def resolve_helper_skill_root(path_helper: Path) -> Path:
     # 兼容没有 skill marker 的旧测试夹具和历史单层 helper 布局。
     return path_helper_resolved.parents[1]
 
-# stage_package 复制 skill 主体和 tests/smoke harness 到临时上传包。
+# stage_package 复制 skill 主体、完整测试和治理事实源到临时上传包。
 def stage_package(path_helper: Path, str_run_id: str) -> Path:
     """创建远端验证使用的本地 staging 包。
 
     :param path_helper: erie-remote-ssh helper 脚本路径，用于定位 reports/tmp。
     :param str_run_id: 本次远端 retained run id。
     :return: staging 包根目录路径。
+    :raises FileNotFoundError: 本地安装态治理 skill 或全局 AGENTS 基线缺失时抛出。
     """
 
     # helper skill 根决定受上传策略允许的本地 staging 边界。
@@ -294,23 +295,75 @@ def stage_package(path_helper: Path, str_run_id: str) -> Path:
     # skill 源码复制到 skills/readable-verilog-generator 下。
     path_staged_skill = path_target / "skills" / "readable-verilog-generator"  # staging 中的 skill 目录
 
-    # smoke harness 位于 staging 工作区根的 tests/smoke。
-    path_staged_smoke = path_target / "tests" / "smoke"  # 远端回归所需的 tests/smoke 副本
+    # 完整测试树位于 staging 工作区根，供远程 pytest 权威回归。
+    path_staged_tests = path_target / "tests"  # 远端 pytest 与 smoke 共用的完整测试目录
+
+    # 项目治理配置随验证包上传，供测试读取真实控制合同。
+    path_staged_agents = path_target / ".agents"  # 远端治理回归所需的项目控制目录
+
+    # 当前文档随验证包上传，供文档、handoff 和发布合同测试读取。
+    path_staged_docs = path_target / "docs"  # 远端治理回归所需的项目文档目录
+
+    # 远端 pytest 在已受管 reports 根下使用隔离 HOME，兼顾上传边界和目录治理。
+    path_validation_codex = path_target / "reports" / ".validation-home" / ".codex"  # 可上传的隔离 Codex 根目录
+
+    # 本地已安装的治理 skill 是远端治理测试所需的显式验证依赖。
+    path_agents_generator_source = (
+        Path.home() / ".codex" / "skills" / "agents-md-generator"  # 当前安装态的治理 skill 根目录
+    )
+
+    # 全局 AGENTS 基线与治理 skill 一同进入隔离 HOME。
+    path_global_agents_source = Path.home() / ".codex" / "AGENTS.md"  # 当前 Codex 的全局受管规则
+
+    # 缺失治理依赖时必须停止，不能退回远端用户环境形成伪绿结果。
+    if not (path_agents_generator_source / "SKILL.md").is_file():
+
+        # 错误包含缺失根目录，便于恢复本地安装后重试。
+        raise FileNotFoundError(
+            f"> ERR: [Python] Missing installed agents-md-generator: {path_agents_generator_source}"
+        )
+
+    # 全局基线缺失时，远端测试无法验证完整规则层级。
+    if not path_global_agents_source.is_file():
+
+        # 显式报告缺失文件而不是生成临时替代规则。
+        raise FileNotFoundError(f"> ERR: [Python] Missing global AGENTS.md: {path_global_agents_source}")
 
     # 过滤运行产物、报告和缓存，避免远端包携带本地验证垃圾。
     obj_copytree_ignore_patterns = shutil.ignore_patterns(  # staging copytree 的产物排除规则
         "__pycache__",  # Python 缓存目录
+        ".pytest_cache",  # 禁止跨候选复用 pytest 收集状态
         "*.pyc",  # Python 字节码文件
         "_smoke_runs",  # 本地 smoke 运行产物
         "reports",  # 本地治理报告目录
         "workflow-state.json",  # 本地 workflow 状态文件
+        "active-session.json",  # 当前本地会话状态不属于候选源快照
     )
 
     # 复制 skill 主体目录。
     shutil.copytree(PATH_SKILL_ROOT, path_staged_skill, ignore=obj_copytree_ignore_patterns)
 
-    # 复制仓库根 tests/smoke 目录。
-    shutil.copytree(PATH_PROJECT_ROOT / "tests" / "smoke", path_staged_smoke, ignore=obj_copytree_ignore_patterns)
+    # 复制完整测试树，让远程 pytest 与本地候选覆盖相同测试集合。
+    shutil.copytree(PATH_PROJECT_ROOT / "tests", path_staged_tests, ignore=obj_copytree_ignore_patterns)
+
+    # 复制项目控制配置，不携带当前机器的临时 active-session 状态。
+    shutil.copytree(PATH_PROJECT_ROOT / ".agents", path_staged_agents, ignore=obj_copytree_ignore_patterns)
+
+    # 复制当前治理文档，保证远程文档合同测试读取候选事实源。
+    shutil.copytree(PATH_PROJECT_ROOT / "docs", path_staged_docs, ignore=obj_copytree_ignore_patterns)
+
+    # 复制安装态治理 skill，让隔离 HOME 中的 pytest 使用已知依赖版本。
+    shutil.copytree(
+        path_agents_generator_source,
+        path_validation_codex / "skills" / "agents-md-generator",
+        ignore=obj_copytree_ignore_patterns,
+    )
+
+    # 写入当前全局受管基线，保持远端 AGENTS 层级与本地候选一致。
+    path_validation_codex.mkdir(parents=True, exist_ok=True)
+
+    # 复制规则文件前已创建隔离 Codex 根目录。
+    shutil.copy2(path_global_agents_source, path_validation_codex / "AGENTS.md")
 
     # staging 根写 AGENTS marker，帮助 workspace-root discovery。
     (path_package_root / "AGENTS.md").write_text(
@@ -320,14 +373,8 @@ def stage_package(path_helper: Path, str_run_id: str) -> Path:
         encoding="utf-8",
     )
 
-    # 上传包工作区根也写 marker，覆盖远端执行 cwd 的根发现路径。
-    (path_target / "AGENTS.md").write_text(
-        "# Remote Validation Packaged Workspace\n\n"
-        "This marker file is created only for remote confidence-gate staging so\n"
-        "workspace-root discovery can resolve project-local state paths from the\n"
-        "uploaded package root.\n",
-        encoding="utf-8",
-    )
+    # 上传包工作区根使用真实受管 AGENTS，兼顾根发现和治理版本验证。
+    shutil.copy2(PATH_PROJECT_ROOT / "AGENTS.md", path_target / "AGENTS.md")
 
     # 返回 staging 包根，finally 中由 cleanup_package 删除。
     return path_package_root

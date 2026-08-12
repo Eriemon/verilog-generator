@@ -145,6 +145,7 @@ def remote_validation_command(
     return f"""
 set -eu
 cd {sh_quote(str_remote_skill)}
+export HOME="$PWD/reports/.validation-home"
 export PYTHONPATH="skills/readable-verilog-generator${{PYTHONPATH:+:$PYTHONPATH}}"
 {str_py} --version
 {str_vivado_snippet}
@@ -174,6 +175,7 @@ fi
 {str_py} -m compileall -q \
   skills/readable-verilog-generator/scripts \
   tests
+{str_py} -m pytest -q -p no:cacheprovider
 {str_py} -m tests.smoke.run_smoke --settings skills/readable-verilog-generator/config/defaults.json
 {str_rtl_md_snippet}
 if [ -n "$configured_simulator_backend" ]; then

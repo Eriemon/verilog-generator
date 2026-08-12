@@ -368,8 +368,8 @@ def build_remote_context(
     # server 由命令行覆盖或项目已确认选择提供。
     str_server = resolve_server(dict_settings, namespace_args.server, parser)  # 远端目标服务器标识
 
-    # timeout 缺省值与旧脚本保持一致。
-    int_timeout = int(dict_settings.get("remote", {}).get("timeout_s", 120))  # 远端请求超时秒数
+    # 完整 pytest、effectiveness 和真实仿真共用有限的十分钟执行窗口。
+    int_timeout = int(dict_settings.get("remote", {}).get("timeout_s", 600))  # 远端请求超时秒数
 
     # 返回上下文对象，后续 helper 函数不再重复传五个基础参数。
     return RemoteHelperContext(

@@ -342,7 +342,7 @@
     },
     "python": "python3",
     "remote_root": ".readable-verilog-generator-validation",
-    "timeout_s": 120
+    "timeout_s": 600
   }
 }
 
