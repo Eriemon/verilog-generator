@@ -64,7 +64,7 @@ from .vg_comb_model import (
 )
 
 # selector 模块统一提供目标规范化和 output actual 静态逐位映射。
-from .vg_comb_selectors import base_target, map_static_output_actual
+from .vg_comb_selectors import base_target, map_static_output_actual, static_target
 
 # VgFacts 是 source reports 与 external interfaces 的发现阶段权威输入。
 from .vg_semantic_facts import VgFacts
@@ -3175,6 +3175,18 @@ def _bind_port_associations(
         formal 到 actual 的有序绑定和实例局部原因。
     """
 
+    # formatter 已声明解析不完整时，空关联不得被解释成合法空连接。
+    if not bool(instance.get("parse_complete", True)):
+
+        # formatter 原因直接进入层级绑定诊断，缺失时使用稳定兜底文本。
+        str_parse_reason = str(  # 当前实例关联不完整原因
+            instance.get("unsupported_reason")  # 优先保留 formatter 的精确失败原因
+            or "instance associations are incomplete"  # 缺失原因时使用稳定兜底文本
+        )  # 当前实例关联不完整诊断文本
+
+        # 不完整实例只能返回带原因的空绑定。
+        return (), str_parse_reason
+
     # mixed 风格不能安全推断未命名位置与命名 formal 的组合语义。
     str_style = str(instance.get("association_style") or "")  # 当前实例端口关联风格
 
@@ -3410,7 +3422,7 @@ def _append_unknown_actual_drivers(
     instance: dict[str, Any],
     reason: str,
     drivers: dict[ScopedTarget, list[ProducerRef]],
-) -> None:
+) -> int:
     """为实例 actual 引用追加局部 unknown producer。
 
     参数:
@@ -3422,11 +3434,14 @@ def _append_unknown_actual_drivers(
         drivers: hierarchy builder 的可变 endpoint 目录。
 
     返回:
-        无；unknown producer 原位追加到相关 parent endpoint。
+        成功定位并追加的 parent endpoint 数量。
     """
 
     # parent input formal 是实例的已知数据来源，不能反向当作未知 child producer。
     set_parent_inputs: set[str] = set()  # 当前 parent 的纯 input formal 基础名称
+
+    # 计数用于判断是否需要升级为父 occurrence 级未知边界。
+    int_endpoint_count = 0  # 已定位的受影响 parent endpoint 数量
 
     # 声明方向逐项证明哪些 actual 只能作为未知实例的输入来源。
     for dict_port in _module_ports(parent):
@@ -3478,6 +3493,12 @@ def _append_unknown_actual_drivers(
             # 已知同端点 producer 继续保留，不被 unknown 覆盖。
             _append_endpoint_driver(drivers, scoped_endpoint, producer_ref)
 
+            # 当前 actual 已成功恢复一个受影响端点。
+            int_endpoint_count += 1  # 累计已经定位的父模块静态端点
+
+    # 调用方据此区分局部恢复与完全无法定位连接。
+    return int_endpoint_count
+
 # hierarchy builder 状态把共享输出容器从递归参数中收拢。
 @dataclass
 class HierarchyBuildState:
@@ -3509,6 +3530,78 @@ class HierarchyBuildState:
 
     # producer 目录允许一个 parent endpoint 同时拥有多个驱动。
     drivers: dict[ScopedTarget, list[ProducerRef]]  # 待冻结的端点生产者目录
+
+# 完全无法恢复连接时，把未知边界限制在当前父 occurrence。
+def _append_parent_unknown_boundary(
+    state: HierarchyBuildState,
+    parent_path: tuple[str, ...],
+    parent: SpecializedModule,
+    instance: dict[str, Any],
+    reason: str,
+) -> None:
+    """让当前父 occurrence 的全部组合目标保持 fail-closed。
+
+    参数:
+        state: 当前层级图构建状态。
+        parent_path: 解析失败实例所属父模块路径。
+        parent: 当前父模块特化。
+        instance: 无法恢复连接的实例事实。
+        reason: formatter 提供的精确不完整原因。
+
+    返回:
+        无；unknown producer 原位追加到父 occurrence 目标。
+    """
+
+    # 已登记本地 driver 包含组合、存储投影和其他实例输出目标。
+    set_targets: set[str] = {  # 当前父 occurrence 已知静态目标集合
+        scoped_endpoint.target  # 保留当前静态端点文本
+        for scoped_endpoint in state.drivers  # 遍历构建期 endpoint 目录
+        if scoped_endpoint.instance_path == parent_path  # 限制在当前父 occurrence
+        and scoped_endpoint.specialization == parent.key  # 限制在当前参数特化
+    }
+
+    # comb facts 补充尚未进入 driver 摘要的静态目标。
+    for frozen_fact in parent.comb_expressions:
+
+        # 解冻当前表达式以读取 formatter 保存的目标字段。
+        dict_fact = _mapping(frozen_fact)  # 当前组合表达式的可读字段映射
+
+        # 目标文本用于补齐尚未登记 producer 的父端点。
+        str_target = str(dict_fact.get("target") or "")  # 当前组合表达式的静态目标文本
+
+        # 空目标无法形成作用域端点。
+        if str_target:
+
+            # 规范化目标空白后并入父 occurrence 边界集合。
+            set_targets.add(static_target(str_target))
+
+    # 无静态目标时仍生成一个稳定占位，禁止两条 gate 静默不适用。
+    if not set_targets:
+
+        # 占位端点保证无连接线索的父 occurrence 仍产生保守锥。
+        set_targets.add("<hierarchy>")
+
+    # 每个父 occurrence 目标独立承载同一实例解析边界。
+    for str_target in sorted(set_targets):
+
+        # 作用域端点把 unknown 限制在当前定义根、路径和特化。
+        scoped_endpoint = ScopedTarget(  # 当前父模块实例的受影响端点
+            state.root.identity,  # 保持当前层级图定义根身份
+            parent_path,  # 限制在解析失败实例所属父路径
+            parent.key,  # 限制在当前父模块参数特化
+            str_target,  # 选择当前需要保守标记的静态目标
+        )  # 完成父路径、特化和静态目标的作用域键构造
+
+        # 未知 producer 保留实例源码范围和 formatter 原因。
+        producer_ref = ProducerRef(  # 当前实例解析边界的生产者证据
+            "unknown_instance",  # 标记不可展开的实例生产者类别
+            scoped_endpoint,  # 把未知边界绑定到当前父端点
+            _span_tuple(instance.get("span")),  # 保留解析失败实例的源码范围
+            reason,  # 保留 formatter 或绑定阶段的精确原因
+        )  # 当前父端点的未知实例生产者
+
+        # 同端点已有的确定 producer 必须继续保留。
+        _append_endpoint_driver(state.drivers, scoped_endpoint, producer_ref)
 
 # child occurrence 上下文避免单端口处理器重复传递相关字段。
 @dataclass(frozen=True)
@@ -3916,6 +4009,34 @@ def _build_instance_node(
 
     # 实例段附加 generate 或数组迭代身份。
     tuple_child_path = parent_path + (_instance_path_segment(instance),)  # 含 generate 或数组索引的 child occurrence 路径
+
+    # formatter 解析不完整时禁止进入参数特化或把空关联当作合法连接。
+    if not bool(instance.get("parse_complete", True)):
+
+        # formatter 的局部原因必须原样进入 unknown producer 证据。
+        str_parse_reason = str(  # 当前实例结构化解析不完整原因
+            instance.get("unsupported_reason")  # 优先读取 formatter 的局部失败原因
+            or "instance associations are incomplete"  # 缺失原因时保持稳定诊断
+        )  # 当前实例结构化解析失败文本
+
+        # 尽可能先从残存 actual 恢复受影响的父端点。
+        int_recovered_endpoints = _append_unknown_actual_drivers(  # 成功定位的父端点数量
+            state.root,  # 使用当前层级图定义根
+            parent_path,  # 在解析失败实例的调用方作用域定位 actual
+            parent,  # 依据父端口方向排除输入来源
+            instance,  # 读取仍可恢复的结构化 actual
+            str_parse_reason,  # 把解析失败原因写入未知生产者
+            state.drivers,  # 更新当前构建期端点目录
+        )  # 当前实例能够恢复的受影响父端点数量
+
+        # 完全无法定位 actual 时升级为当前父 occurrence 的保守边界。
+        if int_recovered_endpoints == 0:
+
+            # 父 occurrence 边界阻止空连接事实让预算门静默通过。
+            _append_parent_unknown_boundary(state, parent_path, parent, instance, str_parse_reason)
+
+        # 不完整关联不得继续解析 child 参数或端口方向。
+        return
 
     # index 阶段已经局部分类缺失、重复和 external-only 引用。
     str_reference_reason = str(instance.get("reference_unknown_reason") or "")  # 当前 child 实现解析原因

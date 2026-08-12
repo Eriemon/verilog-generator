@@ -13,6 +13,9 @@ from typing import Callable, Iterable
 # banner 工具维持 formatter 对分组注释的既有输出风格。
 from .banners import display_width, extract_banner_title, is_banner_line, make_banner
 
+# 实例词法扫描器独立处理注释、字符串和 canonical 偏移映射。
+from .instance_lexing import compact_instance_with_offsets
+
 # AST 模型类只描述已解析结构，不在本 mixin 中新增解析协议。
 from .models import (
     VerilogFormatterError,
@@ -52,72 +55,18 @@ from .textio import read_verilog_text
 # 实例端口连接注释前缀需要避开路径字面量误判。
 INSTANCE_CONNECTION_COMMENT_PREFIX = "//" + "."  # legacy 实例端口连接注释前缀
 
-# compact helper 建立 canonical 文本到原实例字符偏移的映射。
-def _compact_instance_with_offsets(text: str) -> tuple[str, tuple[int, ...]] | None:
-    """压缩实例空白，同时保留每个字符在原实例文本中的偏移。
+# compact helper 保留 formatter 内部兼容入口并委派给独立词法扫描器。
+def _compact_instance_with_offsets(text: str) -> tuple[str, tuple[int, ...], str]:
+    """压缩实例 trivia 并保留 canonical 字符到原文的偏移。
 
     参数:
         text: formatter 已收集的完整实例声明文本。
     返回:
-        canonical 文本及其逐字符原文偏移；含注释时返回 None。
+        canonical 文本、逐字符原文偏移和不完整原因。
     """
 
-    # 注释需要 legacy renderer 保留相对布局，不能安全压缩。
-    if "//" in text or "/*" in text or "*/" in text:
-
-        # None 让调用方保持原始行级实例渲染路径。
-        return None
-
-    # canonical 字符与来源偏移按相同索引同步累积。
-    list_chars: list[str] = []  # 压缩后的实例字符
-
-    # 偏移表用于把 actual 范围换算回原始实例文本。
-    list_offsets: list[int] = []  # canonical 字符对应的原文偏移
-
-    # 待写空格把连续换行和缩进归一成一个分隔符。
-    bool_pending_space = False  # 是否缓存了一段空白
-
-    # 首个空白偏移代表 canonical 分隔符的原文位置。
-    int_pending_offset = 0  # 当前待写空格来源偏移
-
-    # 逐字符扫描避免字符串 replace 破坏 actual 位置映射。
-    for int_offset, str_char in enumerate(text):
-
-        # 任意空白先延迟到遇到下一枚可见字符时再提交。
-        if str_char.isspace():
-
-            # 只保存连续空白区的第一个原文偏移。
-            if list_chars and not bool_pending_space:
-
-                # 待写标志防止连续空白产生多个 canonical 空格。
-                bool_pending_space = True  # 当前空白区尚未写入 canonical 文本
-
-                # 首空白偏移用于分隔符位置的可逆映射。
-                int_pending_offset = int_offset  # 当前空白区起始原文偏移
-
-            # 空白字符本身不直接进入 canonical 字符列表。
-            continue
-
-        # 可见字符到来前提交此前缓存的唯一分隔空格。
-        if bool_pending_space:
-
-            # canonical 空格维持 token 之间的必要边界。
-            list_chars.append(" ")
-
-            # 偏移列表同步记录空格来自哪个原文位置。
-            list_offsets.append(int_pending_offset)
-
-            # 当前空白区已经完成提交。
-            bool_pending_space = False  # 清除待写空格状态
-
-        # 可见字符按原顺序进入 canonical 实例文本。
-        list_chars.append(str_char)
-
-        # 当前字符原文偏移与 canonical 索引保持一一对应。
-        list_offsets.append(int_offset)
-
-    # 返回同步构建的 canonical 文本和不可变偏移表。
-    return "".join(list_chars), tuple(list_offsets)
+    # 独立扫描器负责普通文本、字符串、转义和两类注释状态。
+    return compact_instance_with_offsets(text)
 
 # 括号匹配 helper 跳过字符串中的括号字符。
 def _matching_paren(text: str, int_open: int) -> int:
@@ -263,6 +212,9 @@ def _association_record(text: str, int_start: int, int_end: int, int_position: i
         formal、actual、样式、空连接和 actual 范围字段。
     """
 
+    # 未裁剪右边界用于 positional actual 覆盖尾置 trivia。
+    int_item_end = int_end  # 当前关联在 canonical 列表中的原始非包含终点
+
     # 起始空白不属于 actual 的权威字符范围。
     while int_start < int_end and text[int_start].isspace():
 
@@ -304,13 +256,27 @@ def _association_record(text: str, int_start: int, int_end: int, int_position: i
             "style": "named",  # 当前关联采用点名形式
         }
 
+    # 点号起始条目声称采用 named 语法，缺失括号时不得降级为 positional。
+    if str_item.startswith("."):
+
+        # invalid 样式由实例级入口统一转换为稳定失败原因。
+        return {
+            "formal_name": "",  # 畸形点名条目没有权威 formal
+            "position": int_position,  # 保留声明位置用于诊断
+            "actual_text": "",  # 缺少合法外层括号时不猜测 actual
+            "actual_start": int_start,  # 失败记录保持字段形状稳定
+            "actual_end": int_start,  # 空范围阻止失败记录被绑定
+            "explicit_unconnected": False,  # 畸形语法不同于显式空连接
+            "style": "invalid",  # 实例入口据此执行失败关闭
+        }
+
     # positional 关联的完整条目就是 actual 表达式范围。
     return {
         "formal_name": "",  # 位置关联不携带 formal 名称
         "position": int_position,  # 调用方用于 formal 顺序绑定的位置
         "actual_text": str_item.strip(),  # positional actual 文本
         "actual_start": int_start,  # 位置实参沿用完整条目左边界
-        "actual_end": int_end,  # 条目末字符之后界定位置实参切片
+        "actual_end": int_item_end,  # 保留尾置 trivia 后的条目边界
         "explicit_unconnected": not str_item.strip(),  # 是否为空位置连接
         "style": "positional",  # 当前关联采用位置形式
     }
@@ -325,17 +291,23 @@ def parse_instance_associations(text: str) -> dict[str, object]:
         实例身份、关联列表、解析状态和局部失败原因。
     """
 
-    # canonical 文本和偏移表必须来自同一次无副作用压缩。
-    tuple_compact = _compact_instance_with_offsets(text)  # 实例压缩结果与原文偏移表
+    # canonical 文本、偏移表和失败原因必须来自同一次无副作用扫描。
+    tuple_compact = _compact_instance_with_offsets(text)  # 当前实例的词法压缩三元组
 
-    # 含注释实例交给 legacy renderer，关联事实保持局部不完整。
-    if tuple_compact is None:
+    # canonical 文本驱动后续模块名和括号结构匹配。
+    str_compact = tuple_compact[0]  # 已移除 trivia 的实例文本
 
-        # 稳定原因让调用方区别注释 fallback 与语法错误。
-        return {"parse_complete": False, "unsupported_reason": "instance_contains_comments"}
+    # 偏移表把 actual canonical 范围换算回实例原文。
+    tuple_offsets = tuple_compact[1]  # canonical 字符对应的原文偏移
 
-    # 解包后两个序列保持相同长度和字符索引。
-    str_compact, tuple_offsets = tuple_compact  # canonical 实例文本及逐字符原文偏移
+    # 独立原因字段阻止词法半成品进入结构化关联解析。
+    str_compact_reason = tuple_compact[2]  # 当前实例词法不完整原因
+
+    # 未闭合或游离的词法结构必须保持实例局部失败。
+    if str_compact_reason:
+
+        # 失败只污染当前实例并保留稳定诊断原因。
+        return {"parse_complete": False, "unsupported_reason": str_compact_reason}
 
     # 模块名前缀是后续参数区和实例名扫描的起点。
     match_module = re.match(r"^(?P<module>[A-Za-z_]\w*)", str_compact)  # 实例模块名匹配
@@ -426,6 +398,12 @@ def parse_instance_associations(text: str) -> dict[str, object]:
         )
     ]  # 有序端口关联
 
+    # 条目级畸形 named 语法不得被 mixed 或 positional 分类掩盖。
+    if any(item["style"] == "invalid" for item in [*list_parameters, *list_ports]):
+
+        # 当前实例不提供可用于层级绑定的权威关联列表。
+        return {"parse_complete": False, "unsupported_reason": "malformed_named_association"}
+
     # 所有关联样式用于识别非法 named/positional 混用。
     list_styles = [  # 实例关联样式序列
         str(item["style"])  # 当前参数或端口关联样式
@@ -468,10 +446,12 @@ def parse_instance_associations(text: str) -> dict[str, object]:
             else len(text)  # 空尾部 actual 位于实例文本末端
         )
 
-        # 结束边界由最后一个 actual 字符原文偏移加一得到。
+        # 下一枚 canonical 结构字符的原文偏移完整覆盖尾置 trivia。
         dict_item["actual_end"] = (
-            tuple_offsets[int_actual_end - 1] + 1  # 最后字符之后的原文位置
-            if int_actual_end > int_actual_start  # 非空 actual 具有最后字符
+            tuple_offsets[int_actual_end]  # actual 后继逗号或右括号的原文位置
+            if int_actual_end > int_actual_start and int_actual_end < len(tuple_offsets)  # 存在后继结构字符
+            else tuple_offsets[int_actual_end - 1] + 1  # 文本尾部退化为最后字符之后
+            if int_actual_end > int_actual_start  # 非空 actual 仍需非包含结束边界
             else dict_item["actual_start"]  # 空 actual 起止位置相同
         )  # actual 原实例文本非包含结束偏移
 
