@@ -95,9 +95,9 @@ end
 
 Restart Codex after installation so the skill is discovered.
 
-This README describes the latest public GitHub release, `v0.4.0`. This governed checkout also contains the validated local package `v1.0.8`; use `VERSION` as the local package version authority and do not infer GitHub publication from it.
+This README describes the latest public GitHub release, `v0.4.0`. This governed checkout also contains the validated local package `v1.0.9`; use `VERSION` as the local package version authority and do not infer GitHub publication from it.
 
-For a pinned public install, use tag `v0.4.0` or the automatically generated source archive on the [GitHub release page](https://github.com/Eriemon/verilog-generator/releases/tag/v0.4.0). For a pinned local install, use the validated `dist/readable-verilog-generator-v1.0.8/` package produced by the governed release workflow.
+For a pinned public install, use tag `v0.4.0` or the automatically generated source archive on the [GitHub release page](https://github.com/Eriemon/verilog-generator/releases/tag/v0.4.0). For a pinned local install, use the validated `dist/readable-verilog-generator-v1.0.9/` package produced by the governed release workflow.
 
 ## Authors
 

@@ -95,9 +95,9 @@ end
 
 安装后重启 Codex，让它重新发现该 Skill。
 
-本文档描述 GitHub 当前最新公开 release `v0.4.0`。本受治理 checkout 同时包含已经验证的本地包 `v1.0.8`；本地包版本以 `VERSION` 为准，不应据此推断该版本已经公开发布。
+本文档描述 GitHub 当前最新公开 release `v0.4.0`。本受治理 checkout 同时包含已经验证的本地包 `v1.0.9`；本地包版本以 `VERSION` 为准，不应据此推断该版本已经公开发布。
 
-需要固定公开版本时，使用 `v0.4.0` tag，或下载 [GitHub release 页面](https://github.com/Eriemon/verilog-generator/releases/tag/v0.4.0)自动生成的源码归档；需要固定的本地版本时，使用受治理 release 流程生成的 `dist/readable-verilog-generator-v1.0.8/` 验证包。
+需要固定公开版本时，使用 `v0.4.0` tag，或下载 [GitHub release 页面](https://github.com/Eriemon/verilog-generator/releases/tag/v0.4.0)自动生成的源码归档；需要固定的本地版本时，使用受治理 release 流程生成的 `dist/readable-verilog-generator-v1.0.9/` 验证包。
 
 ## 作者
 
