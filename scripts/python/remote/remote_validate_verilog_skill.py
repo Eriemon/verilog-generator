@@ -8,9 +8,12 @@ current-project 规定的 `> INFO: [Python]`、`> WARNING: [Python]` 或
 
 # 标准库负责 CLI、时间戳和本地功能模块装载。
 import argparse
+import hashlib
 import importlib.util
+import os
 import sys
 import time
+import uuid
 
 # pathlib 负责 skill 根目录和本地支持模块路径。
 from pathlib import Path
@@ -73,6 +76,12 @@ module_type_selection_support = _load_local_support_module(  # facade 绑定 ser
     "readable_verilog_remote_validate_selection",  # 供本地导入注册 selection 模块的名称
 )
 
+# staging manifest 必须先注册，供无 package context 的 execution 动态导入。
+module_type_stage_manifest_support = _load_local_support_module(  # facade 绑定 staging manifest 支撑模块
+    "remote_stage_manifest.py",  # 承载 Git tracked 与无 Git 递归清单逻辑的实现文件
+    "readable_verilog_remote_stage_manifest",  # execution 动态导入使用的稳定模块别名
+)
+
 # execution 支撑模块承载 staging、request 和 retained-run 汇总实现。
 module_type_execution_support = _load_local_support_module(  # facade 绑定 retained-run 执行支撑模块
     "remote_validate_execution.py",  # 承载 request 执行与 retained-run 汇总逻辑的实现文件
@@ -90,6 +99,26 @@ SKILL_ROOT = PATH_SKILL_ROOT  # 兼容旧脚本节点的 skill 根目录
 
 # 旧 helper 使用 PROJECT_ROOT 关联 smoke 目录和仓库合同。
 PROJECT_ROOT = PATH_PROJECT_ROOT  # 兼容旧 helper 的仓库根目录
+
+# new_remote_run_id 生成可抵抗同秒并发碰撞的 retained run 标识。
+def new_remote_run_id() -> str:
+    """生成包含高分辨率时钟、进程号和随机因子的远程 run id。
+
+    :param: 此函数没有外部业务参数。
+    :return: 保持 ``run-`` 前缀且适合目录名使用的唯一标识。
+    """
+
+    # UTC 时间片保留人工可排序性，纳秒值避免只依赖秒级时钟。
+    str_timestamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime())  # UTC 人工可读时间片
+
+    # 随机因子隔离不同进程、主机和 checkout 在同一时刻发起的验证。
+    str_nonce = uuid.uuid4().hex[:12]  # retained run 的随机碰撞隔离因子
+
+    # 进程号帮助人工诊断同一主机上的并发调用来源。
+    int_process_id = os.getpid()  # 当前远程验证发起进程号
+
+    # 组合字段只使用字母、数字和连字符，保持远端相对路径安全。
+    return f"run-{str_timestamp}-{time.time_ns()}-{int_process_id}-{str_nonce}"
 
 # _export_module_members 让 facade 按旧名字暴露子模块成员，同时避免一长串逐行别名赋值。
 def _export_module_members(obj_source_module: ModuleType, str_member_names: str) -> None:
@@ -132,7 +161,7 @@ _export_module_members(
     module_type_snippets_support,
     "remote_validation_command rtl_md_constraint_remote_snippet remote_output_cleanup_snippet "
     "remote_bytecode_cleanup_snippet simulator_priority_export_snippet vivado_activation_snippet "
-    "remote_join sh_quote",
+    "remote_join sh_quote REMOTE_COMPLETION_JSON",
 )
 
 # facade 导出 execution helper，保持 staging、JSON 协议和 retained-run 摘要入口不变。
@@ -144,6 +173,16 @@ _export_module_members(
     "summarize_validation_report summarize_fixture_report summarize_pytest_report "
     "parse_json_output parse_download_path",
 )
+
+# retained 摘要路径表集中定义，summary facade 只复制后传给 execution 层。
+REMOTE_SUMMARY_PATHS = {  # 单轮远程报告需要下载或定位的证据相对路径
+    "completion_json": str(REMOTE_COMPLETION_JSON),  # 最终完成身份清单
+    "execute_validation_json": str(REMOTE_EXECUTE_VALIDATION_JSON),  # 主流程验证 JSON
+    "execute_rtl_path": str(REMOTE_EXECUTE_RTL_PATH),  # 生成 RTL 人工复核入口
+    "execute_testbench_path": str(REMOTE_EXECUTE_TESTBENCH_PATH),  # testbench 失败回放入口
+    "fixture_summary_json": str(REMOTE_FIXTURE_SUMMARY_JSON),  # 固定远程夹具汇总
+    "pytest_summary_json": str(REMOTE_PYTEST_SUMMARY_JSON),  # 权威远程 pytest 摘要
+}
 
 # build_parser 负责组装 CLI 合同，避免 main 承担参数细节。
 def build_parser() -> argparse.ArgumentParser:
@@ -187,6 +226,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # max-runs 控制 retained run 报告大小，避免枚举过多历史目录。
     parser.add_argument("--max-runs", type=int, default=5, help="Maximum retained runs to include with --report-runs.")
+
+    # run-id 让自动化调用方只读取刚完成的 outer run，避免并发时误取其他证据。
+    parser.add_argument("--run-id", help="Read one exact retained run with --report-runs.")
 
     # toolchain-config 兼容调用方传入本地 .settings/verilog.remote.json 副本。
     parser.add_argument(
@@ -326,6 +368,7 @@ def main(argv: list[str] | None = None) -> int:
             remote_helper_context_cli,  # 证据轮询复用的已确认服务器上下文
             str_remote_root,  # run-* 证据目录所在的远端工作区子树
             args.max_runs,  # 调用方允许纳入判定窗口的最近运行条数
+            exact_run_id=args.run_id,  # 自动化调用绑定的确切 outer run 标识
         )
 
         # stdout 末尾保留机器协议 JSON，调用方通过 parse_json_object 读取。
@@ -382,6 +425,38 @@ def build_remote_context(
     )
 
 # run_remote_validation 执行默认远端打包、上传、命令和可选清理流程。
+def staged_source_digest(path_package_root: Path) -> str:
+    """计算 staging 目录的稳定 SHA-256 内容摘要。
+
+    :param path_package_root: 已完成 staging 的本地目录根。
+    :return: 由排序后的相对路径和文件字节共同决定的十六进制摘要。
+    """
+
+    # 同时纳入路径和内容，避免同字节文件在不同位置产生相同包身份。
+    obj_digest = hashlib.sha256()  # 当前 staging 包的增量 SHA-256 计算器
+
+    # 排序消除文件系统枚举顺序差异，保证同一内容跨运行可复现。
+    for path_file in sorted(path_item for path_item in path_package_root.rglob("*") if path_item.is_file()):
+
+        # 相对路径使用 POSIX 分隔符，消除本地主机路径风格差异。
+        str_relative_path = path_file.relative_to(path_package_root).as_posix()  # 摘要中的平台无关相对路径
+
+        # 路径先进入摘要，避免相同字节位于不同位置时产生同一包身份。
+        obj_digest.update(str_relative_path.encode("utf-8"))
+
+        # 空字节分隔路径和内容，阻止字段拼接歧义。
+        obj_digest.update(b"\0")
+
+        # 文件原始字节保证任何 staging 内容变化都会改变摘要。
+        obj_digest.update(path_file.read_bytes())
+
+        # 文件尾分隔符阻止相邻文件字节边界产生拼接歧义。
+        obj_digest.update(b"\0")
+
+    # 十六进制形式便于写入 JSON、环境变量和发布证据。
+    return obj_digest.hexdigest()
+
+# 默认远端流程把 staging 身份、上传请求和 completion 证据绑定为一轮运行。
 def run_remote_validation(
     remote_context: RemoteHelperContext,
     str_remote_root: str,
@@ -400,8 +475,8 @@ def run_remote_validation(
     :return: 进程退出码，0 表示远端 gate 成功。
     """
 
-    # 每次远端验证都使用时间戳 run id，方便 retained 证据排序。
-    str_run_id = f"run-{time.strftime('%Y%m%dT%H%M%S')}"  # 远端 retained run 目录名
+    # 每次远端验证都使用高熵 run id，避免同秒并发共享 retained 目录。
+    str_run_id = new_remote_run_id()  # 远端 retained run 目录名
 
     # 远端父目录位于配置的 remote_root 下。
     str_remote_parent = remote_join(str_remote_root, str_run_id)  # 本次远端 run 目录
@@ -430,6 +505,9 @@ def run_remote_validation(
     # 打包本地 skill 和 smoke 目录到临时 staging 根。
     path_package_root = stage_package(remote_context.path_helper, str_run_id)  # 本地临时上传包根目录
 
+    # 摘要必须在上传前对最终 staging 计算，后续 completion 与调用方都绑定该值。
+    str_source_digest = staged_source_digest(path_package_root)  # 本轮上传包的稳定 SHA-256 身份
+
     # 请求列表在 try 前初始化，保证失败清理路径也可访问。
     list_request_paths: list[Path] = []  # 本轮创建的 erie-remote-ssh request 文件
 
@@ -442,6 +520,8 @@ def run_remote_validation(
         bool_cleanup_outputs=cleanup_remote,  # smoke 输出清理开关
         dict_toolchain_selection=dict_remote_runtime["toolchain"],  # Vivado/xsim 选择载荷
         str_remote_runtime_config_path=str_remote_runtime_config,  # 多版本提示用配置路径
+        str_run_id=str_run_id,  # completion 与 report-runs 共用的 outer run 身份
+        str_source_digest=str_source_digest,  # completion 绑定的上传包身份
     )
 
     # 远端执行可能失败，但本地 staging 和 request 文件必须进入清理路径。
@@ -466,6 +546,15 @@ def run_remote_validation(
 
     # 远端 gate 全流程通过。
     print("> INFO: [Python] Readable Verilog generator remote confidence gate passed.")
+
+    # stdout 末尾机器协议让父级 validate 精确绑定随后读取的 retained run。
+    emit_json_payload(
+        {
+            "run_id": str_run_id,
+            "source_digest": str_source_digest,
+            "status": "passed",
+        }
+    )
 
     # 成功退出码保持旧 CLI 行为。
     return 0
@@ -516,9 +605,21 @@ def run_remote_validation_requests(
     str_command = remote_validation_command(  # 远端 bash 验证脚本
         run_config.str_remote_skill,  # bash gate 执行根目录
         run_config.str_remote_python,  # 远端 Python 可执行命令
+
+        # cleanup 只影响本轮 smoke 输出保留策略。
         cleanup_outputs=run_config.bool_cleanup_outputs,  # 远端 smoke 产物保留策略
+
+        # 工具链选择来自已经验证过枚举和值域的 runtime 配置。
         toolchain_selection=run_config.dict_toolchain_selection,  # 外部仿真工具链选择
+
+        # 配置路径只用于错误提示和审计定位。
         remote_runtime_config_path=run_config.str_remote_runtime_config_path,  # 失败提示中的持久化路径
+
+        # outer run 身份进入最终 completion 清单。
+        run_id=run_config.str_run_id,  # 最终完成清单绑定的 outer run 身份
+
+        # staging 摘要阻止其他源码包复用本轮完成证据。
+        source_digest=run_config.str_source_digest,  # completion 绑定的上传包 SHA-256
     )
 
     # 创建并执行远端 command request。
@@ -672,11 +773,12 @@ def download_remote_runtime_config(
     )
 
 # report_remote_runs 汇总远端 retained run 证据。
-def report_remote_runs(*args: Any) -> dict[str, Any]:
+def report_remote_runs(*args: Any, exact_run_id: str | None = None) -> dict[str, Any]:
     """读取远端 retained run 列表并下载摘要证据。
 
     :param args: 新入口为 `(RemoteHelperContext, remote_root, max_runs)`；旧入口为
         `(helper, settings, server_list, server, remote_root, max_runs)`。
+    :param exact_run_id: 可选的确切 outer run 目录名；提供后禁止 latest 枚举。
     :return: 包含 remote_root、runs 和 status 的报告字典。
     :raises TypeError: 参数数量或首参类型不符合兼容入口时抛出。
     """
@@ -685,7 +787,12 @@ def report_remote_runs(*args: Any) -> dict[str, Any]:
     if len(args) == 3 and isinstance(args[0], RemoteHelperContext):
 
         # 三参入口来自当前 CLI --report-runs 主路径。
-        return _report_remote_runs_with_context(args[0], str(args[1]), int(args[2]))
+        return _report_remote_runs_with_context(
+            args[0],
+            str(args[1]),
+            int(args[2]),
+            exact_run_id=exact_run_id,
+        )
 
     # 旧 smoke 和外部脚本仍传入 helper/settings/server-list/server/root/max-runs。
     if len(args) == 6:
@@ -700,7 +807,12 @@ def report_remote_runs(*args: Any) -> dict[str, Any]:
         )
 
         # 旧入口的后两项对应远端 retained 根和最大 run 数。
-        return _report_remote_runs_with_context(remote_helper_context_legacy, str(args[4]), int(args[5]))
+        return _report_remote_runs_with_context(
+            remote_helper_context_legacy,
+            str(args[4]),
+            int(args[5]),
+            exact_run_id=exact_run_id,
+        )
 
     # 参数不匹配时给出明确错误，避免下游 unpack 报错难定位。
     raise TypeError("> ERR: [Python] report_remote_runs 只接受 3 个 context 参数或 6 个 legacy 参数")
@@ -710,12 +822,15 @@ def _report_remote_runs_with_context(
     remote_context: RemoteHelperContext,
     str_remote_root: str,
     int_max_runs: int,
+    *,
+    exact_run_id: str | None = None,
 ) -> dict[str, Any]:
     """读取远端 retained run 列表并汇总摘要证据。
 
     :param remote_context: erie-remote-ssh helper 调用上下文。
     :param str_remote_root: 远端 retained run 根目录。
     :param int_max_runs: 最多返回的运行条目数量。
+    :param exact_run_id: 可选的确切 outer run 目录名。
     :return: 包含 remote_root、runs 和 status 的稳定字典。
     """
 
@@ -724,6 +839,7 @@ def _report_remote_runs_with_context(
         remote_context,
         str_remote_root,
         int_max_runs,
+        exact_run_id=exact_run_id,
         dict_dependencies={
             "helper_base": helper_base,
             "run_helper": run_helper,
@@ -753,18 +869,16 @@ def summarize_remote_run(
         str_run_name,
         dict_dependencies={
             "remote_join": remote_join,
+            "helper_base": helper_base,
+            "run_helper": run_helper,
+            "parse_json_output": parse_json_output,
+        } | {
             "download_json_optional": download_json_optional,
             "summarize_validation_report": summarize_validation_report,
             "summarize_fixture_report": summarize_fixture_report,
             "summarize_pytest_report": summarize_pytest_report,
         },
-        dict_remote_paths={
-            "execute_validation_json": str(REMOTE_EXECUTE_VALIDATION_JSON),
-            "execute_rtl_path": str(REMOTE_EXECUTE_RTL_PATH),
-            "execute_testbench_path": str(REMOTE_EXECUTE_TESTBENCH_PATH),
-            "fixture_summary_json": str(REMOTE_FIXTURE_SUMMARY_JSON),
-            "pytest_summary_json": str(REMOTE_PYTEST_SUMMARY_JSON),
-        },
+        dict_remote_paths=dict(REMOTE_SUMMARY_PATHS),  # 本轮摘要读取的稳定证据路径副本
     )
 
 # download_json_optional 下载远端 JSON 文件，失败时返回 None。

@@ -1980,12 +1980,33 @@ def _comments_are_near_duplicate(
         # exact 阶段负责该情况。
         return False
 
-    # float_ratio 使用标准库序列相似度，避免引入第三方依赖。
-    float_ratio = difflib.SequenceMatcher(  # 两条注释低噪声文本相似度
+    # 同一个 matcher 依次执行两个安全上界和最终精确比率，避免重复建索引。
+    sequence_matcher_obj_matcher = difflib.SequenceMatcher(  # 当前候选对的标准库序列比较器
         None,  # 使用默认元素比较函数
         candidate.str_similarity_key,  # 后出现候选的低噪声文本
         previous_candidate.str_similarity_key,  # 更早候选的低噪声文本
-    ).ratio()
+    )
+
+    # 长度比率是精确相似度的宽松上界，低于阈值时可安全拒绝。
+    float_length_upper_bound = sequence_matcher_obj_matcher.real_quick_ratio()  # 当前候选对的长度比率上界
+
+    # 上界不足时精确 ratio 必然不足，保持既有阈值判断语义。
+    if float_length_upper_bound < COMMENT_REUSE_SIMILARITY_THRESHOLD:
+
+        # 当前长度差异已证明候选不可能达到近似重复阈值。
+        return False
+
+    # 字符频率比率仍是精确相似度上界，但比长度上界更紧。
+    float_frequency_upper_bound = sequence_matcher_obj_matcher.quick_ratio()  # 当前候选对的字符频率比率上界
+
+    # 字符组成差异足够大时跳过昂贵匹配块计算。
+    if float_frequency_upper_bound < COMMENT_REUSE_SIMILARITY_THRESHOLD:
+
+        # 上界严格低于阈值，提前返回不会漏报近似重复。
+        return False
+
+    # 仅对两个安全上界均达到阈值的候选计算精确序列相似度。
+    float_ratio = sequence_matcher_obj_matcher.ratio()  # 当前候选对的精确序列相似度
 
     # 达到阈值时视作近似复用。
     return float_ratio >= COMMENT_REUSE_SIMILARITY_THRESHOLD

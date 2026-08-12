@@ -555,6 +555,18 @@
       ],
       "decision": "mapped",
       "kind": "option",
+      "rationale": "精确 outer run 查询属于 remote.validate 的证据绑定接口。",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--run-id"
+    },
+    {
+      "command_ids": [
+        "remote.validate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
       "rationale": "",
       "sources": [
         "references/integration/configuration.md"
@@ -758,5 +770,5 @@
   ],
   "schema_version": 2,
   "status": "current",
-  "user_confirmation": "confirmed"
+  "user_confirmation": "not_required"
 }

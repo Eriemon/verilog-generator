@@ -9,6 +9,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+# 远程 runtime 配置只接受实现层明确支持的 simulator backend。
+TUPLE_SUPPORTED_SIMULATOR_BACKENDS = ("xsim", "vcs_verdi", "iverilog")  # 可执行远程验证的后端白名单
+
 # config 模块集中维护远程配置路径和 settings 字段读取规则。
 from scripts.python.workflow.config import local_remote_selection_path, remote_runtime_settings_relpath, remote_setting
 
@@ -189,6 +192,12 @@ def load_remote_runtime_config(path: Path) -> dict[str, Any]:
 
         # 明确指出 simulator_backend 缺失，远端验证无法选择模拟器后端。
         raise ValueError(f"> ERR: [Python] Remote runtime config missing remote.toolchain.simulator_backend: {path}")
+
+    # 未知后端不得进入 shell 命令生成层，避免配置漂移或控制字符注入。
+    if str_backend.strip() not in TUPLE_SUPPORTED_SIMULATOR_BACKENDS:
+
+        # 错误文本保留字段名，但不回显不可信配置内容。
+        raise ValueError(f"> ERR: [Python] unsupported remote.toolchain.simulator_backend: {path}")
 
     # 工具链输出只包含已验证字段，避免把未知字段误传给运行器。
     dict_resolved_toolchain = {

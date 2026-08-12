@@ -8,7 +8,6 @@ import re
 import shutil
 import subprocess
 import sys
-import time
 
 # dataclass 用于把重复 CLI 参数组收束成清晰的请求对象。
 from dataclasses import dataclass
@@ -434,7 +433,7 @@ def build_validation_context(namespace_args: argparse.Namespace) -> ValidationCo
     """
 
     # runtime config 在路径准备后延迟导入。
-    from scripts.python.workflow.config import load_settings, path_setting
+    from scripts.python.workflow.config import build_smoke_run_path, load_settings, path_setting
 
     # 命令行 settings 先保留原 Path 对象，后续按绝对/相对分支解析。
     path_cli_settings = namespace_args.settings  # 用户传入或默认的 settings 路径
@@ -457,8 +456,8 @@ def build_validation_context(namespace_args: argparse.Namespace) -> ValidationCo
     # smoke 根目录来自 settings，不能在脚本中硬编码。
     path_smoke_root = path_setting(dict_settings, "smoke_dir")  # settings 中定义的 smoke 运行根目录
 
-    # 临时目录带进程号和时间戳，便于并行 worker 隔离。
-    path_smoke_dir = path_smoke_root / f"validate-{os.getpid()}-{int(time.time())}"  # 本轮 smoke 子目录
+    # 统一构造 timestamped 运行目录，便于并行隔离并保留验证证据。
+    path_smoke_dir = build_smoke_run_path(path_smoke_root)  # 本轮 retained smoke 目录
 
     # 返回 main 和下游 helper 共用的上下文。
     return ValidationContext(
@@ -488,7 +487,7 @@ def main(argv: list[str] | None = None) -> int:
     # 本轮上下文聚合 settings、smoke 目录和 CLI 开关，后续 gate 共享同一份状态。
     validation_context_current = build_validation_context(namespace_args)  # 当前本地信心门禁上下文
 
-    # 每轮验证开始前清理同名临时产物和旧 pycache。
+    # 每轮验证开始前清理 skill 内部旧缓存，不触碰 retained smoke 目录。
     cleanup_residuals(validation_context_current.dict_settings, validation_context_current.path_smoke_dir)
 
     # 外部治理工具只有显式要求时运行，保持安装包内脚本可用。
@@ -503,10 +502,10 @@ def main(argv: list[str] | None = None) -> int:
     # 远程门禁按 --with-remote / --require-remote 的旧语义执行。
     run_remote_gate_if_requested(validation_context_current, path_effectiveness_report)
 
-    # 所有门禁结束后再次清理临时产物。
+    # 所有门禁结束后再次清理 skill 内部缓存，保留本轮 smoke 证据。
     cleanup_residuals(validation_context_current.dict_settings, validation_context_current.path_smoke_dir)
 
-    # 清理后确认 skill 目录和 smoke 根没有残留禁止项。
+    # 清理后确认 skill 目录没有禁止残留；reports 下的运行证据允许保留。
     verify_no_residuals(validation_context_current.dict_settings, validation_context_current.path_smoke_dir)
 
     # 输出当前 skill 品牌下的最终成功提示。
@@ -751,19 +750,35 @@ def run_remote_gate_if_requested(validation_context: ValidationContext, path_eff
         str_remote_server = str(dict_remote_state["server_id"])  # 远程服务器标识
 
         # 先运行远程验证主流程，保证远端真实产物可用。
-        run(
-            build_remote_validation_command(
-                validation_context.path_settings,
-                str_remote_server,
+        completed_process_remote_validation = run(  # 本轮远程执行身份载荷
+            build_remote_validation_command(  # 构造本轮远程验证命令
+                validation_context.path_settings,  # 复用已解析的路径配置
+                str_remote_server,  # 固定本轮目标服务器
             ),
-            cwd=PATH_SKILL_ROOT,
+            cwd=PATH_SKILL_ROOT,  # 在技能根目录解析相对配置和报告路径
         )
+
+        # 完整执行 stdout 末尾必须给出刚完成的 outer run 和 staging 摘要。
+        dict_remote_validation_identity = parse_json_object(completed_process_remote_validation.stdout)  # 本轮远程执行身份
+
+        # 提取后续报告查询必须绑定的本轮运行标识。
+        str_remote_run_id = str(dict_remote_validation_identity.get("run_id", ""))  # 精确 report-runs 查询使用的 outer run 标识
+
+        # 保留暂存源码摘要以核对远程完成证据。
+        str_source_digest = str(dict_remote_validation_identity.get("source_digest", ""))  # 本轮上传 staging 的 SHA-256 身份
+
+        # 缺失或坏格式身份时失败关闭，禁止回退到“最新”远程目录。
+        if not str_remote_run_id.startswith("run-") or len(str_source_digest) != 64:
+
+            # 缺少身份字段时禁止退化到按时间选择远程报告。
+            raise AssertionError("> ERR: [Python] remote validation did not return a bound run identity.")
 
         # report-runs 命令只读取最近一次远端运行证据，不重新执行远端流程。
         list_remote_report_command = build_remote_validation_command(  # 远端运行报告命令
             validation_context.path_settings,  # 当前 validate 使用的 settings 文件
             str_remote_server,  # 已解析出的远程服务器标识
             report_runs=True,  # 切换到远端运行证据查询模式
+            run_id=str_remote_run_id,  # 只读取本轮刚完成的 outer run
         )
 
         # report-runs 模式回收最近一次远端运行证据。
@@ -773,6 +788,28 @@ def run_remote_gate_if_requested(validation_context: ValidationContext, path_eff
         dict_remote_runs_report = parse_json_object(  # 远程运行证据
             completed_process_remote_runs.stdout,  # 远端运行报告 stdout
         )
+
+        # report-runs 必须回收同一 run 的 completion，且 staging 摘要必须逐字匹配。
+        list_remote_runs = dict_remote_runs_report.get("runs", [])  # 精确 report-runs 返回的运行列表
+
+        # 精确运行查询必须且只能返回本轮报告。
+        dict_remote_run = list_remote_runs[0] if isinstance(list_remote_runs, list) and list_remote_runs else {}  # 本轮唯一远程摘要
+
+        # 完成清单用于绑定源码、命令和实际退出状态。
+        dict_completion = dict_remote_run.get("completion", {}) if isinstance(dict_remote_run, dict) else {}  # 最终完成身份清单
+
+        # 任一身份不一致都说明报告不属于本轮暂存源码。
+        if (
+            not isinstance(dict_completion, dict)
+            or dict_completion.get("run_id") != str_remote_run_id
+            or dict_completion.get("source_digest") != str_source_digest
+        ):
+
+            # 身份不匹配时闭合失败，避免接受旧报告或错误暂存包。
+            raise AssertionError(
+                "> ERR: [Python] remote completion identity does not match "
+                "the executed staging package."
+            )
 
         # eval-skill 需要从文件读取远程运行证据。
         path_remote_runs = validation_context.path_smoke_dir / "remote-runs.json"  # 远程运行证据 JSON 路径

@@ -43,13 +43,13 @@ def verify_no_residuals(
     workspace_context: WorkspaceGateContext,
 ) -> None:
     """
-    检查 smoke 目录与 skill 根下是否还有禁止残留。
+    检查 skill 根下是否还有禁止残留，同时允许 retained smoke 目录存在。
 
     :param settings: Verilog skill 治理配置字典。
     :param smoke_dir: 当前 validate worker 使用的 smoke 目录。
     :param workspace_context: 工作区清理与路径映射依赖的上下文。
     :return: 不返回业务值；通过时表示没有禁止残留留在工作区里。
-    :raises AssertionError: 当 smoke 或 skill 根内仍存在禁止残留时抛出。
+    :raises AssertionError: 当 skill 根内仍存在禁止残留时抛出。
     """
 
     # path_setting 只在真正需要解析 smoke 根目录时才延迟导入。
@@ -63,12 +63,6 @@ def verify_no_residuals(
 
     # 同步解析配置里的 smoke 根目录，供后续边界判断复用。
     path_smoke_root = path_setting(settings, "smoke_dir").resolve()  # 配置定义的 smoke 根目录
-
-    # 当前 worker 目录如果仍然存在，说明 validate 主流程还留下了本轮残留。
-    if smoke_dir.exists():
-
-        # 先把当前 worker 目录转成项目相对路径，再记录到残留摘要里。
-        list_residuals.append(project_relative(smoke_dir, workspace_context))
 
     # 再递归遍历 skill 根目录下的全部条目，继续检查禁止残留名称。
     for path_entry in workspace_context.path_skill_root.rglob("*"):
@@ -130,18 +124,15 @@ def cleanup_residuals(
     workspace_context: WorkspaceGateContext,
 ) -> None:
     """
-    清理本轮 validate 允许自动删除的 smoke、state 与缓存。
+    清理本轮 validate 允许自动删除的 state 与缓存，并保留 smoke 证据。
 
     :param settings: Verilog skill 治理配置字典。
     :param smoke_dir: 当前 validate worker 使用的 smoke 目录。
     :param workspace_context: 工作区清理与路径映射依赖的上下文。
-    :return: 不返回业务值；通过时表示当前 worker 的常规残留已被回收。
+    :return: 不返回业务值；通过时表示 skill 内部常规残留已被回收。
     """
 
-    # 先删除当前 worker 自己负责的 smoke 目录。
-    remove_inside_smoke_root(settings, smoke_dir)
-
-    # 再删除 skill 根里可能残留的 workflow-state.json。
+    # 删除 skill 根里可能残留的 workflow-state.json。
     remove_inside_skill(workspace_context.path_skill_root / "workflow-state.json", workspace_context)
 
     # 继续逆序清理全部 __pycache__ 目录，降低父目录先删导致的 Windows 失败概率。
@@ -149,9 +140,6 @@ def cleanup_residuals(
 
         # 每个缓存目录都经过 skill 根边界检查后再删除。
         remove_inside_skill(path_cache_dir, workspace_context)
-
-    # 最后尝试裁掉已经完全清空的 smoke 根目录壳。
-    prune_empty_smoke_root(settings)
 
 # cleanup_audit_retry_local_artifacts 只回收当前 worker 自己负责的 audit 局部残留。
 def cleanup_audit_retry_local_artifacts(
@@ -171,44 +159,23 @@ def cleanup_audit_retry_local_artifacts(
     # audit 局部重试直接复用常规残留清理，确保不会误删并行兄弟目录。
     cleanup_residuals(settings, smoke_dir, workspace_context)
 
-# cleanup_audit_runtime_artifacts 清空允许 audit 重新生成的运行区内容。
+# cleanup_audit_runtime_artifacts 只回收 audit 重试前的缓存与 state。
 def cleanup_audit_runtime_artifacts(
     settings: dict,
     smoke_dir: Path,
     workspace_context: WorkspaceGateContext,
 ) -> None:
     """
-    清空 audit 重试后允许重新生成的运行产物。
+    清理 audit 重试可回收的缓存，同时保留 reports 证据。
 
     :param settings: Verilog skill 治理配置字典。
     :param smoke_dir: 当前 validate worker 使用的 smoke 目录。
     :param workspace_context: 工作区清理与路径映射依赖的上下文。
-    :return: 不返回业务值；通过时表示 audit 可重建的运行产物已被清空。
+    :return: 不返回业务值；通过时表示缓存已回收且 smoke 证据未被删除。
     """
 
-    # path_setting 只在真正需要解析 smoke 根目录时才延迟导入。
-    from scripts.python.workflow.config import path_setting
-
-    # 先回收常规残留，确保 workflow-state 和 pycache 不再干扰 audit 重试。
+    # 只回收 workflow-state 和 pycache；reports 已是可审计输出根，不再属于可重建临时区。
     cleanup_residuals(settings, smoke_dir, workspace_context)
-
-    # 再解析 audit 运行区对应的 smoke 根目录，供整棵运行树回收使用。
-    path_smoke_root = path_setting(settings, "smoke_dir").resolve()  # audit 运行区的 smoke 根目录
-
-    # smoke 根本身不存在时，说明当前没有运行产物需要额外回收。
-    if not path_smoke_root.exists():
-
-        # 没有运行目录时，当前 helper 直接结束即可。
-        return
-
-    # 继续逆序清理 smoke 根内部条目，确保深层目录先于父级被移除。
-    for path_entry in sorted(path_smoke_root.iterdir(), reverse=True):
-
-        # 每个条目都继续走 smoke 根边界检查后的删除流程。
-        remove_inside_smoke_root(settings, path_entry)
-
-    # 运行条目清空后，再尝试裁掉已经空掉的 smoke 根目录壳。
-    prune_empty_smoke_root(settings)
 
 # prune_empty_smoke_root 只在 smoke 根完全为空时移除目录壳。
 def prune_empty_smoke_root(settings: dict) -> None:

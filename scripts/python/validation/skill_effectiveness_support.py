@@ -8,7 +8,6 @@ import contextlib
 import json
 import os
 import shutil
-import time
 from pathlib import Path, PurePosixPath
 from types import TracebackType
 from typing import Any
@@ -17,7 +16,7 @@ from typing import Any
 from scripts.python.facade.verilog_api import verify_existing_verilog
 
 # skill 根解析沿用 runtime config，保持 evals.json 相对路径语义。
-from scripts.python.workflow.config import skill_root
+from scripts.python.workflow.config import build_smoke_run_path, skill_root
 from scripts.python.workflow.workspace import workspace_root
 
 # 固定 skill 根用于解析 evals.json 中的 fixture 路径。
@@ -31,17 +30,11 @@ def _temporary_eval_root() -> Path:
     :return: 已创建的本轮 eval 临时根目录。
     """
 
-    # 时间戳只参与目录命名，不参与评估语义。
-    int_timestamp = int(time.time())  # 当前秒级时间戳
-
     # smoke 根沿用 workspace_root，使源码仓库和安装副本都能正确落位。
     path_workspace_root = workspace_root()  # eval 临时目录所在的工作区根
 
-    # 运行目录名携带进程与秒级时间，降低并行 eval 之间的目录冲突。
-    str_run_name = f"skill-effectiveness-{os.getpid()}-{int_timestamp}"  # 本轮 eval 目录名
-
-    # 临时目录统一放在 _smoke_runs 下，便于清理脚本识别。
-    path_temp_root = path_workspace_root / "_smoke_runs" / str_run_name  # 当前评估运行目录
+    # 临时目录沿用统一 timestamped smoke 路径，并在其下隔离评估内容。
+    path_temp_root = build_smoke_run_path(path_workspace_root / "reports") / "skill_effectiveness"  # 当前评估运行目录
 
     # mkdir 保证后续 case 可以直接写入子目录。
     path_temp_root.mkdir(parents=True, exist_ok=True)
@@ -252,6 +245,153 @@ def _routing_log_paths(case: dict[str, Any], case_root: Path) -> list[Path]:
     # 返回实际存在和故意缺失的日志路径集合。
     return list_paths
 
+# retained run 组件提取隔离坏格式字段与 fixture 短路判断。
+def _remote_run_components(
+    dict_latest: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[Any], bool]:
+    """提取一轮远程运行的 pytest、执行、完成和 fixture 证据。
+
+    参数:
+        dict_latest: report-runs 返回的单轮 retained run 摘要。
+
+    返回:
+        三类字典证据、原始 fixture 列表和 fixture 总体通过状态。
+    """
+
+    # 三个嵌套字典分别承载权威回归、真实仿真和最终完成身份。
+    dict_remote_pytest = _optional_nested_dict(dict_latest, "pytest")  # 最新运行的 pytest 摘要
+
+    # 主执行摘要证明工具链后端和真实仿真结果。
+    dict_remote_execute = _optional_nested_dict(dict_latest, "remote_execute")  # 最新运行的远程执行摘要
+
+    # completion 证明远端脚本实际到达最终成功写入点。
+    dict_completion = _optional_nested_dict(dict_latest, "completion")  # 最新运行的最终完成清单
+
+    # fixtures 字段损坏为非列表时按无可验证证据处理。
+    obj_fixtures = dict_latest.get("fixtures", [])  # 最新运行保留的 fixture 候选集合
+
+    # 只有列表容器才能继续做逐条 fixture 检查。
+    list_fixtures = obj_fixtures if isinstance(obj_fixtures, list) else []  # 可枚举的远程 fixture 结果
+
+    # 非字典条目不能提供稳定的 ok 字段。
+    list_fixture_dicts = [  # 过滤坏格式条目后的 fixture 字典
+        dict_item  # 当前结构化 fixture 结果
+        for dict_item in list_fixtures  # 遍历原始远程 fixture 列表
+        if isinstance(dict_item, dict)  # 只保留可读取 ok 字段的字典
+    ]
+
+    # 至少一条有效记录且每条 ok 才构成完整 fixture 证据。
+    bool_fixtures_ok = bool(list_fixture_dicts) and all(  # 固定远程 fixture 总体通过状态
+        bool(dict_fixture.get("ok"))  # 当前 fixture 明确报告通过
+        for dict_fixture in list_fixture_dicts  # 遍历全部结构化 fixture 结果
+    )
+
+    # 五项组件来自同一个 retained run，必须作为同一快照返回。
+    return dict_remote_pytest, dict_remote_execute, dict_completion, list_fixtures, bool_fixtures_ok
+
+# 通过性 helper 把全部强验证维度集中为一个布尔判定。
+def _remote_run_is_ok(
+    dict_latest: dict[str, Any],
+    dict_remote_pytest: dict[str, Any],
+    dict_remote_execute: dict[str, Any],
+    dict_completion: dict[str, Any],
+    bool_fixtures_ok: bool,
+) -> bool:
+    """判断一轮 retained run 是否满足全部远程强验证证据。
+
+    参数:
+        dict_latest: report-runs 返回的单轮 retained run 摘要。
+        dict_remote_pytest: 权威远程 pytest 摘要。
+        dict_remote_execute: 真实仿真执行摘要。
+        dict_completion: 最终完成身份清单。
+        bool_fixtures_ok: 固定远程 fixture 总体状态。
+
+    返回:
+        所有证据同时满足时为 True，否则为 False。
+    """
+
+    # completion 必须绑定 outer run、源码摘要、命令摘要和完整起止时间。
+    bool_completion_ok = (  # 最终完成清单的身份与状态校验结果
+        dict_completion.get("status") == "passed"  # 远端命令执行到最终成功写入点
+        and dict_completion.get("run_id") == dict_latest.get("run")  # outer run 身份一致
+        and isinstance(dict_completion.get("source_digest"), str)  # 源码摘要类型有效
+        and len(dict_completion.get("source_digest", "")) == 64  # 源码摘要满足 SHA-256 长度
+        and isinstance(dict_completion.get("command_digest"), str)  # 命令摘要类型有效
+        and len(dict_completion.get("command_digest", "")) == 64  # 命令摘要满足 SHA-256 长度
+        and bool(dict_completion.get("started_at"))  # 远端执行起始时间存在
+        and bool(dict_completion.get("completed_at"))  # 远端执行完成时间存在
+    )
+
+    # pytest、xsim、fixtures 和 completion 缺一不可。
+    return (
+        bool(dict_remote_pytest.get("available"))
+        and bool(dict_remote_pytest.get("ok"))
+        and bool(dict_remote_execute.get("available"))
+        and bool(dict_remote_execute.get("ok"))
+        and dict_remote_execute.get("selected_simulator_backend") == "xsim"
+        and bool_fixtures_ok
+        and bool_completion_ok
+    )
+
+# 摘要 helper 只负责稳定输出字段，不重新解释证据。
+def _build_remote_evaluation_summary(
+    dict_latest: dict[str, Any],
+    dict_remote_pytest: dict[str, Any],
+    dict_remote_execute: dict[str, Any],
+    list_fixtures: list[Any],
+
+    # keyword-only 字段表达调用方政策与联合判定，不属于原始远程证据。
+    *,
+    require_remote: bool,
+    bool_remote_ok: bool,
+) -> dict[str, Any]:
+    """组装效果评估报告中的稳定 remote 字段。
+
+    参数:
+        dict_latest: report-runs 返回的单轮 retained run 摘要。
+        dict_remote_pytest: 权威远程 pytest 摘要。
+        dict_remote_execute: 真实仿真执行摘要。
+        list_fixtures: 原始远程 fixture 结果列表。
+        require_remote: 当前评估是否强制远程证据。
+        bool_remote_ok: 全部强验证证据的联合判定。
+
+    返回:
+        供 eval-skill 消费的稳定 remote 摘要字典。
+    """
+
+    # 逐字段组装避免把报告 schema 伪装成实验参数表。
+    dict_summary: dict[str, Any] = {}  # remote 字段最终报告容器
+
+    # ok 字段表达 retained run 是否满足全部强验证证据。
+    dict_summary["ok"] = bool_remote_ok  # retained run 总体通过状态
+
+    # checked 表示本函数已经检查过远程报告内容。
+    dict_summary["checked"] = True  # 远程报告已检查标志
+
+    # required 保留调用方对远程验证的强制要求。
+    dict_summary["required"] = require_remote  # 当前评估是否要求远程证据
+
+    # latest_run 记录 exact 或最新 retained run 标识。
+    dict_summary["latest_run"] = dict_latest.get("run")  # 最新 retained run 标识
+
+    # selected_simulator_backend 证明强验证后端确实为 xsim。
+    dict_summary["selected_simulator_backend"] = dict_remote_execute.get("selected_simulator_backend")  # retained run 选择的仿真后端
+
+    # fixture_count 让报告使用者确认固定夹具覆盖规模。
+    dict_summary["fixture_count"] = len(list_fixtures)  # retained run 中的 fixture 数量
+
+    # pytest 通过计数保留权威远程回归规模。
+    dict_summary["pytest_passed"] = int(dict_remote_pytest.get("passed", 0))  # pytest 通过用例数
+
+    # 跳过数量单独呈现，避免未执行项被误计为成功覆盖。
+    dict_summary["pytest_skipped"] = int(dict_remote_pytest.get("skipped", 0))  # pytest 跳过用例数
+
+    # 运行耗时用于识别异常短跑并交叉核验 retained 摘要。
+    dict_summary["pytest_duration_seconds"] = float(dict_remote_pytest.get("duration_seconds", 0.0))  # pytest 运行耗时
+
+    # 返回字段名与既有 eval-skill remote 协议保持一致。
+    return dict_summary
+
 # remote run 报告转换为本 eval 报告的统一 remote 字段。
 def _evaluate_remote_runs(
     remote_runs_report: dict[str, Any] | None,
@@ -260,15 +400,15 @@ def _evaluate_remote_runs(
 ) -> dict[str, Any]:
     """检查 retained remote validation run 是否满足 xsim 与 fixture 证据。
 
-        :param remote_runs_report: remote_validate --report-runs 生成的 retained run 报告。
-        :param require_remote: 当前评估是否要求远程证据通过。
-        :return: remote 字段使用的 checked、ok、backend 和 fixture 摘要。
-        """
+    :param remote_runs_report: remote_validate --report-runs 生成的 retained run 报告。
+    :param require_remote: 当前评估是否要求远程证据通过。
+    :return: remote 字段使用的 checked、ok、backend 和 fixture 摘要。
+    """
 
     # 未提供远程报告时只记录 unchecked，不影响非远程必需场景。
     if not remote_runs_report:
 
-        # reason 字段帮助 release gate 区分未提供与失败。
+        # reason 区分调用方未提供证据与远程执行失败。
         return {
             "ok": False,
             "checked": False,
@@ -276,16 +416,16 @@ def _evaluate_remote_runs(
             "reason": "no remote run report provided",
         }
 
-    # runs 字段来自 remote_validate --report-runs，坏格式时按空列表处理。
-    list_runs_candidate = remote_runs_report.get("runs", []) if isinstance(remote_runs_report, dict) else []  # retained run 原始候选集合
+    # runs 字段坏格式或为空时表示报告已检查但证据不足。
+    obj_runs = remote_runs_report.get("runs", []) if isinstance(remote_runs_report, dict) else []  # retained run 原始候选集合
 
-    # 非列表 runs 无法作为 retained run 证据。
-    list_runs = list_runs_candidate if isinstance(list_runs_candidate, list) else []  # 可验证的 retained run 列表
+    # 非列表 runs 不能作为可验证 retained run 集合。
+    list_runs = obj_runs if isinstance(obj_runs, list) else []  # 可验证的 retained run 列表
 
-    # 空 runs 表示报告存在但没有可验证运行。
+    # 空列表表示已读取报告但没有一轮可验证证据。
     if not list_runs:
 
-        # checked=true 表示已看过远程报告但证据不足。
+        # checked=true 保留已执行只读报告查询的事实。
         return {
             "ok": False,
             "checked": True,
@@ -293,98 +433,45 @@ def _evaluate_remote_runs(
             "reason": "remote run report did not contain any retained runs",
         }
 
-    # 最新运行按 report-runs 的排序约定取第一个。
-    dict_latest = list_runs[0]  # report-runs 排序后的最新远程运行
+    # report-runs 保证最新或 exact 运行位于列表首项。
+    dict_latest = list_runs[0]  # 当前需要评估的 retained run
 
-    # pytest 子字段携带权威远程回归的结构化计数和通过状态。
-    dict_remote_pytest = _optional_nested_dict(dict_latest, "pytest")  # 最新运行的 pytest 摘要
+    # 组件 helper 同步提取三类字典、fixture 列表和 fixture 状态。
+    tuple_components = _remote_run_components(dict_latest)  # 三类字典、fixture 列表和 fixture 状态
 
-    # remote_execute 子字段携带模拟器可用性与后端选择。
-    dict_remote_execute = _optional_nested_dict(dict_latest, "remote_execute")  # 最新运行的远程执行摘要
+    # pytest 摘要证明权威远程回归计数和状态。
+    dict_remote_pytest = tuple_components[0]  # 权威远程 pytest 摘要
 
-    # fixtures 字段可能缺失或被损坏为非列表。
-    list_fixtures_candidate = dict_latest.get("fixtures", [])  # 最新运行保留的 fixture 候选集合
+    # execute 摘要证明工具链可用性、后端和仿真通过状态。
+    dict_remote_execute = tuple_components[1]  # 真实仿真执行摘要
 
-    # 只有列表 fixture 才能参与通过性统计。
-    list_fixtures = list_fixtures_candidate if isinstance(list_fixtures_candidate, list) else []  # 远程 fixture 结果列表
+    # completion 绑定 outer run、源码摘要和命令摘要。
+    dict_completion = tuple_components[2]  # 最终完成身份清单
 
-    # 过滤非字典条目，避免坏报告条目参与 get(...) 检查。
-    list_fixture_dicts = [dict_item for dict_item in list_fixtures if isinstance(dict_item, dict)]  # 可检查的 fixture 结果字典
+    # 原始 fixture 列表用于报告覆盖数量。
+    list_fixtures = tuple_components[3]  # 原始远程 fixture 列表
 
-    # 所有 fixture 必须 ok，且至少存在一个 fixture。
-    bool_fixtures_ok = bool(list_fixture_dicts)  # fixture 检查先要求至少有一条有效记录
+    # 联合 fixture 状态要求至少一条且全部通过。
+    bool_fixtures_ok = tuple_components[4]  # 固定远程 fixture 总体状态
 
-    # 任一 fixture 未通过时，远程证据不能算完整。
-    for dict_fixture in list_fixture_dicts:
-
-        # ok 字段为假说明该 fixture 未能通过远程保留运行。
-        if not dict_fixture.get("ok"):
-
-            # 标记失败后退出循环，保留和 all(...) 等价的短路语义。
-            bool_fixtures_ok = False  # fixture 通过性汇总状态
-
-            # 已发现失败 fixture，无需继续扫描后续条目。
-            break
-
-    # xsim 是本 skill 当前远程强验证的 canonical 后端。
-    bool_remote_available = bool(dict_remote_execute.get("available"))  # 远程执行环境可用状态
-
-    # 远程执行自身需要报告 ok，fixture 通过不能替代执行状态。
-    bool_remote_execute_ok = bool(dict_remote_execute.get("ok"))  # 远程执行摘要通过状态
-
-    # 当前 release gate 只接受 xsim 作为强验证后端。
-    bool_backend_xsim = dict_remote_execute.get("selected_simulator_backend") == "xsim"  # 远程后端是否为 xsim
-
-    # pytest 必须有结构化摘要且明确通过，瞬时 stdout 或远程命令退出码不能替代 retained 证据。
-    bool_pytest_available = bool(dict_remote_pytest.get("available"))  # pytest 摘要是否存在
-
-    # 文件存在仍不足以放行，ok 字段必须证明远程 pytest 自身通过。
-    bool_pytest_ok = bool(dict_remote_pytest.get("ok"))  # pytest 摘要是否明确通过
-
-    # 五个远程证据维度同时满足才允许 remote.ok 为真。
-    bool_remote_ok = (  # retained run 总体验证状态
-        bool_pytest_available  # retained run 提供 pytest 机器可读摘要
-        and bool_pytest_ok  # pytest 摘要明确报告通过
-        and bool_remote_available  # 主执行验证 JSON 可下载
-        and bool_remote_execute_ok  # 主执行验证结果为绿
-        and bool_backend_xsim  # 实际后端满足 xsim 强验证要求
-        and bool_fixtures_ok  # 三类最小 RTL fixture 全部通过
+    # 全部强验证维度通过后才允许 remote.ok。
+    bool_remote_ok = _remote_run_is_ok(  # retained run 是否满足全部发布级远程证据
+        dict_latest,  # 用于核对 completion 绑定的 outer 身份
+        dict_remote_pytest,  # 要求摘要存在且 pytest 明确通过
+        dict_remote_execute,  # 要求 xsim 执行可用且结果为绿
+        dict_completion,  # 要求状态、摘要和起止时间全部齐备
+        bool_fixtures_ok,  # 要求至少一项固定夹具且全部通过
     )
 
-    # remote 摘要逐字段组装，避免把报告 schema 伪装成实验参数表。
-    dict_remote_summary: dict[str, Any] = {}  # remote 字段最终报告容器
-
-    # ok 字段表达 retained run 是否满足全部强验证证据。
-    dict_remote_summary["ok"] = bool_remote_ok  # retained run 总体通过状态
-
-    # checked 表示本函数已经检查过远程报告内容。
-    dict_remote_summary["checked"] = True  # 远程报告已检查标志
-
-    # required 保留调用方对远程验证的强制要求。
-    dict_remote_summary["required"] = require_remote  # 当前评估是否要求远程证据
-
-    # latest_run 记录 report-runs 排序后的首个运行标识。
-    dict_remote_summary["latest_run"] = dict_latest.get("run")  # 最新 retained run 标识
-
-    # selected_simulator_backend 用于证明强验证后端确实为 xsim。
-    dict_remote_summary["selected_simulator_backend"] = dict_remote_execute.get("selected_simulator_backend")  # retained run 选择的仿真后端
-
-    # fixture_count 让报告使用者确认本次远程证据覆盖了 fixture。
-    dict_remote_summary["fixture_count"] = len(list_fixtures)  # retained run 中的 fixture 数量
-
-    # pytest 计数字段让效果评估直接保留权威回归规模与跳过数量。
-    dict_remote_summary["pytest_passed"] = int(dict_remote_pytest.get("passed", 0))  # pytest 通过用例数
-
-    # 跳过数量单独呈现，避免使用者把未执行项误计为成功覆盖。
-    dict_remote_summary["pytest_skipped"] = int(dict_remote_pytest.get("skipped", 0))  # pytest 跳过用例数
-
-    # 运行耗时用于识别异常短跑，并和 retained 原始摘要交叉核验。
-    dict_remote_summary["pytest_duration_seconds"] = float(  # pytest 运行耗时
-        dict_remote_pytest.get("duration_seconds", 0.0)  # 远程 pytest 记录的秒数
+    # 稳定摘要只保留 eval-skill 消费的必要字段。
+    return _build_remote_evaluation_summary(
+        dict_latest,
+        dict_remote_pytest,
+        dict_remote_execute,
+        list_fixtures,
+        require_remote=require_remote,
+        bool_remote_ok=bool_remote_ok,
     )
-
-    # 返回 remote 字段的稳定摘要。
-    return dict_remote_summary
 
 # expectation checks 用于默认 prompt regression case。
 def _expectation_checks(

@@ -33,8 +33,8 @@ from .vg_comb_selectors import (
     static_target as _static_target,
 )
 
-# hierarchy tracing 入口建立跨实例 cone 并保留完整 occurrence identity。
-from .vg_comb_tracing import trace_target_cone
+# hierarchy 批量 tracing 在同一 root 内复用索引并保留完整 occurrence identity。
+from .vg_comb_tracing import _trace_target_cones
 
 # source-only 实现索引和 definition roots 驱动每个独立层级图入口。
 from .vg_comb_targets import (
@@ -624,6 +624,9 @@ def build_comb_target_cones(facts: VgFacts) -> tuple[CombTargetCone, ...]:
             # 当前 root 已完成模块内分析。
             continue
 
+        # 当前 root 的目标先稳定收集，再由一个调用级 session 批量追踪。
+        list_scoped_targets: list[ScopedTarget] = []  # 当前 definition root 的有序作用域目标
+
         # 每个 occurrence 内的本地和跨层 endpoint 分别接受预算检查。
         for tuple_path, specialized_module in hierarchy_graph_hierarchy_graph.modules:
 
@@ -653,8 +656,17 @@ def build_comb_target_cones(facts: VgFacts) -> tuple[CombTargetCone, ...]:
                 # 完整 ScopedTarget 绑定 root、path、specialization 和静态端点。
                 scoped_target = ScopedTarget(definition_root.identity, tuple_path, specialized_module.key, str_target)  # 当前待追踪的完整作用域目标
 
-                # tracing 结果直接适配为 facade-compatible CombTargetCone。
-                list_cones.append(trace_target_cone(hierarchy_graph_hierarchy_graph, scoped_target))
+                # 当前目标进入 root 级批量 tracing 输入，顺序保持不变。
+                list_scoped_targets.append(scoped_target)
+
+        # 一个 session 复用 module、producer、fact、line 索引与安全 memo。
+        tuple_root_cones = _trace_target_cones(  # 当前 definition root 的批量组合锥
+            hierarchy_graph_hierarchy_graph,  # 批量目标共用的冻结层次图
+            tuple(list_scoped_targets),  # 按 occurrence 与 target 稳定排序的输入
+        )
+
+        # facade 汇总顺序与旧逐目标 append 路径保持一致。
+        list_cones.extend(tuple_root_cones)
 
     # 最终排序显式覆盖 source、root span、path、fingerprint 和静态 target。
     list_cones.sort(

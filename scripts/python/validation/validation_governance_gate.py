@@ -70,6 +70,7 @@ def build_remote_validation_command(
     governance_gate_context: GovernanceGateContext,
     *,
     report_runs: bool = False,
+    run_id: str | None = None,
 ) -> list[str]:
     """
     组装远程验证脚本命令。
@@ -78,6 +79,7 @@ def build_remote_validation_command(
     :param remote_server: 本次运行显式指定的服务器标识；为空时不额外透传。
     :param governance_gate_context: 远程验证命令拼装所依赖的治理上下文。
     :param report_runs: 是否切换到 report-runs 只读报告模式。
+    :param run_id: report-runs 需要精确读取的 outer retained run 标识。
     :return: 返回可直接交给 subprocess 的 argv 列表。
     """
 
@@ -101,6 +103,12 @@ def build_remote_validation_command(
 
         # report-runs 保持 validate 既有的 `--max-runs 1` 顺序与取值。
         list_command.extend(["--report-runs", "--max-runs", "1"])
+
+        # 调用方提供本轮 run id 时必须精确透传，禁止重新猜测最近目录。
+        if run_id:
+
+            # run id 使用独立 argv 项，避免 shell 拼接改变其路径语义。
+            list_command.extend(["--run-id", run_id])
 
     # 把完整 argv 列表返回给 facade，保持 shell 转义语义稳定。
     return list_command
@@ -384,7 +392,11 @@ def _has_transient_artifact_marker(text: str) -> bool:
     """
 
     # 只把 smoke 目录和 Python 缓存目录视为 validate 可以自动回收的瞬态产物。
-    return "_smoke_runs" in text or "__pycache__" in text
+    return (
+        "_smoke_runs" in text
+        or "reports/smoke_runs_" in text.replace("\\", "/")
+        or "__pycache__" in text
+    )
 
 # _is_dirty_worktree_branch_gate_message 统一匹配开发期允许 advisory 的脏树分支治理文案。
 def _is_dirty_worktree_branch_gate_message(message: str) -> bool:

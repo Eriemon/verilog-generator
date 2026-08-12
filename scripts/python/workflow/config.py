@@ -8,6 +8,7 @@ import json
 import os
 import re
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -413,6 +414,37 @@ def workflow_defaults(settings: dict[str, Any] | None = None) -> dict[str, Any]:
 
     # 深拷贝防止调用方修改全局配置对象。
     return deepcopy(dict_workflow)
+
+# smoke 运行目录命名入口。
+def build_smoke_run_path(
+    path_reports_root: Path,
+    *,
+    datetime_current: datetime | None = None,
+    int_process_id: int | None = None,
+) -> Path:
+    """
+    构造一个位于 reports 根目录下的唯一 smoke 运行目录路径。
+
+    :param path_reports_root: smoke 运行目录所属的 reports 根目录。
+    :param datetime_current: 用于测试注入的当前本地时间，默认读取系统时间。
+    :param int_process_id: 用于测试注入的进程号，默认读取当前进程号。
+    :return: 尚未创建的 `smoke_runs_<时间戳>_<进程号>` 路径。
+    """
+
+    # 微秒时间戳避免同一进程短时间内连续运行时复用旧目录。
+    datetime_run = datetime_current or datetime.now()  # 当前 smoke 运行使用的本地时间
+
+    # 进程号补充并发隔离，避免多个验证进程在同一微秒写入相同目录。
+    int_run_process_id = int_process_id if int_process_id is not None else os.getpid()  # 当前 smoke 运行进程号
+
+    # 固定目录名格式，供本地、远程与 retained 结果发现逻辑共同识别。
+    str_run_name = (
+        f"smoke_runs_{datetime_run.strftime('%Y%m%d-%H%M%S-%f')}"
+        f"_{int_run_process_id}"
+    )  # 当前 smoke 运行目录名
+
+    # 只负责构造路径，目录创建由调用方在明确的运行边界内完成。
+    return path_reports_root / str_run_name
 
 # settings.paths 单项读取入口。
 def path_setting(settings: dict[str, Any], key: str) -> Path:

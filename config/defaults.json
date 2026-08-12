@@ -2,7 +2,7 @@
   "version": 1,
   "paths": {
     "skill_root": "${skill_dir}",
-    "smoke_dir": "${project_root}/_smoke_runs",
+    "smoke_dir": "${project_root}/reports",
     "reports_dir": "${project_root}/reports",
     "example_spec": "${skill_dir}/assets/examples/rtl_erie_verilog_spec.json",
     "use_case_examples_dir": "${skill_dir}/assets/examples/use_case_templates",

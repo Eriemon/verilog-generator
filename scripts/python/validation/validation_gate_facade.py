@@ -43,12 +43,14 @@ class ValidationGateFacade:
         remote_server: str | None,
         *,
         report_runs: bool = False,
+        run_id: str | None = None,
     ) -> list[str]:
         """组装远程验证脚本命令。
 
         :param settings_path: 当前 validate 运行使用的 settings 文件路径。
         :param remote_server: 可选的显式远程服务器标识；为空时回落到本地已确认选择。
         :param report_runs: 是否切换到只读取最近一次远端运行证据的报告模式。
+        :param run_id: report-runs 需要精确读取的 outer retained run 标识。
         :return: 返回命令列表；保持 facade 对远程验证子进程 argv 顺序的兼容封装。
         """
 
@@ -58,6 +60,7 @@ class ValidationGateFacade:
             remote_server,
             self.func_build_governance_gate_context(),
             report_runs=report_runs,
+            run_id=run_id,
         )
 
     # resolve_remote_server 只提取已确认选择中的 server_id。
@@ -184,7 +187,7 @@ class ValidationGateFacade:
 
     # run_audit_skill 执行 skill audit，并处理 smoke 目录瞬时残留导致的一次重试。
     def run_audit_skill(self, settings: dict[str, Any], smoke_dir: Path) -> None:
-        """运行 skill audit；遇到 _smoke_runs 瞬时缺失时清理后重试一次。
+        """运行 skill audit；遇到 smoke 报告目录瞬时缺失时重试一次。
 
         :param settings: Verilog skill 治理配置字典，提供 audit 所需路径和依赖开关。
         :param smoke_dir: 本轮 validate 使用的 smoke 运行目录。
@@ -435,6 +438,90 @@ class ValidationGateFacade:
             self.func_build_workspace_gate_context(),
         )
 
+# 治理入口绑定 helper 隔离远程、工作区门禁与效果评估导出表。
+def _bind_governance_exports(
+    module_globals: dict[str, Any],
+    facade: ValidationGateFacade,
+) -> None:
+    """把治理相关兼容入口回填到调用模块命名空间。
+
+    :param module_globals: 调用方模块的 globals 字典。
+    :param facade: 已绑定 loader 与上下文 builder 的门禁 facade。
+    :return: 不返回业务值；导出入口原地写入 module_globals。
+    """
+
+    # 键名保持 validate_verilog_skill 的既有公开与私有兼容面。
+    module_globals.update(
+        {
+            "build_remote_validation_command": facade.build_remote_validation_command,
+            "resolve_remote_server": facade.resolve_remote_server,
+            "resolve_required_remote_validation_state": facade.resolve_required_remote_validation_state,
+            "run_work_folder_gate": facade.run_work_folder_gate,
+            "_is_advisory_work_folder_gate_failure": facade._is_advisory_work_folder_gate_failure,
+            "_has_transient_artifact_marker": facade._has_transient_artifact_marker,
+            "_is_dirty_worktree_branch_gate_message": facade._is_dirty_worktree_branch_gate_message,
+            "_payload_has_only_transient_artifact_errors": facade._payload_has_only_transient_artifact_errors,
+            "_is_transient_work_folder_gate_failure": facade._is_transient_work_folder_gate_failure,
+            "verify_skill_effectiveness": facade.verify_skill_effectiveness,
+            "verify_audit_skill_report": facade.verify_audit_skill_report,
+            "run_audit_skill": facade.run_audit_skill,
+            "parse_json_object": facade.parse_json_object,
+        }
+    )
+
+# 源码审计入口绑定 helper 保留技能正文与依赖边界检查。
+def _bind_source_audit_exports(
+    module_globals: dict[str, Any],
+    facade: ValidationGateFacade,
+) -> None:
+    """把源码审计兼容入口回填到调用模块命名空间。
+
+    :param module_globals: 调用方模块的 globals 字典。
+    :param facade: 已绑定 loader 与上下文 builder 的门禁 facade。
+    :return: 不返回业务值；导出入口原地写入 module_globals。
+    """
+
+    # 六个入口共同依赖同一 source-audit 上下文 builder。
+    module_globals.update(
+        {
+            "verify_markdown_ascii": facade.verify_markdown_ascii,
+            "verify_skill_standards": facade.verify_skill_standards,
+            "verify_legacy_terms": facade.verify_legacy_terms,
+            "verify_dependency_schema": facade.verify_dependency_schema,
+            "verify_hardcoded_paths": facade.verify_hardcoded_paths,
+            "verify_no_ref_dependencies": facade.verify_no_ref_dependencies,
+        }
+    )
+
+# 工作区入口绑定 helper 保留清理、路径和残留检查兼容面。
+def _bind_workspace_exports(
+    module_globals: dict[str, Any],
+    facade: ValidationGateFacade,
+) -> None:
+    """把工作区兼容入口回填到调用模块命名空间。
+
+    :param module_globals: 调用方模块的 globals 字典。
+    :param facade: 已绑定 loader 与上下文 builder 的门禁 facade。
+    :return: 不返回业务值；导出入口原地写入 module_globals。
+    """
+
+    # 清理与路径入口必须共享同一个 workspace gate 上下文。
+    module_globals.update(
+        {
+            "verify_no_residuals": facade.verify_no_residuals,
+            "cleanup_residuals": facade.cleanup_residuals,
+            "cleanup_audit_retry_local_artifacts": facade.cleanup_audit_retry_local_artifacts,
+            "cleanup_audit_runtime_artifacts": facade.cleanup_audit_runtime_artifacts,
+            "_prune_empty_smoke_root": facade._prune_empty_smoke_root,
+            "remove_inside_skill": facade.remove_inside_skill,
+            "remove_inside_smoke_root": facade.remove_inside_smoke_root,
+            "_remove_tree_with_retry": facade._remove_tree_with_retry,
+            "iter_skill_files": facade.iter_skill_files,
+            "_project_relative": facade._project_relative,
+            "project_artifact_path": facade.project_artifact_path,
+        }
+    )
+
 # bind_validation_gate_exports 把公开兼容门禁函数回填到 validate facade 模块命名空间。
 def bind_validation_gate_exports(
     module_globals: dict[str, Any],
@@ -465,59 +552,14 @@ def bind_validation_gate_exports(
         func_build_governance_gate_context=func_build_governance_gate_context,  # 绑定治理 gate 上下文 builder
     )
 
-    # 再把治理相关的公开兼容门禁函数回填到调用模块命名空间。
-    module_globals.update(
-        {
-            "build_remote_validation_command": validation_gate_facade_binding.build_remote_validation_command,
-            "resolve_remote_server": validation_gate_facade_binding.resolve_remote_server,
-            "resolve_required_remote_validation_state":
-                validation_gate_facade_binding.resolve_required_remote_validation_state,
-            "run_work_folder_gate": validation_gate_facade_binding.run_work_folder_gate,
-            "_is_advisory_work_folder_gate_failure":
-                validation_gate_facade_binding._is_advisory_work_folder_gate_failure,
-            "_has_transient_artifact_marker": validation_gate_facade_binding._has_transient_artifact_marker,
-            "_is_dirty_worktree_branch_gate_message":
-                validation_gate_facade_binding._is_dirty_worktree_branch_gate_message,
-            "_payload_has_only_transient_artifact_errors":
-                validation_gate_facade_binding._payload_has_only_transient_artifact_errors,
-            "_is_transient_work_folder_gate_failure":
-                validation_gate_facade_binding._is_transient_work_folder_gate_failure,
-            "verify_skill_effectiveness": validation_gate_facade_binding.verify_skill_effectiveness,
-            "verify_audit_skill_report": validation_gate_facade_binding.verify_audit_skill_report,
-            "run_audit_skill": validation_gate_facade_binding.run_audit_skill,
-            "parse_json_object": validation_gate_facade_binding.parse_json_object,
-        }
-    )
+    # 三个低复杂度 helper 分别绑定治理、源码审计和工作区入口。
+    _bind_governance_exports(module_globals, validation_gate_facade_binding)
 
-    # 再把源码审计相关的公开兼容门禁函数回填到调用模块命名空间。
-    module_globals.update(
-        {
-            "verify_markdown_ascii": validation_gate_facade_binding.verify_markdown_ascii,
-            "verify_skill_standards": validation_gate_facade_binding.verify_skill_standards,
-            "verify_legacy_terms": validation_gate_facade_binding.verify_legacy_terms,
-            "verify_dependency_schema": validation_gate_facade_binding.verify_dependency_schema,
-            "verify_hardcoded_paths": validation_gate_facade_binding.verify_hardcoded_paths,
-            "verify_no_ref_dependencies": validation_gate_facade_binding.verify_no_ref_dependencies,
-        }
-    )
+    # 源码审计入口复用同一 facade 中的 source-audit loader。
+    _bind_source_audit_exports(module_globals, validation_gate_facade_binding)
 
-    # 最后把工作区清理与路径辅助函数回填到调用模块命名空间。
-    module_globals.update(
-        {
-            "verify_no_residuals": validation_gate_facade_binding.verify_no_residuals,
-            "cleanup_residuals": validation_gate_facade_binding.cleanup_residuals,
-            "cleanup_audit_retry_local_artifacts":
-                validation_gate_facade_binding.cleanup_audit_retry_local_artifacts,
-            "cleanup_audit_runtime_artifacts": validation_gate_facade_binding.cleanup_audit_runtime_artifacts,
-            "_prune_empty_smoke_root": validation_gate_facade_binding._prune_empty_smoke_root,
-            "remove_inside_skill": validation_gate_facade_binding.remove_inside_skill,
-            "remove_inside_smoke_root": validation_gate_facade_binding.remove_inside_smoke_root,
-            "_remove_tree_with_retry": validation_gate_facade_binding._remove_tree_with_retry,
-            "iter_skill_files": validation_gate_facade_binding.iter_skill_files,
-            "_project_relative": validation_gate_facade_binding._project_relative,
-            "project_artifact_path": validation_gate_facade_binding.project_artifact_path,
-        }
-    )
+    # 工作区入口复用同一 facade 中的 workspace loader。
+    _bind_workspace_exports(module_globals, validation_gate_facade_binding)
 
     # 最后把 facade 对象返回给调用方，便于调试或后续扩展保留句柄。
     return validation_gate_facade_binding

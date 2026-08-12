@@ -89,7 +89,7 @@
       "title": "Verilog Style Observations"
     },
     {
-      "content_sha256": "1c38c5ca74df650c25846055ff34c2d048c62c168badc3b9d8ee237b99155a02",
+      "content_sha256": "8d8caf8d5c6c0857cda636733a23d8494e36b005e848401117cfc69c4246ac14",
       "id": "document.references-integration-configuration",
       "keywords": [
         "settings",
@@ -101,13 +101,14 @@
         "eval",
         "hierarchy fixture",
         "file_role_confirmations",
-        "relative path"
+        "relative path",
+        "remote run identity"
       ],
       "path": "references/integration/configuration.md",
-      "responsibility": "定义设置文件、文件角色确认、依赖、验证、远程目标、层次 source-closure fixture、工具链选择、效果评估工作区和运行目录配置合同。",
+      "responsibility": "定义设置文件、文件角色确认、依赖、验证、远程目标、层次 source-closure fixture、工具链选择、远程运行身份绑定、效果评估工作区和运行目录配置合同。",
       "source_anchor": "",
       "status": "current",
-      "summary": "本地、远程与效果评估 Verilog 工作流配置合同。",
+      "summary": "本地、远程、运行证据身份绑定与效果评估 Verilog 工作流配置合同。",
       "title": "Configuration"
     },
     {

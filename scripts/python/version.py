@@ -4,4 +4,4 @@
 __all__ = ["__version__"]  # 对外暴露的源码版本常量名清单
 
 # 版本值与 skill 根目录 VERSION 文件保持一致。
-__version__ = "1.0.3"  # 当前 skill 源码版本号
+__version__ = "1.0.4"  # 当前 skill 源码版本号

@@ -2,6 +2,7 @@
 
 # JSON 负责写出稳定的 retained 证据协议。
 import json
+import os
 
 # 正则表达式从 pytest 成功末行提取计数和耗时。
 import re
@@ -9,11 +10,35 @@ import re
 # Path 保持日志与摘要位置显式且可复核。
 from pathlib import Path
 
-# pytest 日志和摘要固定在当前 retained run 的 smoke 目录。
-PATH_PYTEST_LOG = Path("_smoke_runs/remote_pytest.log")  # pytest 原始输出路径
+# pytest 日志和摘要使用当前 retained run 内的相对位置。
+PATH_PYTEST_LOG = Path("remote_pytest.log")  # pytest 原始输出相对路径
 
 # 摘要路径由 report-runs 下载合同消费，不能与日志路径混用。
-PATH_PYTEST_SUMMARY = Path("_smoke_runs/remote_pytest_summary.json")  # pytest 摘要 JSON 路径
+PATH_PYTEST_SUMMARY = Path("remote_pytest_summary.json")  # pytest 摘要 JSON 相对路径
+
+# smoke_run_root 只接受远程编排显式导出的本轮目录，不回退到旧路径。
+def smoke_run_root() -> Path:
+    """返回远程编排显式指定的 retained smoke 运行目录。
+
+    参数:
+        本函数不接收外部业务参数，目录由环境变量提供。
+    返回:
+        返回当前远程 smoke 运行目录路径。
+    异常:
+        RuntimeError: 远程编排未导出本轮目录时抛出。
+    """
+
+    # 缺失运行目录变量时拒绝猜测路径，避免证据写入错误位置。
+    str_smoke_run_dir = os.environ.get("VERILOG_GENERATOR_SMOKE_RUN_DIR", "")  # 当前远程 retained 目录文本
+
+    # 空变量不能建立可复核的远程证据边界。
+    if not str_smoke_run_dir:
+
+        # 结构化错误提示调用方先建立远程运行目录合同。
+        raise RuntimeError("> ERR: [Python] VERILOG_GENERATOR_SMOKE_RUN_DIR is required")
+
+    # 返回调用时解析出的路径，避免模块导入阶段绑定陈旧环境状态。
+    return Path(str_smoke_run_dir)
 
 # 结果类别必须与 pytest 成功摘要中的公开名称保持一致。
 STR_RESULT_PATTERN = r"(\d+)\s+(passed|skipped|xfailed|xpassed|deselected)"  # pytest 结果类别模式
@@ -110,8 +135,17 @@ def main() -> None:
         AssertionError: pytest 成功摘要、正数通过计数或耗时缺失时抛出。
     """
 
+    # 先解析本轮目录，后续日志与摘要必须共享同一证据边界。
+    path_smoke_run_root = smoke_run_root()  # 当前远程 retained 运行目录
+
+    # 日志路径按本轮运行目录与稳定相对名称组合。
+    path_pytest_log = path_smoke_run_root / PATH_PYTEST_LOG  # 当前 pytest 控制台日志
+
+    # 摘要路径与日志归属于同一 retained 运行目录。
+    path_pytest_summary = path_smoke_run_root / PATH_PYTEST_SUMMARY  # 当前 pytest 结构化摘要
+
     # 按行读取日志，替换非法工具输出字节后仍保留诊断文本。
-    list_log_lines = PATH_PYTEST_LOG.read_text(  # pytest 控制台输出行
+    list_log_lines = path_pytest_log.read_text(  # pytest 控制台输出行
         encoding="utf-8",  # 远程验证包统一使用 UTF-8
         errors="replace",  # 非法字节替换后继续解析成功末行
     ).splitlines()
@@ -123,7 +157,7 @@ def main() -> None:
     dict_payload = parse_pytest_summary_line(str_summary_line)  # report-runs 下载的 pytest 载荷
 
     # retained JSON 使用稳定键序和 UTF-8，供机器与人工共同复核。
-    PATH_PYTEST_SUMMARY.write_text(
+    path_pytest_summary.write_text(
         json.dumps(  # 生成稳定键序的 JSON 文本
             dict_payload,  # 只写入已验证的 pytest 统计载荷
             indent=2,  # 保持 retained 文件可人工审阅

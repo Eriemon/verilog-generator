@@ -3,6 +3,7 @@
 # 标准库负责 JSON 协议、远端请求子进程、临时包 staging 和清理。
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,9 @@ from pathlib import Path
 
 # Any 只用于 helper 上下文、JSON 载荷和输出流。
 from typing import Any, Callable
+
+# facade 在执行本模块前注册 sibling manifest 的稳定动态加载别名。
+from readable_verilog_remote_stage_manifest import stage_project_agents, tracked_project_agent_files
 
 # skill 主体根目录供 staging 和本地缓存清理复用。
 PATH_SKILL_ROOT = Path(__file__).resolve().parents[3]  # 包含 runtime、scripts 与 config 的 skill 根目录
@@ -346,8 +350,8 @@ def stage_package(path_helper: Path, str_run_id: str) -> Path:
     # 复制完整测试树，让远程 pytest 与本地候选覆盖相同测试集合。
     shutil.copytree(PATH_PROJECT_ROOT / "tests", path_staged_tests, ignore=obj_copytree_ignore_patterns)
 
-    # 复制项目控制配置，不携带当前机器的临时 active-session 状态。
-    shutil.copytree(PATH_PROJECT_ROOT / ".agents", path_staged_agents, ignore=obj_copytree_ignore_patterns)
+    # 只复制 Git tracked 项目控制事实源，不携带未跟踪的门禁报告和运行日志。
+    stage_project_agents(PATH_PROJECT_ROOT, path_staged_agents)
 
     # 复制当前治理文档，保证远程文档合同测试读取候选事实源。
     shutil.copytree(PATH_PROJECT_ROOT / "docs", path_staged_docs, ignore=obj_copytree_ignore_patterns)
@@ -706,6 +710,7 @@ def report_remote_runs_with_context_impl(
     str_remote_root: str,
     int_max_runs: int,
     *,
+    exact_run_id: str | None = None,
     dict_dependencies: dict[str, Any],
 ) -> dict[str, Any]:
     """读取远端 retained run 列表并汇总摘要证据。
@@ -713,6 +718,7 @@ def report_remote_runs_with_context_impl(
     :param remote_context: erie-remote-ssh helper 调用上下文。
     :param str_remote_root: 远端 retained run 根目录。
     :param int_max_runs: 最多返回的运行条目数量。
+    :param exact_run_id: 调用方要求精确汇总的 outer run 标识；省略时按时间选择。
     :param dict_dependencies: 汇总 retained-run 列表所需的回调集合。
     :return: 包含 remote_root、runs 和 status 的稳定字典。
     :raises ValueError: int_max_runs 小于 1 时抛出。
@@ -723,6 +729,22 @@ def report_remote_runs_with_context_impl(
 
         # 直接抛出带前缀错误，提示调用方修正 CLI 参数。
         raise ValueError("> ERR: [Python] --max-runs must be at least 1.")
+
+    # 自动化 exact 模式不枚举远端根，避免并发运行改变“最新”目录含义。
+    if exact_run_id is not None:
+
+        # outer run 名称只能是单个安全目录片段，禁止路径穿越和任意路径读取。
+        if re.fullmatch(r"run-[A-Za-z0-9_-]+", exact_run_id) is None:
+
+            # 不安全标识必须在构造任何远端读取路径前失败关闭。
+            raise ValueError("> ERR: [Python] --run-id must be one safe run-* directory name.")
+
+        # 保持稳定返回协议，同时只汇总调用方明确绑定的一轮证据。
+        return {
+            "remote_root": str_remote_root,
+            "runs": [dict_dependencies["summarize_remote_run"](remote_context, str_remote_root, exact_run_id)],
+            "status": "ok",
+        }
 
     # file-list 只依赖 helper 基础参数和目标服务器。
     list_base = dict_dependencies["helper_base"](remote_context)  # retained root 列表查询参数
@@ -826,6 +848,110 @@ def _download_retained_summary(
         str_local_report,
     )
 
+# 定位 outer retained run 中最新的 timestamped smoke 证据根。
+def _discover_remote_smoke_run(
+    remote_context: Any,
+    str_remote_reports: str,
+    *,
+    dict_dependencies: dict[str, Any],
+) -> str:
+    """枚举远程 reports 并返回最新的 smoke 运行目录。
+
+    :param remote_context: erie-remote-ssh helper 调用上下文。
+    :param str_remote_reports: 当前 retained skill 的 reports 根目录。
+    :param dict_dependencies: 文件枚举、JSON 解析与路径组合回调。
+    :return: 最新 timestamped smoke 目录的远程路径。
+    """
+
+    # file-list 只读取 reports 直接子项，不扫描或修改远程证据。
+    list_helper_arguments = [  # reports 直接子项枚举参数
+        "file-list",  # 只读文件列表子命令
+        *dict_dependencies["helper_base"](remote_context),  # 当前连接基础参数
+        "--server",  # 服务器选项名
+        remote_context.str_server,  # retained run 所在服务器
+        "--path",  # 枚举根路径选项名
+        str_remote_reports,  # 当前 retained skill 的 reports 根目录
+    ]
+
+    # 回调别名缩短调用表达式，同时保留可测试依赖注入。
+    func_run_helper = dict_dependencies["run_helper"]  # 远程 helper 执行回调
+
+    # 远程枚举调用保留非零状态，以便把不可读 reports 稳定降级为可诊断的 missing 证据定位。
+    completed_process_listing = func_run_helper(  # 判断 reports 是否可读并为后续唯一选定本轮证据根提供直接子项载荷
+        remote_context.path_helper,  # 实际执行只读 file-list 请求的 helper 入口路径
+        list_helper_arguments,  # 限定服务器和 reports 根目录的枚举参数
+        allow_failure=True,  # 缺失 reports 时改为生成可诊断的证据缺失摘要
+        quiet_on_failure=True,  # 报告聚合阶段不重复打印已由状态表达的 helper 错误
+    )
+
+    # 枚举失败时保留空载荷，让下游用 missing 路径产生可诊断结果。
+    if completed_process_listing.returncode == 0:
+
+        # 只解析成功 helper 输出，避免把错误文本当成目录列表。
+        dict_listing = dict_dependencies["parse_json_output"](completed_process_listing.stdout)  # 用于筛选 timestamped 目录的枚举载荷
+
+    # helper 非零时不解析错误文本，而是进入证据缺失路径。
+    else:
+
+        # 空载荷让下游按证据缺失处理。
+        dict_listing = {}  # 枚举失败时的空目录载荷
+
+    # 非字典载荷不可信，按无可用目录处理。
+    list_entries = dict_listing.get("entries", []) if isinstance(dict_listing, dict) else []  # reports 直接子项
+
+    # 候选列表只收集约定前缀的直接子目录。
+    list_run_names = []  # 可用 timestamped smoke 目录名
+
+    # 逐项校验 helper 载荷，忽略文件与异常项。
+    for dict_entry in list_entries:
+
+        # 只有目录类型和命名合同同时成立才可作为证据根。
+        if (
+            isinstance(dict_entry, dict)
+            and dict_entry.get("type") == "dir"
+            and str(dict_entry.get("name", "")).startswith("smoke_runs_")
+        ):
+
+            # 只有符合类型与前缀合同的目录才参与最新项选择。
+            list_run_names.append(str(dict_entry["name"]))
+
+    # 目录名内嵌可排序时间戳，升序最后一项即最新运行。
+    list_run_names.sort()
+
+    # missing 占位使后续下载保持原有的可选证据语义。
+    str_run_name = list_run_names[-1] if list_run_names else "smoke_runs_missing"  # 选中的 smoke 目录名
+
+    # 所有下游证据路径从这一个 timestamped 根展开。
+    return dict_dependencies["remote_join"](str_remote_reports, str_run_name)
+
+# 封装 retained run 的对外摘要协议。
+def _build_remote_run_summary(
+    str_run_name: str,
+    str_remote_skill: str,
+    str_remote_smoke_run: str,
+    dict_evidence: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """组合 outer run 定位和三类远程证据摘要。
+
+    :param str_run_name: outer retained run 名称。
+    :param str_remote_skill: 远程上传 skill 根目录。
+    :param str_remote_smoke_run: 本轮 timestamped smoke 证据根。
+    :param dict_evidence: completion、pytest、execute 和 fixture 的具名证据摘要。
+    :return: report-runs 对外输出的单轮摘要。
+    """
+
+    # 运行定位与验证证据分组表达，组合后仍维持单层稳定协议。
+    return {
+        "run": str_run_name,
+        "remote_skill": str_remote_skill,
+        "smoke_run": str_remote_smoke_run,
+    } | {
+        "completion": dict_evidence["completion"],
+        "pytest": dict_evidence["pytest"],
+        "remote_execute": dict_evidence["remote_execute"],
+        "fixtures": dict_evidence["fixtures"],
+    }
+
 # 汇总单个 retained run 的执行、pytest 和 fixture 证据。
 def summarize_remote_run_impl(
     remote_context: Any,
@@ -852,21 +978,31 @@ def summarize_remote_run_impl(
         "readable-verilog-generator",  # 远端 staging 后保留下来的 skill 目录名
     )
 
+    # 报告列表与下载拆分，这里只保留当前 outer run 的证据根。
+    str_remote_reports = dict_dependencies["remote_join"](str_remote_skill, "reports")  # timestamped 证据的枚举起点
+
+    # 选中最新 timestamped 目录，供 execution、fixture 和 pytest 共用。
+    str_remote_smoke_run = _discover_remote_smoke_run(  # 当前 outer run 的 smoke 证据根
+        remote_context,  # 使用当前服务器与 helper 路由
+        str_remote_reports,  # 从 outer run 的 reports 直接子项选择
+        dict_dependencies=dict_dependencies,  # 沿用 report-runs 注入的只读回调
+    )
+
     # 先拼出 validation.json 的 retained 地址，后面据此下载执行证据。
     str_execute_validation_json = dict_dependencies["remote_join"](  # 下载 execution 校验 JSON 的来源地址
-        str_remote_skill,  # 作为 validation.json 拼接起点的上传 skill 基目录
+        str_remote_smoke_run,  # 作为 validation.json 拼接起点的 timestamped smoke 目录
         dict_remote_paths["execute_validation_json"],  # validation.json 的相对证据路径
     )
 
     # 再给可读 RTL 产物保留 retained 定位，方便人工追查输出内容。
     str_execute_rtl_path = dict_dependencies["remote_join"](  # 人工回看 RTL 结果时使用的 retained 定位
-        str_remote_skill,  # 把 readable RTL 的相对路径挂到这次上传目录下面
+        str_remote_smoke_run,  # 把 readable RTL 的相对路径挂到 timestamped smoke 目录下面
         dict_remote_paths["execute_rtl_path"],  # readable RTL 产物的相对路径
     )
 
     # 最后把 testbench 的 retained 定位单独留下，失败时可以直接回看激励。
     str_execute_testbench_path = dict_dependencies["remote_join"](  # 失败复盘激励文件时使用的 retained 定位
-        str_remote_skill,  # 沿着这次上传目录定位失败回放所需的激励文件
+        str_remote_smoke_run,  # 沿着 timestamped smoke 目录定位失败回放所需的激励文件
         dict_remote_paths["execute_testbench_path"],  # remote_execute testbench 的相对路径
     )
 
@@ -884,7 +1020,7 @@ def summarize_remote_run_impl(
     # fixture 汇总与 execution 证据分开下载，保留最小案例回归的独立事实边界。
     dict_fixture_summary = _download_retained_summary(  # remote_fixtures 汇总 JSON 证据
         remote_context,  # 下载 fixture 回归汇总时使用的远程 helper 上下文
-        str_remote_skill,  # fixture 证据所在的 retained skill 根目录
+        str_remote_smoke_run,  # fixture 证据所在的 timestamped smoke 根目录
         str_run_name,  # fixture 下载结果对应的 retained run 名称
         dict_dependencies=dict_dependencies,  # fixture 下载复用的路径与 JSON 回调
         dict_remote_paths=dict_remote_paths,  # fixture 汇总在远端 skill 内的路径配置
@@ -895,7 +1031,7 @@ def summarize_remote_run_impl(
     # pytest 摘要独立下载，保证 retained run 能复核权威回归的精确计数和耗时。
     dict_pytest_summary = _download_retained_summary(  # 远程 pytest 结构化 JSON 证据
         remote_context,  # 下载 pytest 摘要时使用的远程 helper 上下文
-        str_remote_skill,  # 作为权威回归摘要定位起点的远端 skill 目录
+        str_remote_smoke_run,  # 作为权威回归摘要定位起点的 timestamped smoke 目录
         str_run_name,  # 把权威回归计数隔离到本次 run 的本地证据分区
         dict_dependencies=dict_dependencies,  # 注入 pytest 证据下载与路径组合能力
         dict_remote_paths=dict_remote_paths,  # pytest 摘要在远端 skill 内的路径配置
@@ -903,19 +1039,46 @@ def summarize_remote_run_impl(
         str_local_filename="remote_pytest_summary.json",  # 供 require-remote 消费的本地 JSON 名称
     )
 
-    # 返回单个 retained run 的统一摘要结构，供 report-runs 聚合输出。
-    return {
-        "run": str_run_name,
-        "remote_skill": str_remote_skill,
-        "pytest": dict_dependencies["summarize_pytest_report"](dict_pytest_summary),
-        "remote_execute": dict_dependencies["summarize_validation_report"](
-            dict_execute_report,
-            rtl_path=str_execute_rtl_path,
-            testbench_path=str_execute_testbench_path,
-            validation_json=str_execute_validation_json,
-        ),
-        "fixtures": dict_dependencies["summarize_fixture_report"](dict_fixture_summary),
+    # 先把三类证据分别压缩为对外摘要，避免返回结构内嵌副作用。
+    dict_pytest_report = dict_dependencies["summarize_pytest_report"](dict_pytest_summary)  # 权威 pytest 计数摘要
+
+    # completion 位于同一 timestamped smoke 根，缺失时 optional 下载器返回空字典并由评估层失败关闭。
+    dict_completion = _download_retained_summary(  # 远程效果评估用于核对运行标识、源码摘要和最终状态的原子完成清单
+        remote_context,  # 当前服务器上执行下载操作所需的帮助器调用上下文
+        str_remote_smoke_run,  # 本轮完成清单所在的时间戳证据目录
+        str_run_name,  # 当前完成清单绑定的外层保留运行名称
+        dict_dependencies=dict_dependencies,  # 负责远程下载与 JSON 解析的依赖回调映射
+        dict_remote_paths=dict_remote_paths,  # 定位完成清单所需的远端相对路径配置
+        str_remote_path_key="completion_json",  # 从路径配置读取完成清单位置的稳定键名
+        str_local_filename="remote_completion.json",  # 下载完成清单时使用的本地临时文件名称
+    )
+
+    # execution 摘要额外保留 RTL、testbench 和 validation JSON 远程定位。
+    dict_validation_report = dict_dependencies["summarize_validation_report"](  # 含可追溯工件定位的 execute 摘要
+        dict_execute_report,  # 下载的 execution 原始载荷
+        rtl_path=str_execute_rtl_path,  # 人工复核时的 RTL 入口
+        testbench_path=str_execute_testbench_path,  # 失败回放时的激励入口
+        validation_json=str_execute_validation_json,  # 机器消费的原始校验证据
+    )
+
+    # fixture 摘要保留固定最小案例的独立回归边界。
+    dict_fixtures_report = dict_dependencies["summarize_fixture_report"](dict_fixture_summary)  # 夹具合同通过情况摘要
+
+    # 具名证据分组缩短最终协议调用，同时避免位置参数次序误配。
+    dict_remote_evidence = {  # 最终报告按稳定键名汇总完成状态、测试计数、工具链结果和夹具结果的证据映射
+        "completion": dict_completion,  # 绑定运行身份、源码摘要和最终状态的完成证据
+        "pytest": dict_pytest_report,  # 记录权威远程测试计数与耗时的测试证据
+        "remote_execute": dict_validation_report,  # 记录模拟器选择和执行就绪状态的工具链证据
+        "fixtures": dict_fixtures_report,  # 记录固定远程样例通过情况的夹具证据
     }
+
+    # 统一协议函数保证 report-runs 继续输出稳定键名。
+    return _build_remote_run_summary(
+        str_run_name,  # outer retained run 名称
+        str_remote_skill,  # 上传 skill 远程根目录
+        str_remote_smoke_run,  # 本轮 timestamped 证据根
+        dict_remote_evidence,  # 已按稳定键名分组的完整证据
+    )
 
 # download_json_optional_impl 下载远端 JSON 文件，失败时返回 None。
 def download_json_optional_impl(

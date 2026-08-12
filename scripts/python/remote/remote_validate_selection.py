@@ -55,6 +55,8 @@ class RemoteValidationRunConfig:
     :param bool_cleanup_outputs: 是否清理远端 smoke 输出。
     :param dict_toolchain_selection: 已确认的远端工具链选择。
     :param str_remote_runtime_config_path: 远端 runtime 配置相对路径。
+    :param str_run_id: 本次 outer retained run 的唯一标识。
+    :param str_source_digest: 上传 staging 内容的 SHA-256 摘要。
     """
 
     # staging 包是 request-upload 的本地源目录。
@@ -77,6 +79,12 @@ class RemoteValidationRunConfig:
 
     # runtime 配置路径用于多 Vivado 候选提示和审计。
     str_remote_runtime_config_path: str  # 远端 runtime 配置相对路径
+
+    # outer run 标识把执行输出和后续 report-runs 查询绑定到同一目录。
+    str_run_id: str  # 本次 outer retained run 的唯一标识
+
+    # staging 摘要用于阻止其他源码包复用本轮完成证据。
+    str_source_digest: str  # 上传 staging 内容的 SHA-256 摘要
 
 # _ensure_runtime_import_path 只在需要 runtime helper 时调整导入路径。
 def _ensure_runtime_import_path() -> None:
