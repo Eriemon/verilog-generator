@@ -288,20 +288,21 @@
       "title": "Verilog Dispatcher"
     },
     {
-      "content_sha256": "70d4663301d61d76068617615cf67435c09912cc492759aebd97144cbd4934e7",
+      "content_sha256": "c6c6de9e2d2d2335e6644a8018ee64d38ad0b3e1f0fba259f11bd17ae536429e",
       "id": "document.references-workflows-workflow-contracts",
       "keywords": [
         "workflow",
         "artifacts",
         "status",
         "resume",
+        "provider",
         "trace"
       ],
       "path": "references/workflows/workflow-contracts.md",
-      "responsibility": "定义运行目录、固定阶段、交付状态、已有 RTL 子流、恢复和 trace 语义。",
+      "responsibility": "定义运行目录、模型 provider、固定阶段、交付状态、已有 RTL 子流、恢复和 trace 语义。",
       "source_anchor": "",
       "status": "current",
-      "summary": "Verilog 工作流产物与状态合同。",
+      "summary": "Verilog 工作流 provider、产物与状态合同。",
       "title": "Workflow Contracts"
     }
   ],

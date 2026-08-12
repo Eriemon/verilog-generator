@@ -569,18 +569,21 @@ def result_projection(dict_command: dict[str, Any]) -> dict[str, Any]:
     返回：供问询消费者读取的执行指导字段映射。
     """
 
-    # 投影保留风险、边界、前置条件和正反示例。
+    # 投影保留执行参数、输出协议、关联导航、风险、边界和正反示例。
     return {
         "id": dict_command["id"],
         "category": dict_command["category"],
         "title": dict_command["title"],
         "summary": dict_command["summary"],
         "when_to_use": dict_command["when_to_use"],
+        "parameters": dict_command["parameters"],
         "risk": dict_command["risk"],
         "invocation_templates": dict_command["invocation_templates"],
         "examples": dict_command["examples"],
         "prerequisites": dict_command["prerequisites"],
+        "outputs": dict_command["outputs"],
         "boundaries": dict_command["boundaries"],
+        "related_command_ids": dict_command["related_command_ids"],
     }
 
 # JSON 输出器把所有机器模式收敛到单个直接 dump 调用。

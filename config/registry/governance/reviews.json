@@ -225,12 +225,10 @@
       "value": "--evals"
     },
     {
-      "command_ids": [
-        "remote.validate"
-      ],
-      "decision": "mapped",
+      "command_ids": [],
+      "decision": "not_public",
       "kind": "option",
-      "rationale": "",
+      "rationale": "该选项属于 erie-remote-ssh 的 run-request 外部调用，不是本技能 remote_validate_verilog_skill 的公开参数。",
       "sources": [
         "references/integration/configuration.md"
       ],
@@ -343,6 +341,45 @@
     },
     {
       "command_ids": [
+        "workflow.run",
+        "workflow.batch"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "command provider 必须通过该选项取得显式外部命令，缺失时 fail closed。",
+      "sources": [
+        "references/workflows/workflow-contracts.md"
+      ],
+      "value": "--model-command"
+    },
+    {
+      "command_ids": [
+        "workflow.run",
+        "workflow.batch"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "两个生成入口共享 mock、manual、command provider 选择合同。",
+      "sources": [
+        "references/workflows/workflow-contracts.md"
+      ],
+      "value": "--model-provider"
+    },
+    {
+      "command_ids": [
+        "workflow.run",
+        "workflow.batch"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "该超时限制 command provider 的单次外部调用。",
+      "sources": [
+        "references/workflows/workflow-contracts.md"
+      ],
+      "value": "--model-timeout"
+    },
+    {
+      "command_ids": [
         "quality.external-interface-extract"
       ],
       "decision": "mapped",
@@ -380,6 +417,19 @@
         "references/integration/configuration.md"
       ],
       "value": "--no-require-remote"
+    },
+    {
+      "command_ids": [
+        "workflow.run",
+        "workflow.batch"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "该选项显式关闭 provider 流式消费，与 --stream 形成布尔对偶。",
+      "sources": [
+        "references/workflows/workflow-contracts.md"
+      ],
+      "value": "--no-stream"
     },
     {
       "command_ids": [
@@ -439,8 +489,7 @@
     },
     {
       "command_ids": [
-        "validation.skill",
-        "remote.validate"
+        "validation.skill"
       ],
       "decision": "mapped",
       "kind": "option",
@@ -563,15 +612,35 @@
     },
     {
       "command_ids": [
-        "remote.validate"
+        "toolchain.dependencies-check",
+        "toolchain.dependencies-prompt",
+        "toolchain.dependencies-skip",
+        "toolchain.dependencies-install",
+        "toolchain.dependencies-adapt",
+        "toolchain.fpga-route",
+        "toolchain.fpga-select-vendor",
+        "toolchain.fpga-cleanup"
       ],
       "decision": "mapped",
       "kind": "option",
-      "rationale": "",
+      "rationale": "依赖治理的全部子命令通过共享 parser 使用该项目本地状态路径覆盖。",
       "sources": [
         "references/integration/configuration.md"
       ],
       "value": "--state-path"
+    },
+    {
+      "command_ids": [
+        "workflow.run",
+        "workflow.batch"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "该选项显式启用 provider 流式消费，与 --no-stream 形成布尔对偶。",
+      "sources": [
+        "references/workflows/workflow-contracts.md"
+      ],
+      "value": "--stream"
     },
     {
       "command_ids": [

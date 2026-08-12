@@ -5,6 +5,7 @@
 - [Run Directory](#run-directory)
 - [Entry Routing](#entry-routing)
 - [Script Entry Points](#script-entry-points)
+- [Model Providers](#model-providers)
 - [Fixed Generation Pipeline](#fixed-generation-pipeline)
 - [Delivery Gate Matrix](#delivery-gate-matrix)
 - [Existing RTL Assist Flows](#existing-rtl-assist-flows)
@@ -76,6 +77,12 @@ Canonical examples:
 - `python -m scripts.python.remote.remote_validate_verilog_skill`
 
 Runtime modules may call `runtime` and `scripts/python/*` helpers as needed, but runtime modules must not import the legacy host integration facade. The public Python facade lives at `scripts/python/facade/verilog_api.py`.
+
+## Model Providers
+
+`run-workflow` and `run-batch` accept `--model-provider mock|manual|command`; the default is `manual`. `mock` is deterministic test support. `manual` reads the response file already staged for the current generation step and does not call a model. `command` is the real non-interactive provider and requires `--model-command`; omitting that command fails closed with a non-zero exit instead of falling back to `mock` or `manual`.
+
+Use `--model-timeout` to bound command-provider execution. `--stream` and `--no-stream` select streamed or buffered consumption when the provider supports it. Provider selection never relaxes requirement confirmation, extraction, validation, retry, or delivery gates.
 
 ## Fixed Generation Pipeline
 
@@ -197,6 +204,10 @@ reported tool actually ran. Use `--no-external` only for static readiness; if a 
 compile, execute, or implement readiness with external execution disabled, validation reports a
 `toolchain_issue` error and separates `static_passed`, `compile_not_run`, `sim_not_run`, and
 remote-required status in metrics.
+
+That fallback order is a general compatibility capability, not this repository's release acceptance
+matrix. The current release gate is fixed to `server_1` with xsim; VCS+Verdi remains an optional
+compatible backend and is not a required release condition.
 
 Verification testbenches remain Verilog-2001 `.v` artifacts. Source RTL and generated
 verification files use the same Verilog-only boundary.
