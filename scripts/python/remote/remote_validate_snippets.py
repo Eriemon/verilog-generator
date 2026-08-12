@@ -16,11 +16,17 @@ from typing import Any
 try:
     from .remote_archive_integrity import build_package_integrity_snippet
     from .remote_output_cleanup import build_remote_output_cleanup_snippet
+    from .remote_validate_gates import (
+        filename_gate_remote_snippet as build_filename_gate_remote_snippet,
+    )
 
 # 包导入失败时回退。
 except ImportError:
     from readable_verilog_remote_archive_integrity import build_package_integrity_snippet
     from readable_verilog_remote_output_cleanup import build_remote_output_cleanup_snippet
+    from readable_verilog_remote_validate_gates import (
+        filename_gate_remote_snippet as build_filename_gate_remote_snippet,
+    )
 
 # skill 根用于定位 runtime 与 config。
 PATH_SKILL_ROOT = Path(__file__).resolve().parents[3]  # shell 片段定位根
@@ -60,6 +66,12 @@ REMOTE_PYTEST_REGRESSION_SUMMARY_JSON = PurePosixPath("remote_pytest_regression_
 
 # full 阶段摘要保留完整测试树的真实命令和计数。
 REMOTE_PYTEST_FULL_SUMMARY_JSON = PurePosixPath("remote_pytest_full_summary.json")  # 全量测试树摘要的 retained 路径
+
+# post-pytest 日志保存 smoke 入口及其真实退出状态，便于定位 pytest 后阶段。
+REMOTE_POST_PYTEST_LOG = PurePosixPath("remote_post_pytest.log")  # pytest 后阶段原始日志路径
+
+# post-pytest 阶段 JSON 记录当前阶段、状态和真实退出码。
+REMOTE_POST_PYTEST_PHASE_JSON = PurePosixPath("remote_post_pytest_phase.json")  # pytest 后阶段标记路径
 
 # 环境文件记录解释器、平台和工具解析事实。
 REMOTE_ENVIRONMENT_JSON = PurePosixPath("remote_environment.json")  # 远端环境原始事实路径
@@ -431,12 +443,27 @@ export VERILOG_GENERATOR_SMOKE_RUN_DIR="$VERILOG_GENERATOR_REPORT_ROOT"
 export VERILOG_GENERATOR_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR"
 
+# pytest 后阶段证据只在三轮 pytest 全部完成后启用，避免把 pytest 失败误写成 smoke 失败。
+is_post_pytest_phase_enabled=0
+
+# 当前 pytest 后阶段名称供失败退出钩子写入可定位的 retained 标记。
+name_post_pytest_phase="post_pytest"
+
+# post-pytest 阶段标记和日志固定绑定当前 outer reports 根。
+path_post_pytest_phase="$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_post_pytest_phase.json"
+path_post_pytest_log="$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_post_pytest.log"
+
 # 当前 outer run 的审核文件只能由本轮命令生成，不能沿用上传包或预置目录中的旧身份。
 rm -f "$VERILOG_GENERATOR_AGENT_REVIEW_PATH"
 
 # 无论阶段在哪一步失败，都由 Agent 生成 retained 审核文件，避免失败证据只剩散落日志。
 write_agent_review_on_exit() {{
   local exit_code="$?"
+  if [ "${{is_post_pytest_phase_enabled:-0}}" -eq 1 ] && [ "$exit_code" -ne 0 ]; then
+    printf '{{"phase":"%s","status":"failed","exit_code":%s,"timestamp":"%s"}}\n' \\
+      "$name_post_pytest_phase" "$exit_code" "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" \\
+      > "$path_post_pytest_phase"
+  fi
   if [ ! -f "$VERILOG_GENERATOR_AGENT_REVIEW_PATH" ]; then
     REVIEW_STATUS="failed" REVIEW_EXIT_CODE="$exit_code" {str_py} - <<'PY'
 import json
@@ -521,6 +548,12 @@ cp "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_pytest_full.log" \
 cp "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_pytest_full_summary.json" \
   "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_pytest_summary.json"
 
+# 三阶段 pytest 已完成，先写入 post-pytest 起始标记，再进入 smoke 入口。
+is_post_pytest_phase_enabled=1
+name_post_pytest_phase="smoke"
+printf '{{"phase":"post_pytest","status":"started","exit_code":0,"timestamp":"%s"}}\n' \\
+  "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" > "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_post_pytest_phase.json"
+
 # full 后清理归档。
 rm -f "${{package_archive_path:-}}"
 
@@ -530,10 +563,27 @@ workflow_execute_root="$workflow_workspace_root/remote_execute"
 workflow_implement_root="$workflow_workspace_root/remote_implement"
 mkdir -p "$workflow_workspace_root"
 
-# smoke runner 继续执行 fixture、工具链和 readiness 约束。
+# smoke runner 继续执行 fixture、工具链和 readiness 约束，并保留真实退出码。
+set +e
 {str_py} -m tests.smoke.run_smoke \
   --settings skills/readable-verilog-generator/config/defaults.json \
-  --run-dir "$VERILOG_GENERATOR_SMOKE_RUN_DIR"
+  --run-dir "$VERILOG_GENERATOR_SMOKE_RUN_DIR" 2>&1 | tee "$path_post_pytest_log"
+exit_code_post_pytest="${{PIPESTATUS[0]}}"
+set -e
+if [ "$exit_code_post_pytest" -eq 0 ]; then
+  status_post_pytest="passed"
+else
+  status_post_pytest="failed"
+fi
+printf '{{"phase":"%s","status":"%s","exit_code":%s,"timestamp":"%s"}}\n' \\
+  "$name_post_pytest_phase" "$status_post_pytest" "$exit_code_post_pytest" "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" \\
+  > "$path_post_pytest_phase"
+if [ "$exit_code_post_pytest" -ne 0 ]; then
+  exit "$exit_code_post_pytest"
+fi
+
+# smoke 已通过，后续工作流失败时由退出钩子记录当前阶段。
+name_post_pytest_phase="workflow"
 {dict_context['str_rtl_md_snippet']}
 {dict_context['str_filename_gate_snippet']}
 if [ -n "$configured_simulator_backend" ]; then
@@ -553,6 +603,9 @@ fi
   --external-target local
 mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_execute"
 cp -R "$workflow_execute_root/." "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_execute/"
+
+# workflow 证据已归档，后续失败归因切换到 fixture 阶段。
+name_post_pytest_phase="fixture"
 EXPECTED_SIM_BACKEND="$expected_sim_backend" {str_py} - <<'PY'
 import json
 import os
@@ -709,6 +762,7 @@ shutil.copytree(fixture_workspace_root, fixture_archive_root, dirs_exist_ok=True
 )
 PY
 if [ "$yosys_available" -eq 1 ]; then
+  name_post_pytest_phase="implement"
   {str_py} -m {WORKFLOW_CLI_MODULE} run-workflow \
     --spec skills/readable-verilog-generator/assets/examples/rtl_erie_verilog_spec.json \
     --out-dir "$workflow_implement_root" \
@@ -757,6 +811,7 @@ PY
 fi
 
 # runtime 模块汇总环境、cwd、压力、归档和三阶段测试事实。
+name_post_pytest_phase="evidence"
 {str_py} -m scripts.python.remote.remote_evidence_runtime
 """.strip()
 
@@ -861,249 +916,8 @@ def filename_gate_remote_snippet(str_remote_python: str) -> str:
     :return: 可嵌入主 bash 脚本的文件名回归片段。
     """
 
-    # 文件名 probe 的解释器名称先做 shell quoting，避免破坏 heredoc 前缀。
-    str_py = sh_quote(str_remote_python)  # 文件名门禁片段使用的 Python 命令
-
-    # 所有故意违规文件只进入 generated-deliverable gate，不进入 simulator。
-    str_template = r"""
-mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/file_naming_gates"
-__PY__ - <<'PY'
-import json
-import os
-import shutil
-import subprocess
-import sys
-from pathlib import Path
-
-root = Path(".smoke-scratch/remote_fixtures/file_naming_gates")
-archive_root = Path(os.environ["VERILOG_GENERATOR_SMOKE_RUN_DIR"]) / "remote_fixtures/file_naming_gates"
-root.mkdir(parents=True, exist_ok=True)
-archive_root.mkdir(parents=True, exist_ok=True)
-cases = (
-    {
-        "case_id": "vg148_version_suffix_reject",
-        "filename": "module_v1.v",
-        "gate_id": "VG148",
-        "command_contract": "generated_deliverable_gate --spec --json --markdown",
-        "source": "module module_v1;\nendmodule\n",
-        "spec": {},
-        "expected_status": "failed",
-        "expected_role": "design",
-        "expected_role_source": "content_evidence",
-        "confirmation_required": False,
-        "confirmed_role": None,
-    },
-    {
-        "case_id": "vg148_numeric_suffix_reject",
-        "filename": "module_123.v",
-        "gate_id": "VG148",
-        "command_contract": "generated_deliverable_gate --spec --json --markdown",
-        "source": "module module_123;\nendmodule\n",
-        "spec": {},
-        "expected_status": "failed",
-        "expected_role": "design",
-        "expected_role_source": "content_evidence",
-        "confirmation_required": False,
-        "confirmed_role": None,
-    },
-    {
-        "case_id": "vg148_protocol_digit_allow",
-        "filename": "axi4_lite.v",
-        "gate_id": "VG148",
-        "command_contract": "generated_deliverable_gate --spec --json --markdown",
-        "source": "module axi4_lite;\nendmodule\n",
-        "spec": {},
-        "expected_status": "passed",
-        "expected_role": "design",
-        "expected_role_source": "content_evidence",
-        "confirmation_required": False,
-        "confirmed_role": None,
-    },
-    {
-        "case_id": "vg149_suffix_tb_reject",
-        "filename": "counter_tb.v",
-        "gate_id": "VG149",
-        "command_contract": "generated_deliverable_gate --spec --json --markdown",
-        "source": "module counter_tb;\nendmodule\n",
-        "spec": {},
-        "expected_status": "failed",
-        "expected_role": "testbench",
-        "expected_role_source": "explicit_name",
-        "confirmation_required": False,
-        "confirmed_role": None,
-    },
-    {
-        "case_id": "vg149_counter_ambiguous",
-        "filename": "counter.v",
-        "gate_id": "VG149",
-        "command_contract": "generated_deliverable_gate --spec --json --markdown",
-        "source": "module counter();\ninitial begin\n    #1;\n    $finish;\nend\nendmodule\n",
-        "spec": {},
-        "expected_status": "inconclusive",
-        "expected_role": "ambiguous",
-        "expected_role_source": "content_evidence",
-        "confirmation_required": True,
-        "confirmed_role": None,
-    },
-    {
-        "case_id": "vg149_counter_confirmed_testbench_reject",
-        "filename": "counter.v",
-        "gate_id": "VG149",
-        "command_contract": "generated_deliverable_gate --spec --json --markdown",
-        "source": "module counter();\ninitial begin\n    #1;\n    $finish;\nend\nendmodule\n",
-        "spec": {"file_role_confirmations": {"counter.v": "testbench"}},
-        "expected_status": "failed",
-        "expected_role": "testbench",
-        "expected_role_source": "confirmed",
-        "confirmation_required": False,
-        "confirmed_role": "testbench",
-    },
-    {
-        "case_id": "vg149_tb_prefix_allow",
-        "filename": "tb_counter.v",
-        "gate_id": "VG149",
-        "command_contract": "generated_deliverable_gate --spec --json --markdown",
-        "source": "module tb_counter;\ninitial begin\n    $finish;\nend\nendmodule\n",
-        "spec": {},
-        "expected_status": "passed",
-        "expected_role": "testbench",
-        "expected_role_source": "explicit_name",
-        "confirmation_required": False,
-        "confirmed_role": None,
-    },
-)
-
-
-def find_named_list(value, key):
-    if isinstance(value, dict):
-        if isinstance(value.get(key), list):
-            return value[key]
-        for child in value.values():
-            found = find_named_list(child, key)
-            if found is not None:
-                return found
-    elif isinstance(value, list):
-        for child in value:
-            found = find_named_list(child, key)
-            if found is not None:
-                return found
-    return None
-
-
-summary = {"cases": []}
-for case in cases:
-    case_root = root / case["case_id"]
-    source_root = case_root / "source"
-    source_root.mkdir(parents=True, exist_ok=True)
-    (source_root / case["filename"]).write_text(case["source"], encoding="utf-8")
-    spec_path = case_root / "spec.json"
-    spec_path.write_text(json.dumps(case["spec"], indent=2, sort_keys=True), encoding="utf-8")
-    report_path = case_root / "report.json"
-    markdown_path = case_root / "report.md"
-    command = [
-        sys.executable,
-        "-m",
-        "scripts.python.validation.generated_deliverable_gate",
-        str(source_root),
-        "--spec",
-        str(spec_path),
-        "--json",
-        str(report_path),
-        "--markdown",
-        str(markdown_path),
-    ]
-    required_command_tokens = case["command_contract"].split()
-    assert required_command_tokens[0] in command[2], command
-    assert all(token in command for token in required_command_tokens[1:]), command
-    result = subprocess.run(command, check=False)
-    payload = json.loads(report_path.read_text(encoding="utf-8"))
-    gate_results = find_named_list(payload, "vg_rule_results") or []
-    gate_result = next(item for item in gate_results if item["gate_id"] == case["gate_id"])
-    file_facts = find_named_list(payload, "file_facts") or []
-    file_fact = next(item for item in file_facts if item["path"] == case["filename"])
-    assert gate_result["status"] == case["expected_status"], gate_result
-    assert file_fact["role"] == case["expected_role"], file_fact
-    assert file_fact["role_source"] == case["expected_role_source"], file_fact
-    assert isinstance(file_fact["role_evidence"], list), file_fact
-    assert file_fact["confirmation_required"] is case["confirmation_required"], file_fact
-    assert file_fact["confirmed_role"] == case["confirmed_role"], file_fact
-    if case["expected_status"] != "passed":
-        assert result.returncode != 0, result.returncode
-    summary["cases"].append(
-        {
-            "case_id": case["case_id"],
-            "gate_id": case["gate_id"],
-            "status": gate_result["status"],
-            "role": file_fact["role"],
-            "role_source": file_fact["role_source"],
-            "role_evidence": file_fact["role_evidence"],
-            "confirmation_required": file_fact["confirmation_required"],
-            "confirmed_role": file_fact["confirmed_role"],
-            "report": str(archive_root / case["case_id"] / "report.json"),
-            "markdown": str(archive_root / case["case_id"] / "report.md"),
-        }
-    )
-shutil.copytree(root, archive_root, dirs_exist_ok=True)
-(archive_root / "summary.json").write_text(
-    json.dumps(summary, indent=2, sort_keys=True),
-    encoding="utf-8",
-)
-PY
-mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/file_naming_gates/xsim"
-cat > "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/file_naming_gates/xsim/counter.v" <<'VERILOG'
-module counter (
-    input wire i_clk,
-    input wire i_rstn,
-    output reg o_count
-);
-always @(posedge i_clk or negedge i_rstn) begin
-    if (!i_rstn) begin
-        o_count <= 1'b0;
-    end else begin
-        o_count <= ~o_count;
-    end
-end
-endmodule
-VERILOG
-cat > "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/file_naming_gates/xsim/tb_counter.v" <<'VERILOG'
-module tb_counter;
-reg i_clk;
-reg i_rstn;
-wire o_count;
-counter dut (
-    .i_clk(i_clk),
-    .i_rstn(i_rstn),
-    .o_count(o_count)
-);
-initial begin
-    i_clk = 1'b0;
-    forever #5 i_clk = ~i_clk;
-end
-initial begin
-    i_rstn = 1'b0;
-    #12 i_rstn = 1'b1;
-    #30;
-    if ((o_count !== 1'b0) && (o_count !== 1'b1)) begin
-        $display("[TB_ERROR] counter output is unknown");
-        $finish;
-    end
-    $display("[TB_PASS] tb_counter completed");
-    $finish;
-end
-endmodule
-VERILOG
-if [ "$expected_sim_backend" = "xsim" ]; then
-  (
-    cd "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/file_naming_gates/xsim"
-    xvlog counter.v tb_counter.v
-    xelab tb_counter -s tb_counter_snapshot
-    xsim tb_counter_snapshot -runall
-  )
-fi
-""".strip()
-
-    # 唯一解释器占位符替换完成后，文件名 probe 才能嵌入主脚本。
-    return str_template.replace("__PY__", str_py)
+    # 文件名门禁正文已拆到独立模块，保持旧入口和输出合同不变。
+    return build_filename_gate_remote_snippet(str_remote_python)
 
 # rtl_md_constraint_remote_snippet 生成 RTL Markdown 约束远端回归片段。
 def rtl_md_constraint_remote_snippet(str_remote_python: str) -> str:

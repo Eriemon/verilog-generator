@@ -106,6 +106,12 @@ module_type_output_cleanup_support = _load_local_support_module(  # facade 绑�
     "readable_verilog_remote_output_cleanup",  # 输出策略模块别名
 )
 
+# 文件名门禁支撑模块先载入，供 snippets 兼容相对导入和脚本直跑。
+module_type_validate_gates_support = _load_local_support_module(  # facade 绑定文件名门禁支撑模块
+    "remote_validate_gates.py",  # 承载文件名门禁与合法 testbench 片段
+    "readable_verilog_remote_validate_gates",  # 先注册名称，确保 snippets 的回退导入可用
+)
+
 # execution 支撑模块承载 staging、request 和 retained-run 汇总实现。
 module_type_execution_support = _load_local_support_module(  # facade 绑定 retained-run 执行支撑模块
     "remote_validate_execution.py",  # 承载 request 执行与 retained-run 汇总逻辑的实现文件

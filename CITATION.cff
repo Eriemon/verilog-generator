@@ -20,8 +20,8 @@ keywords:
   - RTL
   - FPGA
   - hardware generation
-repository-code: "https://github.com/Eriemon/verilog-generator"
-url: "https://github.com/Eriemon/verilog-generator"
-version: "1.1.0"
-date-released: "2026-08-11"
+repository-code: "https://github.com/Eriemon/verilog-generator.git"
+url: "https://github.com/Eriemon/verilog-generator.git"
+version: "1.2.0"
+date-released: "2026-08-12"
 license: "Apache-2.0"

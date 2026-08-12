@@ -5,67 +5,51 @@
 </p>
 
 <p align="center">
-  <img src="assets/readme/hero.png" alt="Verilog Generator RTL workbench" width="100%">
+  <img src="assets/readme/hero-overview.png" alt="Verilog Generator: readable RTL to traceable checks" width="100%">
 </p>
-
-![Verilog Generator RTL workflow](assets/readme-workflow.png)
 
 <p align="center">
   <a href="LICENSE"><img alt="Apache-2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-2ad4ee"></a>
-  <img alt="Version v0.4.0" src="https://img.shields.io/badge/version-v0.4.0-8ce85d">
+  <img alt="Version v1.2.0" src="https://img.shields.io/badge/version-v1.2.0-8ce85d">
+  <img alt="Python 3.10 or newer" src="https://img.shields.io/badge/python-3.10%2B-3776ab">
   <img alt="Verilog-2001" src="https://img.shields.io/badge/RTL-Verilog--2001-ffb85c">
-  <img alt="Example gate: zero errors" src="https://img.shields.io/badge/example_gate-0_errors-8ce85d">
+  <img alt="Agent skill" src="https://img.shields.io/badge/target-Codex%20skill-8ce85d">
 </p>
 
 <p align="center">
-  Define the ports, clock, reset, and behavior. Get RTL that is readable, traceable, and verifiable.
+  <strong>Readable RTL → traceable checks → installable package</strong><br>
+  Define the interface, make behavior explicit, and carry real verification to handoff.
 </p>
 
-## What is Verilog Generator?
+Verilog Generator is a Codex skill for everyday Verilog-2001 work. Give it a module requirement, existing RTL, a testbench, or a tool log. It can write a new module, explain old code, add semantic comments, or repair code against actual diagnostics.
 
-Verilog Generator is a Codex skill for everyday Verilog-2001 work. Give it a module requirement, existing RTL, a testbench, or a tool log. It can write a new module, explain old code, add useful comments, or repair code against actual diagnostics.
+The project keeps one boundary visible: generated RTL is only called verified when the corresponding check really ran. Static review, simulation, synthesis, and hardware results stay distinct, so the next engineer can read the code, reproduce the claim, and review the diff.
 
-The project follows one rule: generated RTL should be easy for the next engineer to read, review, and verify. It states which checks were run and never presents unrun simulation or synthesis as completed.
+## Why use Verilog Generator?
 
-## What can it do?
+- Start from ports, clocks, resets, timing expectations, and transaction rules instead of an underspecified prompt.
+- Preserve Verilog-2001 readability with stable naming, semantic comments, and a deliberate design profile.
+- Explain existing modules and testbenches through interfaces, state, timing paths, and risk locations.
+- Repair against real diagnostics while keeping the change boundary and validation record explicit.
+- Package the governed skill with versioned metadata, a receipt, and a reproducible installation path.
 
-<table>
-  <tr>
-    <td width="33%">
-      <strong>01 / Write new RTL</strong><br><br>
-      Start with ports, clock/reset behavior, timing expectations, and key checks.<br><br>
-      <code>Verilog-2001 RTL / testbench / check records</code>
-    </td>
-    <td width="33%">
-      <strong>02 / Understand existing RTL</strong><br><br>
-      Hand over a module, testbench, or failure log and get its interfaces, state machines, timing paths, and risks explained.<br><br>
-      <code>structure / behavior / risk locations</code>
-    </td>
-    <td width="33%">
-      <strong>03 / Repair with verification</strong><br><br>
-      Fix against expected behavior and real diagnostics while preserving a reviewable diff and validation boundary.<br><br>
-      <code>patch / diff / static or real tool results</code>
-    </td>
-  </tr>
-</table>
+## 01 — Start from RTL intent
 
-### Project facts
+![Project facts for a readable RTL task](assets/readme/project-facts.png)
 
-![Project facts](assets/readme/project-facts.png)
+Write down the module purpose, ports, clock and reset behavior, data boundaries, and the checks that matter. The workflow keeps these project facts visible before generation or repair begins.
 
-The skill keeps project facts, interfaces, and validation boundaries visible before a change is proposed.
+## 02 — Specify behavior before generation
 
-### Design profile
+![Design profile for Verilog-2001 generation](assets/readme/design-profile.png)
 
-![Design profile](assets/readme/design-profile.png)
+Route each request through an explicit design profile: interface shape, timing assumptions, reset semantics, state transitions, and review scope. This gives the generated RTL a purpose that can be checked line by line.
 
-Each request is routed through a readable design profile so generated RTL has an explicit purpose and review scope.
+## 03 — Carry verification through handoff
 
-### Rule rendering
+![Readable rule rendering and verification handoff](assets/readme/rule-rendering.png)
 
-![Rule rendering](assets/readme/rule-rendering.png)
-
-The final output preserves the selected readability rules, semantic comments, and verification handoff.
+The final handoff keeps semantic comments, readability rules, and validation boundaries together. A local static result is labeled as static; an unrun simulator or synthesis tool is never presented as completed.
 
 ## Generated RTL example
 
@@ -96,7 +80,7 @@ always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
 end
 ```
 
-**[Open the complete commented source ->](assets/examples/readme/axis_packet_meter.v)**
+**[Open the complete commented source →](assets/examples/readme/axis_packet_meter.v)**
 
 | Repository-local static gate | Result |
 | --- | ---: |
@@ -107,35 +91,37 @@ end
 
 > This is a repository-local static result. No simulator, synthesis, hardware, or remote-tool result is claimed here.
 
-## Installation
+## Get started
 
 > Tell Codex: `Install https://github.com/Eriemon/verilog-generator`
 
-Restart Codex after installation so the skill is discovered.
+Restart Codex after installation so the skill is discovered. For a reproducible local install, use the validated package directory `dist/readable-verilog-generator-v1.2.0/`; `VERSION`, `pyproject.toml`, and `CITATION.cff` carry the same package version.
 
-This README describes the latest public GitHub release, `v0.4.0`. This governed checkout also contains the validated local package `v1.1.0`; use `VERSION` as the local package version authority and do not infer GitHub publication from it.
+The public repository is [Eriemon/verilog-generator](https://github.com/Eriemon/verilog-generator). A local mirror is kept under `github/readable-verilog-generator/` with its `.git` history intact. The mirror is built from versioned `dist/` directories one release at a time; it is not a substitute for a GitHub tag, release, or push.
 
-For a pinned public install, use tag `v0.4.0` or the automatically generated source archive on the [GitHub release page](https://github.com/Eriemon/verilog-generator/releases/tag/v0.4.0). For a pinned local install, use the validated `dist/readable-verilog-generator-v1.1.0/` package produced by the governed release workflow.
+## Develop locally, mirror deliberately
 
-## Authors
+The source of truth is `skills/readable-verilog-generator/`. The governed release flow produces `dist/readable-verilog-generator-vX.Y.Z/` and its receipt before any mirror copy is made. The mirror helper checks the existing repository, copies one validated package, and leaves commit, tag, push, and GitHub Release decisions to the repository owner.
 
-<p align="center">
-  <img src="assets/readme/authors.png" alt="Jiyuan Liu and He Li, Southeast University HIQC Laboratory" width="100%">
-</p>
+```text
+source skill  →  versioned dist + receipt  →  local GitHub mirror
+```
+
+Keep the package boundary inspectable: required public files stay at the skill root, generated runtime state stays out of the public package, and README images are local PNG assets with matching English and Chinese variants.
+
+## Authors and citation
 
 Jiyuan Liu and He Li · Southeast University · 东南大学 · HIQC (Heterogeneous Intelligence and Quantum Computing Laboratory)
 
-## How to cite
-
-> If this skill supports your research, teaching, or engineering work, cite the release below. [CITATION.cff](CITATION.cff) remains the canonical metadata source.
+If this skill supports your research, teaching, or engineering work, cite the governed package below. [CITATION.cff](CITATION.cff) remains the canonical metadata source.
 
 ```bibtex
 @software{liu_2026_verilog_generator,
   author       = {Jiyuan Liu and He Li},
   title        = {{Verilog Generator}: An Agent Skill for Verilog-2001 RTL Workflows},
   year         = {2026},
-  version      = {0.4.0},
-  date         = {2026-07-05},
+  version      = {1.2.0},
+  date         = {2026-08-12},
   url          = {https://github.com/Eriemon/verilog-generator},
   license      = {Apache-2.0},
   note         = {Agent skill package for disciplined Verilog-2001 RTL workflows}
