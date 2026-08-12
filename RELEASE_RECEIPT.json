@@ -2,7 +2,7 @@
   "skill_name": "readable-verilog-generator",
   "version": "v1.2.0",
   "source_path": "skills/readable-verilog-generator",
-  "generated_at": "2026-08-12T21:46:30",
+  "generated_at": "2026-08-13T01:27:08",
   "current_branch": "master",
   "local_branches": [
     "master",
@@ -39,7 +39,7 @@
         "placeholders": [
           "<REDACTED_EMAIL>"
         ],
-        "sha256": "5594d891a59ceaede50c6dcd02a24ea8d65efd4de3223e6fe0195adac5541e0c"
+        "sha256": "35aa91bd7c49807dcd6293397d0e56541e1f6b283a06b6e0d5ca142520ecd3cb"
       },
       {
         "path": "README.md",
@@ -49,7 +49,7 @@
         "placeholders": [
           "<REDACTED_EMAIL>"
         ],
-        "sha256": "617dda96980a0c2302644d4ee2b25de3b6ed2da191d95ee9b7537e884079f1a6"
+        "sha256": "3a5921a733f7adf898f11652011bb9d21ed7bd91933bbd01e9a10ccecbb13a39"
       }
     ],
     "receipt_required": true
@@ -159,11 +159,6 @@
               "heading": "",
               "remote": true
             },
-            "https://img.shields.io/badge/python-3.10%2B-3776ab": {
-              "role": "badge-remote",
-              "heading": "",
-              "remote": true
-            },
             "https://img.shields.io/badge/RTL-Verilog--2001-ffb85c": {
               "role": "badge-remote",
               "heading": "",
@@ -176,28 +171,28 @@
             },
             "assets/readme/project-facts.png": {
               "role": "project-facts",
-              "heading": "01 \u2014 Start from RTL intent",
+              "heading": "What to prepare",
               "remote": false
             },
             "assets/readme/design-profile.png": {
               "role": "design-profile",
-              "heading": "02 \u2014 Specify behavior before generation",
+              "heading": "Preview and confirm before generation",
               "remote": false
             },
             "assets/readme/rule-rendering.png": {
               "role": "rule-rendering",
-              "heading": "03 \u2014 Carry verification through handoff",
+              "heading": "What you receive",
               "remote": false
             }
           },
           "headings": [
-            "Why use Verilog Generator?",
-            "01 \u2014 Start from RTL intent",
-            "02 \u2014 Specify behavior before generation",
-            "03 \u2014 Carry verification through handoff",
-            "Generated RTL example",
-            "Get started",
-            "Develop locally, mirror deliberately",
+            "What it is useful for",
+            "Install",
+            "What to prepare",
+            "How to call it",
+            "Preview and confirm before generation",
+            "What you receive",
+            "Example result",
             "Authors and citation"
           ],
           "hero_images": [
@@ -206,7 +201,6 @@
           "badge_images": [
             "https://img.shields.io/badge/license-Apache--2.0-2ad4ee",
             "https://img.shields.io/badge/version-v1.2.0-8ce85d",
-            "https://img.shields.io/badge/python-3.10%2B-3776ab",
             "https://img.shields.io/badge/RTL-Verilog--2001-ffb85c",
             "https://img.shields.io/badge/target-Codex%20skill-8ce85d"
           ],
@@ -216,15 +210,14 @@
             "assets/readme/rule-rendering.png"
           ],
           "feature_headings": [
-            "01 \u2014 Start from RTL intent",
-            "02 \u2014 Specify behavior before generation",
-            "03 \u2014 Carry verification through handoff"
+            "Preview and confirm before generation",
+            "What to prepare",
+            "What you receive"
           ],
           "image_references": [
             "assets/readme/hero-overview.png",
             "https://img.shields.io/badge/license-Apache--2.0-2ad4ee",
             "https://img.shields.io/badge/version-v1.2.0-8ce85d",
-            "https://img.shields.io/badge/python-3.10%2B-3776ab",
             "https://img.shields.io/badge/RTL-Verilog--2001-ffb85c",
             "https://img.shields.io/badge/target-Codex%20skill-8ce85d",
             "assets/readme/project-facts.png",
@@ -251,11 +244,6 @@
               "heading": "",
               "remote": true
             },
-            "https://img.shields.io/badge/python-3.10%2B-3776ab": {
-              "role": "badge-remote",
-              "heading": "",
-              "remote": true
-            },
             "https://img.shields.io/badge/RTL-Verilog--2001-ffb85c": {
               "role": "badge-remote",
               "heading": "",
@@ -268,28 +256,28 @@
             },
             "assets/readme/project-facts-cn.png": {
               "role": "project-facts-cn",
-              "heading": "01 \u2014 \u4ece RTL \u610f\u56fe\u5f00\u59cb",
+              "heading": "\u9700\u8981\u51c6\u5907\u4ec0\u4e48",
               "remote": false
             },
             "assets/readme/design-profile-cn.png": {
               "role": "design-profile-cn",
-              "heading": "02 \u2014 \u751f\u6210\u524d\u5bf9\u9f50\u884c\u4e3a",
+              "heading": "\u5148\u9884\u89c8\u5e76\u786e\u8ba4\uff0c\u518d\u751f\u6210",
               "remote": false
             },
             "assets/readme/rule-rendering-cn.png": {
               "role": "rule-rendering-cn",
-              "heading": "03 \u2014 \u8ba9\u9a8c\u8bc1\u8d2f\u7a7f\u4ea4\u4ed8",
+              "heading": "\u6700\u7ec8\u5f97\u5230\u4ec0\u4e48",
               "remote": false
             }
           },
           "headings": [
-            "\u4e3a\u4ec0\u4e48\u4f7f\u7528 Verilog Generator",
-            "01 \u2014 \u4ece RTL \u610f\u56fe\u5f00\u59cb",
-            "02 \u2014 \u751f\u6210\u524d\u5bf9\u9f50\u884c\u4e3a",
-            "03 \u2014 \u8ba9\u9a8c\u8bc1\u8d2f\u7a7f\u4ea4\u4ed8",
-            "\u751f\u6210\u7ed3\u679c\u793a\u4f8b",
-            "\u5f00\u59cb\u4f7f\u7528",
-            "\u672c\u5730\u5f00\u53d1\uff0c\u8c28\u614e\u955c\u50cf",
+            "\u5b83\u6709\u4ec0\u4e48\u7528",
+            "\u5b89\u88c5",
+            "\u9700\u8981\u51c6\u5907\u4ec0\u4e48",
+            "\u5982\u4f55\u8c03\u7528",
+            "\u5148\u9884\u89c8\u5e76\u786e\u8ba4\uff0c\u518d\u751f\u6210",
+            "\u6700\u7ec8\u5f97\u5230\u4ec0\u4e48",
+            "\u7ed3\u679c\u793a\u4f8b",
             "\u4f5c\u8005\u4e0e\u5f15\u7528"
           ],
           "hero_images": [
@@ -298,7 +286,6 @@
           "badge_images": [
             "https://img.shields.io/badge/license-Apache--2.0-2ad4ee",
             "https://img.shields.io/badge/version-v1.2.0-8ce85d",
-            "https://img.shields.io/badge/python-3.10%2B-3776ab",
             "https://img.shields.io/badge/RTL-Verilog--2001-ffb85c",
             "https://img.shields.io/badge/target-Codex%20skill-8ce85d"
           ],
@@ -308,15 +295,14 @@
             "assets/readme/rule-rendering-cn.png"
           ],
           "feature_headings": [
-            "01 \u2014 \u4ece RTL \u610f\u56fe\u5f00\u59cb",
-            "02 \u2014 \u751f\u6210\u524d\u5bf9\u9f50\u884c\u4e3a",
-            "03 \u2014 \u8ba9\u9a8c\u8bc1\u8d2f\u7a7f\u4ea4\u4ed8"
+            "\u5148\u9884\u89c8\u5e76\u786e\u8ba4\uff0c\u518d\u751f\u6210",
+            "\u6700\u7ec8\u5f97\u5230\u4ec0\u4e48",
+            "\u9700\u8981\u51c6\u5907\u4ec0\u4e48"
           ],
           "image_references": [
             "assets/readme/hero-overview-cn.png",
             "https://img.shields.io/badge/license-Apache--2.0-2ad4ee",
             "https://img.shields.io/badge/version-v1.2.0-8ce85d",
-            "https://img.shields.io/badge/python-3.10%2B-3776ab",
             "https://img.shields.io/badge/RTL-Verilog--2001-ffb85c",
             "https://img.shields.io/badge/target-Codex%20skill-8ce85d",
             "assets/readme/project-facts-cn.png",
@@ -554,35 +540,35 @@
     },
     {
       "path": "assets/readme/design-profile-cn.png",
-      "sha256": "7ff1bbd92460098b73589b2a5438994efc37d67e06ca25fa8356715022a97c2e"
+      "sha256": "f631705842893b5d0530253bc08b7a86cd74cda3d4655dd922b49852d3a8b8bd"
     },
     {
       "path": "assets/readme/design-profile.png",
-      "sha256": "e4783c189b4e23d5a01816c8702b9be5fc516fb01c844b8981fcc8c5b5e472be"
+      "sha256": "15c57b3fe1deda262ca34d8cc6e02614e6a9abcbae71dee502588c80e17961b3"
     },
     {
       "path": "assets/readme/hero-overview-cn.png",
-      "sha256": "bdf4866e2f1456e39ddd000b24078d50a17965002a1d1c18f8cc290a7bda0019"
+      "sha256": "3035b4e5c4e100a0e8db5d632351a550d9f8509d78b76df3a50efdf34b1f926c"
     },
     {
       "path": "assets/readme/hero-overview.png",
-      "sha256": "db96cd105d5195125105c389c6de27431ca020df2088525b6e1d06bf982905f9"
+      "sha256": "264fdf3bc5473ff83fff478db6c676291fb124ebc8fb3aa41bef05407a17bf18"
     },
     {
       "path": "assets/readme/project-facts-cn.png",
-      "sha256": "56231abaaef6f933eddfc2cf2b6289c696092a20cd7900a6e269357bfe1c9d65"
+      "sha256": "51cbbf1073e9313ef3ed18cff8483603ba681d784325800a804ebfb08e8fc3ae"
     },
     {
       "path": "assets/readme/project-facts.png",
-      "sha256": "e73ef77458e39381947b2c007fb7b5997fe5d2a5104124f234b221e81f159079"
+      "sha256": "a8193d19ab1e527748d6493d95748eb875873044feaa06def2eeef77618de886"
     },
     {
       "path": "assets/readme/rule-rendering-cn.png",
-      "sha256": "67b8b1bc4a2a11dc9802496d5892625291151adc604f72c0c65e459a5ac57503"
+      "sha256": "d030acfd756af8b0d7f132909cae3ed0b201639a337f1466e443d9445e6c0b3a"
     },
     {
       "path": "assets/readme/rule-rendering.png",
-      "sha256": "a06754638b20d689365505ff49ee38878c4ac76bf6552e1aecfce9ec875df7aa"
+      "sha256": "ebb40995e88734716e52d8a8925417ae7019815c9e6e94aeebcee6ec5d5c1b70"
     },
     {
       "path": "assets/readme-workflow.png",
@@ -978,11 +964,11 @@
     },
     {
       "path": "README-CN.md",
-      "sha256": "5594d891a59ceaede50c6dcd02a24ea8d65efd4de3223e6fe0195adac5541e0c"
+      "sha256": "35aa91bd7c49807dcd6293397d0e56541e1f6b283a06b6e0d5ca142520ecd3cb"
     },
     {
       "path": "README.md",
-      "sha256": "617dda96980a0c2302644d4ee2b25de3b6ed2da191d95ee9b7537e884079f1a6"
+      "sha256": "3a5921a733f7adf898f11652011bb9d21ed7bd91933bbd01e9a10ccecbb13a39"
     },
     {
       "path": "references/checklists/capability-distillation-checklist.md",
