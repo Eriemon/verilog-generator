@@ -287,7 +287,7 @@ def _append_deliverable_gate_result(
     list_issues: list[ValidationIssue],
     dict_metrics: dict[str, Any],
 
-    # 以下参数定义本次 PG 门禁的设计输入和审查策略。
+    # 以下参数定义本次 VG 门禁的设计输入和审查策略。
     spec: dict[str, Any],
     root: Path,
     comment_language: str,
@@ -310,7 +310,7 @@ def _append_deliverable_gate_result(
     tuple_deliverable = _validate_verilog_generated_deliverable_gate(  # 最终交付门禁诊断和摘要
         root,  # 生成 artifact 根目录
         comment_language,  # 交付门禁采用的注释语言
-        spec=spec,  # PG 门禁复用 validation 的归一化规格
+        spec=spec,  # VG 门禁复用 validation 的归一化规格
         strict_generated_comments=strict_generated_comments,  # 新生成 RTL 严格模式
     )
 
@@ -394,7 +394,7 @@ def _validate_verilog_generated_deliverable_gate(
     # dict_report 是最终交付门禁的完整报告。
     dict_report = run_verilog_deliverable_gate(  # 最终交付门禁完整报告
         root,  # 待审计的生成产物根路径
-        spec=spec,  # 固定 PG 门禁依赖的规格合同
+        spec=spec,  # 固定 VG 门禁依赖的规格合同
         strict=True,  # validation 内部始终按交付级严格模式执行
         comment_language=comment_language,  # comment gate 与 VG 注释规则共享的语言策略
     )  # 交付门禁报告
@@ -408,8 +408,8 @@ def _validate_verilog_generated_deliverable_gate(
         "errors": dict_report.get("errors"),  # 聚合后阻断问题数量
         "strict_warnings": dict_report.get("strict_warnings"),  # strict 模式 warning 数量
         "checks": dict_report.get("checks"),  # 子门禁摘要证据
-        "pg_catalog_version": dict_report.get("pg_catalog_version"),  # 固定 PG 目录版本
-        "pg_gate_summary": dict_report.get("pg_gate_summary"),  # PG 结果状态汇总
+        "vg_catalog_version": dict_report.get("vg_catalog_version"),  # 统一 VG 目录版本
+        "vg_rule_summary": dict_report.get("vg_rule_summary"),  # VG 逐规则状态汇总
     }  # 交付门禁摘要 metrics
 
     # list_issues 只补充 strict warning 阻断，error 已由既有子门禁进入 issue 流。

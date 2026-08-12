@@ -1,6 +1,6 @@
-"""实现复位结构、一致性与触发极性相关 RTL PG 门禁。"""
+"""实现复位结构、一致性与触发极性相关 RTL VG 门禁。"""
 
-# future annotations 延后解析 PG 数据模型类型。
+# future annotations 延后解析 VG 数据模型类型。
 from __future__ import annotations
 
 # re 只在 formatter AST 已确认的头部和控制节点中提取标识符。
@@ -10,10 +10,10 @@ import re
 from typing import Any, Callable, Iterator
 
 # facts 提供可信 module 与结构化 always 事实。
-from .rtl_pg_facts import PgFacts, iter_trusted_modules
+from .vg_semantic_facts import VgFacts, iter_trusted_modules
 
 # models 统一逐门禁状态和定位证据。
-from .rtl_pg_models import PgEvaluation, PgFinding, failed, passed
+from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passed
 
 # 复位、清零和置位名称只用于识别控制信号角色，不推断普通数据信号。
 RESET_NAME_PATTERN = re.compile(  # 常见复位类控制信号名称
@@ -31,35 +31,243 @@ RESET_ONLY_NAME_PATTERN = re.compile(  # 复位或清零类信号名称
 )
 
 # evaluate_reset_gate 把固定编号路由到复位规则实现。
-def evaluate_reset_gate(str_gate_id: str, facts: PgFacts) -> PgEvaluation:
-    """执行复位结构规则组中的指定 PG 门禁。
+def evaluate_reset_gate(str_gate_id: str, facts: VgFacts) -> VgEvaluation:
+    """执行复位结构规则组中的指定 VG 门禁。
 
     参数:
-        str_gate_id: 当前执行的固定 PG 复位门禁编号。
+        str_gate_id: 当前执行的固定 VG 复位门禁编号。
         facts: formatter AST 构建的可信扫描事实。
     返回:
         当前复位规则的逐门禁结论。
     """
 
-    # 路由表只包含 rtl_pg_engine 分配给本模块的激活编号。
-    dict_evaluators: dict[str, Callable[[PgFacts], PgEvaluation]] = {  # 固定编号到复位规则函数的映射
-        "PG1004": _no_sync_async_mix,  # 同一复位线不得混用同步和异步风格
-        "PG1006": _one_reset_per_always,  # 单个 always 只允许一个复位控制
-        "PG1012": _loop_no_reset_logic_mix,  # 循环体不得同时承载复位与普通逻辑
-        "PG1022": _no_async_reset_as_data,  # 异步复位不得进入普通数据赋值
-        "PG1029": _no_internal_async_source,  # 异步复位必须来自输入端口
-        "PG1031": _no_set_reset_pair,  # 单个 always 不得并用异步 set 和 reset
-        "PG1039": _ff_no_mixed_reset_style,  # 全部触发器必须在复位分支初始化
-        "PG1042": _ff_no_mixed_reset_style,  # 同一时序块目标必须统一复位覆盖
-        "PG1045": _ff_reset_condition_match,  # 异步触发极性必须匹配复位条件
-        "PG1047": _no_logic_in_async_path,  # 异步复位网络不得插入组合运算
+    # 路由表只包含统一 VG 语义引擎分配给本模块的激活编号。
+    dict_evaluators: dict[str, Callable[[VgFacts], VgEvaluation]] = {  # 固定编号到复位规则函数的映射
+        "VG075": _no_sync_async_mix,  # 同一复位线不得混用同步和异步风格
+        "VG077": _one_reset_per_always,  # 单个 always 只允许一个复位控制
+        "VG082": _reset_source_is_stable,  # 复位源不得由普通组合逻辑生成
+        "VG083": _loop_no_reset_logic_mix,  # 循环体不得同时承载复位与普通逻辑
+        "VG093": _no_async_reset_as_data,  # 异步复位不得进入普通数据赋值
+        "VG099": _reset_generator_is_dedicated,  # 复位产生逻辑应位于独立模块
+        "VG100": _no_internal_async_source,  # 异步复位必须来自输入端口
+        "VG102": _no_set_reset_pair,  # 单个 always 不得并用异步 set 和 reset
+        "VG110": _ff_no_mixed_reset_style,  # 全部触发器必须在复位分支初始化
+        "VG113": _ff_no_mixed_reset_style,  # 同一时序块目标必须统一复位覆盖
+        "VG116": _ff_reset_condition_match,  # 异步触发极性必须匹配复位条件
+        "VG118": _no_logic_in_async_path,  # 异步复位网络不得插入组合运算
     }
 
     # engine 已保证编号属于本模块，直接执行唯一对应函数。
     return dict_evaluators[str_gate_id](facts)
 
+# _reset_source_is_stable 验证复位来源是否具有明确稳定性合同。
+def _reset_source_is_stable(facts: VgFacts) -> VgEvaluation:
+    """拒绝由普通组合表达式直接生成的复位控制。
+
+    参数:
+        facts: formatter AST 构建的可信扫描事实。
+    返回:
+        不稳定复位源的失败证据、外部来源不确定结论或通过结论。
+    """
+
+    # findings 保存可确定的组合复位源证据。
+    list_findings: list[VgFinding] = []  # 组合复位源证据
+
+    # uncertain_findings 保存缺少规格信任合同的外部来源。
+    list_uncertain_findings: list[VgFinding] = []  # 未声明信任的外部复位源证据
+
+    # applicable 区分没有复位输入与检查后合规。
+    bool_applicable = False  # 是否发现被时序块消费的复位信号
+
+    # 规格中的外部信任源必须按 module 和 output_port 精确声明。
+    list_trusted_sources = list(  # 规格声明的外部复位信任源
+        dict(facts.spec.get("reset") or {}).get("trusted_external_sources") or []  # 缺省为空列表
+    )
+
+    # 精确二元组避免只按模块名或端口名进行宽松信任。
+    set_trusted_pairs = {  # 精确匹配外部模块类型和输出端口
+        (str(dict_source.get("module") or ""), str(dict_source.get("output_port") or ""))  # 模块和输出端口合同
+        for dict_source in list_trusted_sources  # 遍历规格信任源
+        if isinstance(dict_source, dict)  # 忽略无法解释的非对象条目
+    }
+
+    # 每个可信 module 独立提取异步复位消费与来源证据。
+    for source_facts, _, str_module_text, int_base_line in iter_trusted_modules(facts):
+
+        # 边沿敏感列表限定当前 module 真正消费的复位信号。
+        set_reset_signals = {  # 敏感列表中具有复位角色的边沿信号
+            str_signal  # 当前复位类边沿信号
+            for str_signal in re.findall(  # 提取边沿敏感列表标识符
+                r"(?:posedge|negedge)\s+([A-Za-z_]\w*)",  # 边沿事件标识符模式
+                str_module_text,  # 搜索当前复位信号所在的 module 内容
+                flags=re.IGNORECASE,  # 信号角色匹配不区分大小写
+            )
+            if RESET_NAME_PATTERN.search(str_signal)  # 只保留复位角色名称
+        }
+
+        # 每个被消费的复位信号独立追踪本地赋值或实例来源。
+        for str_reset in set_reset_signals:
+
+            # 当前 module 已提供规则适用的复位消费事实。
+            bool_applicable = True  # 已发现复位控制信号
+
+            # 顶层 input reset 由模块边界承担来源合同，不属于本地组合生成。
+            if re.search(rf"\binput\b[^;\n]*\b{re.escape(str_reset)}\b", str_module_text, flags=re.IGNORECASE):
+
+                # 输入端口来源由集成边界保证，继续检查其他复位信号。
+                continue
+
+            # 连续赋值可直接揭示本地组合复位表达式。
+            obj_assign = re.search(  # 当前复位信号的连续赋值
+                rf"\bassign\s+{re.escape(str_reset)}\s*=\s*([^;]+);",  # 当前复位赋值模式
+                str_module_text,  # 当前 formatter 可信 module 文本
+                flags=re.IGNORECASE,  # Verilog 关键字匹配不区分大小写
+            )
+
+            # 包含组合运算符的本地复位赋值无法静态保证无毛刺。
+            if obj_assign is not None and re.search(r"[&|^~?:+\-*/%]", obj_assign.group(1)) is not None:
+
+                # module 内偏移换算为一基文件行号。
+                int_line = int_base_line + str_module_text.count("\n", 0, obj_assign.start())  # 组合复位赋值行号
+
+                # 记录确定的不稳定复位来源证据。
+                list_findings.append(
+                    VgFinding(
+                        source_facts.relative_path,
+                        int_line,
+                        "复位控制由普通组合表达式生成，无法静态保证无毛刺。",
+                        obj_assign.group(0).strip(),
+                    )
+                )
+
+                # 当前复位已有确定失败，无需再推断实例来源。
+                continue
+
+            # 实例输出只有在 spec 精确声明可信 module/output_port 时才能确定通过。
+            for obj_instance in re.finditer(
+                r"\b([A-Za-z_]\w*)\s+[A-Za-z_]\w*\s*\((.*?)\)\s*;",
+                str_module_text,
+                flags=re.DOTALL,
+            ):
+
+                # 实例类型与规格 module 字段进行精确比较。
+                str_provider_module = obj_instance.group(1)  # 当前复位提供者模块类型
+
+                # 命名端口连接确定复位信号对应的输出端口。
+                obj_port = re.search(  # 连接当前复位信号的实例端口
+                    rf"\.([A-Za-z_]\w*)\s*\(\s*{re.escape(str_reset)}\s*\)",  # 命名端口连接模式
+                    obj_instance.group(2),  # 当前实例端口连接文本
+                )
+
+                # 无关实例或已被规格精确信任的来源无需报告。
+                if obj_port is None or (str_provider_module, obj_port.group(1)) in set_trusted_pairs:
+
+                    # 继续检查当前 module 的其他实例。
+                    continue
+
+                # 外部实例位置换算为一基文件行号。
+                int_line = int_base_line + str_module_text.count("\n", 0, obj_instance.start())  # 外部复位实例行号
+
+                # 未声明信任的外部提供者保持不确定而非误报通过。
+                list_uncertain_findings.append(
+                    VgFinding(
+                        source_facts.relative_path,
+                        int_line,
+                        "外部复位提供者未出现在 trusted_external_sources 合同中。",
+                        f"{str_provider_module}.{obj_port.group(1)}",
+                    )
+                )
+
+    # 确定的不稳定复位来源优先形成失败结论。
+    if list_findings:
+
+        # 返回全部本地组合复位证据。
+        return failed(*list_findings)
+
+    # 外部来源没有信任合同时保持 fail-closed 不确定状态。
+    if list_uncertain_findings:
+
+        # 保留全部未受信任实例位置供规格补全。
+        return inconclusive("External reset source is not trusted by spec.", *list_uncertain_findings)
+
+    # 没有违规时报告规则是否实际追踪过复位来源。
+    return passed(applicable=bool_applicable)
+
+# _reset_generator_is_dedicated 限制复位产生职责所在的模块角色。
+def _reset_generator_is_dedicated(facts: VgFacts) -> VgEvaluation:
+    """检查复位产生职责是否封装在独立 reset 模块中。
+
+    参数:
+        facts: formatter AST 构建的可信扫描事实。
+    返回:
+        内联复位产生的失败证据或适用性结论。
+    """
+
+    # findings 汇总功能模块内联的复位产生逻辑。
+    list_findings: list[VgFinding] = []  # 内联复位产生证据
+
+    # applicable 区分没有复位产生逻辑与检查后合规。
+    bool_applicable = False  # 是否发现复位产生逻辑
+
+    # 每个可信 module 独立判断角色名称和连续赋值。
+    for source_facts, dict_module, str_module_text, int_base_line in iter_trusted_modules(facts):
+
+        # formatter module 名称用于识别专用 reset generator/controller。
+        str_module_name = str(dict_module.get("name") or "")  # 当前 formatter module 名称
+
+        # 每条连续赋值独立判断其目标是否具有复位角色。
+        for obj_assign in re.finditer(
+            r"\bassign\s+([A-Za-z_]\w*)\s*=\s*([^;]+);",
+            str_module_text,
+            flags=re.IGNORECASE,
+        ):
+
+            # 非复位目标不属于本规则对象。
+            if RESET_NAME_PATTERN.search(obj_assign.group(1)) is None:
+
+                # 继续检查同一 module 的其他连续赋值。
+                continue
+
+            # 当前 module 已提供复位产生逻辑。
+            bool_applicable = True  # 已发现复位输出赋值
+
+            # 专用 reset generator/controller 允许承载该职责。
+            bool_dedicated_module = re.search(  # 模块名是否表达专用复位职责
+                r"(?:reset|rst).*(?:gen|ctrl)|(?:gen|ctrl).*(?:reset|rst)",  # 专用复位模块命名模式
+                str_module_name,  # formatter 提供的当前模块名
+                flags=re.IGNORECASE,  # 模块角色识别不区分大小写
+            ) is not None
+
+            # 专用复位模块满足职责隔离合同。
+            if bool_dedicated_module:
+
+                # 当前模块角色满足隔离合同。
+                continue
+
+            # 连续赋值位置换算为一基文件行号。
+            int_line = int_base_line + str_module_text.count("\n", 0, obj_assign.start())  # 内联复位赋值行号
+
+            # 记录功能模块混入复位产生职责的确定证据。
+            list_findings.append(
+                VgFinding(
+                    source_facts.relative_path,
+                    int_line,
+                    "复位产生逻辑内联在功能模块中，建议封装为独立复位模块。",
+                    obj_assign.group(0).strip(),
+                )
+            )
+
+    # 任一内联复位产生逻辑都使门禁失败。
+    if list_findings:
+
+        # 返回全部职责混合证据。
+        return failed(*list_findings)
+
+    # 没有违规时报告规则是否实际检查过复位产生逻辑。
+    return passed(applicable=bool_applicable)
+
 # _no_async_reset_as_data 禁止异步复位控制进入普通赋值右值。
-def _no_async_reset_as_data(facts: PgFacts) -> PgEvaluation:
+def _no_async_reset_as_data(facts: VgFacts) -> VgEvaluation:
     """检查异步复位信号是否被当作普通数据信号使用。
 
     参数:
@@ -69,7 +277,7 @@ def _no_async_reset_as_data(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存异步复位信号进入数据赋值的位置。
-    list_findings: list[PgFinding] = []  # 异步复位数据用途证据
+    list_findings: list[VgFinding] = []  # 异步复位数据用途证据
 
     # applicable 区分没有异步复位与检查后合规。
     bool_applicable = False  # 是否发现异步复位控制信号
@@ -114,7 +322,7 @@ def _no_async_reset_as_data(facts: PgFacts) -> PgEvaluation:
 
             # 赋值所在行直接定位复位数据用途。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,
                     int_base_line + int_offset_line,
                     "异步复位信号被连接到普通数据赋值右值。",
@@ -132,7 +340,7 @@ def _no_async_reset_as_data(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _no_internal_async_source 要求异步复位直接来自 module 输入。
-def _no_internal_async_source(facts: PgFacts) -> PgEvaluation:
+def _no_internal_async_source(facts: VgFacts) -> VgEvaluation:
     """检查寄存器异步复位是否使用内部生成信号。
 
     参数:
@@ -142,7 +350,7 @@ def _no_internal_async_source(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存不属于输入端口的异步复位信号。
-    list_findings: list[PgFinding] = []  # 内部异步复位来源证据
+    list_findings: list[VgFinding] = []  # 内部异步复位来源证据
 
     # applicable 区分没有异步复位与输入来源合规。
     bool_applicable = False  # 是否发现异步复位边沿
@@ -179,7 +387,7 @@ def _no_internal_async_source(facts: PgFacts) -> PgEvaluation:
 
             # 内部来源形成确定警告证据。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,
                     int_line,
                     "内部生成信号被用作寄存器异步复位。",
@@ -197,7 +405,7 @@ def _no_internal_async_source(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _no_logic_in_async_path 禁止组合赋值生成异步复位网络。
-def _no_logic_in_async_path(facts: PgFacts) -> PgEvaluation:
+def _no_logic_in_async_path(facts: VgFacts) -> VgEvaluation:
     """检查异步复位线路中是否插入组合逻辑运算。
 
     参数:
@@ -207,7 +415,7 @@ def _no_logic_in_async_path(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存由组合表达式生成的异步复位信号。
-    list_findings: list[PgFinding] = []  # 异步复位组合路径证据
+    list_findings: list[VgFinding] = []  # 异步复位组合路径证据
 
     # 组合路径适用性只由实际消费的异步复位网络决定。
     bool_applicable = False  # 是否发现待追踪的复位网络
@@ -243,7 +451,7 @@ def _no_logic_in_async_path(facts: PgFacts) -> PgEvaluation:
 
             # 组合表达式直接形成异步复位路径违规。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,
                     int_base_line + int_offset_line,
                     "异步复位线路由组合逻辑表达式生成。",
@@ -261,7 +469,7 @@ def _no_logic_in_async_path(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _no_sync_async_mix 禁止同一复位信号跨时序块混用同步与异步模式。
-def _no_sync_async_mix(facts: PgFacts) -> PgEvaluation:
+def _no_sync_async_mix(facts: VgFacts) -> VgEvaluation:
     """检查同一复位线路是否同时承担同步和异步复位。
 
     参数:
@@ -304,7 +512,7 @@ def _no_sync_async_mix(facts: PgFacts) -> PgEvaluation:
             dict_usages.setdefault(str_signal, []).append((str_style, source_facts.relative_path, int_line))
 
     # findings 为每条发生模式混用的复位线生成一条确定证据。
-    list_findings: list[PgFinding] = []  # 同步与异步混用证据
+    list_findings: list[VgFinding] = []  # 同步与异步混用证据
 
     # 信号名排序保证多文件报告顺序稳定。
     for str_signal in sorted(dict_usages):
@@ -323,7 +531,7 @@ def _no_sync_async_mix(facts: PgFacts) -> PgEvaluation:
 
         # 每条混用复位线只生成一个稳定证据。
         list_findings.append(
-            PgFinding(str_path, int_line, "同一复位线路同时用于同步和异步复位。", str_signal)
+            VgFinding(str_path, int_line, "同一复位线路同时用于同步和异步复位。", str_signal)
         )
 
     # 任一混用线路都使固定门禁失败。
@@ -336,7 +544,7 @@ def _no_sync_async_mix(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool(dict_usages))
 
 # _one_reset_per_always 限制单个时序块只使用一个复位类异步控制。
-def _one_reset_per_always(facts: PgFacts) -> PgEvaluation:
+def _one_reset_per_always(facts: VgFacts) -> VgEvaluation:
     """检查每个时序 always 的复位类控制信号数量。
 
     参数:
@@ -346,7 +554,7 @@ def _one_reset_per_always(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存含多个复位控制的过程块。
-    list_findings: list[PgFinding] = []  # 多复位控制证据
+    list_findings: list[VgFinding] = []  # 多复位控制证据
 
     # applicable 区分无复位结构与复位结构合规。
     bool_applicable = False  # 是否发现复位类异步控制
@@ -381,7 +589,7 @@ def _one_reset_per_always(facts: PgFacts) -> PgEvaluation:
 
             # 每个超限 always 形成独立 finding。
             list_findings.append(
-                PgFinding(source_facts.relative_path, int_line, "同一 always 使用了多个复位类信号。", str_evidence)
+                VgFinding(source_facts.relative_path, int_line, "同一 always 使用了多个复位类信号。", str_evidence)
             )
 
     # 任一过程块超出单复位约束即失败。
@@ -394,7 +602,7 @@ def _one_reset_per_always(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _loop_no_reset_logic_mix 禁止 for 循环内部切分复位与普通逻辑分支。
-def _loop_no_reset_logic_mix(facts: PgFacts) -> PgEvaluation:
+def _loop_no_reset_logic_mix(facts: VgFacts) -> VgEvaluation:
     """检查循环体是否同时包含复位分支和普通逻辑分支。
 
     参数:
@@ -404,7 +612,7 @@ def _loop_no_reset_logic_mix(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存包含复位 if/else 的循环节点。
-    list_findings: list[PgFinding] = []  # 循环复位混合证据
+    list_findings: list[VgFinding] = []  # 循环复位混合证据
 
     # applicable 区分无相关循环与循环结构合规。
     bool_applicable = False  # 是否发现带复位的时序循环结构
@@ -446,7 +654,7 @@ def _loop_no_reset_logic_mix(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _loop_reset_mix_findings 分析单个时序过程块的循环复位结构。
-def _loop_reset_mix_findings(str_path: str, dict_always: dict[str, Any]) -> tuple[bool, list[PgFinding]]:
+def _loop_reset_mix_findings(str_path: str, dict_always: dict[str, Any]) -> tuple[bool, list[VgFinding]]:
     """检查一个时序过程块中的循环复位分支。
 
     参数:
@@ -457,7 +665,7 @@ def _loop_reset_mix_findings(str_path: str, dict_always: dict[str, Any]) -> tupl
     """
 
     # 局部列表只保存当前 always 的循环混合证据。
-    list_findings: list[PgFinding] = []  # 当前过程块的循环违规
+    list_findings: list[VgFinding] = []  # 当前过程块的循环违规
 
     # applicable 表示至少一个循环后代引用复位信号。
     bool_applicable = False  # 当前过程块是否包含复位循环
@@ -502,7 +710,7 @@ def _loop_reset_mix_findings(str_path: str, dict_always: dict[str, Any]) -> tupl
 
         # 每个混合循环形成独立 finding。
         list_findings.append(
-            PgFinding(
+            VgFinding(
                 str_path,
                 int_line,
                 "复位分支和普通逻辑出现在同一循环中。",
@@ -514,7 +722,7 @@ def _loop_reset_mix_findings(str_path: str, dict_always: dict[str, Any]) -> tupl
     return bool_applicable, list_findings
 
 # _no_set_reset_pair 禁止同一时序块并用异步置位和异步复位。
-def _no_set_reset_pair(facts: PgFacts) -> PgEvaluation:
+def _no_set_reset_pair(facts: VgFacts) -> VgEvaluation:
     """检查单个 always 是否同时包含异步 set 与 reset 控制。
 
     参数:
@@ -524,7 +732,7 @@ def _no_set_reset_pair(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存双向异步控制过程块。
-    list_findings: list[PgFinding] = []  # set/reset 并用证据
+    list_findings: list[VgFinding] = []  # set/reset 并用证据
 
     # applicable 区分没有异步控制与控制结构合规。
     bool_applicable = False  # 是否发现 set 或 reset 类异步控制
@@ -543,7 +751,7 @@ def _no_set_reset_pair(facts: PgFacts) -> PgEvaluation:
 
             # rst/reset/clear 名称形成复位角色集合。
             set_reset_controls = {  # 复位类控制集合
-                str_signal  # 当前复位类边沿信号
+                str_signal  # 当前敏感列表中的复位角色信号
                 for str_signal in set_signals  # 遍历当前敏感列表的异步控制
                 if RESET_ONLY_NAME_PATTERN.search(str_signal)  # 仅选择复位或清零角色
             }
@@ -565,7 +773,7 @@ def _no_set_reset_pair(facts: PgFacts) -> PgEvaluation:
 
             # 每个双向控制块形成独立 finding。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,
                     int_line,
                     "同一 always 同时使用异步 set 和 reset。",
@@ -583,7 +791,7 @@ def _no_set_reset_pair(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _ff_no_mixed_reset_style 要求复位时序块的全部触发器目标都在复位分支赋值。
-def _ff_no_mixed_reset_style(facts: PgFacts) -> PgEvaluation:
+def _ff_no_mixed_reset_style(facts: VgFacts) -> VgEvaluation:
     """检查同一时序块内触发器目标是否统一接受复位。
 
     参数:
@@ -593,7 +801,7 @@ def _ff_no_mixed_reset_style(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存复位覆盖不完整的时序块。
-    list_findings: list[PgFinding] = []  # 混合复位覆盖证据
+    list_findings: list[VgFinding] = []  # 混合复位覆盖证据
 
     # applicable 区分没有复位块与复位覆盖完整。
     bool_applicable = False  # 是否发现可判定的复位时序块
@@ -639,7 +847,7 @@ def _ff_no_mixed_reset_style(facts: PgFacts) -> PgEvaluation:
 
             # 每个覆盖不完整的时序块形成独立 finding。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,
                     int_line,
                     "同一时序块中存在未统一复位的触发器目标。",
@@ -657,7 +865,7 @@ def _ff_no_mixed_reset_style(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _ff_reset_condition_match 要求异步边沿与首层复位条件的有效电平一致。
-def _ff_reset_condition_match(facts: PgFacts) -> PgEvaluation:
+def _ff_reset_condition_match(facts: VgFacts) -> VgEvaluation:
     """检查异步复位触发边沿是否匹配复位条件极性。
 
     参数:
@@ -667,7 +875,7 @@ def _ff_reset_condition_match(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存异步触发和条件极性不一致的过程块。
-    list_findings: list[PgFinding] = []  # 复位极性错配证据
+    list_findings: list[VgFinding] = []  # 复位极性错配证据
 
     # applicable 区分无异步复位与极性匹配。
     bool_applicable = False  # 是否发现可比较的异步复位条件
@@ -712,7 +920,7 @@ def _ff_reset_condition_match(facts: PgFacts) -> PgEvaluation:
 def _reset_polarity_finding(
     str_path: str,
     dict_always: dict[str, Any],
-) -> tuple[bool, PgFinding | None]:
+) -> tuple[bool, VgFinding | None]:
     """返回一个时序过程块的复位极性检查结果。
 
     参数:
@@ -771,7 +979,7 @@ def _reset_polarity_finding(
     str_evidence = f"{str_edge} {str_signal}; {str_header}"  # 当前触发沿与条件对照
 
     # 返回已比较状态和唯一错配证据。
-    return True, PgFinding(
+    return True, VgFinding(
         str_path,
         int_line,
         "异步复位触发边沿与复位条件极性不一致。",
@@ -948,7 +1156,7 @@ def _assigned_targets(list_nodes: Any) -> set[str]:
     return set_targets
 
 # _has_reset_and_loop 识别复位入口之外的合规循环结构。
-def _has_reset_and_loop(facts: PgFacts) -> bool:
+def _has_reset_and_loop(facts: VgFacts) -> bool:
     """判断目标是否包含复位时序块与循环节点。
 
     参数:

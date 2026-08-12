@@ -1,7 +1,7 @@
 {
   "version": 1,
   "catalog_version": 3,
-  "description": "Self-contained three-way fixture routing for every active RTL PG gate.",
+  "description": "Self-contained three-way fixture routing for every active VG semantic gate.",
   "fixtures": {
     "canonical_clean": "module dut (\n    input wire clk,\n    input wire [3:0] a,\n    output reg y\n);\nalways @(posedge clk) begin\n    y <= a[0];\nend\nendmodule\n",
     "formatter_parse_error": "module dut (\n    input wire a\n",
@@ -91,439 +91,906 @@
     "array_index_out_of_range": "module dut (\n    output wire y\n);\nreg [7:0] memory [0:3];\nassign y = memory[4][0];\nendmodule\n",
     "array_index_at_upper_bound": "module dut (\n    output wire y\n);\nreg [7:0] memory [0:3];\nassign y = memory[3][0];\nendmodule\n",
     "comb_feedback": "module dut (\n    output wire y\n);\nwire feedback_a;\nwire feedback_b;\nassign feedback_a = feedback_b;\nassign feedback_b = feedback_a;\nassign y = feedback_a;\nendmodule\n",
-    "comb_chain": "module dut (\n    input wire d,\n    output wire y\n);\nwire stage;\nassign stage = d;\nassign y = stage;\nendmodule\n"
+    "comb_chain": "module dut (\n    input wire d,\n    output wire y\n);\nwire stage;\nassign stage = d;\nassign y = stage;\nendmodule\n",
+    "vg080_nonindex_arithmetic": "module dut\n(\n    input wire [3:0] data,\n    output reg [3:0] sum\n);\ninteger i;\nalways @(*) begin\n    sum = 4'b0000;\n    for (i = 0; i < 4; i = i + 1) begin\n        sum = sum + data[i];\n    end\nend\nendmodule\n",
+    "vg082_comb_reset": "module dut\n(\n    input wire clk,\n    input wire ext_rst_n,\n    input wire enable,\n    output reg y\n);\nwire rst_n;\nassign rst_n = ext_rst_n & enable;\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) y <= 1'b0;\n    else y <= 1'b1;\nend\nendmodule\n",
+    "vg099_inline_reset": "module dut\n(\n    input wire clk,\n    input wire ext_rst_n,\n    output reg y\n);\nwire rst_n;\nassign rst_n = ext_rst_n & 1'b1;\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) y <= 1'b0;\n    else y <= 1'b1;\nend\nendmodule\n",
+    "vg119_high_flip": "module dut\n(\n    input wire clk,\n    input wire rst_n,\n    output reg done\n);\nlocalparam [1:0] IDLE = 2'b00;\nlocalparam [1:0] DONE = 2'b11;\nreg [1:0] state;\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) state <= IDLE;\n    else state <= DONE;\nend\nalways @(*) begin\n    done = (state == DONE);\nend\nendmodule\n",
+    "vg125_literal_width": "module dut\n(\n    output wire [7:0] value\n);\nassign value = 8'd3;\nendmodule\n"
   },
   "shared_fixtures": {
     "positive": "canonical_clean",
     "inconclusive": "formatter_parse_error"
   },
   "cases": {
-    "PG1001": {
+    "VG072": {
       "positive": "canonical_clean",
       "negative": "xz_arithmetic",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": ["PG1051"]
+      "allowed_overlaps": [
+        "VG122",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1005": {
+    "VG076": {
       "positive": "case_default_clean",
       "negative": "overlapping_case_items",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1007": {
+    "VG078": {
       "positive": "canonical_clean",
       "negative": "xz_condition",
       "inconclusive": "formatter_parse_error",
       "allowed_overlaps": [
-        "PG1030"
+        "VG101",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
       ]
     },
-    "PG1008": {
+    "VG079": {
       "positive": "canonical_clean",
       "negative": "comb_nonblocking",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1013": {
+    "VG084": {
       "positive": "case_default_clean",
       "negative": "case_item_width_mismatch",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1014": {
+    "VG085": {
       "positive": "canonical_clean",
       "negative": "relational_width_mismatch",
       "inconclusive": "unknown_relational_width",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1017": {
+    "VG088": {
       "positive": "xz_branch_condition",
       "negative": "vector_if_condition",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1018": {
+    "VG089": {
       "positive": "canonical_clean",
       "negative": "combinational_output_clock",
       "inconclusive": "unknown_clock_source",
       "allowed_overlaps": [
-        "PG1025",
-        "PG1061"
+        "VG096",
+        "VG132",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
       ]
     },
-    "PG1019": {
+    "VG090": {
       "positive": "case_default_clean",
       "negative": "constant_case_control",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1030": {
+    "VG101": {
       "positive": "canonical_clean",
       "negative": "xz_branch_condition",
       "inconclusive": "formatter_parse_error",
       "allowed_overlaps": [
-        "PG1007"
+        "VG078",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
       ]
     },
-    "PG1032": {
+    "VG103": {
       "positive": "canonical_clean",
       "negative": "duplicate_path_assignment",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1034": {
+    "VG105": {
       "positive": "case_default_clean",
       "negative": "runtime_case_item",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1035": {
+    "VG106": {
       "positive": "nonrecursive_function",
       "negative": "recursive_function",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1036": {
+    "VG107": {
       "positive": "canonical_clean",
       "negative": "register_output_clock",
       "inconclusive": "unknown_clock_source",
       "allowed_overlaps": [
-        "PG1002"
+        "VG073",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
       ]
     },
-    "PG1037": {
+    "VG108": {
       "positive": "case_default_clean",
       "negative": "case_default_xz",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1038": {
+    "VG109": {
       "positive": "xz_branch_condition",
       "negative": "combinational_if_without_else",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1040": {
+    "VG111": {
       "positive": "case_default_clean",
       "negative": "case_without_default",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1044": {
+    "VG115": {
       "positive": "task_io_width_match",
       "negative": "task_io_width_mismatch",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1046": {
+    "VG117": {
       "positive": "canonical_clean",
       "negative": "sensitivity_bar_separator",
       "inconclusive": "formatter_parse_error",
       "allowed_overlaps": [
-        "PG1055"
+        "VG126",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
       ]
     },
-    "PG1050": {
+    "VG121": {
       "positive": "nonrecursive_function",
       "negative": "scalar_function_return",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1052": {
+    "VG123": {
       "positive": "constant_for_loop",
       "negative": "variable_for_loop",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": ["PG1065"]
+      "allowed_overlaps": [
+        "VG136",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1053": {
+    "VG124": {
       "positive": "canonical_clean",
       "negative": "initial_block",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1055": {
+    "VG126": {
       "positive": "complete_sensitivity",
       "negative": "incomplete_sensitivity",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1056": {
+    "VG127": {
       "positive": "task_local_write",
       "negative": "task_without_timing",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1057": {
+    "VG128": {
       "positive": "case_default_clean",
       "negative": "casez_usage",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1058": {
+    "VG129": {
       "positive": "canonical_clean",
       "negative": "sequential_blocking",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1060": {
+    "VG131": {
       "positive": "canonical_clean",
       "negative": "assignment_delay",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1062": {
+    "VG133": {
       "positive": "task_without_timing",
       "negative": "task_with_timing",
       "inconclusive": "formatter_parse_error",
       "allowed_overlaps": [
-        "PG1060"
+        "VG131",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
       ]
     },
-    "PG1066": {
+    "VG137": {
       "positive": "canonical_clean",
       "negative": "assignment_width_mismatch",
       "inconclusive": "unknown_assignment_width",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1067": {
+    "VG138": {
       "positive": "canonical_clean",
       "negative": "unsized_literal",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1068": {
+    "VG139": {
       "positive": "nonrecursive_function",
       "negative": "function_nonblocking",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1069": {
+    "VG140": {
       "positive": "canonical_clean",
       "negative": "procedural_wire_assignment",
       "inconclusive": "formatter_parse_error",
       "allowed_overlaps": [
-        "PG1070"
+        "VG141",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
       ]
     },
-    "PG1070": {
+    "VG141": {
       "positive": "canonical_clean",
       "negative": "multiple_drivers",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1071": {
+    "VG142": {
       "positive": "canonical_clean",
       "negative": "wire_inline_assignment",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1072": {
+    "VG143": {
       "positive": "canonical_clean",
       "negative": "simulation_system_task",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1016": {
+    "VG087": {
       "positive": "reset_clean",
       "negative": "reset_override",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1026": {
+    "VG097": {
       "positive": "port_width_match",
       "negative": "port_width_mismatch",
       "inconclusive": "external_port_width",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1043": {
+    "VG114": {
       "positive": "case_default_clean",
       "negative": "full_case_directive",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1010": {
+    "VG081": {
       "positive": "constant_repeat",
       "negative": "variable_repeat",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": ["PG1065"]
+      "allowed_overlaps": [
+        "VG136",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1020": {
+    "VG091": {
       "positive": "simple_array_index",
       "negative": "complex_array_index",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1021": {
+    "VG092": {
       "positive": "constant_repeat",
       "negative": "zero_repeat",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1024": {
+    "VG095": {
       "positive": "procedural_latch",
       "negative": "gate_primitive_latch",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1064": {
+    "VG135": {
       "positive": "procedural_latch",
       "negative": "mixed_latch_comb",
       "inconclusive": "formatter_parse_error",
       "allowed_overlaps": [
-        "PG1038"
+        "VG109",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
       ]
     },
-    "PG1002": {
+    "VG073": {
       "positive": "canonical_clean",
       "negative": "multiple_clock_domains",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1025": {
+    "VG096": {
       "positive": "canonical_clean",
       "negative": "combinational_output_clock",
       "inconclusive": "unknown_clock_source",
       "allowed_overlaps": [
-        "PG1018",
-        "PG1061"
+        "VG089",
+        "VG132",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
       ]
     },
-    "PG1049": {
+    "VG120": {
       "positive": "canonical_clean",
       "negative": "dual_edge_clock",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1061": {
+    "VG132": {
       "positive": "canonical_clean",
       "negative": "clock_as_data",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1004": {
+    "VG075": {
       "positive": "reset_clean",
       "negative": "sync_async_reset_mix",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1006": {
+    "VG077": {
       "positive": "reset_clean",
       "negative": "multiple_reset_controls",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1012": {
+    "VG083": {
       "positive": "reset_clean",
       "negative": "reset_logic_in_loop",
       "inconclusive": "formatter_parse_error",
       "allowed_overlaps": [
-        "PG1058",
-        "PG1067"
+        "VG129",
+        "VG138",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
       ]
     },
-    "PG1031": {
+    "VG102": {
       "positive": "reset_clean",
       "negative": "async_set_reset_pair",
       "inconclusive": "formatter_parse_error",
       "allowed_overlaps": [
-        "PG1006"
+        "VG077",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
       ]
     },
-    "PG1042": {
+    "VG113": {
       "positive": "reset_clean",
       "negative": "partial_reset_coverage",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": ["PG1039"]
+      "allowed_overlaps": [
+        "VG110",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1045": {
+    "VG116": {
       "positive": "reset_clean",
       "negative": "reset_polarity_mismatch",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1003": {
+    "VG074": {
       "positive": "scalar_logic_operands",
       "negative": "vector_logic_operands",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1015": {
+    "VG086": {
       "positive": "fsm_clean",
       "negative": "fsm_missing_initial",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1022": {
+    "VG093": {
       "positive": "reset_clean",
       "negative": "reset_as_data",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1023": {
+    "VG094": {
       "positive": "fsm_clean",
       "negative": "fsm_default_hold",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1027": {
+    "VG098": {
       "positive": "fsm_clean",
       "negative": "fsm_unreachable_state",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1029": {
+    "VG100": {
       "positive": "reset_clean",
       "negative": "internal_async_reset",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1033": {
+    "VG104": {
       "positive": "latch_no_feedback",
       "negative": "latch_feedback",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": ["PG1038", "PG1065"]
+      "allowed_overlaps": [
+        "VG109",
+        "VG136",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1039": {
+    "VG110": {
       "positive": "reset_clean",
       "negative": "partial_reset_coverage",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": ["PG1042"]
+      "allowed_overlaps": [
+        "VG113",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1041": {
+    "VG112": {
       "positive": "fsm_clean",
       "negative": "fsm_41_states",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": ["PG1015", "PG1067"]
+      "allowed_overlaps": [
+        "VG086",
+        "VG138",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1047": {
+    "VG118": {
       "positive": "reset_clean",
       "negative": "reset_logic_path",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": ["PG1029"]
+      "allowed_overlaps": [
+        "VG100",
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1051": {
+    "VG122": {
       "positive": "arithmetic_extended",
       "negative": "arithmetic_overflow",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1059": {
+    "VG130": {
       "positive": "array_index_at_upper_bound",
       "negative": "array_index_out_of_range",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1063": {
+    "VG134": {
       "positive": "signed_arithmetic_clean",
       "negative": "signed_unsigned_mix",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
     },
-    "PG1065": {
+    "VG136": {
       "positive": "comb_chain",
       "negative": "comb_feedback",
       "inconclusive": "formatter_parse_error",
-      "allowed_overlaps": []
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119",
+        "VG125"
+      ]
+    },
+    "VG080": {
+      "positive": "canonical_clean",
+      "negative": "vg080_nonindex_arithmetic",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": [
+        "VG099",
+        "VG082",
+        "VG119",
+        "VG125",
+        "VG136",
+        "VG138"
+      ]
+    },
+    "VG082": {
+      "positive": "canonical_clean",
+      "negative": "vg082_comb_reset",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": [
+        "VG100",
+        "VG118",
+        "VG099",
+        "VG080",
+        "VG119",
+        "VG125"
+      ]
+    },
+    "VG099": {
+      "positive": "canonical_clean",
+      "negative": "vg099_inline_reset",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": [
+        "VG082",
+        "VG100",
+        "VG118",
+        "VG080",
+        "VG119",
+        "VG125"
+      ]
+    },
+    "VG119": {
+      "positive": "canonical_clean",
+      "negative": "vg119_high_flip",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG125"
+      ]
+    },
+    "VG125": {
+      "positive": "canonical_clean",
+      "negative": "vg125_literal_width",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": [
+        "VG099",
+        "VG080",
+        "VG082",
+        "VG119"
+      ]
     }
   }
 }

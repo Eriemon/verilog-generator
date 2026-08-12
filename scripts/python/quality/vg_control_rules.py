@@ -1,6 +1,6 @@
-"""实现 always、case、循环和仿真构造相关 RTL PG 门禁。"""
+"""实现 always、case、循环和仿真构造相关 RTL VG 门禁。"""
 
-# future annotations 延后解析 PG 数据模型类型。
+# future annotations 延后解析 VG 数据模型类型。
 from __future__ import annotations
 
 # re 在 formatter AST 可信文本和结构字段内匹配控制构造。
@@ -10,53 +10,162 @@ import re
 from typing import Callable
 
 # facts 提供可信 module 文本和结构化 always、声明事实。
-from .rtl_pg_facts import PgFacts, iter_trusted_modules
+from .vg_semantic_facts import VgFacts, iter_trusted_modules
 
 # models 统一逐门禁状态和定位证据。
-from .rtl_pg_models import PgEvaluation, PgFinding, failed, inconclusive, passed
+from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passed
 
 # 共享位宽事实确保实例连接与表达式规则采用同一受限求值语义。
-from .rtl_pg_value_facts import constant_integer, expression_width, module_parameter_values, module_widths
+from .vg_value_facts import constant_integer, expression_width, module_parameter_values, module_widths
 
 # evaluate_control_gate 把固定编号路由到控制结构规则实现。
-def evaluate_control_gate(str_gate_id: str, facts: PgFacts) -> PgEvaluation:
-    """执行控制结构规则组中的指定 PG 门禁。
+def evaluate_control_gate(str_gate_id: str, facts: VgFacts) -> VgEvaluation:
+    """执行控制结构规则组中的指定 VG 门禁。
 
     参数:
-        str_gate_id: 当前执行的固定 PG 控制门禁编号。
+        str_gate_id: 当前执行的固定 VG 控制门禁编号。
         facts: formatter AST 构建的可信扫描事实。
     返回:
         当前控制结构规则的逐门禁结论。
     """
 
-    # 路由表只包含 rtl_pg_engine 分配给本模块的激活编号。
-    dict_evaluators: dict[str, Callable[[PgFacts], PgEvaluation]] = {  # 固定编号到控制规则函数的映射
-        "PG1008": _comb_blocking,  # 组合块赋值操作符检查
-        "PG1010": _repeat_constant_count,  # repeat 常量次数检查
-        "PG1016": _synth_no_reset_override,  # 综合复位属性覆盖检查
-        "PG1020": _array_index_simple,  # 数组索引形态检查
-        "PG1021": _loop_at_least_once,  # 循环至少执行一次检查
-        "PG1024": _latch_no_gate_primitive,  # 门级锁存器描述检查
-        "PG1026": _connection_port_width_match,  # 实例端口连接位宽检查
-        "PG1037": _case_default_not_xz,  # default 未知态检查
-        "PG1040": _case_has_default,  # case 默认分支完整性检查
-        "PG1043": _synth_no_full_case_attr,  # full_case 综合指令检查
-        "PG1046": _sensitivity_separator,  # 敏感列表分隔符检查
-        "PG1052": _for_constant_bounds,  # for 常量边界检查
-        "PG1053": _initial_forbidden,  # initial 综合边界检查
-        "PG1055": _sensitivity_complete_minimal,  # 组合敏感列表精确性检查
-        "PG1057": _case_kind,  # casex/casez 使用检查
-        "PG1058": _sequential_nonblocking,  # 时序块赋值操作符检查
-        "PG1060": _assignment_delay,  # 赋值延时控制检查
-        "PG1064": _latch_separate_from_comb,  # 锁存与普通组合逻辑分离检查
-        "PG1072": _simulation_system_tasks,  # 仿真系统任务检查
+    # 路由表只包含统一 VG 语义引擎分配给本模块的激活编号。
+    dict_evaluators: dict[str, Callable[[VgFacts], VgEvaluation]] = {  # 固定编号到控制规则函数的映射
+        "VG079": _comb_blocking,  # 组合块赋值操作符检查
+        "VG080": _for_body_nonindex_arithmetic,  # procedural for 循环体非索引算术检查
+        "VG081": _repeat_constant_count,  # repeat 常量次数检查
+        "VG087": _synth_no_reset_override,  # 综合复位属性覆盖检查
+        "VG091": _array_index_simple,  # 数组索引形态检查
+        "VG092": _loop_at_least_once,  # 循环至少执行一次检查
+        "VG095": _latch_no_gate_primitive,  # 门级锁存器描述检查
+        "VG097": _connection_port_width_match,  # 实例端口连接位宽检查
+        "VG108": _case_default_not_xz,  # default 未知态检查
+        "VG111": _case_has_default,  # case 默认分支完整性检查
+        "VG114": _synth_no_full_case_attr,  # full_case 综合指令检查
+        "VG117": _sensitivity_separator,  # 敏感列表分隔符检查
+        "VG123": _for_constant_bounds,  # for 常量边界检查
+        "VG124": _initial_forbidden,  # initial 综合边界检查
+        "VG126": _sensitivity_complete_minimal,  # 组合敏感列表精确性检查
+        "VG128": _case_kind,  # casex/casez 使用检查
+        "VG129": _sequential_nonblocking,  # 时序块赋值操作符检查
+        "VG131": _assignment_delay,  # 赋值延时控制检查
+        "VG135": _latch_separate_from_comb,  # 锁存与普通组合逻辑分离检查
+        "VG143": _simulation_system_tasks,  # 仿真系统任务检查
     }
 
     # engine 已保证编号属于本模块，直接执行唯一对应函数。
     return dict_evaluators[str_gate_id](facts)
 
+# _for_body_nonindex_arithmetic 限制 procedural 循环只更新索引变量。
+def _for_body_nonindex_arithmetic(facts: VgFacts) -> VgEvaluation:
+    """检查 procedural for 循环是否算术更新非索引变量。
+
+    参数:
+        facts: formatter AST 构建的可信扫描事实。
+    返回:
+        非索引算术更新的失败证据或适用性结论。
+    """
+
+    # findings 汇总非循环变量的算术写入证据。
+    list_findings: list[VgFinding] = []  # 非循环变量算术写入证据
+
+    # applicable 区分无循环输入与检查后合规。
+    bool_applicable = False  # 是否发现 procedural for 循环
+
+    # 循环模式同时捕获索引、更新目标和主体。
+    str_loop_pattern = (  # 单层 procedural 循环及其 begin/end 主体
+        r"\bfor\s*\(\s*([A-Za-z_]\w*)\s*=.*?;.*?;\s*"
+        r"([A-Za-z_]\w*)\s*=.*?\)\s*begin(?P<body>.*?)\bend\b"
+    )
+
+    # 赋值模式只覆盖当前规则能可靠判断的简单语句。
+    str_assignment_pattern = r"\b([A-Za-z_]\w*)\s*(?:=|<=)\s*([^;]+);"  # 循环体简单赋值
+
+    # 每个可信 module 独立排除 generate 区域并检查 procedural 循环。
+    for source_facts, _, str_module_text, int_base_line in iter_trusted_modules(facts):
+
+        # generate 区域由 elaboration 复制硬件，不属于 procedural datapath 限制。
+        str_procedural_text = re.sub(  # 移除 elaboration 专用文本后的 module 内容
+            r"\bgenerate\b.*?\bendgenerate\b",  # elaboration 区域边界模式
+            "",  # 删除命中区域而不引入替代文本
+            str_module_text,  # 当前 formatter 可信 module 文本
+            flags=re.DOTALL | re.IGNORECASE,  # 跨行且忽略关键字大小写
+        )
+
+        # 逐个循环核对头部更新目标和循环体赋值。
+        for obj_loop in re.finditer(str_loop_pattern, str_procedural_text, flags=re.DOTALL | re.IGNORECASE):
+
+            # 当前 module 已提供可审查的 procedural 循环。
+            bool_applicable = True  # 已发现规则适用的 procedural 循环
+
+            # 捕获组一是循环索引。
+            str_loop_index = obj_loop.group(1)  # 当前循环索引变量
+
+            # 捕获组二是循环头的更新目标。
+            str_update_target = obj_loop.group(2)  # 当前循环更新目标
+
+            # 循环头必须更新声明的同一索引变量。
+            if str_update_target != str_loop_index:
+
+                # 循环头位置映射回原始 module 的一基行号。
+                int_line = int_base_line + str_procedural_text.count("\n", 0, obj_loop.start())  # 循环头一基行号
+
+                # 记录循环头破坏索引约束的确定证据。
+                list_findings.append(
+                    VgFinding(
+                        source_facts.relative_path,
+                        int_line,
+                        "for 循环头更新了非循环索引变量。",
+                        obj_loop.group(0).split("begin", 1)[0].strip(),
+                        "BLOCKER",
+                    )
+                )
+
+            # 循环体文本限定后续赋值扫描范围。
+            # 命名捕获组提供 formatter 边界内的循环体文本。
+            str_body = obj_loop.group("body")  # formatter 边界内的循环体文本
+
+            # 每条简单赋值独立判断目标角色和算术运算。
+            for obj_assignment in re.finditer(str_assignment_pattern, str_body):
+
+                # 两个捕获组分别表示写入目标和右值表达式。
+                str_lvalue, str_expression = obj_assignment.groups()  # 当前写入目标和右值
+
+                # 索引更新或非算术赋值不属于违规对象。
+                if str_lvalue == str_loop_index or re.search(r"[+\-*/%]", str_expression) is None:
+
+                    # 继续检查同一循环体中的其他赋值。
+                    continue
+
+                # 把循环体内偏移换算为原 module 的一基源码行号。
+                # 循环体相对偏移叠加主体起点得到 module 内位置。
+                int_offset = obj_loop.start("body") + obj_assignment.start()  # 当前赋值的 module 文本偏移
+
+                # module 内位置用于计算稳定的一基行号。
+                int_line = int_base_line + str_procedural_text.count("\n", 0, int_offset)  # 当前赋值一基行号
+
+                # 非索引变量的算术更新作为 warning 证据进入统一报告。
+                list_findings.append(
+                    VgFinding(
+                        source_facts.relative_path,
+                        int_line,
+                        "procedural for 循环体对非循环变量执行了算术更新。",
+                        obj_assignment.group(0).strip(),
+                        "WARNING",
+                    )
+                )
+
+    # 任一确定证据都使本门禁失败。
+    if list_findings:
+
+        # 保留全部循环证据，便于一次修复多个位置。
+        return failed(*list_findings)
+
+    # 没有违规时报告规则是否实际检查过 procedural 循环。
+    return passed(applicable=bool_applicable)
+
 # _synth_no_reset_override 禁止综合指令覆盖 RTL 复位语义。
-def _synth_no_reset_override(facts: PgFacts) -> PgEvaluation:
+def _synth_no_reset_override(facts: VgFacts) -> VgEvaluation:
     """检查综合属性是否显式禁用、移除或覆盖复位行为。
 
     参数:
@@ -66,7 +175,7 @@ def _synth_no_reset_override(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存可信 module 范围内的复位覆盖指令。
-    list_findings: list[PgFinding] = []  # 综合复位覆盖证据
+    list_findings: list[VgFinding] = []  # 综合复位覆盖证据
 
     # 出现复位信号或复位覆盖指令时规则才具有适用性。
     bool_applicable = False  # 当前目标是否包含复位语义
@@ -98,7 +207,7 @@ def _synth_no_reset_override(facts: PgFacts) -> PgEvaluation:
 
             # 记录覆盖指令的文件、行号和原始证据文本。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,
                     int_line,
                     "禁止使用综合工具覆盖 RTL 复位属性。",
@@ -110,7 +219,7 @@ def _synth_no_reset_override(facts: PgFacts) -> PgEvaluation:
     return failed(*list_findings) if list_findings else passed(applicable=bool_applicable)
 
 # _connection_port_width_match 比较已解析子模块端口与父模块连接信号位宽。
-def _connection_port_width_match(facts: PgFacts) -> PgEvaluation:
+def _connection_port_width_match(facts: VgFacts) -> VgEvaluation:
     """检查命名实例连接两侧的静态可知位宽。
 
     参数:
@@ -126,7 +235,7 @@ def _connection_port_width_match(facts: PgFacts) -> PgEvaluation:
     }  # 本轮扫描可见的 module 接口
 
     # findings 收集所有确定的实例端口位宽冲突。
-    list_findings: list[PgFinding] = []  # 实例端口位宽冲突证据
+    list_findings: list[VgFinding] = []  # 实例端口位宽冲突证据
 
     # applicable 区分“没有实例”与“实例已被实际检查”。
     bool_applicable = False  # 是否发现模块实例
@@ -217,7 +326,7 @@ def _connection_port_width_match(facts: PgFacts) -> PgEvaluation:
 
                 # 记录确定的两侧位宽冲突及其连接原文。
                 list_findings.append(
-                    PgFinding(
+                    VgFinding(
                         source_facts.relative_path,
                         int_line,
                         "模块端口与实例连接信号位宽不一致。",
@@ -241,7 +350,7 @@ def _connection_port_width_match(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _synth_no_full_case_attr 禁止以 full_case 指令替代 RTL 默认分支。
-def _synth_no_full_case_attr(facts: PgFacts) -> PgEvaluation:
+def _synth_no_full_case_attr(facts: VgFacts) -> VgEvaluation:
     """检查 formatter 可信 module 中的 full_case 综合指令。
 
     参数:
@@ -251,7 +360,7 @@ def _synth_no_full_case_attr(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存每条 full_case 指令的精确位置。
-    list_findings: list[PgFinding] = []  # full_case 指令证据
+    list_findings: list[VgFinding] = []  # full_case 指令证据
 
     # applicable 只在可信 module 中发现真实 case 结构时置位。
     bool_applicable = False  # full_case 检查是否遇到真实 case 语句
@@ -272,7 +381,7 @@ def _synth_no_full_case_attr(facts: PgFacts) -> PgEvaluation:
 
             # 记录工具指令位置，供失败报告直接指向源码。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,
                     int_line,
                     "避免使用 full_case 综合属性。",
@@ -284,7 +393,7 @@ def _synth_no_full_case_attr(facts: PgFacts) -> PgEvaluation:
     return failed(*list_findings) if list_findings else passed(applicable=bool_applicable)
 
 # _repeat_constant_count 要求 repeat 次数只依赖字面量或声明常量。
-def _repeat_constant_count(facts: PgFacts) -> PgEvaluation:
+def _repeat_constant_count(facts: VgFacts) -> VgEvaluation:
     """检查 repeat 次数表达式是否保持综合期常量。
 
     参数:
@@ -294,7 +403,7 @@ def _repeat_constant_count(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存所有引用运行时变量的 repeat 头部。
-    list_findings: list[PgFinding] = []  # repeat 变量次数证据
+    list_findings: list[VgFinding] = []  # repeat 变量次数证据
 
     # applicable 区分没有 repeat 与全部 repeat 均使用常量。
     bool_applicable = False  # 是否发现 repeat 控制结构
@@ -325,7 +434,7 @@ def _repeat_constant_count(facts: PgFacts) -> PgEvaluation:
 
             # 记录运行时变量参与 repeat 次数计算的确定证据。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,
                     int_line,
                     "repeat 次数必须使用字面量或声明常量。",
@@ -337,7 +446,7 @@ def _repeat_constant_count(facts: PgFacts) -> PgEvaluation:
     return failed(*list_findings) if list_findings else passed(applicable=bool_applicable)
 
 # _array_index_simple 限制方括号索引为单一信号或数字。
-def _array_index_simple(facts: PgFacts) -> PgEvaluation:
+def _array_index_simple(facts: VgFacts) -> VgEvaluation:
     """检查数组或向量索引是否为简单标识符或数字。
 
     参数:
@@ -347,7 +456,7 @@ def _array_index_simple(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存包含算术或组合表达式的索引访问。
-    list_findings: list[PgFinding] = []  # 复杂方括号索引证据
+    list_findings: list[VgFinding] = []  # 复杂方括号索引证据
 
     # applicable 记录可信 module 中是否存在索引访问。
     bool_applicable = False  # 是否发现数组或向量索引
@@ -375,7 +484,7 @@ def _array_index_simple(facts: PgFacts) -> PgEvaluation:
 
             # 记录完整访问片段，便于拆分索引计算与数组读取。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,
                     int_line,
                     "数组索引应使用简单信号，避免直接嵌入表达式。",
@@ -387,7 +496,7 @@ def _array_index_simple(facts: PgFacts) -> PgEvaluation:
     return failed(*list_findings) if list_findings else passed(applicable=bool_applicable)
 
 # _loop_at_least_once 拒绝静态可证明为零次或负次数的 repeat。
-def _loop_at_least_once(facts: PgFacts) -> PgEvaluation:
+def _loop_at_least_once(facts: VgFacts) -> VgEvaluation:
     """检查静态可求值的 repeat 是否至少执行一次。
 
     参数:
@@ -397,7 +506,7 @@ def _loop_at_least_once(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存静态次数小于一的 repeat 语句。
-    list_findings: list[PgFinding] = []  # 不执行 repeat 的定位证据
+    list_findings: list[VgFinding] = []  # 不执行 repeat 的定位证据
 
     # applicable 记录是否发现 repeat 控制结构。
     bool_applicable = False  # 当前目标是否包含 repeat
@@ -423,7 +532,7 @@ def _loop_at_least_once(facts: PgFacts) -> PgEvaluation:
             # 运行时变量或复杂表达式无法证明至少执行一次。
             if int_repeat_count is None:
 
-                # 保留未知状态，由 PG1010 另行报告变量次数建议。
+                # 保留未知状态，由 VG081 另行报告变量次数建议。
                 bool_unknown = True  # 当前 repeat 次数无法静态确认
 
                 # 当前语句不能安全比较次数，继续收集其他确定违规。
@@ -440,7 +549,7 @@ def _loop_at_least_once(facts: PgFacts) -> PgEvaluation:
 
             # 记录可证明不会执行循环主体的 repeat。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,
                     int_line,
                     "循环次数必须静态保证至少执行一次。",
@@ -464,7 +573,7 @@ def _loop_at_least_once(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _latch_no_gate_primitive 识别交叉反馈 nand/nor 门锁存器。
-def _latch_no_gate_primitive(facts: PgFacts) -> PgEvaluation:
+def _latch_no_gate_primitive(facts: VgFacts) -> VgEvaluation:
     """检查是否使用交叉反馈基本门描述锁存器。
 
     参数:
@@ -474,7 +583,7 @@ def _latch_no_gate_primitive(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存成对交叉反馈 nand/nor 原语的位置。
-    list_findings: list[PgFinding] = []  # 基本门锁存器证据
+    list_findings: list[VgFinding] = []  # 基本门锁存器证据
 
     # applicable 同时覆盖门级和过程式锁存描述。
     bool_applicable = False  # 是否发现可识别的锁存结构
@@ -544,7 +653,7 @@ def _latch_no_gate_primitive(facts: PgFacts) -> PgEvaluation:
 
                 # finding 合并两条门语句作为完整反馈证据。
                 list_findings.append(
-                    PgFinding(
+                    VgFinding(
                         source_facts.relative_path,
                         int_line,
                         "禁止使用交叉反馈基本门描述锁存器。",
@@ -556,7 +665,7 @@ def _latch_no_gate_primitive(facts: PgFacts) -> PgEvaluation:
     return failed(*list_findings) if list_findings else passed(applicable=bool_applicable)
 
 # _latch_separate_from_comb 要求锁存赋值块不混入独立组合输出。
-def _latch_separate_from_comb(facts: PgFacts) -> PgEvaluation:
+def _latch_separate_from_comb(facts: VgFacts) -> VgEvaluation:
     """检查锁存过程块是否混合驱动其他组合逻辑目标。
 
     参数:
@@ -566,7 +675,7 @@ def _latch_separate_from_comb(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存同时驱动锁存目标与普通组合目标的 always 块。
-    list_findings: list[PgFinding] = []  # 锁存与组合逻辑混合证据
+    list_findings: list[VgFinding] = []  # 锁存与组合逻辑混合证据
 
     # applicable 只对可识别的不完整 if 锁存结构置位。
     bool_applicable = False  # 是否发现过程式锁存候选
@@ -613,7 +722,7 @@ def _latch_separate_from_comb(facts: PgFacts) -> PgEvaluation:
 
             # 记录整个过程块首行和额外驱动目标。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,
                     int_line,
                     "锁存器应与其他组合逻辑分开描述。",
@@ -625,13 +734,13 @@ def _latch_separate_from_comb(facts: PgFacts) -> PgEvaluation:
     return failed(*list_findings) if list_findings else passed(applicable=bool_applicable)
 
 # _comb_blocking 要求无边沿事件的 always 使用阻塞赋值。
-def _comb_blocking(facts: PgFacts) -> PgEvaluation:
+def _comb_blocking(facts: VgFacts) -> VgEvaluation:
     """检查组合 always 是否错误使用非阻塞赋值。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1008 的确定性执行结论。
+        VG079 的确定性执行结论。
     """
 
     # combinational=True 只选择不含 posedge/negedge 的过程块。
@@ -643,13 +752,13 @@ def _comb_blocking(facts: PgFacts) -> PgEvaluation:
     )
 
 # _sequential_nonblocking 要求边沿触发 always 使用非阻塞赋值。
-def _sequential_nonblocking(facts: PgFacts) -> PgEvaluation:
+def _sequential_nonblocking(facts: VgFacts) -> VgEvaluation:
     """检查时序 always 是否错误使用阻塞赋值。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1058 的确定性执行结论。
+        VG129 的确定性执行结论。
     """
 
     # combinational=False 只选择含 posedge/negedge 的过程块。
@@ -661,17 +770,17 @@ def _sequential_nonblocking(facts: PgFacts) -> PgEvaluation:
     )
 
 # _case_has_default 检查每个 case 块的默认覆盖分支。
-def _case_has_default(facts: PgFacts) -> PgEvaluation:
+def _case_has_default(facts: VgFacts) -> VgEvaluation:
     """检查每个 case 块是否包含 default 分支。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1040 的确定性执行结论。
+        VG111 的确定性执行结论。
     """
 
     # findings 保存所有缺少 default 的独立 case 块。
-    list_findings: list[PgFinding] = []  # 缺失默认分支的定位证据
+    list_findings: list[VgFinding] = []  # 缺失默认分支的定位证据
 
     # applicable 区分没有 case 和所有 case 均完整。
     bool_applicable = False  # default 覆盖规则尚未遇到可审查 case 块
@@ -700,10 +809,10 @@ def _case_has_default(facts: PgFacts) -> PgEvaluation:
 
             # finding 仅保留 case 首行，避免报告包含大段正文。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,  # 缺少默认分支的 RTL 文件
                     int_line,  # case 关键字所在一基行号
-                    "case 语句缺少 default 分支。",  # PG1040 诊断文本
+                    "case 语句缺少 default 分支。",  # VG111 诊断文本
                     obj_match.group(0).splitlines()[0],  # case 首行证据
                 )
             )
@@ -718,13 +827,13 @@ def _case_has_default(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _case_default_not_xz 禁止 default 分支驱动未知态字面量。
-def _case_default_not_xz(facts: PgFacts) -> PgEvaluation:
+def _case_default_not_xz(facts: VgFacts) -> VgEvaluation:
     """检查 case default 分支是否驱动 X/Z。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1037 的确定性执行结论。
+        VG108 的确定性执行结论。
     """
 
     # 模式限定 default 标签之后同一语句内的 X/Z 字面量。
@@ -735,13 +844,13 @@ def _case_default_not_xz(facts: PgFacts) -> PgEvaluation:
     )
 
 # _sensitivity_separator 拒绝竖线形式的敏感列表分隔符。
-def _sensitivity_separator(facts: PgFacts) -> PgEvaluation:
+def _sensitivity_separator(facts: VgFacts) -> VgEvaluation:
     """检查敏感列表是否使用非法竖线分隔符。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1046 的确定性执行结论。
+        VG117 的确定性执行结论。
     """
 
     # 模式同时识别单竖线和逻辑或，合法 or 关键字不会命中。
@@ -752,17 +861,17 @@ def _sensitivity_separator(facts: PgFacts) -> PgEvaluation:
     )
 
 # _for_constant_bounds 检查 for 三段式的可综合常量边界。
-def _for_constant_bounds(facts: PgFacts) -> PgEvaluation:
+def _for_constant_bounds(facts: VgFacts) -> VgEvaluation:
     """检查 for 初始化、边界和更新是否为常量可综合形式。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1052 的确定性执行结论。
+        VG123 的确定性执行结论。
     """
 
     # findings 保存初始化、边界或步进不受支持的循环。
-    list_findings: list[PgFinding] = []  # 不可综合 for 循环证据
+    list_findings: list[VgFinding] = []  # 不可综合 for 循环证据
 
     # applicable 区分没有目标 for 和已完成检查。
     bool_applicable = False  # 是否发现受支持形状的 for 语句
@@ -816,7 +925,7 @@ def _for_constant_bounds(facts: PgFacts) -> PgEvaluation:
 
                 # finding 保留完整 for 头部作为修复证据。
                 list_findings.append(
-                    PgFinding(
+                    VgFinding(
                         source_facts.relative_path,  # 不合规循环所在 RTL 文件
                         int_line,  # 帮助用户定位循环头部的一基行号
                         "for 循环边界或更新不是常量可综合形式。",  # 指示初值、边界或步进需改为常量形式
@@ -834,39 +943,39 @@ def _for_constant_bounds(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _initial_forbidden 禁止设计 RTL 中的 initial 仿真构造。
-def _initial_forbidden(facts: PgFacts) -> PgEvaluation:
+def _initial_forbidden(facts: VgFacts) -> VgEvaluation:
     """检查设计 RTL 是否包含 initial 块。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1053 的确定性执行结论。
+        VG124 的确定性执行结论。
     """
 
     # 单词边界避免把 initial 当作标识符子串。
     return _trusted_pattern_gate(facts, r"\binitial\b", "设计 RTL 中出现 initial 块。")
 
 # _case_kind 禁止会放宽未知态匹配的 casex 和 casez。
-def _case_kind(facts: PgFacts) -> PgEvaluation:
+def _case_kind(facts: VgFacts) -> VgEvaluation:
     """检查设计 RTL 是否使用 casex 或 casez。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1057 的确定性执行结论。
+        VG128 的确定性执行结论。
     """
 
     # case 本身不命中，只有带 x/z 后缀的形式触发。
     return _trusted_pattern_gate(facts, r"\bcase[xz]\s*\(", "设计 RTL 使用了 casex/casez。")
 
 # _assignment_delay 禁止连续和过程赋值中的延时控制。
-def _assignment_delay(facts: PgFacts) -> PgEvaluation:
+def _assignment_delay(facts: VgFacts) -> VgEvaluation:
     """检查赋值语句是否包含延时控制。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1060 的确定性执行结论。
+        VG131 的确定性执行结论。
     """
 
     # 模式覆盖 assign #delay 和赋值目标前的过程延时。
@@ -877,30 +986,30 @@ def _assignment_delay(facts: PgFacts) -> PgEvaluation:
     )
 
 # _simulation_system_tasks 禁止设计 RTL 中的典型仿真系统任务。
-def _simulation_system_tasks(facts: PgFacts) -> PgEvaluation:
+def _simulation_system_tasks(facts: VgFacts) -> VgEvaluation:
     """检查设计 RTL 是否包含仿真系统任务。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1072 的确定性执行结论。
+        VG143 的确定性执行结论。
     """
 
     # 第一阶段固定覆盖 display、finish 和 stop 三类任务。
     return _trusted_pattern_gate(facts, r"\$(?:display|finish|stop)\b", "设计 RTL 中出现仿真系统任务。")
 
 # _sensitivity_complete_minimal 比较显式列表与正文真实读取集合。
-def _sensitivity_complete_minimal(facts: PgFacts) -> PgEvaluation:
+def _sensitivity_complete_minimal(facts: VgFacts) -> VgEvaluation:
     """检查显式组合敏感列表是否完整且无冗余。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1055 的通过、失败或不确定结论。
+        VG126 的通过、失败或不确定结论。
     """
 
     # findings 保存敏感列表集合与读取集合不相等的过程块。
-    list_findings: list[PgFinding] = []  # 组合敏感列表遗漏或冗余证据
+    list_findings: list[VgFinding] = []  # 组合敏感列表遗漏或冗余证据
 
     # applicable 只对显式且非边沿触发的 always 生效。
     bool_applicable = False  # 是否发现需要集合比较的组合 always
@@ -976,7 +1085,7 @@ def _sensitivity_complete_minimal(facts: PgFacts) -> PgEvaluation:
 
                 # finding 让用户直接看到遗漏和冗余项。
                 list_findings.append(
-                    PgFinding(
+                    VgFinding(
                         source_facts.relative_path,  # 敏感列表违规所在 RTL 文件
                         int_line,  # always 头部的一基行号
                         "组合敏感列表存在遗漏或冗余。",  # 提示显式列表必须精确等于正文读取集合
@@ -995,12 +1104,12 @@ def _sensitivity_complete_minimal(facts: PgFacts) -> PgEvaluation:
 
 # _always_assignment_gate 根据过程块类型检查禁止的赋值操作符。
 def _always_assignment_gate(
-    facts: PgFacts,
+    facts: VgFacts,
     *,
     combinational: bool,
     forbidden_operator: str,
     message: str,
-) -> PgEvaluation:
+) -> VgEvaluation:
     """在 formatter AST 已识别的 always 范围内检查赋值操作符。
 
     参数:
@@ -1009,11 +1118,11 @@ def _always_assignment_gate(
         forbidden_operator: 当前过程块类型禁止的赋值操作符。
         message: 命中时写入 finding 的诊断文本。
     返回:
-        PG1008 或 PG1058 的确定性执行结论。
+        VG079 或 VG129 的确定性执行结论。
     """
 
     # findings 保存过程块内每个禁止操作符使用点。
-    list_findings: list[PgFinding] = []  # 赋值操作符违规证据
+    list_findings: list[VgFinding] = []  # 赋值操作符违规证据
 
     # applicable 区分没有目标过程块和目标块全部合规。
     bool_applicable = False  # 是否发现当前类型的 always 过程块
@@ -1052,8 +1161,8 @@ def _always_assignment_gate(
             # 非阻塞和阻塞赋值需要不同的负向断言边界。
             str_pattern = (  # 当前规则禁止的赋值操作符模式
                 r"\b\w+(?:\[[^]]+\])?\s*<=\s*"  # 组合块禁止的非阻塞赋值模式
-                if forbidden_operator == "<="  # PG1008 选择非阻塞操作符
-                else r"\b\w+(?:\[[^]]+\])?\s*(?<![<>=!])=(?!=)"  # PG1058 选择阻塞赋值模式
+                if forbidden_operator == "<="  # VG079 选择非阻塞操作符
+                else r"\b\w+(?:\[[^]]+\])?\s*(?<![<>=!])=(?!=)"  # VG129 选择阻塞赋值模式
             )
 
             # 每个禁止操作符使用点都形成独立 finding。
@@ -1064,7 +1173,7 @@ def _always_assignment_gate(
 
                 # finding 保留目标和操作符片段。
                 list_findings.append(
-                    PgFinding(
+                    VgFinding(
                         source_facts.relative_path,  # 操作符违规所在 RTL 文件
                         int_line,  # 违规赋值的一基行号
                         message,  # 组合或时序规则诊断文本
@@ -1082,7 +1191,7 @@ def _always_assignment_gate(
     return passed(applicable=bool_applicable)
 
 # _trusted_pattern_gate 在可信 module 边界内执行文本型控制规则。
-def _trusted_pattern_gate(facts: PgFacts, str_pattern: str, str_message: str) -> PgEvaluation:
+def _trusted_pattern_gate(facts: VgFacts, str_pattern: str, str_message: str) -> VgEvaluation:
     """扫描指定控制构造并生成精确行号证据。
 
     参数:
@@ -1094,7 +1203,7 @@ def _trusted_pattern_gate(facts: PgFacts, str_pattern: str, str_message: str) ->
     """
 
     # findings 保存可信 module 中的全部正则命中。
-    list_findings: list[PgFinding] = []  # 当前文本规则的违规证据
+    list_findings: list[VgFinding] = []  # 当前文本规则的违规证据
 
     # module 文本排除 formatter 无法确认的顶层噪声。
     for source_facts, _, str_module_text, int_base_line in iter_trusted_modules(facts):
@@ -1107,7 +1216,7 @@ def _trusted_pattern_gate(facts: PgFacts, str_pattern: str, str_message: str) ->
 
             # finding 保留原始匹配片段便于修复。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,  # 违规控制构造所在 RTL 文件
                     int_line,  # 当前命中的一基源码行号
                     str_message,  # 当前固定规则的诊断文本
@@ -1125,7 +1234,7 @@ def _trusted_pattern_gate(facts: PgFacts, str_pattern: str, str_message: str) ->
     return passed(applicable=False)
 
 # _constant_names 汇总 for 边界允许引用的常量符号。
-def _constant_names(facts: PgFacts) -> set[str]:
+def _constant_names(facts: VgFacts) -> set[str]:
     """收集 formatter AST 已识别的 parameter 与 localparam 名称。
 
     参数:

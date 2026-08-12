@@ -36,11 +36,11 @@ from scripts.python.facade.verilog_api import (
 # 本地 runtime helper 提供固定 skill 根、模板摘要和 lint 证据。
 from scripts.python.workflow.config import skill_root
 from scripts.python.workflow.pattern_templates import summarize_pattern_templates
-from scripts.python.workflow.rtl_md_constraints import (
-    load_rtl_md_constraints,
+from scripts.python.workflow.verilog_gate_catalog import (
+    load_verilog_quality_gates,
     summarize_constraints_for_prompt,
 )
-from scripts.python.quality.rtl_pg_engine import run_rtl_pg_gate
+from scripts.python.quality.quality_gate import run_verilog_quality_gate
 from scripts.python.workflow.workspace import write_json
 
 # case 基础工具负责最核心的检查计算与文件复制。
@@ -623,28 +623,35 @@ def _evaluate_rtl_md_constraint_case(
     # 生成 lint 所需的夹具规格描述。
     dict_spec = _rtl_md_fixture_spec()  # lint 所需的 RTL Markdown 夹具规格
 
-    # 对违规夹具运行固定 PG 门禁，收集真实失败的门禁编号。
-    dict_blocked_report = run_rtl_pg_gate(path_generated, spec=dict_spec)  # 违规 fixture PG 报告
+    # 对违规夹具运行固定 VG 门禁，收集真实失败的门禁编号。
+    dict_blocked_report = run_verilog_quality_gate(path_generated, spec=dict_spec).to_dict()  # 违规 fixture VG 报告
 
     # failed 状态代表规则确认命中；error 与 inconclusive 不能伪装成规则命中。
-    set_blocked_codes = {  # 违规 fixture 中状态为 failed 的固定 PG 编号
-        str(dict_result["gate_id"])  # 当前真实失败结果对应的固定 PG 编号
-        for dict_result in dict_blocked_report["pg_gate_results"]  # 逐条读取违规夹具结果
+    set_blocked_codes = {  # 违规 fixture 中状态为 failed 的固定 VG 编号
+        str(dict_result["gate_id"])  # 当前真实失败结果对应的固定 VG 编号
+        for dict_result in dict_blocked_report["vg_rule_results"]  # 逐条读取违规夹具结果
         if dict_result["status"] == "failed"  # 仅采纳规则确定命中的失败状态
     }
 
-    # 对 clean 夹具运行同一 PG 门禁，确认正常结构不会被误杀。
-    dict_clean_report = run_rtl_pg_gate(path_clean_root, spec=dict_spec)  # 合规 fixture PG 报告
+    # 对 clean 夹具运行同一 VG 门禁，确认正常结构不会被误杀。
+    dict_clean_report = run_verilog_quality_gate(path_clean_root, spec=dict_spec).to_dict()  # 合规 fixture VG 报告
+
+    # effectiveness clean 条件只评价迁移语义段，原生可读性规则由独立质量回归覆盖。
+    bool_clean_semantic_ready = all(  # VG072-VG143 是否全部确定通过
+        dict_result["status"] == "passed"  # 当前语义规则是否确定通过
+        for dict_result in dict_clean_report["vg_rule_results"]  # 遍历统一逐规则结果
+        if int(str(dict_result["gate_id"])[2:]) >= 72  # 只评价迁移语义段
+    )
 
     # 读取约束目录，核对规则总量和规则 id。
-    dict_catalog = load_rtl_md_constraints()  # RTL Markdown 约束目录
+    dict_catalog = load_verilog_quality_gates()  # 统一 Verilog VG 目录
 
     # 读取注入 prompt 的约束摘要文本。
     str_prompt_summary = summarize_constraints_for_prompt()  # prompt 中注入的约束摘要
 
     # 把 catalog 中登记的规则 id 拉平成集合，后面用于 prompt 覆盖检查。
     set_catalog_rule_ids = {  # 约束目录中声明的全部规则 id 集合
-        str(dict_rule["gate_id"])  # 目录中单条规则的固定 PG 编号
+        str(dict_rule["gate_id"])  # 目录中单条规则的固定 VG 编号
         for dict_rule in dict_catalog["rules"]  # 逐条读取 catalog 规则记录里的 id
     }
 
@@ -664,7 +671,7 @@ def _evaluate_rtl_md_constraint_case(
     if dict_expectations.get("clean_all_active_passed"):
 
         # 合规 fixture 不应产生任何静态问题。
-        dict_checks["clean_all_active_passed"] = dict_clean_report["delivery_ready"]  # clean fixture 是否通过全部激活门禁
+        dict_checks["clean_all_active_passed"] = bool_clean_semantic_ready  # clean fixture 是否通过全部语义门禁
 
     # 可选检查确认目录总数与 eval 期望一致。
     if dict_expectations.get("catalog_total_rules"):
@@ -685,12 +692,12 @@ def _evaluate_rtl_md_constraint_case(
             for str_rule_id in set_catalog_rule_ids  # 逐条遍历 catalog 中声明的规则 id
         )
 
-    # 可选检查确认报告中的失败项只使用固定 PG 编号。
-    if dict_expectations.get("failed_results_use_pg_ids"):
+    # 可选检查确认报告中的失败项只使用固定 VG 编号。
+    if dict_expectations.get("failed_results_use_vg_ids"):
 
         # 固定编号格式防止旧 lint code 回流到公开报告。
-        dict_checks["failed_results_use_pg_ids"] = all(  # 失败结果是否全部使用 PG10xx 编号
-            re.fullmatch(r"PG10\d{2}", str_code) is not None  # 当前失败编号是否符合固定 PG 格式
+        dict_checks["failed_results_use_vg_ids"] = all(  # 失败结果是否全部使用 PG10xx 编号
+            re.fullmatch(r"VG\d{3}", str_code) is not None  # 当前失败编号是否符合统一 VG 格式
             for str_code in set_blocked_codes  # 逐条核对真实失败编号
         )
 
@@ -700,7 +707,7 @@ def _evaluate_rtl_md_constraint_case(
         # 默认至少要求违规 fixture 被拦截且 clean fixture 放行。
         dict_checks = {
             "blocked_any": bool(set_blocked_codes),  # bad fixture 是否至少命中一条阻断规则
-            "clean_all_active_passed": dict_clean_report["delivery_ready"],  # clean fixture 是否通过激活门禁
+            "clean_all_active_passed": bool_clean_semantic_ready,  # clean fixture 是否通过语义门禁
         }
 
     # 约束 case 的 with_skill 需要附加 lint 证据字段。
@@ -710,9 +717,9 @@ def _evaluate_rtl_md_constraint_case(
         dict_checks,
         with_skill_extra={
             "failed_gate_ids": sorted(set_blocked_codes),
-            "clean_delivery_ready": dict_clean_report["delivery_ready"],
+            "clean_delivery_ready": bool_clean_semantic_ready,
             "catalog_total_rules": dict_catalog.get("total_rules"),
-            "pg_gate_summary": dict_blocked_report.get("pg_gate_summary"),
+            "vg_rule_summary": dict_blocked_report.get("vg_rule_summary"),
         },
     )
 
@@ -1911,5 +1918,5 @@ CASE_EVALUATORS: dict[str, CaseEvaluator] = {  # 供 _evaluate_case 按 kind 查
     "verify_existing_rtl_repair_regression": _evaluate_verify_existing_rtl_repair_case,  # 核对 RTL repair 的应用边界
     "verify_existing_rtl_patch_library_regression": _evaluate_verify_existing_rtl_patch_library_case,  # 核对 patch-library 分类路径
     "routing_regression": _evaluate_routing_case,  # 核对只读 route 决策字段
-    "rtl_pg_gate_regression": _evaluate_rtl_md_constraint_case,  # 核对固定 RTL PG 门禁注入与执行
+    "vg_semantic_gate_regression": _evaluate_rtl_md_constraint_case,  # 核对固定 RTL VG 门禁注入与执行
 }  # kind 到具体 evaluator 的查找表

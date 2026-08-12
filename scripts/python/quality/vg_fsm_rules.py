@@ -1,6 +1,6 @@
-"""实现 FSM 初态、默认恢复、可达性和状态数量 RTL PG 门禁。"""
+"""实现 FSM 初态、默认恢复、可达性和状态数量 RTL VG 门禁。"""
 
-# future annotations 延后解析 PG 数据模型类型。
+# future annotations 延后解析 VG 数据模型类型。
 from __future__ import annotations
 
 # re 在 formatter 确认的 module 文本内提取状态机结构。
@@ -13,35 +13,149 @@ from collections import deque
 from typing import Callable
 
 # facts 提供可信 module 文本和稳定的证据文件位置。
-from .rtl_pg_facts import PgFacts, PgSourceFacts, iter_trusted_modules
+from .vg_semantic_facts import VgFacts, VgSourceFacts, iter_trusted_modules
 
 # models 统一逐门禁状态和定位证据。
-from .rtl_pg_models import PgEvaluation, PgFinding, failed, inconclusive, passed
+from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passed
 
 # evaluate_fsm_gate 把固定编号路由到 FSM 规则实现。
-def evaluate_fsm_gate(str_gate_id: str, facts: PgFacts) -> PgEvaluation:
-    """执行 FSM 规则组中的指定 PG 门禁。
+def evaluate_fsm_gate(str_gate_id: str, facts: VgFacts) -> VgEvaluation:
+    """执行 FSM 规则组中的指定 VG 门禁。
 
     参数:
-        str_gate_id: 当前执行的固定 PG FSM 门禁编号。
+        str_gate_id: 当前执行的固定 VG FSM 门禁编号。
         facts: formatter AST 构建的可信扫描事实。
     返回:
         当前 FSM 规则的逐门禁结论。
     """
 
-    # 路由表只包含 rtl_pg_engine 分配给本模块的激活编号。
-    dict_evaluators: dict[str, Callable[[PgFacts], PgEvaluation]] = {  # 固定编号到 FSM 规则函数的映射
-        "PG1015": _fsm_has_initial_state,  # 复位初态检查
-        "PG1023": _fsm_default_reset_regs,  # 非法编码恢复检查
-        "PG1027": _fsm_no_dead_unreachable,  # 状态可达性检查
-        "PG1041": _fsm_limit_state_count,  # 状态数量上限检查
+    # 路由表只包含统一 VG 语义引擎分配给本模块的激活编号。
+    dict_evaluators: dict[str, Callable[[VgFacts], VgEvaluation]] = {  # 固定编号到 FSM 规则函数的映射
+        "VG086": _fsm_has_initial_state,  # 复位初态检查
+        "VG094": _fsm_default_reset_regs,  # 非法编码恢复检查
+        "VG098": _fsm_no_dead_unreachable,  # 状态可达性检查
+        "VG112": _fsm_limit_state_count,  # 状态数量上限检查
+        "VG119": _fsm_min_transition_flips,  # 状态转换翻转位数检查
     }
 
     # engine 已保证编号属于本模块，直接执行唯一对应函数。
     return dict_evaluators[str_gate_id](facts)
 
+# _fsm_min_transition_flips 检查首个可证明状态转换的编码翻转量。
+def _fsm_min_transition_flips(facts: VgFacts) -> VgEvaluation:
+    """检查可解析 FSM 转换是否采用低翻转编码。
+
+    参数:
+        facts: formatter AST 构建的可信扫描事实。
+    返回:
+        高翻转转换的失败证据或适用性结论。
+    """
+
+    # findings 汇总高翻转状态转换证据。
+    list_findings: list[VgFinding] = []  # 高翻转状态转换证据
+
+    # applicable 区分无 FSM 输入与检查后合规。
+    bool_applicable = False  # 是否识别出至少两个定宽状态常量
+
+    # 状态模式捕获名称、声明宽度和二进制编码。
+    str_state_pattern = (  # 状态名、声明宽度和二进制编码捕获模式
+        r"\b(?:localparam|parameter)\s*(?:\[[^\]]+\]\s*)?"
+        r"([A-Za-z_]\w*)\s*=\s*(\d+)'[bB]([01_]+)"
+    )
+
+    # 每个可信 module 独立构造状态常量和赋值目标序列。
+    for source_facts, _, str_module_text, int_base_line in iter_trusted_modules(facts):
+
+        # 当前 module 的状态常量形成局部编码表。
+        dict_states = {  # 状态名称到无分隔符二进制编码的映射
+            obj_match.group(1): obj_match.group(3).replace("_", "")  # 状态名对应规范编码
+            for obj_match in re.finditer(str_state_pattern, str_module_text)  # 遍历当前 module 状态声明
+        }
+
+        # 少于两个状态时不存在可比较转换。
+        if len(dict_states) < 2:
+
+            # 继续检查下一个可信 module。
+            continue
+
+        # 只保留状态寄存器非阻塞赋值中的声明状态名称。
+        # 先提取所有状态寄存器的非阻塞赋值目标。
+        list_destinations = re.findall(  # 状态寄存器赋值目标序列
+            r"\bstate\w*\s*<=\s*([A-Za-z_]\w*)\s*;",  # 状态寄存器赋值模式
+            str_module_text,  # 当前 formatter 可信 module 文本
+            flags=re.IGNORECASE,  # 状态寄存器命名不区分大小写
+        )
+
+        # 只保留已在当前 module 声明的确定状态名称。
+        list_destinations = [str_name for str_name in list_destinations if str_name in dict_states]  # 已声明状态序列
+
+        # 需要至少两个不同目标才能形成可比较转换。
+        if len(set(list_destinations)) < 2:
+
+            # 当前 module 没有足够的确定转换证据。
+            continue
+
+        # 当前批次以稳定出现顺序选择首个可证明转换。
+        # 已发现可比较状态转换。
+        bool_applicable = True  # 当前规则具有实际检查对象
+
+        # 稳定序列的首个状态作为源状态。
+        str_source_state = list_destinations[0]  # 首个转换的源状态
+
+        # 稳定序列的第二个状态作为目标状态。
+        str_destination_state = list_destinations[1]  # 首个转换的目标状态
+
+        # 查询源状态的二进制编码。
+        str_source_bits = dict_states[str_source_state]  # 源状态二进制编码
+
+        # 查询目标状态的二进制编码。
+        str_destination_bits = dict_states[str_destination_state]  # 目标状态二进制编码
+
+        # 同位置编码比较得到翻转总数。
+        int_flips = sum(  # 同位置编码比特的翻转总数
+            str_left != str_right  # 当前编码位置是否发生翻转
+            for str_left, str_right in zip(str_source_bits, str_destination_bits)  # 对齐比较两侧编码
+        )
+
+        # 全部状态只有一个有效位时采用 one-hot 翻转上限。
+        bool_one_hot = all(str_bits.count("1") == 1 for str_bits in dict_states.values())  # 是否为 one-hot 编码
+
+        # one-hot 转换允许一位撤销和一位置位，其他编码只允许一位变化。
+        int_allowed_flips = 2 if bool_one_hot else 1  # 当前编码允许的最大翻转数
+
+        # 只有同宽编码才能执行确定的逐位比较。
+        if len(str_source_bits) == len(str_destination_bits) and int_flips > int_allowed_flips:
+
+            # 目标状态首次出现位置用于生成稳定定位。
+            obj_match = re.search(rf"\b{re.escape(str_destination_state)}\b", str_module_text)  # 目标状态首个位置
+
+            # 缺失匹配时保守回退到 module 起点。
+            int_match_offset = obj_match.start() if obj_match else 0  # 缺失定位时回退 module 起点
+
+            # 文本偏移换算为一基文件行号。
+            int_line = int_base_line + str_module_text.count("\n", 0, int_match_offset)  # 转换证据一基行号
+
+            # 报告确定超出编码策略的状态转换。
+            list_findings.append(
+                VgFinding(
+                    source_facts.relative_path,
+                    int_line,
+                    f"状态转换同时翻转 {int_flips} 位，超过当前编码允许的 {int_allowed_flips} 位。",
+                    f"{str_source_state}->{str_destination_state}",
+                )
+            )
+
+    # 任一高翻转转换都使本门禁失败。
+    if list_findings:
+
+        # 返回全部高翻转状态转换证据。
+        return failed(*list_findings)
+
+    # 没有违规时报告规则是否实际比较过状态转换。
+    return passed(applicable=bool_applicable)
+
 # _fsm_has_initial_state 验证复位路径上的常量状态入口。
-def _fsm_has_initial_state(facts: PgFacts) -> PgEvaluation:
+def _fsm_has_initial_state(facts: VgFacts) -> VgEvaluation:
     """检查状态寄存器是否在复位路径进入声明的常量初态。
 
     参数:
@@ -51,7 +165,7 @@ def _fsm_has_initial_state(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存缺少可信复位初态的 FSM 证据。
-    list_findings: list[PgFinding] = []  # 当前规则的违规证据
+    list_findings: list[VgFinding] = []  # 当前规则的违规证据
 
     # 出现 ST_* 常量时规则才具有适用性。
     bool_applicable = False  # 当前目标是否包含可识别 FSM
@@ -102,7 +216,7 @@ def _fsm_has_initial_state(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _fsm_default_reset_regs 验证非法编码的确定恢复路径。
-def _fsm_default_reset_regs(facts: PgFacts) -> PgEvaluation:
+def _fsm_default_reset_regs(facts: VgFacts) -> VgEvaluation:
     """检查状态 case 的 default 分支是否恢复到确定状态。
 
     参数:
@@ -112,7 +226,7 @@ def _fsm_default_reset_regs(facts: PgFacts) -> PgEvaluation:
     """
 
     # 独立列表汇总 default 保持未知态或缺失分支的诊断。
-    list_findings: list[PgFinding] = []  # 默认恢复规则的违规证据
+    list_findings: list[VgFinding] = []  # 默认恢复规则的违规证据
 
     # default 检查只对包含状态声明的 module 生效。
     bool_applicable = False  # 是否发现默认恢复检查对象
@@ -175,7 +289,7 @@ def _fsm_default_reset_regs(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _fsm_no_dead_unreachable 验证复位初态到全部状态的转移闭包。
-def _fsm_no_dead_unreachable(facts: PgFacts) -> PgEvaluation:
+def _fsm_no_dead_unreachable(facts: VgFacts) -> VgEvaluation:
     """检查所有声明状态是否能从复位初态到达并具有转移。
 
     参数:
@@ -185,7 +299,7 @@ def _fsm_no_dead_unreachable(facts: PgFacts) -> PgEvaluation:
     """
 
     # 图诊断列表同时容纳不可达节点和缺少后继边的节点。
-    list_findings: list[PgFinding] = []  # 状态图规则的违规证据
+    list_findings: list[VgFinding] = []  # 状态图规则的违规证据
 
     # 可达性规则只在发现状态节点时进入适用态。
     bool_applicable = False  # 是否发现可建立图的 FSM 候选
@@ -258,7 +372,7 @@ def _fsm_no_dead_unreachable(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _fsm_limit_state_count 验证单个状态机的规模边界。
-def _fsm_limit_state_count(facts: PgFacts) -> PgEvaluation:
+def _fsm_limit_state_count(facts: VgFacts) -> VgEvaluation:
     """检查单个 FSM 的声明状态数量不超过四十。
 
     参数:
@@ -268,7 +382,7 @@ def _fsm_limit_state_count(facts: PgFacts) -> PgEvaluation:
     """
 
     # 规模诊断只保存状态数量越过边界的 module。
-    list_findings: list[PgFinding] = []  # 状态规模规则的违规证据
+    list_findings: list[VgFinding] = []  # 状态规模规则的违规证据
 
     # 数量规则只统计明确声明的状态常量。
     bool_applicable = False  # 是否发现可计数的状态集合
@@ -523,13 +637,13 @@ def _reachable_states(str_initial_state: str, dict_transitions: dict[str, set[st
 
 # _finding 统一 FSM 规则的路径和行号定位策略。
 def _finding(
-    source_facts: PgSourceFacts,
+    source_facts: VgSourceFacts,
     str_module_text: str,
     int_base_line: int,
     str_token: str,
     str_message: str,
     str_evidence: str,
-) -> PgFinding:
+) -> VgFinding:
     """构造绑定到 module 内首个目标词元的稳定证据。
 
     参数:
@@ -550,7 +664,7 @@ def _finding(
     int_line = int_base_line + str_module_text[: max(0, int_offset)].count("\n")  # 证据的一基文件行号
 
     # 返回统一的不可变证据模型。
-    return PgFinding(
+    return VgFinding(
         source_facts.relative_path,
         int_line,
         str_message,

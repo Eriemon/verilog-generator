@@ -1,6 +1,6 @@
-"""实现锁存环、数组索引边界和组合反馈 RTL PG 门禁。"""
+"""实现锁存环、数组索引边界和组合反馈 RTL VG 门禁。"""
 
-# future annotations 延后解析 PG 数据模型类型。
+# future annotations 延后解析 VG 数据模型类型。
 from __future__ import annotations
 
 # re 在 formatter 确认的 module 文本内提取结构关系。
@@ -10,10 +10,10 @@ import re
 from typing import Callable, Iterator
 
 # facts 提供可信 module 文本和稳定证据路径。
-from .rtl_pg_facts import PgFacts, PgSourceFacts, iter_trusted_modules
+from .vg_semantic_facts import VgFacts, VgSourceFacts, iter_trusted_modules
 
 # models 统一逐门禁状态和定位证据。
-from .rtl_pg_models import PgEvaluation, PgFinding, failed, passed
+from .vg_rule_models import VgEvaluation, VgFinding, failed, passed
 
 # Verilog 关键字不得进入组合依赖图节点集合。
 VERILOG_KEYWORDS = frozenset(  # 右值标识符过滤集合
@@ -30,28 +30,28 @@ VERILOG_KEYWORDS = frozenset(  # 右值标识符过滤集合
 ELSE_PATTERN = r"\b" + "else" + r"\b"  # 条件备用分支匹配模式
 
 # evaluate_structure_gate 把固定编号路由到结构规则实现。
-def evaluate_structure_gate(str_gate_id: str, facts: PgFacts) -> PgEvaluation:
-    """执行组合结构规则组中的指定 PG 门禁。
+def evaluate_structure_gate(str_gate_id: str, facts: VgFacts) -> VgEvaluation:
+    """执行组合结构规则组中的指定 VG 门禁。
 
     参数:
-        str_gate_id: 当前执行的固定 PG 结构门禁编号。
+        str_gate_id: 当前执行的固定 VG 结构门禁编号。
         facts: formatter AST 构建的可信扫描事实。
     返回:
         当前结构规则的逐门禁结论。
     """
 
-    # 路由表只包含 rtl_pg_engine 分配给本模块的激活编号。
-    dict_evaluators: dict[str, Callable[[PgFacts], PgEvaluation]] = {  # 固定编号到结构规则函数的映射
-        "PG1033": _latch_no_comb_loop,  # 锁存器组合环检查
-        "PG1059": _array_index_in_range,  # 常量数组索引边界检查
-        "PG1065": _comb_no_feedback,  # 普通组合反馈检查
+    # 路由表只包含统一 VG 语义引擎分配给本模块的激活编号。
+    dict_evaluators: dict[str, Callable[[VgFacts], VgEvaluation]] = {  # 固定编号到结构规则函数的映射
+        "VG104": _latch_no_comb_loop,  # 锁存器组合环检查
+        "VG130": _array_index_in_range,  # 常量数组索引边界检查
+        "VG136": _comb_no_feedback,  # 普通组合反馈检查
     }
 
     # engine 已保证编号属于本模块，直接执行唯一对应函数。
     return dict_evaluators[str_gate_id](facts)
 
 # _latch_no_comb_loop 检查锁存目标是否落入组合依赖环。
-def _latch_no_comb_loop(facts: PgFacts) -> PgEvaluation:
+def _latch_no_comb_loop(facts: VgFacts) -> VgEvaluation:
     """检查含锁存语义的组合目标是否参与反馈环。
 
     参数:
@@ -61,7 +61,7 @@ def _latch_no_comb_loop(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存位于组合环中的锁存目标。
-    list_findings: list[PgFinding] = []  # 锁存组合环证据
+    list_findings: list[VgFinding] = []  # 锁存组合环证据
 
     # applicable 区分无锁存候选与已检查锁存结构。
     bool_applicable = False  # 是否发现条件赋值锁存候选
@@ -106,7 +106,7 @@ def _latch_no_comb_loop(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _array_index_in_range 检查常量数组访问是否落在声明边界内。
-def _array_index_in_range(facts: PgFacts) -> PgEvaluation:
+def _array_index_in_range(facts: VgFacts) -> VgEvaluation:
     """检查数组的常量索引是否超出声明范围。
 
     参数:
@@ -116,7 +116,7 @@ def _array_index_in_range(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存每个确定越界的常量访问。
-    list_findings: list[PgFinding] = []  # 数组常量越界证据
+    list_findings: list[VgFinding] = []  # 数组常量越界证据
 
     # applicable 区分无数组声明与已检查数组边界。
     bool_applicable = False  # 是否发现可解析的数组声明
@@ -151,11 +151,11 @@ def _array_index_in_range(facts: PgFacts) -> PgEvaluation:
 
 # _array_access_findings 为单个 module 生成常量索引越界证据。
 def _array_access_findings(
-    source_facts: PgSourceFacts,
+    source_facts: VgSourceFacts,
     str_module_text: str,
     int_base_line: int,
     dict_ranges: dict[str, tuple[int, int]],
-) -> list[PgFinding]:
+) -> list[VgFinding]:
     """检查一个 module 中全部已声明数组的常量访问。
 
     参数:
@@ -168,7 +168,7 @@ def _array_access_findings(
     """
 
     # 局部列表只汇总当前 module 的数组边界违规。
-    list_findings: list[PgFinding] = []  # 当前 module 的越界访问证据
+    list_findings: list[VgFinding] = []  # 当前 module 的越界访问证据
 
     # 每个数组分别检查全部十进制常量访问。
     for str_name, tuple_bounds in dict_ranges.items():
@@ -202,7 +202,7 @@ def _array_access_findings(
 
             # 每次确定越界形成独立 finding。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,
                     int_line,
                     "数组常量索引超出声明范围。",
@@ -214,7 +214,7 @@ def _array_access_findings(
     return list_findings
 
 # _comb_no_feedback 检查连续和组合过程赋值形成的依赖环。
-def _comb_no_feedback(facts: PgFacts) -> PgEvaluation:
+def _comb_no_feedback(facts: VgFacts) -> VgEvaluation:
     """检查组合赋值依赖图中是否存在反馈环。
 
     参数:
@@ -224,7 +224,7 @@ def _comb_no_feedback(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存每个 module 的稳定首个反馈节点。
-    list_findings: list[PgFinding] = []  # 组合反馈环证据
+    list_findings: list[VgFinding] = []  # 组合反馈环证据
 
     # applicable 区分无组合赋值与已检查依赖图。
     bool_applicable = False  # 是否发现组合依赖边
@@ -529,13 +529,13 @@ def _path_returns_to_start(str_start: str, dict_dependencies: dict[str, set[str]
 
 # _finding 统一结构规则的路径和行号定位策略。
 def _finding(
-    source_facts: PgSourceFacts,
+    source_facts: VgSourceFacts,
     str_module_text: str,
     int_base_line: int,
     str_token: str,
     str_message: str,
     str_evidence: str,
-) -> PgFinding:
+) -> VgFinding:
     """构造绑定到 module 内首个目标词元的稳定证据。
 
     参数:
@@ -556,7 +556,7 @@ def _finding(
     int_line = int_base_line + str_module_text[: max(0, int_offset)].count("\n")  # 证据的一基文件行号
 
     # 返回统一的不可变证据模型。
-    return PgFinding(
+    return VgFinding(
         source_facts.relative_path,
         int_line,
         str_message,

@@ -609,13 +609,13 @@ def _control_node_to_dict(item: Any) -> dict[str, Any]:
         for dict_child in dict_item.get("alternate", []) or []  # 遍历 formatter alternate 节点
     ]
 
-    # PG1005 与 PG1034 通过标签文本和分支子树判断 case 路径违规。
+    # VG076 与 VG105 通过标签文本和分支子树判断 case 路径违规。
     list_items = [
         _case_item_to_dict(dict_case_item)  # 保留当前标签文本及其递归分支节点
         for dict_case_item in dict_item.get("items", []) or []  # 按 formatter 顺序读取全部 case 分支
     ]
 
-    # 固定键集合让后续 PG 规则不依赖 dataclass 字段顺序。
+    # 固定键集合让后续 VG 规则不依赖 dataclass 字段顺序。
     return {
         "kind": dict_item.get("kind", ""),
         "header": dict_item.get("header", ""),

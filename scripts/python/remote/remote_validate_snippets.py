@@ -317,16 +317,16 @@ def rtl_md_constraint_remote_snippet(str_remote_python: str) -> str:
 
     # 模板中的 __PY__ 占位符稍后替换为转义后的 Python 命令。
     str_template = r"""
-mkdir -p _smoke_runs/remote_rtl_md_constraints
+mkdir -p _smoke_runs/remote_verilog_quality_gates
 __PY__ - <<'PY'
 from pathlib import Path
 
 from scripts.python.workflow.prompt import render_prompt
-from scripts.python.workflow.rtl_md_constraints import load_rtl_md_constraints, summarize_constraints_for_prompt
-from scripts.python.quality.rtl_pg_engine import run_rtl_pg_gate
+from scripts.python.workflow.verilog_gate_catalog import load_verilog_quality_gates, summarize_constraints_for_prompt
+from scripts.python.quality.vg_semantic_engine import run_vg_semantic_gate
 
 
-def spec(name="remote_rtl_md_constraints"):
+def spec(name="remote_verilog_quality_gates"):
     return {
         "name": name,
         "description": "Remote RTL Markdown constraint regression fixture.",
@@ -347,23 +347,23 @@ def spec(name="remote_rtl_md_constraints"):
     }
 
 
-catalog = load_rtl_md_constraints()
-assert catalog["total_rules"] == 72, catalog
-assert catalog["active_rules"] == 67, catalog
-assert catalog["reserved_rules"] == 5, catalog
+catalog = load_verilog_quality_gates()
+assert catalog["total_rules"] == 121, catalog
+assert catalog["active_rules"] == 121, catalog
+assert catalog["reserved_rules"] == 0, catalog
 prompt = render_prompt(spec(), stage="rtl")
 for marker in (
-    "RTL PG gates",
-    "PG1001",
-    "PG1040",
-    "PG1072",
+    "Verilog quality gates",
+    "VG072",
+    "VG111",
+    "VG143",
 ):
     assert marker in prompt, marker
 summary = summarize_constraints_for_prompt(max_rules_per_group=3)
-assert "67 active gates" in summary, summary
-assert "5 reserved gates" in summary, summary
+assert "121 active gates" in summary, summary
+assert "reserved gates" not in summary, summary
 
-bad_dir = Path("_smoke_runs/remote_rtl_md_constraints/bad")
+bad_dir = Path("_smoke_runs/remote_verilog_quality_gates/bad")
 bad_dir.mkdir(parents=True, exist_ok=True)
 (bad_dir / "bad_constraints.v").write_text(
     "\n".join(
@@ -398,26 +398,26 @@ bad_dir.mkdir(parents=True, exist_ok=True)
     ),
     encoding="utf-8",
 )
-bad_report = run_rtl_pg_gate(bad_dir, spec=spec("bad_constraints"))
+bad_report = run_vg_semantic_gate(bad_dir, spec=spec("bad_constraints"))
 codes = {
     result["gate_id"]
-    for result in bad_report["pg_gate_results"]
+    for result in bad_report["vg_rule_results"]
     if result["status"] == "failed"
 }
 for expected in (
-    "PG1007",
-    "PG1030",
-    "PG1040",
-    "PG1046",
-    "PG1053",
-    "PG1008",
-    "PG1019",
-    "PG1071",
-    "PG1038",
+    "VG078",
+    "VG101",
+    "VG111",
+    "VG117",
+    "VG124",
+    "VG079",
+    "VG090",
+    "VG142",
+    "VG109",
 ):
     assert expected in codes, codes
 
-good_dir = Path("_smoke_runs/remote_rtl_md_constraints/good")
+good_dir = Path("_smoke_runs/remote_verilog_quality_gates/good")
 good_dir.mkdir(parents=True, exist_ok=True)
 (good_dir / "good_constraints.v").write_text(
     "\n".join(
@@ -441,7 +441,7 @@ good_dir.mkdir(parents=True, exist_ok=True)
     ),
     encoding="utf-8",
 )
-good_report = run_rtl_pg_gate(good_dir, spec=spec("good_constraints"))
+good_report = run_vg_semantic_gate(good_dir, spec=spec("good_constraints"))
 assert good_report["delivery_ready"] is True, good_report["delivery_issues_by_rule"]
 PY
 __PY__ -m scripts.python.workflow.cli eval-skill \
@@ -456,7 +456,7 @@ report = json.loads(Path("_smoke_runs/remote_eval_skill.json").read_text(encodin
 summary = report["summary"]
 assert summary["ok"] is True, summary
 assert summary["case_count"] >= 30, summary
-case = next((item for item in report["cases"] if item.get("id") == "rtl_pg_gate_regression"), None)
+case = next((item for item in report["cases"] if item.get("id") == "vg_semantic_gate_regression"), None)
 assert case and case.get("passed") is True, case
 PY
 """.strip()

@@ -1,4 +1,4 @@
-"""实现信号声明与驱动来源相关 RTL PG 门禁。"""
+"""实现信号声明与驱动来源相关 RTL VG 门禁。"""
 
 # future annotations 延后解析规则模型类型。
 from __future__ import annotations
@@ -7,49 +7,49 @@ from __future__ import annotations
 import re
 
 # facts 提供 formatter AST 确认的 module 结构。
-from .rtl_pg_facts import PgFacts, iter_trusted_modules
+from .vg_semantic_facts import VgFacts, iter_trusted_modules
 
 # models 统一逐门禁结论与证据格式。
-from .rtl_pg_models import PgEvaluation, PgFinding, failed, passed
+from .vg_rule_models import VgEvaluation, VgFinding, failed, passed
 
 # evaluate_driver_gate 把固定编号路由到三条驱动规则。
-def evaluate_driver_gate(str_gate_id: str, facts: PgFacts) -> PgEvaluation:
+def evaluate_driver_gate(str_gate_id: str, facts: VgFacts) -> VgEvaluation:
     """执行过程赋值、多驱动和 wire 初始化门禁。
 
     参数:
-        str_gate_id: 当前执行的固定 PG 驱动门禁编号。
+        str_gate_id: 当前执行的固定 VG 驱动门禁编号。
         facts: formatter AST 构建的可信扫描事实。
     返回:
         当前驱动规则的逐门禁结论。
     """
 
-    # PG1069 专门检查过程块对 net 类型的驱动。
-    if str_gate_id == "PG1069":
+    # VG140 专门检查过程块对 net 类型的驱动。
+    if str_gate_id == "VG140":
 
         # wire 过程赋值需要独立声明类型事实。
         return _procedural_wire_assignment(facts)
 
-    # PG1070 聚合连续赋值和 always 两类独立来源。
-    if str_gate_id == "PG1070":
+    # VG141 聚合连续赋值和 always 两类独立来源。
+    if str_gate_id == "VG141":
 
         # 多驱动检查按 module 隔离同名信号。
         return _multiple_drivers(facts)
 
-    # 本模块剩余固定入口为 PG1071。
+    # 本模块剩余固定入口为 VG142。
     return _wire_inline_assignment(facts)
 
 # _procedural_wire_assignment 检查 always 目标与 wire 声明交集。
-def _procedural_wire_assignment(facts: PgFacts) -> PgEvaluation:
+def _procedural_wire_assignment(facts: VgFacts) -> VgEvaluation:
     """检查过程块是否驱动 wire 信号。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1069 的确定性执行结论。
+        VG140 的确定性执行结论。
     """
 
     # findings 保留每个过程驱动使用点。
-    list_findings: list[PgFinding] = []  # wire 过程赋值证据集合
+    list_findings: list[VgFinding] = []  # wire 过程赋值证据集合
 
     # 声明类型只在当前 module 内有效。
     for source_facts, dict_module, str_module_text, _ in iter_trusted_modules(facts):
@@ -74,15 +74,15 @@ def _procedural_wire_assignment(facts: PgFacts) -> PgEvaluation:
 
                 # finding 记录具体 wire 名，便于直接修复声明或赋值方式。
                 list_findings.append(
-                    PgFinding(
+                    VgFinding(
                         source_facts.relative_path,  # 违规过程块所在 RTL 文件
                         int_line,  # formatter 提供的过程块起始行
-                        "过程块对 wire 信号赋值。",  # PG1069 的用户诊断
+                        "过程块对 wire 信号赋值。",  # VG140 的用户诊断
                         str(str_target),  # 被过程块驱动的 wire 名称
                     )
                 )
 
-    # 至少一个确定交集即触发 PG1069。
+    # 至少一个确定交集即触发 VG140。
     if list_findings:
 
         # 失败结论保留全部过程驱动证据。
@@ -92,17 +92,17 @@ def _procedural_wire_assignment(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=False)
 
 # _multiple_drivers 按独立 assign/always 来源统计每个左值。
-def _multiple_drivers(facts: PgFacts) -> PgEvaluation:
+def _multiple_drivers(facts: VgFacts) -> VgEvaluation:
     """检查同一信号是否存在多个独立驱动源。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1070 的确定性执行结论。
+        VG141 的确定性执行结论。
     """
 
     # findings 保存跨来源计数超过一的信号。
-    list_findings: list[PgFinding] = []  # 多驱动信号证据集合
+    list_findings: list[VgFinding] = []  # 多驱动信号证据集合
 
     # 每个 module 维护独立计数，避免层级间同名误报。
     for source_facts, dict_module, _, _ in iter_trusted_modules(facts):
@@ -144,7 +144,7 @@ def _multiple_drivers(facts: PgFacts) -> PgEvaluation:
         # 只报告来源数量超过一的有效信号。
         for str_target, int_count in dict_driver_counts.items():
 
-            # 单来源信号满足 PG1070。
+            # 单来源信号满足 VG141。
             if int_count <= 1:
 
                 # 当前目标无需生成多驱动证据。
@@ -155,7 +155,7 @@ def _multiple_drivers(facts: PgFacts) -> PgEvaluation:
 
             # finding 在 evidence 中保留信号名和来源数量。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,  # 多驱动信号所在 RTL 文件
                     int_line,  # 当前 module 的一基起始行
                     "同一信号存在多个独立驱动源。",  # 提示合并或移除冲突驱动结构
@@ -173,17 +173,17 @@ def _multiple_drivers(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=False)
 
 # _wire_inline_assignment 读取 formatter 声明的 init 字段。
-def _wire_inline_assignment(facts: PgFacts) -> PgEvaluation:
+def _wire_inline_assignment(facts: VgFacts) -> VgEvaluation:
     """检查 wire 声明是否附带初始化表达式。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1071 的确定性执行结论。
+        VG142 的确定性执行结论。
     """
 
     # findings 保存每个声明级初始化位置。
-    list_findings: list[PgFinding] = []  # wire 内联初始化证据集合
+    list_findings: list[VgFinding] = []  # wire 内联初始化证据集合
 
     # 声明判断只消费 formatter 已识别的 decls。
     for source_facts, dict_module, _, _ in iter_trusted_modules(facts):
@@ -191,7 +191,7 @@ def _wire_inline_assignment(facts: PgFacts) -> PgEvaluation:
         # 逐条核对声明种类和初始化字段。
         for dict_decl in dict_module.get("decls", []):
 
-            # 非 wire 声明不属于 PG1071。
+            # 非 wire 声明不属于 VG142。
             if str(dict_decl.get("kind") or "").lower() != "wire":
 
                 # 当前声明无需检查内联 wire 初始化。
@@ -208,7 +208,7 @@ def _wire_inline_assignment(facts: PgFacts) -> PgEvaluation:
 
             # finding 保留被初始化的具体 net 名。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,  # wire 声明所在 RTL 文件
                     int_line,  # formatter 提供的声明行号
                     "wire 声明包含内联初始化赋值。",  # 提示拆分声明与连续赋值
@@ -216,7 +216,7 @@ def _wire_inline_assignment(facts: PgFacts) -> PgEvaluation:
                 )
             )
 
-    # 任一声明级初始化都触发 PG1071。
+    # 任一声明级初始化都触发 VG142。
     if list_findings:
 
         # 返回全部声明证据，方便批量修复。

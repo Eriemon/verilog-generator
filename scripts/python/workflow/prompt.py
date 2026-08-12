@@ -25,7 +25,7 @@ from .pattern_templates import summarize_pattern_templates
 from scripts.python.existing_rtl.semantic_contract import SEMANTIC_RESULT_TAG
 
 # RTL Markdown 约束摘要与 vector hash tag 是 prompt hard gate 的来源。
-from .rtl_md_constraints import summarize_constraints_for_prompt
+from .verilog_gate_catalog import summarize_constraints_for_prompt
 from .spec import normalize_spec
 from .vectors import VECTOR_HASH_TAG
 

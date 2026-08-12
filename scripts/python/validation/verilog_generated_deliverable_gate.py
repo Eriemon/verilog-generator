@@ -35,7 +35,7 @@ def create_parser() -> argparse.ArgumentParser:
     # 非严格模式用于审查历史样例，不用于最终交付。
     parser.add_argument("--non-strict", action="store_true", help="Downgrade strict warnings for exploration.")
 
-    # 可选规格为位宽、时钟与接口类 PG 门禁提供合同事实。
+    # 可选规格为位宽、时钟与接口类 VG 门禁提供合同事实。
     parser.add_argument("--spec", type=Path, help="Optional normalized Verilog spec JSON path.")
 
     # 注释语言策略传给 quality gate。
@@ -145,12 +145,12 @@ def main() -> int:
         return 1
 
     # 规格只在调用方显式提供时读取，缺省保持纯 RTL 审查模式。
-    dict_spec = json.loads(args.spec.read_text(encoding="utf-8")) if args.spec is not None else None  # 可选 PG 规格合同
+    dict_spec = json.loads(args.spec.read_text(encoding="utf-8")) if args.spec is not None else None  # 可选 VG 规格合同
 
     # 执行最终交付门禁。
     dict_report = run_verilog_deliverable_gate(  # 保存完整诊断、摘要计数和退出码依据
         path_target,  # 用户指定的 RTL 文件或目录
-        spec=dict_spec,  # PG 门禁使用的归一化规格
+        spec=dict_spec,  # VG 门禁使用的归一化规格
 
         # 以下选项定义交付严格度、注释策略和扫描边界。
         strict=not args.non_strict,  # strict 模式默认开启

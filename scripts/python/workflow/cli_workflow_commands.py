@@ -197,13 +197,13 @@ def cmd_review(args: argparse.Namespace) -> int:
         # 方言越界返回失败。
         return 1
 
-    # 可选规格先归一化为 PG 引擎可直接消费的字典。
-    dict_spec = read_json_anywhere(args.spec) if args.spec is not None else None  # 可选 PG 规格合同
+    # 可选规格先归一化为 VG 引擎可直接消费的字典。
+    dict_spec = read_json_anywhere(args.spec) if args.spec is not None else None  # 可选 VG 规格合同
 
     # 真实 review 进入交付门禁闭环。
     dict_report = run_verilog_deliverable_gate(  # 承载交付结论、修复要求和问题编号的审查报告
         args.target,  # 本次审查需要进入交付门禁的 Verilog 文件
-        spec=dict_spec,  # PG 门禁使用调用方提供的设计规格
+        spec=dict_spec,  # VG 门禁使用调用方提供的设计规格
         strict=not args.non_strict,  # 默认严格交付模式
         comment_language=args.comment_language,  # 交付门禁采用的注释语言策略
         formatter_profile=args.formatter_profile,  # 控制格式化抽象语法检查的配置名

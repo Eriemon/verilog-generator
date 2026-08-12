@@ -70,6 +70,15 @@ class QualityGateReport:
     # strict 决定部分样式规则是 error 还是 warning。
     strict: bool  # 严格模式开关
 
+    # vg_catalog_version 标识统一规则目录版本。
+    vg_catalog_version: int  # 统一 VG catalog 版本
+
+    # vg_rule_summary 汇总全部规则的执行状态。
+    vg_rule_summary: dict[str, Any]  # 逐规则状态摘要
+
+    # vg_rule_results 按 catalog 顺序保存每条规则结论。
+    vg_rule_results: tuple[dict[str, Any], ...]  # 121 条统一 VG 结果
+
     # errors 属性给 CLI 和报告摘要复用。
     @property
 
@@ -123,7 +132,7 @@ class QualityGateReport:
 
         # dict_report 保持历史字段和嵌套结构。
         dict_report = {  # 质量门 JSON 报告主体
-            "version": 1,  # 质量门报告结构版本
+            "version": 2,  # 统一 VG 质量门报告结构版本
             "root": str(self.root),  # 检查入口路径文本
             "ok": self.ok(),  # error 诊断是否为零
             "strict": self.strict,  # 本次运行 strict 开关
@@ -132,6 +141,9 @@ class QualityGateReport:
             "issues": [issue.to_dict() for issue in self.issues],  # JSON 诊断列表
             "metrics": self.metrics,  # 文本和结构聚合指标
             "ast_report": self.ast_report,  # 原始结构解析聚合树
+            "vg_catalog_version": self.vg_catalog_version,  # 统一规则目录版本
+            "vg_rule_summary": self.vg_rule_summary,  # 全部规则状态摘要
+            "vg_rule_results": list(self.vg_rule_results),  # 按 catalog 顺序的逐规则结果
         }
 
         # 返回给 CLI、validation 和 integration 复用。

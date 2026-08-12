@@ -1,6 +1,6 @@
-"""实现表达式、条件和位宽相关 RTL PG 门禁。"""
+"""实现表达式、条件和位宽相关 RTL VG 门禁。"""
 
-# future annotations 延后解析 PG 数据模型类型。
+# future annotations 延后解析 VG 数据模型类型。
 from __future__ import annotations
 
 # re 在 formatter AST 已确认的 module 文本内匹配表达式构造。
@@ -10,13 +10,13 @@ import re
 from typing import Callable
 
 # facts 提供可信 module 文本、行号和结构化声明。
-from .rtl_pg_facts import PgFacts, iter_trusted_modules
+from .vg_semantic_facts import VgFacts, iter_trusted_modules
 
 # models 统一逐门禁状态和定位证据。
-from .rtl_pg_models import PgEvaluation, PgFinding, failed, inconclusive, passed
+from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passed
 
 # value_facts 是表达式与分支规则共享的常量和位宽事实实现。
-from . import rtl_pg_value_facts
+from . import vg_value_facts
 
 # XZ_LITERAL 只匹配显式包含 X/Z 数位的 Verilog 定宽字面量。
 XZ_LITERAL = r"\b\d*'[sS]?[bBoOdDhH][0-9a-fA-F_xXzZ?]*[xXzZ][0-9a-fA-F_xXzZ?]*\b"  # X/Z 字面量模式
@@ -31,73 +31,199 @@ SIZED_LITERAL = r"\d+'[sS]?[bBoOdDhH][0-9a-fA-F_xXzZ?]+"  # 可提取前缀位�
 SIMPLE_OPERAND = rf"(?:[A-Za-z_]\w*|{SIZED_LITERAL})"  # 高置信二元操作数模式
 
 # evaluate_expression_gate 把固定编号路由到表达式规则实现。
-def evaluate_expression_gate(str_gate_id: str, facts: PgFacts) -> PgEvaluation:
-    """执行表达式规则组中的指定 PG 门禁。
+def evaluate_expression_gate(str_gate_id: str, facts: VgFacts) -> VgEvaluation:
+    """执行表达式规则组中的指定 VG 门禁。
 
     参数:
-        str_gate_id: 当前执行的固定 PG 表达式门禁编号。
+        str_gate_id: 当前执行的固定 VG 表达式门禁编号。
         facts: formatter AST 构建的可信扫描事实。
     返回:
         当前表达式规则的逐门禁结论。
     """
 
-    # 路由表只包含 rtl_pg_engine 分配给本模块的激活编号。
-    dict_evaluators: dict[str, Callable[[PgFacts], PgEvaluation]] = {  # 固定编号到表达式规则函数的映射
-        "PG1001": _xz_arithmetic,  # X/Z 算术表达式检查
-        "PG1003": _logic_operator_scalar_operands,  # 逻辑运算符标量操作数检查
-        "PG1007": _xz_condition,  # X/Z 条件表达式检查
-        "PG1014": _relational_width,  # 关系表达式位宽检查
-        "PG1030": _xz_branch_condition,  # X/Z 分支控制检查
-        "PG1051": _arithmetic_result_width,  # 算术结果溢出检查
-        "PG1063": _arithmetic_sign_consistency,  # 算术操作数符号一致性检查
-        "PG1066": _assignment_width,  # 赋值两侧位宽检查
-        "PG1067": _explicit_literal,  # 常量显式位宽进制检查
+    # 路由表只包含统一 VG 语义引擎分配给本模块的激活编号。
+    dict_evaluators: dict[str, Callable[[VgFacts], VgEvaluation]] = {  # 固定编号到表达式规则函数的映射
+        "VG072": _xz_arithmetic,  # X/Z 算术表达式检查
+        "VG074": _logic_operator_scalar_operands,  # 逻辑运算符标量操作数检查
+        "VG078": _xz_condition,  # X/Z 条件表达式检查
+        "VG085": _relational_width,  # 关系表达式位宽检查
+        "VG101": _xz_branch_condition,  # X/Z 分支控制检查
+        "VG122": _arithmetic_result_width,  # 算术结果溢出检查
+        "VG125": _literal_declared_width_matches_value,  # 字面量声明位宽检查
+        "VG134": _arithmetic_sign_consistency,  # 算术操作数符号一致性检查
+        "VG137": _assignment_width,  # 赋值两侧位宽检查
+        "VG138": _explicit_literal,  # 常量显式位宽进制检查
     }
 
     # engine 已保证编号属于本模块，直接执行唯一对应函数。
     return dict_evaluators[str_gate_id](facts)
 
+# _literal_declared_width_matches_value 比较定宽常量声明与最小数值宽度。
+def _literal_declared_width_matches_value(facts: VgFacts) -> VgEvaluation:
+    """检查定宽字面量的声明位宽是否等于其最小实际位宽。
+
+    参数:
+        facts: formatter AST 构建的可信扫描事实。
+    返回:
+        位宽不一致的失败证据或适用性结论。
+    """
+
+    # findings 专门保存需要调整声明宽度的字面量位置。
+    list_findings: list[VgFinding] = []  # 声明位宽与实际位宽不一致证据
+
+    # applicable 区分无字面量输入与检查后合规。
+    bool_applicable = False  # 是否发现可静态求值的定宽字面量
+
+    # 模式分别捕获声明位宽、进制和数位。
+    str_pattern = (  # 声明位宽、进制和数位三个捕获组
+        r"\b(\d+)'[sS]?([bBoOdDhH])"
+        r"([0-9a-fA-F_xXzZ?]+)(?![0-9a-fA-F_xXzZ?])"
+    )
+
+    # 每个可信 module 独立扫描可静态求值的定宽字面量。
+    for source_facts, _, str_module_text, int_base_line in iter_trusted_modules(facts):
+
+        # 保留匹配对象以生成精确证据位置和原文。
+        for obj_match in re.finditer(str_pattern, str_module_text):
+
+            # 当前匹配使规则进入适用状态。
+            bool_applicable = True  # 已发现规则适用的定宽字面量
+
+            # 第一捕获组提供声明位宽。
+            int_declared_width = int(obj_match.group(1))  # 字面量声明位宽
+
+            # 第二捕获组统一为小写进制标识。
+            str_base = obj_match.group(2).lower()  # 归一化进制标识
+
+            # 第三捕获组移除仅用于可读性的下划线。
+            str_digits = obj_match.group(3).replace("_", "")  # 移除可读分隔符后的数位
+
+            # X/Z/? 数位没有可比较的确定数值宽度，交由专门未知态规则处理。
+            if re.search(r"[xXzZ?]", str_digits):
+
+                # 继续检查当前 module 的其他确定数值字面量。
+                continue
+
+            # 参数声明表达设计接口宽度，全零常量表达复位/清零宽度，二者不按最小数值位宽收缩。
+            # 最近换行位置限定字面量所在声明行。
+            int_line_start = str_module_text.rfind("\n", 0, obj_match.start()) + 1  # 当前源码行起始偏移
+
+            # 行前缀用于识别 parameter/localparam 合同。
+            str_line_prefix = str_module_text[int_line_start : obj_match.start()]  # 字面量之前的声明文本
+
+            # 参数宽度与显式全零宽度都是设计合同，不按数值最小宽度收缩。
+            if re.search(r"\b(?:parameter|localparam)\b", str_line_prefix) or (
+                str_base == "d" and int(str_digits, 10) == 0
+            ):
+
+                # 当前字面量属于合同宽度，继续扫描其他字面量。
+                continue
+
+            # 受限求值器只处理已排除未知态的确定数值。
+            int_actual_width = _literal_actual_width(str_base, str_digits)  # 当前数值的最小位宽
+
+            # 声明宽度已经精确时无需生成诊断。
+            if int_declared_width == int_actual_width:
+
+                # 继续检查当前 module 的其他字面量。
+                continue
+
+            # 把 module 内偏移换算为一基文件行号。
+            int_line = int_base_line + str_module_text.count("\n", 0, obj_match.start())  # 当前字面量一基行号
+
+            # 报告声明宽度与最小数值宽度的确定差异。
+            list_findings.append(
+                VgFinding(
+                    source_facts.relative_path,
+                    int_line,
+                    f"字面量声明为 {int_declared_width} 位，但实际值只需要 {int_actual_width} 位。",
+                    obj_match.group(0),
+                )
+            )
+
+    # 任一宽度差异都使本门禁失败。
+    if list_findings:
+
+        # 返回全部字面量证据，支持批量修复。
+        return failed(*list_findings)
+
+    # 没有违规时保留规则是否实际适用的信息。
+    return passed(applicable=bool_applicable)
+
+# _literal_actual_width 对确定数位执行受限的最小宽度求值。
+def _literal_actual_width(str_base: str, str_digits: str) -> int:
+    """计算受支持定宽字面量的最小实际位宽。
+
+    参数:
+        str_base: 已归一化的小写进制标识。
+        str_digits: 已移除分隔符的字面量数位。
+    返回:
+        至少为一位的最小表示宽度。
+    """
+
+    # 非十进制字面量按每个数位的固定承载位数计算。
+    if str_base != "d":
+
+        # 二、八、十六进制分别按一、三、四位展开。
+        return max(1, len(str_digits) * {"b": 1, "o": 3, "h": 4}[str_base])
+
+    # 防御性保留未知态分支，避免未来调用方绕过上游过滤。
+    if re.search(r"[xXzZ?]", str_digits):
+
+        # 未知十进制数位按最保守的每位四比特估计。
+        return max(1, len(str_digits) * 4)
+
+    # 确定数值通过 Python 整数位长得到精确最小宽度。
+    # 当前进制标识映射为 Python 整数解析基数。
+    int_radix = {"b": 2, "o": 8, "d": 10, "h": 16}[str_base]  # 当前字面量数值进制
+
+    # 确定数位转换为非负整数值。
+    int_value = int(str_digits, int_radix)  # 解析后的非负整数值
+
+    # 零值也至少需要一个表示位。
+    return max(1, int_value.bit_length())
+
 # _logic_operator_scalar_operands 禁止逻辑运算符直接消费多位向量。
-def _logic_operator_scalar_operands(facts: PgFacts) -> PgEvaluation:
+def _logic_operator_scalar_operands(facts: VgFacts) -> VgEvaluation:
     """检查逻辑与、逻辑或两侧是否为可证明的标量表达式。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1003 的通过、失败或不确定结论。
+        VG074 的通过、失败或不确定结论。
     """
 
     # 逻辑表达式使用统一的简单二元表达式扫描器。
     return _binary_expression_gate(facts, str_rule="logic")
 
 # _arithmetic_result_width 检查目标是否容纳简单算术表达式的完整结果。
-def _arithmetic_result_width(facts: PgFacts) -> PgEvaluation:
+def _arithmetic_result_width(facts: VgFacts) -> VgEvaluation:
     """比较简单算术结果所需位宽与赋值目标位宽。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1051 的通过、失败或不确定结论。
+        VG122 的通过、失败或不确定结论。
     """
 
     # 算术宽度规则复用同一受限表达式扫描边界。
     return _binary_expression_gate(facts, str_rule="overflow")
 
 # _arithmetic_sign_consistency 禁止简单算术表达式混用有符号和无符号操作数。
-def _arithmetic_sign_consistency(facts: PgFacts) -> PgEvaluation:
+def _arithmetic_sign_consistency(facts: VgFacts) -> VgEvaluation:
     """比较简单算术表达式两侧的声明符号属性。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1063 的通过、失败或不确定结论。
+        VG134 的通过、失败或不确定结论。
     """
 
     # 符号规则沿用相同匹配结果，避免建立第二套表达式抽取器。
     return _binary_expression_gate(facts, str_rule="sign")
 
 # _binary_expression_gate 对高置信简单赋值表达式执行三类规则判断。
-def _binary_expression_gate(facts: PgFacts, *, str_rule: str) -> PgEvaluation:
+def _binary_expression_gate(facts: VgFacts, *, str_rule: str) -> VgEvaluation:
     """执行逻辑标量、算术位宽或符号一致性判断。
 
     参数:
@@ -108,7 +234,7 @@ def _binary_expression_gate(facts: PgFacts, *, str_rule: str) -> PgEvaluation:
     """
 
     # findings 汇总当前规则的全部确定违规。
-    list_findings: list[PgFinding] = []  # 当前规则的定位证据
+    list_findings: list[VgFinding] = []  # 当前规则的定位证据
 
     # applicable 只在发现目标二元表达式后置位。
     bool_applicable = False  # 是否存在当前规则关心的表达式
@@ -120,7 +246,7 @@ def _binary_expression_gate(facts: PgFacts, *, str_rule: str) -> PgEvaluation:
     for source_facts, dict_module, str_module_text, int_base_line in iter_trusted_modules(facts):
 
         # 位宽表统一来自共享 value facts。
-        dict_widths = rtl_pg_value_facts.module_widths(dict_module)  # 当前 module 的信号位宽
+        dict_widths = vg_value_facts.module_widths(dict_module)  # 当前 module 的信号位宽
 
         # signed 字段由 formatter 对端口和内部声明统一提供。
         dict_signed = _module_signedness(dict_module)  # 当前 module 的信号符号属性
@@ -184,7 +310,7 @@ def _binary_expression_gate(facts: PgFacts, *, str_rule: str) -> PgEvaluation:
 
                 # finding 保留原始赋值表达式便于修复。
                 list_findings.append(
-                    PgFinding(
+                    VgFinding(
                         source_facts.relative_path,
                         int_line,
                         dict_messages[str_rule],
@@ -237,13 +363,13 @@ def _binary_expression_outcome(
     """
 
     # 三个操作数宽度统一通过共享表达式事实求取。
-    int_target_width = rtl_pg_value_facts.expression_width(str_target, dict_widths)  # 赋值目标位宽
+    int_target_width = vg_value_facts.expression_width(str_target, dict_widths)  # 赋值目标位宽
 
     # 左操作数宽度用于标量和算术结果判断。
-    int_left_width = rtl_pg_value_facts.expression_width(str_left, dict_widths)  # 左操作数位宽
+    int_left_width = vg_value_facts.expression_width(str_left, dict_widths)  # 左操作数位宽
 
     # 右操作数独立求宽，未知值不会继承左侧结果。
-    int_right_width = rtl_pg_value_facts.expression_width(str_right, dict_widths)  # 右操作数位宽
+    int_right_width = vg_value_facts.expression_width(str_right, dict_widths)  # 右操作数位宽
 
     # 逻辑规则要求两侧都可证明为单位宽。
     if str_rule == "logic":
@@ -353,13 +479,13 @@ def _expression_signedness(str_expression: str, dict_signed: dict[str, bool]) ->
     return None
 
 # _xz_arithmetic 禁止未知态字面量进入算术运算。
-def _xz_arithmetic(facts: PgFacts) -> PgEvaluation:
+def _xz_arithmetic(facts: VgFacts) -> VgEvaluation:
     """检查算术表达式是否包含 X/Z 字面量。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1001 的确定性执行结论。
+        VG072 的确定性执行结论。
     """
 
     # 双向模式覆盖未知态字面量位于运算符任一侧的情况。
@@ -370,13 +496,13 @@ def _xz_arithmetic(facts: PgFacts) -> PgEvaluation:
     )
 
 # _xz_condition 禁止未知态字面量参与布尔或三目判断。
-def _xz_condition(facts: PgFacts) -> PgEvaluation:
+def _xz_condition(facts: VgFacts) -> VgEvaluation:
     """检查条件和三目表达式是否包含 X/Z 字面量。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1007 的确定性执行结论。
+        VG078 的确定性执行结论。
     """
 
     # 模式同时覆盖 if 条件和三目运算符两侧的未知态字面量。
@@ -387,13 +513,13 @@ def _xz_condition(facts: PgFacts) -> PgEvaluation:
     )
 
 # _xz_branch_condition 专门覆盖 if 与 case 控制表达式。
-def _xz_branch_condition(facts: PgFacts) -> PgEvaluation:
+def _xz_branch_condition(facts: VgFacts) -> VgEvaluation:
     """检查分支控制表达式是否包含 X/Z 字面量。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1030 的确定性执行结论。
+        VG101 的确定性执行结论。
     """
 
     # case、casex 和 casez 控制项都进入相同未知态检查。
@@ -404,39 +530,39 @@ def _xz_branch_condition(facts: PgFacts) -> PgEvaluation:
     )
 
 # _relational_width 复用通用位宽比较并限定关系表达式。
-def _relational_width(facts: PgFacts) -> PgEvaluation:
+def _relational_width(facts: VgFacts) -> VgEvaluation:
     """比较简单关系表达式两侧的可判定位宽。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1014 的通过、失败或不确定结论。
+        VG085 的通过、失败或不确定结论。
     """
 
     # relational_only 选择比较运算符匹配路径。
     return _width_gate(facts, relational_only=True)
 
 # _assignment_width 将同一求宽算法切换到连续和过程赋值语法。
-def _assignment_width(facts: PgFacts) -> PgEvaluation:
+def _assignment_width(facts: VgFacts) -> VgEvaluation:
     """比较简单赋值两侧的可判定位宽。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1066 的通过、失败或不确定结论。
+        VG137 的通过、失败或不确定结论。
     """
 
     # relational_only 关闭后选择连续或过程赋值匹配路径。
     return _width_gate(facts, relational_only=False)
 
 # _explicit_literal 拒绝赋值和参数中的无尺寸十进制数。
-def _explicit_literal(facts: PgFacts) -> PgEvaluation:
+def _explicit_literal(facts: VgFacts) -> VgEvaluation:
     """检查常量是否显式声明位宽与进制。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1067 的确定性执行结论。
+        VG138 的确定性执行结论。
     """
 
     # 前置负向断言避免把位选择下标误判为无尺寸字面量。
@@ -447,7 +573,7 @@ def _explicit_literal(facts: PgFacts) -> PgEvaluation:
     )
 
 # _width_gate 对简单标识符和定宽字面量执行静态位宽比较。
-def _width_gate(facts: PgFacts, *, relational_only: bool) -> PgEvaluation:
+def _width_gate(facts: VgFacts, *, relational_only: bool) -> VgEvaluation:
     """执行关系或赋值表达式的简单位宽比较。
 
     参数:
@@ -461,7 +587,7 @@ def _width_gate(facts: PgFacts, *, relational_only: bool) -> PgEvaluation:
     bool_applicable = False  # 是否发现符合本规则形状的表达式
 
     # findings 保存所有可确定的两侧位宽冲突。
-    list_findings: list[PgFinding] = []  # 位宽不一致的定位证据
+    list_findings: list[VgFinding] = []  # 位宽不一致的定位证据
 
     # unknown 表示至少一条目标表达式无法静态求宽。
     bool_unknown = False  # 是否存在无法静态确定的表达式
@@ -517,10 +643,10 @@ def _width_gate(facts: PgFacts, *, relational_only: bool) -> PgEvaluation:
 
                 # finding 保留原始表达式便于直接修复。
                 list_findings.append(
-                    PgFinding(
+                    VgFinding(
                         source_facts.relative_path,  # 位宽冲突所在 RTL 文件
                         int_line,  # 位宽冲突的一基源码行号
-                        "表达式两侧位宽不一致。",  # 固定 PG 诊断文本
+                        "表达式两侧位宽不一致。",  # 固定 VG 诊断文本
                         obj_match.group(0).strip(),  # 原始关系或赋值表达式
                     )
                 )
@@ -551,7 +677,7 @@ def _module_widths(dict_module: dict[str, object]) -> dict[str, int | None]:
     """
 
     # 共享事实模块是位宽解析的唯一实现来源，避免兼容入口复制分支逻辑。
-    return rtl_pg_value_facts.module_widths(dict_module)
+    return vg_value_facts.module_widths(dict_module)
 
 # _parse_width 解析常量或单参数加减常量的 Verilog 区间。
 def _parse_width(str_width: str, dict_parameter_values: dict[str, int]) -> int | None:
@@ -726,25 +852,25 @@ def _expression_width(str_expression: str, dict_widths: dict[str, int | None]) -
 
 # 表达式规则继续保留内部函数名，但实际统一使用共享事实实现。
 # module_widths 别名让既有表达式调用切换到共享声明事实。
-_module_widths = rtl_pg_value_facts.module_widths  # 共享 module 位宽入口
+_module_widths = vg_value_facts.module_widths  # 共享 module 位宽入口
 
 # parse_width 别名保留本模块内部调用合同。
-_parse_width = rtl_pg_value_facts.parse_width  # 共享声明区间解析入口
+_parse_width = vg_value_facts.parse_width  # 共享声明区间解析入口
 
 # constant_integer 别名统一参数区间整数求值语义。
-_constant_integer = rtl_pg_value_facts.constant_integer  # 共享受限整数解析入口
+_constant_integer = vg_value_facts.constant_integer  # 共享受限整数解析入口
 
 # parameter_integer 别名统一十进制参数识别语义。
-_parameter_integer = rtl_pg_value_facts.parameter_integer  # 共享 parameter 整数入口
+_parameter_integer = vg_value_facts.parameter_integer  # 共享 parameter 整数入口
 
 # constant_width 别名统一 localparam 结果位宽推断。
-_constant_width = rtl_pg_value_facts.constant_width  # 共享常量宽度入口
+_constant_width = vg_value_facts.constant_width  # 共享常量宽度入口
 
 # expression_width 别名让既有规则复用扩展后的表达式求宽。
-_expression_width = rtl_pg_value_facts.expression_width  # 共享表达式位宽入口
+_expression_width = vg_value_facts.expression_width  # 共享表达式位宽入口
 
 # _pattern_gate 在可信 module 边界内执行文本型表达式规则。
-def _pattern_gate(facts: PgFacts, str_pattern: str, str_message: str) -> PgEvaluation:
+def _pattern_gate(facts: VgFacts, str_pattern: str, str_message: str) -> VgEvaluation:
     """扫描指定模式并生成精确行号证据。
 
     参数:
@@ -756,7 +882,7 @@ def _pattern_gate(facts: PgFacts, str_pattern: str, str_message: str) -> PgEvalu
     """
 
     # findings 保存可信 module 中的全部正则命中。
-    list_findings: list[PgFinding] = []  # 当前文本规则的违规证据
+    list_findings: list[VgFinding] = []  # 当前文本规则的违规证据
 
     # module 文本排除 formatter 无法确认的顶层噪声。
     for source_facts, _, str_module_text, int_base_line in iter_trusted_modules(facts):
@@ -769,7 +895,7 @@ def _pattern_gate(facts: PgFacts, str_pattern: str, str_message: str) -> PgEvalu
 
             # finding 保留原始匹配片段便于修复。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,  # 违规表达式所在 RTL 文件
                     int_line,  # 当前命中的一基源码行号
                     str_message,  # 当前固定规则的诊断文本

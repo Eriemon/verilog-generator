@@ -1,4 +1,4 @@
-"""定义 RTL PG 门禁内部结果模型。"""
+"""定义 RTL VG 门禁内部结果模型。"""
 
 # future annotations 避免运行期求值递归类型。
 from __future__ import annotations
@@ -9,10 +9,10 @@ from dataclasses import dataclass, field
 # Any 表达 JSON 字典中的异构标量。
 from typing import Any
 
-# PgFinding 固定单条门禁证据的公共字段。
+# VgFinding 固定单条门禁证据的公共字段。
 @dataclass(frozen=True)
-class PgFinding:
-    """保存单条 PG 违规或不确定证据。"""
+class VgFinding:
+    """保存单条 VG 违规或不确定证据。"""
 
     # path 记录相对扫描根的 RTL 文件位置。
     path: str  # 证据所在的 RTL 相对路径
@@ -26,12 +26,15 @@ class PgFinding:
     # evidence 保留触发规则的最小源码或结构事实。
     evidence: str = ""  # 当前发现的最小可追溯证据
 
+    # severity 允许单条规则同时产生 BLOCKER 与 WARNING 发现。
+    severity: str | None = None  # finding 级治理等级；缺省时继承 catalog
+
     # to_dict 把不可变证据模型转换为报告字典。
     def to_dict(self) -> dict[str, Any]:
         """返回 JSON 友好的证据字典。
 
         参数:
-            self: 当前不可变 PG 证据对象。
+            self: 当前不可变 VG 证据对象。
         返回:
             字段稳定、可直接写入 JSON 报告的字典。
         """
@@ -42,27 +45,28 @@ class PgFinding:
             "line": self.line,  # 定位文件内的具体触发行
             "message": self.message,  # 面向审查者的规则诊断
             "evidence": self.evidence,  # 触发规则的最小结构证据
+            "severity": self.severity,  # 可选 finding 级治理等级
         }
 
-# PgEvaluation 固定单条 active 门禁的内部执行结论。
+# VgEvaluation 固定单条 active 门禁的内部执行结论。
 @dataclass(frozen=True)
-class PgEvaluation:
-    """保存一条激活 PG 门禁的执行结论。"""
+class VgEvaluation:
+    """保存一条激活 VG 门禁的执行结论。"""
 
-    # status 只能取 PG 引擎声明的固定状态集合。
+    # status 只能取 VG 引擎声明的固定状态集合。
     status: str  # 当前门禁执行后的固定状态
 
     # applicable 表明当前 RTL 是否出现该规则的适用结构。
     applicable: bool  # 当前门禁是否存在可分析对象
 
     # findings 保留所有确定违规或不确定证据。
-    findings: tuple[PgFinding, ...] = field(default_factory=tuple)  # 当前门禁的有序证据集合
+    findings: tuple[VgFinding, ...] = field(default_factory=tuple)  # 当前门禁的有序证据集合
 
     # message 解释无具体 finding 时的状态原因。
     message: str = ""  # 当前状态的补充说明
 
 # passed 统一创建规则通过结论。
-def passed(*, applicable: bool = False, message: str = "") -> PgEvaluation:
+def passed(*, applicable: bool = False, message: str = "") -> VgEvaluation:
     """构造通过结论。
 
     参数:
@@ -73,10 +77,10 @@ def passed(*, applicable: bool = False, message: str = "") -> PgEvaluation:
     """
 
     # 通过结论不携带违规证据。
-    return PgEvaluation("passed", applicable, message=message)
+    return VgEvaluation("passed", applicable, message=message)
 
 # failed 统一创建带确定证据的失败结论。
-def failed(*findings: PgFinding) -> PgEvaluation:
+def failed(*findings: VgFinding) -> VgEvaluation:
     """构造包含确定违规证据的失败结论。
 
     参数:
@@ -86,10 +90,10 @@ def failed(*findings: PgFinding) -> PgEvaluation:
     """
 
     # 失败结论始终标记规则适用并保留证据顺序。
-    return PgEvaluation("failed", True, tuple(findings))
+    return VgEvaluation("failed", True, tuple(findings))
 
 # inconclusive 统一创建证据不足的 fail-closed 结论。
-def inconclusive(message: str, *findings: PgFinding) -> PgEvaluation:
+def inconclusive(message: str, *findings: VgFinding) -> VgEvaluation:
     """构造分析信息不足时的 fail-closed 结论。
 
     参数:
@@ -100,4 +104,4 @@ def inconclusive(message: str, *findings: PgFinding) -> PgEvaluation:
     """
 
     # 不确定结论保持适用状态，交由 strict 交付策略阻断。
-    return PgEvaluation("inconclusive", True, tuple(findings), message)
+    return VgEvaluation("inconclusive", True, tuple(findings), message)

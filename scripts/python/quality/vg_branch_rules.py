@@ -1,4 +1,4 @@
-"""实现分支、case 和互斥赋值路径相关 RTL PG 门禁。"""
+"""实现分支、case 和互斥赋值路径相关 RTL VG 门禁。"""
 
 # future annotations 延后解析规则模型类型。
 from __future__ import annotations
@@ -10,13 +10,13 @@ import re
 from typing import Any, Callable, Iterator
 
 # facts 提供 formatter AST 确认的 module 边界和源码定位上下文。
-from .rtl_pg_facts import PgFacts, iter_trusted_modules
+from .vg_semantic_facts import VgFacts, iter_trusted_modules
 
 # models 统一逐门禁结论和定位证据。
-from .rtl_pg_models import PgEvaluation, PgFinding, failed, inconclusive, passed
+from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passed
 
 # value_facts 提供分支规则共享的常量解析和位宽事实。
-from .rtl_pg_value_facts import (
+from .vg_value_facts import (
     ConstantBits,
     expression_width,
     module_constant_values,
@@ -25,42 +25,42 @@ from .rtl_pg_value_facts import (
 )
 
 # evaluate_branch_gate 把七个固定编号路由到唯一分支规则实现。
-def evaluate_branch_gate(str_gate_id: str, facts: PgFacts) -> PgEvaluation:
-    """执行分支规则组中的指定固定 PG 门禁。
+def evaluate_branch_gate(str_gate_id: str, facts: VgFacts) -> VgEvaluation:
+    """执行分支规则组中的指定固定 VG 门禁。
 
     参数:
-        str_gate_id: 当前执行的固定 PG 分支门禁编号。
+        str_gate_id: 当前执行的固定 VG 分支门禁编号。
         facts: formatter AST 构建的可信扫描事实。
     返回:
         当前分支规则的逐门禁结论。
     """
 
     # 路由表集中声明第二批七条规则的唯一执行函数。
-    dict_evaluators: dict[str, Callable[[PgFacts], PgEvaluation]] = {  # 固定编号到规则函数的映射
-        "PG1005": _case_no_overlap,  # case 标签重叠检查
-        "PG1013": _case_item_in_range_width,  # case 标签位宽检查
-        "PG1017": _branch_condition_scalar,  # if 条件单位宽检查
-        "PG1019": _case_control_not_constant,  # case 控制项常量检查
-        "PG1032": _assign_no_duplicate_condition,  # 同路径重复赋值检查
-        "PG1034": _case_item_constant_only,  # case 标签常量检查
-        "PG1038": _combinational_if_has_else,  # 组合 if 终止 else 检查
+    dict_evaluators: dict[str, Callable[[VgFacts], VgEvaluation]] = {  # 固定编号到规则函数的映射
+        "VG076": _case_no_overlap,  # case 标签重叠检查
+        "VG084": _case_item_in_range_width,  # case 标签位宽检查
+        "VG088": _branch_condition_scalar,  # if 条件单位宽检查
+        "VG090": _case_control_not_constant,  # case 控制项常量检查
+        "VG103": _assign_no_duplicate_condition,  # 同路径重复赋值检查
+        "VG105": _case_item_constant_only,  # case 标签常量检查
+        "VG109": _combinational_if_has_else,  # 组合 if 终止 else 检查
     }
 
     # engine 已保证编号属于分支模块，直接执行唯一对应函数。
     return dict_evaluators[str_gate_id](facts)
 
 # _case_no_overlap 比较同一 case 内可静态解析的标签模式。
-def _case_no_overlap(facts: PgFacts) -> PgEvaluation:
+def _case_no_overlap(facts: VgFacts) -> VgEvaluation:
     """检查同一 case 中可解析标签是否形成重叠。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1005 的通过、失败或不确定结论。
+        VG076 的通过、失败或不确定结论。
     """
 
     # findings 汇总全部可确定的标签重叠位置。
-    list_findings: list[PgFinding] = []  # case 标签重叠证据
+    list_findings: list[VgFinding] = []  # case 标签重叠证据
 
     # applicable 区分没有 case 和完成过 case 分析。
     bool_applicable = False  # 是否发现 case 控制节点
@@ -105,7 +105,7 @@ def _case_overlap_findings(
     int_base_line: int,
     dict_case: dict[str, Any],
     dict_constants: dict[str, str],
-) -> tuple[list[PgFinding], bool]:
+) -> tuple[list[VgFinding], bool]:
     """返回单个 case 的重叠证据和未知标签标记。
 
     参数:
@@ -125,7 +125,7 @@ def _case_overlap_findings(
     list_patterns: list[tuple[str, ConstantBits]] = []  # 当前 case 的已知标签模式
 
     # findings 保存当前 case 内的全部确定重叠。
-    list_findings: list[PgFinding] = []  # 当前 case 的标签重叠证据
+    list_findings: list[VgFinding] = []  # 当前 case 的标签重叠证据
 
     # unknown 标记至少一个标签无法解析。
     bool_unknown = False  # 当前 case 是否含未知标签
@@ -179,17 +179,17 @@ def _case_overlap_findings(
     return list_findings, bool_unknown
 
 # _case_item_in_range_width 比较控制项和每个可解析标签的位宽。
-def _case_item_in_range_width(facts: PgFacts) -> PgEvaluation:
+def _case_item_in_range_width(facts: VgFacts) -> VgEvaluation:
     """检查 case 标签与控制表达式的可判定位宽。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1013 的通过、失败或不确定结论。
+        VG084 的通过、失败或不确定结论。
     """
 
     # findings 保存全部可定位的位宽不一致标签。
-    list_findings: list[PgFinding] = []  # case 标签位宽冲突证据
+    list_findings: list[VgFinding] = []  # case 标签位宽冲突证据
 
     # applicable 标记至少发现一个 case 控制节点。
     bool_applicable = False  # 是否存在 case 位宽检查对象
@@ -267,17 +267,17 @@ def _case_item_in_range_width(facts: PgFacts) -> PgEvaluation:
     return _finish(list_findings, bool_applicable, bool_unknown, "存在无法静态确定的 case 控制项或标签位宽。")
 
 # _branch_condition_scalar 对 formatter 识别的 if 条件执行单位宽判断。
-def _branch_condition_scalar(facts: PgFacts) -> PgEvaluation:
+def _branch_condition_scalar(facts: VgFacts) -> VgEvaluation:
     """检查 if 条件是否可确定为单位宽表达式。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1017 的通过、失败或不确定结论。
+        VG088 的通过、失败或不确定结论。
     """
 
     # findings 保存全部可确定的向量条件位置。
-    list_findings: list[PgFinding] = []  # 非单位宽条件证据
+    list_findings: list[VgFinding] = []  # 非单位宽条件证据
 
     # applicable 标记至少出现一个 if 节点。
     bool_applicable = False  # 是否存在分支条件检查对象
@@ -328,17 +328,17 @@ def _branch_condition_scalar(facts: PgFacts) -> PgEvaluation:
     return _finish(list_findings, bool_applicable, bool_unknown, "存在无法静态确定宽度的分支条件。")
 
 # _case_control_not_constant 区分纯常量控制项、运行时信号和未知符号。
-def _case_control_not_constant(facts: PgFacts) -> PgEvaluation:
+def _case_control_not_constant(facts: VgFacts) -> VgEvaluation:
     """禁止 case 控制表达式完全由常量组成。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1019 的通过、失败或不确定结论。
+        VG090 的通过、失败或不确定结论。
     """
 
     # findings 保存纯常量 case 控制项。
-    list_findings: list[PgFinding] = []  # 固定 case 控制项证据
+    list_findings: list[VgFinding] = []  # 固定 case 控制项证据
 
     # applicable 标记至少发现一个 case 节点。
     bool_applicable = False  # 是否存在 case 控制项检查对象
@@ -398,17 +398,17 @@ def _case_control_not_constant(facts: PgFacts) -> PgEvaluation:
     return _finish(list_findings, bool_applicable, bool_unknown, "存在无法区分运行时信号与常量的 case 控制表达式。")
 
 # _assign_no_duplicate_condition 在 formatter 控制路径内检查重复简单左值。
-def _assign_no_duplicate_condition(facts: PgFacts) -> PgEvaluation:
+def _assign_no_duplicate_condition(facts: VgFacts) -> VgEvaluation:
     """检查同一控制路径是否重复写入同一简单左值。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1032 的通过、失败或不确定结论。
+        VG103 的通过、失败或不确定结论。
     """
 
     # findings 保存同一控制路径上的第二次赋值位置。
-    list_findings: list[PgFinding] = []  # 重复过程赋值证据
+    list_findings: list[VgFinding] = []  # 重复过程赋值证据
 
     # applicable 标记至少有一个可分析控制树。
     bool_applicable = False  # 是否存在过程控制节点
@@ -459,17 +459,17 @@ def _assign_no_duplicate_condition(facts: PgFacts) -> PgEvaluation:
     return _finish(list_findings, bool_applicable, bool_unknown, "存在无法静态识别的过程赋值左值。")
 
 # _case_item_constant_only 判断标签是常量、运行时表达式还是未知符号。
-def _case_item_constant_only(facts: PgFacts) -> PgEvaluation:
+def _case_item_constant_only(facts: VgFacts) -> VgEvaluation:
     """检查 case 标签是否仅使用字面量或已知常量符号。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1034 的通过、失败或不确定结论。
+        VG105 的通过、失败或不确定结论。
     """
 
     # findings 保存变量或逻辑表达式标签。
-    list_findings: list[PgFinding] = []  # 非常量 case 标签证据
+    list_findings: list[VgFinding] = []  # 非常量 case 标签证据
 
     # applicable 专门记录标签常量规则是否见到目标结构。
     bool_applicable = False  # 是否存在 case 标签检查对象
@@ -532,17 +532,17 @@ def _case_item_constant_only(facts: PgFacts) -> PgEvaluation:
     return _finish(list_findings, bool_applicable, bool_unknown, "存在无法静态解析的 case 分支标签。")
 
 # _combinational_if_has_else 检查组合过程内每条 if 链的终止分支。
-def _combinational_if_has_else(facts: PgFacts) -> PgEvaluation:
+def _combinational_if_has_else(facts: VgFacts) -> VgEvaluation:
     """检查组合 always 中每条 if 链是否具有终止 else。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1038 的通过或失败结论。
+        VG109 的通过或失败结论。
     """
 
     # findings 保存缺少终止 else 的组合 if 头部。
-    list_findings: list[PgFinding] = []  # 组合 if 链不完整证据
+    list_findings: list[VgFinding] = []  # 组合 if 链不完整证据
 
     # applicable 标记至少发现一个组合 if 节点。
     bool_applicable = False  # 是否存在组合 if 检查对象
@@ -929,7 +929,7 @@ def _patterns_overlap(left: ConstantBits, right: ConstantBits, str_case_kind: st
         两个模式存在共同匹配值时返回 True。
     """
 
-    # 不同宽度由 PG1013 处理，当前规则不猜测扩展语义。
+    # 不同宽度由 VG084 处理，当前规则不猜测扩展语义。
     if left.width != right.width:
 
         # 位宽不同不形成当前高置信重叠证据。
@@ -958,7 +958,7 @@ def _finding(
     str_locator: str,
     str_message: str,
     str_evidence: str,
-) -> PgFinding:
+) -> VgFinding:
     """按可信 module 文本定位并构造规则证据。
 
     参数:
@@ -969,7 +969,7 @@ def _finding(
         str_message: 当前固定规则的中文诊断。
         str_evidence: 报告中保留的最小规则证据。
     返回:
-        已计算一基行号的 PG finding。
+        已计算一基行号的 VG finding。
     """
 
     # locator 首次出现位置足以定位当前 formatter 节点。
@@ -979,15 +979,15 @@ def _finding(
     int_line = int_base_line if int_offset < 0 else int_base_line + str_module_text.count("\n", 0, int_offset)  # 当前证据的一基行号
 
     # 统一 finding 字段供 engine 序列化。
-    return PgFinding(str_path, int_line, str_message, str_evidence)
+    return VgFinding(str_path, int_line, str_message, str_evidence)
 
 # _finish 集中实施确定失败优先于不确定事实的状态合同。
 def _finish(
-    list_findings: list[PgFinding],
+    list_findings: list[VgFinding],
     bool_applicable: bool,
     bool_unknown: bool,
     str_unknown_message: str,
-) -> PgEvaluation:
+) -> VgEvaluation:
     """按失败优先、不确定次之的统一顺序生成规则结论。
 
     参数:
@@ -996,7 +996,7 @@ def _finish(
         bool_unknown: 当前规则是否遇到无法静态判断的事实。
         str_unknown_message: 不确定结论的用户诊断文本。
     返回:
-        失败、不确定或通过的统一 PG 结论。
+        失败、不确定或通过的统一 VG 结论。
     """
 
     # 任一确定违规都优先形成 failed。

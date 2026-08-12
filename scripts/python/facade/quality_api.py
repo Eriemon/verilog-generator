@@ -243,7 +243,7 @@ def check_verilog_deliverable(
     bool_abi_wrapper = _abi_wrapper_enabled(dict_options)  # 当前交付门是否启用 ABI wrapper 模式
 
     # 可选规格支持字典、JSON 文本或 JSON 路径三种 facade 输入。
-    dict_spec = _load_optional_json(dict_options.get("spec"))  # PG 门禁使用的归一化规格
+    dict_spec = _load_optional_json(dict_options.get("spec"))  # VG 门禁使用的归一化规格
 
     # 交付门共享关键字参数时沿用质量门那一套 ABI wrapper 兼容规则。
     dict_gate_kwargs = _gate_kwargs(  # 交付门共享关键字参数字典
@@ -257,7 +257,7 @@ def check_verilog_deliverable(
     # 交付门把共享参数整体展开给下游实现，避免这里再重复拼参数。
     dict_report = run_verilog_deliverable_gate(  # 交付门运行结果字典
         path_artifacts,  # 本次要审查的交付工件路径
-        spec=dict_spec,  # PG 门禁使用的可选规格合同
+        spec=dict_spec,  # VG 门禁使用的可选规格合同
         **dict_gate_kwargs,  # 交付门下游实际使用的关键字参数集合
     )
 

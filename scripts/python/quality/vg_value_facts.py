@@ -1,4 +1,4 @@
-"""提供 RTL PG 规则共享的常量、符号和位宽事实。"""
+"""提供 RTL VG 规则共享的常量、符号和位宽事实。"""
 
 # future annotations 延后解析不可变常量模型类型。
 from __future__ import annotations

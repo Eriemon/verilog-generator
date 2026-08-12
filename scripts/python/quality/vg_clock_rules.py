@@ -1,4 +1,4 @@
-"""实现派生时钟来源相关 RTL PG 门禁。"""
+"""实现派生时钟来源相关 RTL VG 门禁。"""
 
 # future annotations 延后解析规则模型类型。
 from __future__ import annotations
@@ -10,37 +10,37 @@ import re
 from typing import Callable
 
 # facts 提供 formatter AST 确认的 module 结构。
-from .rtl_pg_facts import PgFacts, iter_trusted_modules
+from .vg_semantic_facts import VgFacts, iter_trusted_modules
 
 # models 统一逐门禁结论与证据格式。
-from .rtl_pg_models import PgEvaluation, PgFinding, failed, inconclusive, passed
+from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passed
 
 # evaluate_clock_gate 把固定编号路由到对应的时钟规则实现。
-def evaluate_clock_gate(str_gate_id: str, facts: PgFacts) -> PgEvaluation:
-    """执行时钟语义域中的指定固定 PG 门禁。
+def evaluate_clock_gate(str_gate_id: str, facts: VgFacts) -> VgEvaluation:
+    """执行时钟语义域中的指定固定 VG 门禁。
 
     参数:
-        str_gate_id: 当前执行的固定 PG 时钟门禁编号。
+        str_gate_id: 当前执行的固定 VG 时钟门禁编号。
         facts: formatter AST 构建的可信扫描事实。
     返回:
         当前时钟来源规则的逐门禁结论。
     """
 
     # 路由表覆盖单域、来源、门控、边沿和非时钟连接规则。
-    dict_evaluators: dict[str, Callable[[PgFacts], PgEvaluation]] = {  # 固定编号到时钟规则函数的映射
-        "PG1002": _single_clock_domain,  # 单时钟域建议检查
-        "PG1018": _combinational_clock_source,  # 组合逻辑派生时钟检查
-        "PG1025": _gated_clock,  # 门控时钟建议检查
-        "PG1036": _registered_clock_source,  # 寄存器输出时钟检查
-        "PG1049": _single_clock_edge,  # 同时使用双边沿检查
-        "PG1061": _clock_only_clock_pin,  # 时钟作为数据信号检查
+    dict_evaluators: dict[str, Callable[[VgFacts], VgEvaluation]] = {  # 固定编号到时钟规则函数的映射
+        "VG073": _single_clock_domain,  # 单时钟域建议检查
+        "VG089": _combinational_clock_source,  # 组合逻辑派生时钟检查
+        "VG096": _gated_clock,  # 门控时钟建议检查
+        "VG107": _registered_clock_source,  # 寄存器输出时钟检查
+        "VG120": _single_clock_edge,  # 同时使用双边沿检查
+        "VG132": _clock_only_clock_pin,  # 时钟作为数据信号检查
     }
 
     # engine 已保证编号属于时钟域，直接执行唯一对应函数。
     return dict_evaluators[str_gate_id](facts)
 
 # _single_clock_domain 要求一个设计目标只使用一个时钟信号。
-def _single_clock_domain(facts: PgFacts) -> PgEvaluation:
+def _single_clock_domain(facts: VgFacts) -> VgEvaluation:
     """检查 formatter 识别的时序过程块是否共享单一时钟域。
 
     参数:
@@ -96,10 +96,10 @@ def _single_clock_domain(facts: PgFacts) -> PgEvaluation:
 
         # 每个时钟域都保留一条定位，便于确认跨域边界。
         list_findings = [  # 多时钟域定位证据
-            PgFinding(  # 当前独立时钟域的诊断对象
+            VgFinding(  # 当前独立时钟域的诊断对象
                 dict_clock_locations[str_clock][0],  # 当前时钟首次出现的文件
                 dict_clock_locations[str_clock][1],  # 当前时钟首次出现的一基行号
-                "建议设计仅使用一个时钟域。",  # PG1002 用户诊断
+                "建议设计仅使用一个时钟域。",  # VG073 用户诊断
                 str_clock,  # 当前独立时钟域名称
             )
             for str_clock in sorted(set_clocks)  # 稳定排序全部确定时钟域
@@ -117,8 +117,8 @@ def _single_clock_domain(facts: PgFacts) -> PgEvaluation:
     # 单一确定时钟域适用通过；没有时序块则不适用。
     return passed(applicable=bool(set_clocks))
 
-# _combinational_clock_source 保持 PG1018 的既有组合来源语义。
-def _combinational_clock_source(facts: PgFacts) -> PgEvaluation:
+# _combinational_clock_source 保持 VG089 的既有组合来源语义。
+def _combinational_clock_source(facts: VgFacts) -> VgEvaluation:
     """检查组合逻辑输出是否被用作时钟。
 
     参数:
@@ -127,11 +127,11 @@ def _combinational_clock_source(facts: PgFacts) -> PgEvaluation:
         组合派生时钟的逐门禁结论。
     """
 
-    # PG1018 禁止任何组合网络输出作为时钟。
+    # VG089 禁止任何组合网络输出作为时钟。
     return _derived_clock_gate(facts, combination_clock=True)
 
 # _gated_clock 复用组合来源事实识别门控时钟。
-def _gated_clock(facts: PgFacts) -> PgEvaluation:
+def _gated_clock(facts: VgFacts) -> VgEvaluation:
     """检查逻辑门控后的信号是否被用作寄存器时钟。
 
     参数:
@@ -143,8 +143,8 @@ def _gated_clock(facts: PgFacts) -> PgEvaluation:
     # 当前 formatter 的组合来源集合覆盖 assign 和组合 always 门控输出。
     return _derived_clock_gate(facts, combination_clock=True)
 
-# _registered_clock_source 保持 PG1036 的既有寄存器来源语义。
-def _registered_clock_source(facts: PgFacts) -> PgEvaluation:
+# _registered_clock_source 保持 VG107 的既有寄存器来源语义。
+def _registered_clock_source(facts: VgFacts) -> VgEvaluation:
     """检查寄存器输出是否被用作其他寄存器时钟。
 
     参数:
@@ -153,11 +153,11 @@ def _registered_clock_source(facts: PgFacts) -> PgEvaluation:
         寄存器派生时钟的逐门禁结论。
     """
 
-    # PG1036 选择时序过程块的驱动目标作为禁止来源。
+    # VG107 选择时序过程块的驱动目标作为禁止来源。
     return _derived_clock_gate(facts, combination_clock=False)
 
 # _derived_clock_gate 实现组合来源与寄存器来源的共享检查。
-def _derived_clock_gate(facts: PgFacts, *, combination_clock: bool) -> PgEvaluation:
+def _derived_clock_gate(facts: VgFacts, *, combination_clock: bool) -> VgEvaluation:
     """检查时序 always 的时钟是否来自指定驱动类型。
 
     参数:
@@ -171,7 +171,7 @@ def _derived_clock_gate(facts: PgFacts, *, combination_clock: bool) -> PgEvaluat
     bool_combination_clock = combination_clock  # 是否检查组合逻辑派生时钟
 
     # findings 汇总所有 module 中的确定违规来源。
-    list_findings: list[PgFinding] = []  # 本轮确认的派生时钟证据
+    list_findings: list[VgFinding] = []  # 本轮确认的派生时钟证据
 
     # applicable 标记至少发现一个可解析的时序 always。
     bool_applicable = False  # 当前设计是否存在时钟来源检查对象
@@ -203,13 +203,13 @@ def _derived_clock_gate(facts: PgFacts, *, combination_clock: bool) -> PgEvaluat
             # formatter 明确认定的组合块进入组合来源集合。
             if bool(dict_always.get("is_combinational")):
 
-                # 组合目标可触发 PG1018。
+                # 组合目标可触发 VG089。
                 set_combinational_targets.update(set_targets)
 
             # 其余块按时序来源收集，后续仍要求 clock 字段可解析。
             else:
 
-                # 时序目标可触发 PG1036。
+                # 时序目标可触发 VG107。
                 set_sequential_targets.update(set_targets)
 
         # 第二遍检查每个时序块实际使用的时钟信号。
@@ -235,9 +235,9 @@ def _derived_clock_gate(facts: PgFacts, *, combination_clock: bool) -> PgEvaluat
 
             # 两条门禁分别选择组合来源集合或寄存器来源集合。
             set_forbidden_sources = (
-                set_continuous_targets | set_combinational_targets  # PG1018 禁止的组合来源
+                set_continuous_targets | set_combinational_targets  # VG089 禁止的组合来源
                 if bool_combination_clock  # 当前执行组合派生时钟检查
-                else set_sequential_targets  # PG1036 禁止的寄存器来源
+                else set_sequential_targets  # VG107 禁止的寄存器来源
             )  # 当前门禁禁止作为时钟的信号集合
 
             # 普通输入时钟不在派生来源集合中，应保持通过。
@@ -257,7 +257,7 @@ def _derived_clock_gate(facts: PgFacts, *, combination_clock: bool) -> PgEvaluat
             )  # 当前时钟门禁的用户诊断
 
             # finding 保留文件、行号、诊断和具体时钟名。
-            list_findings.append(PgFinding(source_facts.relative_path, int_line, str_message, str_clock))
+            list_findings.append(VgFinding(source_facts.relative_path, int_line, str_message, str_clock))
 
     # 任一确定派生时钟都使当前固定门禁失败。
     if list_findings:
@@ -269,7 +269,7 @@ def _derived_clock_gate(facts: PgFacts, *, combination_clock: bool) -> PgEvaluat
     return passed(applicable=bool_applicable)
 
 # _single_clock_edge 禁止同一时钟同时作为上升沿和下降沿触发源。
-def _single_clock_edge(facts: PgFacts) -> PgEvaluation:
+def _single_clock_edge(facts: VgFacts) -> VgEvaluation:
     """检查同一时钟是否混合使用 posedge 与 negedge。
 
     参数:
@@ -346,7 +346,7 @@ def _single_clock_edge(facts: PgFacts) -> PgEvaluation:
 
     # 双边沿时钟逐一形成 finding。
     list_findings = [  # 同一时钟混用两个边沿的证据
-        PgFinding(  # 当前双边沿时钟的诊断对象
+        VgFinding(  # 当前双边沿时钟的诊断对象
             dict_locations[str_clock][0],  # 时钟首次出现文件
             dict_locations[str_clock][1],  # 时钟首次出现行号
             "避免同时使用同一时钟的上升沿和下降沿。",  # 双边沿混用诊断文本
@@ -372,7 +372,7 @@ def _single_clock_edge(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool(dict_edges))
 
 # _clock_only_clock_pin 禁止已识别时钟进入普通数据连接。
-def _clock_only_clock_pin(facts: PgFacts) -> PgEvaluation:
+def _clock_only_clock_pin(facts: VgFacts) -> VgEvaluation:
     """检查时钟信号是否被连续赋值或普通实例端口当作数据使用。
 
     参数:
@@ -382,7 +382,7 @@ def _clock_only_clock_pin(facts: PgFacts) -> PgEvaluation:
     """
 
     # findings 保存时钟进入普通数据路径的确定证据。
-    list_findings: list[PgFinding] = []  # 时钟非时钟用途证据
+    list_findings: list[VgFinding] = []  # 时钟非时钟用途证据
 
     # clocks 从时序 always 的 formatter clock 字段建立。
     set_clocks: set[str] = set()  # 当前设计已识别的时钟名称
@@ -430,7 +430,7 @@ def _clock_only_clock_pin(facts: PgFacts) -> PgEvaluation:
 
                 # 记录时钟进入连续赋值数据路径的证据。
                 list_findings.append(
-                    PgFinding(
+                    VgFinding(
                         source_facts.relative_path,
                         int_line,
                         "时钟信号只能连接到寄存器时钟管脚。",
@@ -455,7 +455,7 @@ def _clock_only_clock_pin(facts: PgFacts) -> PgEvaluation:
 
                 # 记录普通实例端口使用时钟信号的证据。
                 list_findings.append(
-                    PgFinding(
+                    VgFinding(
                         source_facts.relative_path,
                         int_line,
                         "时钟信号连接到了非时钟实例端口。",

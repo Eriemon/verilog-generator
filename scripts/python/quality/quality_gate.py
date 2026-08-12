@@ -7,6 +7,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+# 统一 catalog 为原生样式规则和迁移语义规则提供相同元数据。
+from scripts.python.workflow.verilog_gate_catalog import load_verilog_quality_gates
+
 # formatter_ast 入口仍由 facade 负责组织文件级 orchestration。
 from .formatter_ast import iter_verilog_sources, read_verilog_source
 
@@ -60,6 +63,8 @@ from .quality_gate_region_rules import _region_ownership_rules, _rulebook_consis
 from .quality_gate_reports import write_quality_gate_report
 from .quality_gate_structure_rules import _module_rules
 from .quality_gate_text_rules import _raw_text_rules
+from .vg_semantic_engine import run_vg_semantic_gate
+from .vg_semantic_facts import build_vg_facts_from_reports
 
 # 组织目录级质量门运行并保持旧入口签名稳定。
 def run_verilog_quality_gate(
@@ -70,6 +75,7 @@ def run_verilog_quality_gate(
     formatter_profile: str = "formatter-normalize",
     include_testbench: bool = False,
     vitis_wrapper: bool = False,
+    spec: dict[str, Any] | None = None,
 ) -> QualityGateReport:
     """
     运行确定性的 Verilog 可读性和风格质量门。
@@ -80,6 +86,7 @@ def run_verilog_quality_gate(
     :param formatter_profile: formatter_ast 使用的解析 profile。
     :param include_testbench: 是否把 testbench 文件纳入质量门。
     :param vitis_wrapper: 是否按 Vitis wrapper 端口规则放宽命名检查。
+    :param spec: 可选归一化设计规格，用于补充语义门禁事实。
     :return: 包含诊断、metrics 和 AST 汇总的质量门报告。
     """
 
@@ -146,14 +153,201 @@ def run_verilog_quality_gate(
     # 聚合 module 数复用 AST summary，避免重复口径。
     dict_aggregate_metrics["modules"] = dict_ast_tree_report["summary"]["modules"]  # 已解析 module 总数
 
+    # 迁移语义段复用本轮已经生成的 formatter AST，禁止第二次解析。
+    vg_facts = build_vg_facts_from_reports(  # 共享 AST 语义事实
+        path_root,  # 语义执行器消费的规范 RTL 入口
+        list_file_reports,  # 已生成的逐文件 AST 报告
+        spec=spec,  # 调用方提供的可选设计规格
+    )
+
+    # 迁移语义段通过统一入口生成 VG072-VG143 结果。
+    dict_semantic_report = run_vg_semantic_gate(  # 72 条迁移语义规则报告
+        path_root,  # 本轮统一质量门扫描根
+        spec=spec,  # 语义规则可选设计规格
+        strict=strict,  # WARNING 级结果的阻断策略
+        include_testbench=include_testbench,  # testbench 纳入策略
+        facts=vg_facts,  # 复用本轮唯一 AST 事实
+    )
+
+    # catalog 元数据把原生 issue 聚合为 VG000-VG071 的逐规则结论。
+    dict_catalog = load_verilog_quality_gates()  # 已验证的 121 条统一规则目录
+
+    # 原生规则结果与迁移语义结果采用相同公开模型。
+    list_native_results = _native_vg_rule_results(  # 49 条原生规则结果
+        dict_catalog,  # 统一规则元数据和稳定顺序
+        list_issues,  # 原生质量门诊断
+        bool(list_files),  # 是否发现可检查 RTL
+    )
+
+    # 两段结果严格按 catalog 顺序拼成完整统一报告。
+    list_vg_results = (  # 121 条 VG 结果
+        list_native_results + list(dict_semantic_report["vg_rule_results"])  # 原生段后接语义段
+    )
+
+    # 语义规则的失败或不确定状态进入统一 issue 列表，复用既有 ok/errors 语义。
+    _append_semantic_issues(list_issues, dict_semantic_report["vg_rule_results"], strict=strict)
+
+    # 全量摘要不再沿用语义子引擎的 72 条局部计数。
+    dict_vg_summary = _summarize_vg_rule_results(list_vg_results)  # 121 条规则执行摘要
+
     # 返回不可变报告对象，供 CLI 或验证流程序列化。
     return QualityGateReport(
-        path_root,
-        tuple(list_issues),
-        dict_aggregate_metrics,
-        dict_ast_tree_report,
-        strict,
+        root=path_root,
+        issues=tuple(list_issues),
+        metrics=dict_aggregate_metrics,
+        ast_report=dict_ast_tree_report,
+        strict=strict,
+        vg_catalog_version=int(dict_catalog["version"]),
+        vg_rule_summary=dict_vg_summary,
+        vg_rule_results=tuple(list_vg_results),
     )
+
+# _native_vg_rule_results 把原生 QualityIssue 聚合为逐规则结果。
+def _native_vg_rule_results(
+    dict_catalog: dict[str, Any],
+    list_issues: list[QualityIssue],
+    bool_has_sources: bool,
+) -> list[dict[str, Any]]:
+    """构造 VG000 至 VG071 已发射规则的逐规则结论。
+
+    参数:
+        dict_catalog: 已验证的统一 VG 规则目录。
+        list_issues: 原生质量门已经产生的诊断。
+        bool_has_sources: 当前运行是否发现 Verilog 输入。
+    返回:
+        按 catalog 顺序组织的原生逐规则结果。
+    """
+
+    # 先按规则码归组，避免每条 catalog 记录重复扫描全部诊断。
+    dict_issues_by_code: dict[str, list[QualityIssue]] = {}  # 原生规则码到诊断集合
+
+    # 每条原生诊断只归入自身固定 VG 编号。
+    for quality_issue in list_issues:
+
+        # setdefault 保持同一规则的诊断出现顺序。
+        dict_issues_by_code.setdefault(quality_issue.code, []).append(quality_issue)
+
+    # 只处理迁移段之前实际存在的 49 条规则。
+    list_results: list[dict[str, Any]] = []  # 原生 VG 逐规则结果
+
+    # catalog 顺序是公开逐规则结果的唯一顺序来源。
+    for dict_rule in dict_catalog["rules"]:
+
+        # 当前 catalog 条目提供固定 VG 主键。
+        str_gate_id = str(dict_rule["gate_id"])  # 当前 catalog 规则码
+
+        # VG072 之后由语义引擎负责，停止原生段聚合。
+        if int(str_gate_id[2:]) >= 72:
+
+            # 后续规则不得在两个执行器中重复报告。
+            break
+
+        # 当前规则只消费与其固定编号相同的原生诊断。
+        list_rule_issues = dict_issues_by_code.get(str_gate_id, [])  # 当前规则全部诊断
+
+        # 公开模型始终保留规则元数据、状态和逐项证据。
+        list_results.append(
+            {
+                "gate_id": str_gate_id,
+                "rule_key": dict_rule["rule_key"],
+                "level": dict_rule["level"],
+                "catalog_status": "active",
+                "status": "failed" if list_rule_issues else "passed",
+                "applicable": bool_has_sources,
+                "message": "" if bool_has_sources else "No Verilog source was discovered.",
+                "findings": [
+                    {
+                        "path": quality_issue.path or "",
+                        "line": quality_issue.line or 1,
+                        "message": quality_issue.message,
+                        "evidence": quality_issue.rule or "",
+                    }
+                    for quality_issue in list_rule_issues
+                ],
+            }
+        )
+
+    # 返回值保持 catalog 的稳定顺序。
+    return list_results
+
+# _append_semantic_issues 让语义结果参与统一 errors/warnings 判定。
+def _append_semantic_issues(
+    list_issues: list[QualityIssue],
+    list_results: list[dict[str, Any]],
+    *,
+    strict: bool,
+) -> None:
+    """把未通过的语义规则转换为统一质量诊断。
+
+    参数:
+        list_issues: 接收转换后诊断的统一列表。
+        list_results: 语义引擎产生的逐规则结果。
+        strict: 是否把 WARNING 级非通过结果升级为 error。
+    返回:
+        无；诊断直接追加到 ``list_issues``。
+    """
+
+    # 每条未通过结果按 finding 粒度映射为统一诊断。
+    for dict_result in list_results:
+
+        # 已通过结果不需要重复生成 issue。
+        if dict_result["status"] == "passed":
+
+            # 继续处理其他语义规则。
+            continue
+
+        # 没有定位证据时仍生成规则级 fail-closed 诊断。
+        list_findings = list(dict_result["findings"]) or [  # 当前规则的定位证据或规则级回退
+            {
+                "path": None,  # 规则级回退没有文件位置
+                "line": None,  # 规则级回退没有源码行号
+                "message": dict_result["message"] or "VG semantic rule did not pass.",  # 非通过原因
+            }
+        ]
+
+        # 每个 finding 独立保留路径、行号和规则键。
+        for dict_finding in list_findings:
+
+            # finding 可覆盖 catalog 的默认治理等级。
+            str_finding_level = str(dict_finding.get("severity") or dict_result["level"])  # finding 级或目录级治理等级
+
+            # strict 模式把 WARNING 非通过状态统一升级为 error。
+            str_severity = "error" if str_finding_level == "BLOCKER" or strict else "warning"  # 当前阻断策略
+
+            # 统一 issue 让既有 errors/warnings 汇总无需理解语义子模型。
+            list_issues.append(
+                QualityIssue(
+                    str(dict_result["gate_id"]),
+                    str_severity,
+                    str(dict_finding["message"]),
+                    dict_finding.get("path"),
+                    dict_finding.get("line"),
+                    str(dict_result["rule_key"]),
+                )
+            )
+
+# _summarize_vg_rule_results 生成稳定的全目录状态计数。
+def _summarize_vg_rule_results(list_results: list[dict[str, Any]]) -> dict[str, Any]:
+    """汇总全部统一 VG 逐规则结果。
+
+    参数:
+        list_results: 按 catalog 顺序组织的完整逐规则结果。
+    返回:
+        规则总数、激活数和各公开状态计数。
+    """
+
+    # 公开状态顺序保持 JSON 和 Markdown 报告字段稳定。
+    tuple_statuses = ("passed", "failed", "inconclusive", "error", "not_run")  # 公开状态顺序
+
+    # 每个状态都显式计数，零值字段也不会从报告消失。
+    return {
+        "total": len(list_results),
+        "active": len(list_results),
+        "status_counts": {
+            str_status: sum(dict_result["status"] == str_status for dict_result in list_results)
+            for str_status in tuple_statuses
+        },
+    }
 
 # 从检查入口收集需要进入质量门的 Verilog 源文件。
 def _quality_gate_source_files(path_root: Path, include_testbench: bool) -> list[Path]:

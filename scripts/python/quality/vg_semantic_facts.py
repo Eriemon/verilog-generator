@@ -1,4 +1,4 @@
-"""从 formatter AST 可信范围构建 RTL PG 分析事实。"""
+"""从 formatter AST 可信范围构建 RTL VG 分析事实。"""
 
 # future annotations 避免运行期求值递归类型。
 from __future__ import annotations
@@ -15,9 +15,9 @@ from typing import Any, Iterator
 # formatter_ast 提供唯一受信任的 Verilog 解析入口。
 from .formatter_ast import build_ast_report_for_path, iter_verilog_sources, read_verilog_source
 
-# PgSourceFacts 保存单个文件的原文与 formatter AST。
+# VgSourceFacts 保存单个文件的原文与 formatter AST。
 @dataclass(frozen=True)
-class PgSourceFacts:
+class VgSourceFacts:
     """保存单个 Verilog 文件的 formatter AST 与原始文本。"""
 
     # path 指向当前运行时可见的 RTL 文件。
@@ -35,16 +35,16 @@ class PgSourceFacts:
     # report 是 formatter AST 的结构化事实报告。
     report: dict[str, Any]  # 当前文件的 formatter AST 报告
 
-# PgFacts 汇总一次 PG 运行的全部输入事实。
+# VgFacts 汇总一次 VG 运行的全部输入事实。
 @dataclass(frozen=True)
-class PgFacts:
-    """保存一次 PG 门禁运行的全部可信解析事实。"""
+class VgFacts:
+    """保存一次 VG 门禁运行的全部可信解析事实。"""
 
     # root 是本轮扫描采用的解析后根路径。
-    root: Path  # 本轮 PG 扫描根路径
+    root: Path  # 本轮 VG 扫描根路径
 
     # sources 只包含按 testbench 策略纳入的 RTL 文件。
-    sources: tuple[PgSourceFacts, ...]  # 本轮纳入分析的文件事实
+    sources: tuple[VgSourceFacts, ...]  # 本轮纳入分析的文件事实
 
     # parse_errors 汇总 formatter AST 的阻断诊断。
     parse_errors: tuple[dict[str, Any], ...]  # 无法安全分析的解析错误
@@ -52,14 +52,14 @@ class PgFacts:
     # spec 保留调用方提供的归一化设计合同。
     spec: dict[str, Any]  # 可供接口和时钟规则消费的规格
 
-# build_pg_facts 只通过 formatter AST 建立规则事实。
-def build_pg_facts(
+# build_vg_facts 只通过 formatter AST 建立规则事实。
+def build_vg_facts(
     root: Path,
     *,
     spec: dict[str, Any] | None = None,
     include_testbench: bool = False,
-) -> PgFacts:
-    """建立可供固定 PG 规则消费的可信源码事实。
+) -> VgFacts:
+    """建立可供固定 VG 规则消费的可信源码事实。
 
     参数:
         root: 待扫描的 Verilog 文件或目录。
@@ -70,10 +70,10 @@ def build_pg_facts(
     """
 
     # 解析扫描根，避免后续报告路径随调用位置漂移。
-    path_root = root.resolve()  # 本轮 PG 扫描采用的规范根路径
+    path_root = root.resolve()  # 本轮 VG 扫描采用的规范根路径
 
     # 文件事实按 formatter_ast 的稳定遍历顺序收集。
-    list_sources: list[PgSourceFacts] = []  # 等待规则消费的有序文件集合
+    list_sources: list[VgSourceFacts] = []  # 等待规则消费的有序文件集合
 
     # 解析错误独立汇总，供全部 active 门禁统一 fail-closed。
     list_parse_errors: list[dict[str, Any]] = []  # formatter AST 阻断诊断
@@ -99,7 +99,7 @@ def build_pg_facts(
         # diagnostics 可能同时包含提示和阻断错误。
         list_diagnostics = list(dict_report.get("diagnostics", []))  # 当前文件的 formatter 诊断
 
-        # 只把 error 级诊断提升为 PG fail-closed 原因。
+        # 只把 error 级诊断提升为 VG fail-closed 原因。
         for dict_diagnostic in list_diagnostics:
 
             # 非 error 诊断不破坏 AST 可信边界。
@@ -115,7 +115,7 @@ def build_pg_facts(
         list_sources.append(
 
             # 单文件对象绑定路径、原文和对应 AST，避免跨文件串扰。
-            PgSourceFacts(
+            VgSourceFacts(
                 path=path_source,  # 当前 RTL 的解析后文件路径
                 relative_path=str_relative_path,  # 跨机器稳定的相对路径
 
@@ -127,19 +127,91 @@ def build_pg_facts(
         )
 
     # 不可变事实对象防止规则之间相互污染输入。
-    return PgFacts(
+    return VgFacts(
         root=path_root,  # 本轮扫描的规范根路径
         sources=tuple(list_sources),  # 稳定顺序的文件事实
         parse_errors=tuple(list_parse_errors),  # 所有阻断解析诊断
         spec=dict(spec or {}),  # 复制可选规格，隔离调用方后续修改
     )
 
+# build_vg_facts_from_reports 复用统一质量门的 AST，避免二次解析。
+def build_vg_facts_from_reports(
+    root: Path,
+    reports: list[dict[str, Any]],
+    *,
+    spec: dict[str, Any] | None = None,
+) -> VgFacts:
+    """复用统一质量门已经生成的 formatter AST 报告构建语义事实。
+
+    参数:
+        root: 本轮统一质量门的源文件或目录入口。
+        reports: 已完成 formatter 解析的逐文件 AST 报告。
+        spec: 可选归一化设计规格。
+    返回:
+        可供全部 VG 语义规则共享的不可变事实对象。
+    """
+
+    # 解析扫描根以保持报告路径稳定。
+    path_root = root.resolve()  # 统一质量门已经规范化的扫描根
+
+    # sources 按调用方报告顺序收集文件事实。
+    list_sources: list[VgSourceFacts] = []  # 复用 AST 的逐文件事实
+
+    # parse_errors 汇总会破坏语义判断的 formatter 错误。
+    list_parse_errors: list[dict[str, Any]] = []  # 复用报告中的阻断诊断
+
+    # 每份 AST 报告与真实源文件重新绑定，但不重复执行 formatter 解析。
+    for dict_report in reports:
+
+        # 报告 path 字段恢复为当前机器可读的文件路径。
+        path_source = Path(str(dict_report["path"]))  # AST 报告对应的真实源文件
+
+        # 读取统一质量门已经解析的同一份源码。
+        str_source, _ = read_verilog_source(path_source)  # 源码文本与未使用的编码标记
+
+        # 优先沿用报告已记录的跨机器相对路径。
+        str_relative_path = str(  # 报告优先提供跨机器稳定的相对路径
+            dict_report.get("relative_path") or _relative_path(path_root, path_source)  # 稳定报告位置
+        )
+
+        # formatter error 必须进入语义引擎的 fail-closed 输入。
+        for dict_diagnostic in dict_report.get("diagnostics", []):
+
+            # warning 不破坏 AST 可信边界，仅收集 error。
+            if dict_diagnostic.get("severity") == "error":
+
+                # 保留文件位置和 formatter 原始诊断字段。
+                list_parse_errors.append({"path": str_relative_path, **dict_diagnostic})
+
+        # 单文件事实绑定源码、行序和调用方提供的唯一 AST 报告。
+        list_sources.append(
+            VgSourceFacts(
+                path=path_source,  # 当前 RTL 的真实文件路径
+                relative_path=str_relative_path,  # 报告使用的稳定相对路径
+
+                # 源码文本和行序共同支持后续 span 回切。
+                source=str_source,  # formatter 已消费的当前源码
+                lines=tuple(str_source.splitlines()),  # AST span 回切所需行序
+
+                # 报告对象保持调用方生成的 AST 身份。
+                report=dict_report,  # 统一质量门生成的唯一 AST 报告
+            )
+        )
+
+    # 聚合结果保留报告顺序，并隔离后续规则对输入集合的修改。
+    return VgFacts(
+        root=path_root,  # 复用报告对应的统一扫描入口
+        sources=tuple(list_sources),  # 按既有 AST 报告顺序冻结文件事实
+        parse_errors=tuple(list_parse_errors),  # 复用报告内的 formatter 错误集合
+        spec=dict(spec or {}),  # 为语义规则复制可选设计合同
+    )
+
 # iter_trusted_modules 只产出 formatter 已确认的 module span。
-def iter_trusted_modules(facts: PgFacts) -> Iterator[tuple[PgSourceFacts, dict[str, Any], str, int]]:
+def iter_trusted_modules(facts: VgFacts) -> Iterator[tuple[VgSourceFacts, dict[str, Any], str, int]]:
     """逐个返回 formatter AST 已确认边界的 module 文本。
 
     参数:
-        facts: 本轮 PG 扫描的不可变事实。
+        facts: 本轮 VG 扫描的不可变事实。
     返回:
         迭代产生文件事实、module 字典、可信文本和一基起始行。
     """
@@ -169,7 +241,7 @@ def iter_trusted_modules(facts: PgFacts) -> Iterator[tuple[PgSourceFacts, dict[s
             yield source_facts, dict_module, str_module_text, int_start
 
 # source_line 为证据报告读取安全的一基源码行。
-def source_line(source_facts: PgSourceFacts, int_line: int) -> str:
+def source_line(source_facts: VgSourceFacts, int_line: int) -> str:
     """按一基行号返回源码行，越界时返回空文本。
 
     参数:

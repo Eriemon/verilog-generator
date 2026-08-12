@@ -1,4 +1,4 @@
-"""实现 function 与 task 相关 RTL PG 门禁。"""
+"""实现 function 与 task 相关 RTL VG 门禁。"""
 
 # future annotations 延后解析规则模型类型。
 from __future__ import annotations
@@ -7,70 +7,70 @@ from __future__ import annotations
 import re
 
 # facts 提供 formatter AST 确认的 module 和子程序结构。
-from .rtl_pg_facts import PgFacts, iter_trusted_modules
+from .vg_semantic_facts import VgFacts, iter_trusted_modules
 
 # models 统一逐门禁结论与证据格式。
-from .rtl_pg_models import PgEvaluation, PgFinding, failed, inconclusive, passed
+from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passed
 
-# value facts 提供与其他 PG 规则一致的受限位宽求值。
-from .rtl_pg_value_facts import module_parameter_values, parse_width
+# value facts 提供与其他 VG 规则一致的受限位宽求值。
+from .vg_value_facts import module_parameter_values, parse_width
 
 # evaluate_subprogram_gate 按固定编号路由 function/task 规则。
-def evaluate_subprogram_gate(str_gate_id: str, facts: PgFacts) -> PgEvaluation:
+def evaluate_subprogram_gate(str_gate_id: str, facts: VgFacts) -> VgEvaluation:
     """执行 function/task 精确子程序门禁。
 
     参数:
-        str_gate_id: 当前执行的固定 PG 子程序编号。
+        str_gate_id: 当前执行的固定 VG 子程序编号。
         facts: formatter AST 构建的可信扫描事实。
     返回:
         当前子程序规则的逐门禁结论。
     """
 
-    # PG1035 只判断函数直接调用自身的情况。
-    if str_gate_id == "PG1035":
+    # VG106 只判断函数直接调用自身的情况。
+    if str_gate_id == "VG106":
 
         # 递归规则消费 formatter 的 functions 边界。
         return _function_recursion(facts)
 
-    # PG1044 比较 task 调用实参与声明形参的静态位宽。
-    if str_gate_id == "PG1044":
+    # VG115 比较 task 调用实参与声明形参的静态位宽。
+    if str_gate_id == "VG115":
 
         # task 接口规则只消费 formatter 确认的 module 和 task 边界。
         return _task_io_width_match(facts)
 
-    # PG1050 比较 function 声明宽度与返回赋值表达式宽度。
-    if str_gate_id == "PG1050":
+    # VG121 比较 function 声明宽度与返回赋值表达式宽度。
+    if str_gate_id == "VG121":
 
         # function 返回规则在每个 module 作用域内独立求宽。
         return _function_return_width(facts)
 
-    # PG1056 禁止 function 或 task 直接写 module 作用域状态。
-    if str_gate_id == "PG1056":
+    # VG127 禁止 function 或 task 直接写 module 作用域状态。
+    if str_gate_id == "VG127":
 
         # 全局写入规则排除子程序自己的形参、局部变量和返回变量。
         return _subprogram_no_global_write(facts)
 
-    # PG1062 只扫描 task 内部的时序控制。
-    if str_gate_id == "PG1062":
+    # VG133 只扫描 task 内部的时序控制。
+    if str_gate_id == "VG133":
 
         # task 时序规则不扩大到 module 其他区域。
         return _task_timing_control(facts)
 
-    # 本模块剩余固定入口为 PG1068。
+    # 本模块剩余固定入口为 VG139。
     return _function_nonblocking(facts)
 
 # _task_io_width_match 比较 task 输入与输出形式端口的声明位宽。
-def _task_io_width_match(facts: PgFacts) -> PgEvaluation:
+def _task_io_width_match(facts: VgFacts) -> VgEvaluation:
     """检查 task 的 input 与 output 形式端口位宽是否一致。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1044 的确定结论或证据不足结论。
+        VG115 的确定结论或证据不足结论。
     """
 
     # findings 保存 input 与 output 形参的确定宽度差异。
-    list_findings: list[PgFinding] = []  # task 形式端口宽度违规
+    list_findings: list[VgFinding] = []  # task 形式端口宽度违规
 
     # unknown 防止复杂区间被默认视为宽度一致。
     bool_unknown = False  # 是否存在无法静态求宽的形式端口
@@ -129,7 +129,7 @@ def _task_port_width_result(
     str_path: str,
     dict_task: dict[str, object],
     dict_parameter_values: dict[str, int],
-) -> tuple[bool, bool, PgFinding | None]:
+) -> tuple[bool, bool, VgFinding | None]:
     """返回单个 task 的适用性、未知状态和可选违规证据。
 
     参数:
@@ -195,10 +195,10 @@ def _task_port_width_result(
     str_task_name = _subprogram_name(str_task_text, "task") or "<unknown>"  # 当前 task 名称
 
     # finding 列出已确认的不一致宽度。
-    obj_finding = PgFinding(  # 当前 task 的端口宽度差异证据
+    obj_finding = VgFinding(  # 当前 task 的端口宽度差异证据
         str_path,  # 违规证据所属 RTL 文件
         int_line,  # 当前 task 定义行
-        "task 输入与输出形式端口位宽不一致。",  # PG1044 用户诊断
+        "task 输入与输出形式端口位宽不一致。",  # VG115 用户诊断
         f"{str_task_name}: widths {sorted(set_widths)}",  # task 名称与已确认宽度集合
     )
 
@@ -206,17 +206,17 @@ def _task_port_width_result(
     return True, False, obj_finding
 
 # _function_return_width 要求 function 显式声明返回位宽。
-def _function_return_width(facts: PgFacts) -> PgEvaluation:
+def _function_return_width(facts: VgFacts) -> VgEvaluation:
     """检查 function 声明是否包含显式返回区间。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1050 的确定性执行结论。
+        VG121 的确定性执行结论。
     """
 
     # findings 保存缺少显式返回区间的 function 定义。
-    list_findings: list[PgFinding] = []  # function 返回声明违规
+    list_findings: list[VgFinding] = []  # function 返回声明违规
 
     # applicable 表明至少存在一个 formatter 确认的 function。
     bool_applicable = False  # 当前设计是否包含 function
@@ -234,7 +234,7 @@ def _function_return_width(facts: PgFacts) -> PgEvaluation:
             str_function_text = _block_text(dict_function)  # 当前待核对返回区间的 function 源码
 
             # 支持 automatic、signed 和显式方括号返回区间。
-            obj_match = re.search(  # 供 PG1050 区分显式返回区间与默认标量声明
+            obj_match = re.search(  # 供 VG121 区分显式返回区间与默认标量声明
                 r"\bfunction\b\s+(?:automatic\s+)?(?:signed\s+)?(\[[^]]+\]\s+)?([A-Za-z_]\w*)\s*;",  # 捕获可选返回区间和 function 标识符
                 str_function_text,  # 本次返回区间检查的源码范围
             )
@@ -247,7 +247,7 @@ def _function_return_width(facts: PgFacts) -> PgEvaluation:
 
                 # 不支持的声明形状按缺少受支持显式位宽处理。
                 list_findings.append(
-                    PgFinding(
+                    VgFinding(
                         source_facts.relative_path,
                         int_line,
                         "function 未提供可识别的显式返回位宽。",
@@ -269,7 +269,7 @@ def _function_return_width(facts: PgFacts) -> PgEvaluation:
 
             # finding 指向缺少方括号区间的 function 名称。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,
                     int_line,
                     "function 必须显式指定返回值位宽。",
@@ -277,7 +277,7 @@ def _function_return_width(facts: PgFacts) -> PgEvaluation:
                 )
             )
 
-    # 任一缺失显式区间都触发 PG1050。
+    # 任一缺失显式区间都触发 VG121。
     if list_findings:
 
         # 失败结论保留全部 function 定义证据。
@@ -287,17 +287,17 @@ def _function_return_width(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _subprogram_no_global_write 禁止子程序直接修改 module 作用域对象。
-def _subprogram_no_global_write(facts: PgFacts) -> PgEvaluation:
+def _subprogram_no_global_write(facts: VgFacts) -> VgEvaluation:
     """检查 function 与 task 是否写入非局部 module 状态。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1056 的确定性执行结论。
+        VG127 的确定性执行结论。
     """
 
     # findings 保存每个子程序中的首层全局写入证据。
-    list_findings: list[PgFinding] = []  # 子程序全局写入违规
+    list_findings: list[VgFinding] = []  # 子程序全局写入违规
 
     # applicable 表明设计中存在 function 或 task。
     bool_applicable = False  # 当前设计是否包含子程序
@@ -329,7 +329,7 @@ def _subprogram_no_global_write(facts: PgFacts) -> PgEvaluation:
                 # 设计级证据保持 module 和子程序遍历顺序。
                 list_findings.extend(list_block_findings)
 
-    # 任一全局写入都触发 PG1056。
+    # 任一全局写入都触发 VG127。
     if list_findings:
 
         # 失败结论保留全部子程序写入位置。
@@ -376,7 +376,7 @@ def _global_write_findings_for_block(
     dict_block: dict[str, object],
     str_kind: str,
     set_global_names: set[str],
-) -> list[PgFinding]:
+) -> list[VgFinding]:
     """返回一个 function 或 task 中确定的全局写入证据。
 
     参数:
@@ -411,7 +411,7 @@ def _global_write_findings_for_block(
     str_pattern = r"(?m)^\s*([A-Za-z_]\w*)(?:\s*\[[^]]+\])?\s*(?:<=|=)(?!=)"  # 子程序赋值左值
 
     # block findings 只保存属于 module 声明表的赋值目标。
-    list_findings: list[PgFinding] = []  # 单个子程序块的全局写入证据
+    list_findings: list[VgFinding] = []  # 单个子程序块的全局写入证据
 
     # 逐条赋值判断基础名称所属作用域。
     for obj_assignment in re.finditer(str_pattern, str_text):
@@ -440,7 +440,7 @@ def _global_write_findings_for_block(
 
         # finding 指明子程序种类和被修改的全局名称。
         list_findings.append(
-            PgFinding(
+            VgFinding(
                 str_path,
                 int_line,
                 "子程序直接写入 module 作用域对象。",
@@ -452,17 +452,17 @@ def _global_write_findings_for_block(
     return list_findings
 
 # _function_recursion 识别函数体对自身名称的调用。
-def _function_recursion(facts: PgFacts) -> PgEvaluation:
+def _function_recursion(facts: VgFacts) -> VgEvaluation:
     """只在函数确实调用自身时报告递归。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1035 的确定性执行结论。
+        VG106 的确定性执行结论。
     """
 
     # findings 保存每个直接递归函数的定义位置。
-    list_findings: list[PgFinding] = []  # 直接递归调用证据集合
+    list_findings: list[VgFinding] = []  # 直接递归调用证据集合
 
     # applicable 表明设计中至少存在一个 formatter 函数块。
     bool_applicable = False  # 当前设计是否包含可分析 function
@@ -509,15 +509,15 @@ def _function_recursion(facts: PgFacts) -> PgEvaluation:
 
             # finding 保留函数名，便于审查者直接定位调用链。
             list_findings.append(
-                PgFinding(
+                VgFinding(
                     source_facts.relative_path,  # 递归函数所在 RTL 文件
                     int_line,  # formatter 提供的函数定义行
-                    "function 存在直接递归调用。",  # PG1035 的用户诊断
+                    "function 存在直接递归调用。",  # VG106 的用户诊断
                     obj_name.group(1),  # 发生自调用的函数名称
                 )
             )
 
-    # 任一直接递归函数都触发 PG1035。
+    # 任一直接递归函数都触发 VG106。
     if list_findings:
 
         # 失败结论保留全部函数证据。
@@ -527,33 +527,33 @@ def _function_recursion(facts: PgFacts) -> PgEvaluation:
     return passed(applicable=bool_applicable)
 
 # _task_timing_control 配置 task 专属时序构造模式。
-def _task_timing_control(facts: PgFacts) -> PgEvaluation:
+def _task_timing_control(facts: VgFacts) -> VgEvaluation:
     """只在 task 内部出现延时或事件控制时报告。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1062 的确定性执行结论。
+        VG133 的确定性执行结论。
     """
 
     # 延时、事件和 wait 只能在 task 边界内触发本规则。
     return _subprogram_pattern(facts, "tasks", r"(?:#\s*\d+|@\s*\(|\bwait\s*\()", "task 内部包含时序控制。")
 
 # _function_nonblocking 配置 function 专属赋值模式。
-def _function_nonblocking(facts: PgFacts) -> PgEvaluation:
+def _function_nonblocking(facts: VgFacts) -> VgEvaluation:
     """只在 function 内部出现非阻塞赋值时报告。
 
     参数:
         facts: formatter AST 构建的可信扫描事实。
     返回:
-        PG1068 的确定性执行结论。
+        VG139 的确定性执行结论。
     """
 
     # 非阻塞操作符只在 function 边界内触发本规则。
     return _subprogram_pattern(facts, "functions", r"<=", "function 内部包含非阻塞赋值。")
 
 # _subprogram_pattern 复用 formatter 子程序边界执行局部扫描。
-def _subprogram_pattern(facts: PgFacts, str_collection: str, str_pattern: str, str_message: str) -> PgEvaluation:
+def _subprogram_pattern(facts: VgFacts, str_collection: str, str_pattern: str, str_message: str) -> VgEvaluation:
     """在 formatter AST 子程序块内执行构造扫描。
 
     参数:
@@ -566,7 +566,7 @@ def _subprogram_pattern(facts: PgFacts, str_collection: str, str_pattern: str, s
     """
 
     # findings 保存每个命中子程序的定义位置。
-    list_findings: list[PgFinding] = []  # 子程序构造违规证据
+    list_findings: list[VgFinding] = []  # 子程序构造违规证据
 
     # applicable 表明目标子程序集合至少包含一项。
     bool_applicable = False  # 当前设计是否存在目标子程序
@@ -596,7 +596,7 @@ def _subprogram_pattern(facts: PgFacts, str_collection: str, str_pattern: str, s
             str_evidence = str_text.splitlines()[0] if str_text else ""  # 子程序声明首行证据
 
             # finding 绑定当前文件、定义行和目标构造。
-            list_findings.append(PgFinding(source_facts.relative_path, int_line, str_message, str_evidence))
+            list_findings.append(VgFinding(source_facts.relative_path, int_line, str_message, str_evidence))
 
     # 任一命中子程序都使当前固定门禁失败。
     if list_findings:

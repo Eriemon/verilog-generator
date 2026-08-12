@@ -1,26 +1,416 @@
 {
-  "version": 3,
-  "name": "rtl_pg_gate_catalog",
-  "description": "Fixed PG1001-PG1072 gate catalog for readable Verilog RTL generation and review.",
-  "total_rules": 72,
-  "active_rules": 67,
-  "reserved_rules": 5,
+  "version": 4,
+  "name": "verilog_quality_gate_catalog",
+  "description": "Unified VG catalog for readable Verilog RTL generation, review, and semantic validation.",
+  "total_rules": 121,
+  "active_rules": 121,
+  "reserved_rules": 0,
   "status_counts": {
-    "active": 67,
-    "reserved": 5
+    "active": 121
   },
   "active_level_counts": {
-    "BLOCKER": 48,
-    "WARNING": 19
+    "BLOCKER": 51,
+    "WARNING": 70
   },
   "policy": {
-    "active": "Active gates execute deterministically and contribute to delivery readiness.",
-    "reserved": "Reserved gates remain prompt guidance and never count as passed or block phase-one delivery.",
-    "strict": "Any non-pass active BLOCKER blocks delivery; active WARNING non-pass also blocks strict delivery."
+    "active": "Every catalog rule executes through the unified Verilog quality gate.",
+    "strict": "Any non-pass BLOCKER blocks delivery; WARNING findings also block strict delivery."
   },
   "rules": [
     {
-      "gate_id": "PG1001",
+      "gate_id": "VG000",
+      "rule_key": "existing_vg000",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG000 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG001",
+      "rule_key": "existing_vg001",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG001 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG002",
+      "rule_key": "existing_vg002",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG002 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG003",
+      "rule_key": "existing_vg003",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG003 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG004",
+      "rule_key": "existing_vg004",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG004 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG005",
+      "rule_key": "existing_vg005",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG005 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG006",
+      "rule_key": "existing_vg006",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG006 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG007",
+      "rule_key": "existing_vg007",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG007 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG008",
+      "rule_key": "existing_vg008",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG008 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG009",
+      "rule_key": "existing_vg009",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG009 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG010",
+      "rule_key": "existing_vg010",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG010 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG011",
+      "rule_key": "existing_vg011",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG011 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG012",
+      "rule_key": "existing_vg012",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG012 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG013",
+      "rule_key": "existing_vg013",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG013 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG014",
+      "rule_key": "existing_vg014",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG014 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG015",
+      "rule_key": "existing_vg015",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG015 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG020",
+      "rule_key": "existing_vg020",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG020 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG021",
+      "rule_key": "existing_vg021",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG021 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG022",
+      "rule_key": "existing_vg022",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG022 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG023",
+      "rule_key": "existing_vg023",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG023 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG024",
+      "rule_key": "existing_vg024",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG024 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG025",
+      "rule_key": "existing_vg025",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG025 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG030",
+      "rule_key": "existing_vg030",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG030 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG031",
+      "rule_key": "existing_vg031",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG031 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG040",
+      "rule_key": "existing_vg040",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG040 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG041",
+      "rule_key": "existing_vg041",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG041 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG042",
+      "rule_key": "existing_vg042",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG042 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG050",
+      "rule_key": "existing_vg050",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG050 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG051",
+      "rule_key": "existing_vg051",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG051 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG052",
+      "rule_key": "existing_vg052",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG052 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG053",
+      "rule_key": "existing_vg053",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG053 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG054",
+      "rule_key": "existing_vg054",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG054 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG055",
+      "rule_key": "existing_vg055",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG055 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG056",
+      "rule_key": "existing_vg056",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG056 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG057",
+      "rule_key": "existing_vg057",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG057 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG058",
+      "rule_key": "existing_vg058",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG058 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG059",
+      "rule_key": "existing_vg059",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG059 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG060",
+      "rule_key": "existing_vg060",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG060 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG061",
+      "rule_key": "existing_vg061",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG061 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG062",
+      "rule_key": "existing_vg062",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG062 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG063",
+      "rule_key": "existing_vg063",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG063 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG064",
+      "rule_key": "existing_vg064",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG064 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG065",
+      "rule_key": "existing_vg065",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG065 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG066",
+      "rule_key": "existing_vg066",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG066 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG067",
+      "rule_key": "existing_vg067",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG067 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG068",
+      "rule_key": "existing_vg068",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG068 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG069",
+      "rule_key": "existing_vg069",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG069 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG070",
+      "rule_key": "existing_vg070",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG070 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG071",
+      "rule_key": "existing_vg071",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "既有可读性与结构规则",
+      "summary": "保留 VG071 在 v0.6.3 中已经实现的 Verilog 质量检查语义。"
+    },
+    {
+      "gate_id": "VG072",
       "rule_key": "op_no_xz_arith",
       "level": "BLOCKER",
       "status": "active",
@@ -28,7 +418,7 @@
       "summary": "禁止在算术操作时使用包含“x”或者“z”的值。"
     },
     {
-      "gate_id": "PG1002",
+      "gate_id": "VG073",
       "rule_key": "clk_single_domain",
       "level": "WARNING",
       "status": "active",
@@ -36,7 +426,7 @@
       "summary": "建议仅使用一个时钟域。"
     },
     {
-      "gate_id": "PG1003",
+      "gate_id": "VG074",
       "rule_key": "op_no_logic_on_vector",
       "level": "WARNING",
       "status": "active",
@@ -44,7 +434,7 @@
       "summary": "避免在向量运算中使用逻辑运算符。"
     },
     {
-      "gate_id": "PG1004",
+      "gate_id": "VG075",
       "rule_key": "rst_no_sync_async_mix",
       "level": "BLOCKER",
       "status": "active",
@@ -52,7 +442,7 @@
       "summary": "禁止在同一条复位线路中同时使用异步复位和同步复位。"
     },
     {
-      "gate_id": "PG1005",
+      "gate_id": "VG076",
       "rule_key": "case_no_overlap",
       "level": "WARNING",
       "status": "active",
@@ -60,7 +450,7 @@
       "summary": "case语句中的分支语句避免重叠。"
     },
     {
-      "gate_id": "PG1006",
+      "gate_id": "VG077",
       "rule_key": "rst_one_signal_per_always",
       "level": "WARNING",
       "status": "active",
@@ -68,7 +458,7 @@
       "summary": "建议在同一个always 语句中只使用同一个复位信号。"
     },
     {
-      "gate_id": "PG1007",
+      "gate_id": "VG078",
       "rule_key": "op_no_xz_condition",
       "level": "BLOCKER",
       "status": "active",
@@ -76,7 +466,7 @@
       "summary": "禁止在条件表达式中使用包含“x”或者“z”的值。"
     },
     {
-      "gate_id": "PG1008",
+      "gate_id": "VG079",
       "rule_key": "comb_blocking_assign",
       "level": "BLOCKER",
       "status": "active",
@@ -84,15 +474,15 @@
       "summary": "组合电路必须使用阻塞赋值，禁止使用非阻塞赋值。"
     },
     {
-      "gate_id": "PG1009",
+      "gate_id": "VG080",
       "rule_key": "loop_no_nonindex_arith",
       "level": "BLOCKER",
-      "status": "reserved",
+      "status": "active",
       "topic": "循环语句",
       "summary": "禁止在for语句中对循环变量之外的变量进行算术运算。"
     },
     {
-      "gate_id": "PG1010",
+      "gate_id": "VG081",
       "rule_key": "repeat_const_count",
       "level": "WARNING",
       "status": "active",
@@ -100,15 +490,15 @@
       "summary": "避免在repeat语句表达式中使用变量。"
     },
     {
-      "gate_id": "PG1011",
+      "gate_id": "VG082",
       "rule_key": "rst_no_glitchy_comb",
       "level": "BLOCKER",
-      "status": "reserved",
+      "status": "active",
       "topic": "复位",
       "summary": "禁止使用有竞争冒险情况的组合逻辑输出作为复位信号。"
     },
     {
-      "gate_id": "PG1012",
+      "gate_id": "VG083",
       "rule_key": "loop_no_reset_logic_mix",
       "level": "BLOCKER",
       "status": "active",
@@ -116,7 +506,7 @@
       "summary": "复位部分和逻辑部分禁止出现在同一个for循环中。"
     },
     {
-      "gate_id": "PG1013",
+      "gate_id": "VG084",
       "rule_key": "case_item_in_range_width",
       "level": "BLOCKER",
       "status": "active",
@@ -124,7 +514,7 @@
       "summary": "case语句的所有分支表达式必须在控制表达式的范围之内，并且数据位宽一致。"
     },
     {
-      "gate_id": "PG1014",
+      "gate_id": "VG085",
       "rule_key": "op_rel_width_match",
       "level": "BLOCKER",
       "status": "active",
@@ -132,7 +522,7 @@
       "summary": "关系操作符左边与右边的数据位宽必须一致。"
     },
     {
-      "gate_id": "PG1015",
+      "gate_id": "VG086",
       "rule_key": "fsm_has_initial_state",
       "level": "BLOCKER",
       "status": "active",
@@ -140,7 +530,7 @@
       "summary": "状态机必须设置初始状态。"
     },
     {
-      "gate_id": "PG1016",
+      "gate_id": "VG087",
       "rule_key": "synth_no_reset_override",
       "level": "BLOCKER",
       "status": "active",
@@ -148,7 +538,7 @@
       "summary": "禁止使用综合工具改变代码的复位属性。"
     },
     {
-      "gate_id": "PG1017",
+      "gate_id": "VG088",
       "rule_key": "branch_cond_scalar",
       "level": "WARNING",
       "status": "active",
@@ -156,7 +546,7 @@
       "summary": "if语句和条件运算符的条件表达式避免为向量，建议由单位宽信号组成。"
     },
     {
-      "gate_id": "PG1018",
+      "gate_id": "VG089",
       "rule_key": "clk_no_comb_clock",
       "level": "BLOCKER",
       "status": "active",
@@ -164,7 +554,7 @@
       "summary": "禁止将组合逻辑的输出作为时钟信号。"
     },
     {
-      "gate_id": "PG1019",
+      "gate_id": "VG090",
       "rule_key": "case_control_not_constant",
       "level": "BLOCKER",
       "status": "active",
@@ -172,7 +562,7 @@
       "summary": "禁止在case语句的控制表达式中使用固定值。"
     },
     {
-      "gate_id": "PG1020",
+      "gate_id": "VG091",
       "rule_key": "array_index_simple",
       "level": "WARNING",
       "status": "active",
@@ -180,7 +570,7 @@
       "summary": "建议数组索引为简单的信号，避免使用表达式。"
     },
     {
-      "gate_id": "PG1021",
+      "gate_id": "VG092",
       "rule_key": "loop_at_least_once",
       "level": "BLOCKER",
       "status": "active",
@@ -188,7 +578,7 @@
       "summary": "循环语句必须至少满足一次循环条件。"
     },
     {
-      "gate_id": "PG1022",
+      "gate_id": "VG093",
       "rule_key": "rst_no_async_to_data_pin",
       "level": "BLOCKER",
       "status": "active",
@@ -196,7 +586,7 @@
       "summary": "禁止将异步的置位/复位信号连接到非置位/复位管脚。"
     },
     {
-      "gate_id": "PG1023",
+      "gate_id": "VG094",
       "rule_key": "fsm_default_reset_regs",
       "level": "BLOCKER",
       "status": "active",
@@ -204,7 +594,7 @@
       "summary": "状态机在default状态时，必须把状态机中所有寄存器重置为确定状态（复位状态或者空闲状态）。"
     },
     {
-      "gate_id": "PG1024",
+      "gate_id": "VG095",
       "rule_key": "latch_no_gate_primitive",
       "level": "BLOCKER",
       "status": "active",
@@ -212,7 +602,7 @@
       "summary": "禁止使用基本逻辑门来描述锁存器。"
     },
     {
-      "gate_id": "PG1025",
+      "gate_id": "VG096",
       "rule_key": "clk_avoid_gating",
       "level": "WARNING",
       "status": "active",
@@ -220,7 +610,7 @@
       "summary": "避免使用门控时钟。"
     },
     {
-      "gate_id": "PG1026",
+      "gate_id": "VG097",
       "rule_key": "conn_port_width_match",
       "level": "BLOCKER",
       "status": "active",
@@ -228,7 +618,7 @@
       "summary": "模块端口的数据位宽与实例化信号的数据位宽必须一致。"
     },
     {
-      "gate_id": "PG1027",
+      "gate_id": "VG098",
       "rule_key": "fsm_no_dead_unreachable",
       "level": "BLOCKER",
       "status": "active",
@@ -236,15 +626,15 @@
       "summary": "状态机禁止出现死锁状态和不可达状态。"
     },
     {
-      "gate_id": "PG1028",
+      "gate_id": "VG099",
       "rule_key": "rst_dedicated_generator",
       "level": "WARNING",
-      "status": "reserved",
+      "status": "active",
       "topic": "复位",
       "summary": "建议为复位产生电路创建独立的模块。"
     },
     {
-      "gate_id": "PG1029",
+      "gate_id": "VG100",
       "rule_key": "rst_no_internal_async_src",
       "level": "WARNING",
       "status": "active",
@@ -252,7 +642,7 @@
       "summary": "避免使用内部生成信号作为寄存器的异步复位信号。"
     },
     {
-      "gate_id": "PG1030",
+      "gate_id": "VG101",
       "rule_key": "branch_cond_no_xz",
       "level": "BLOCKER",
       "status": "active",
@@ -260,7 +650,7 @@
       "summary": "if语句的条件表达式与case语句的控制表达式中禁止出现“x”或者“z”。"
     },
     {
-      "gate_id": "PG1031",
+      "gate_id": "VG102",
       "rule_key": "rst_no_set_reset_pair",
       "level": "WARNING",
       "status": "active",
@@ -268,7 +658,7 @@
       "summary": "避免同时使用异步置位和异步复位信号。"
     },
     {
-      "gate_id": "PG1032",
+      "gate_id": "VG103",
       "rule_key": "assign_no_dup_condition",
       "level": "BLOCKER",
       "status": "active",
@@ -276,7 +666,7 @@
       "summary": "禁止在同一条件下对同一个信号进行重复赋值。"
     },
     {
-      "gate_id": "PG1033",
+      "gate_id": "VG104",
       "rule_key": "latch_no_comb_loop",
       "level": "BLOCKER",
       "status": "active",
@@ -284,7 +674,7 @@
       "summary": "禁止出现含有锁存器的组合逻辑环路。"
     },
     {
-      "gate_id": "PG1034",
+      "gate_id": "VG105",
       "rule_key": "case_item_constant_only",
       "level": "BLOCKER",
       "status": "active",
@@ -292,7 +682,7 @@
       "summary": "case语句的分支语句必须使用常量，禁止使用变量或者逻辑运算。"
     },
     {
-      "gate_id": "PG1035",
+      "gate_id": "VG106",
       "rule_key": "func_no_recursion",
       "level": "BLOCKER",
       "status": "active",
@@ -300,7 +690,7 @@
       "summary": "禁止调用递归函数。"
     },
     {
-      "gate_id": "PG1036",
+      "gate_id": "VG107",
       "rule_key": "clk_no_regout_clock",
       "level": "BLOCKER",
       "status": "active",
@@ -308,7 +698,7 @@
       "summary": "禁止将寄存器的输出直接连接到其它寄存器的时钟管脚。"
     },
     {
-      "gate_id": "PG1037",
+      "gate_id": "VG108",
       "rule_key": "case_default_not_xz",
       "level": "WARNING",
       "status": "active",
@@ -316,7 +706,7 @@
       "summary": "case语句的default分支禁止赋值为“x”或者“z”。"
     },
     {
-      "gate_id": "PG1038",
+      "gate_id": "VG109",
       "rule_key": "comb_if_has_else",
       "level": "WARNING",
       "status": "active",
@@ -324,7 +714,7 @@
       "summary": "建议组合逻辑电路中if语句以else语句结尾。"
     },
     {
-      "gate_id": "PG1039",
+      "gate_id": "VG110",
       "rule_key": "ff_init_on_reset",
       "level": "BLOCKER",
       "status": "active",
@@ -332,7 +722,7 @@
       "summary": "在复位或者初始化时，必须对触发器赋初值。"
     },
     {
-      "gate_id": "PG1040",
+      "gate_id": "VG111",
       "rule_key": "case_has_default",
       "level": "BLOCKER",
       "status": "active",
@@ -340,7 +730,7 @@
       "summary": "在case语句中必须使用default分支。"
     },
     {
-      "gate_id": "PG1041",
+      "gate_id": "VG112",
       "rule_key": "fsm_limit_state_count",
       "level": "WARNING",
       "status": "active",
@@ -348,7 +738,7 @@
       "summary": "建议单个状态机的状态数不超过40个。"
     },
     {
-      "gate_id": "PG1042",
+      "gate_id": "VG113",
       "rule_key": "ff_no_mixed_reset_style",
       "level": "BLOCKER",
       "status": "active",
@@ -356,7 +746,7 @@
       "summary": "禁止在同一个always 语句中混合使用有复位和无复位的触发器。"
     },
     {
-      "gate_id": "PG1043",
+      "gate_id": "VG114",
       "rule_key": "synth_no_full_case_attr",
       "level": "WARNING",
       "status": "active",
@@ -364,7 +754,7 @@
       "summary": "避免使用“full_case”属性。"
     },
     {
-      "gate_id": "PG1044",
+      "gate_id": "VG115",
       "rule_key": "task_io_width_match",
       "level": "BLOCKER",
       "status": "active",
@@ -372,7 +762,7 @@
       "summary": "在task语句中，输入信号的位宽与输出信号的位宽必须一致。"
     },
     {
-      "gate_id": "PG1045",
+      "gate_id": "VG116",
       "rule_key": "ff_reset_condition_match",
       "level": "BLOCKER",
       "status": "active",
@@ -380,7 +770,7 @@
       "summary": "复位信号的触发条件与进入条件必须一致。"
     },
     {
-      "gate_id": "PG1046",
+      "gate_id": "VG117",
       "rule_key": "sens_no_or_separator",
       "level": "BLOCKER",
       "status": "active",
@@ -388,7 +778,7 @@
       "summary": "禁止使用“|”和“||”连接敏感信号。"
     },
     {
-      "gate_id": "PG1047",
+      "gate_id": "VG118",
       "rule_key": "rst_no_logic_in_async_path",
       "level": "WARNING",
       "status": "active",
@@ -396,15 +786,15 @@
       "summary": "避免在异步复位线路中插入逻辑操作运算。"
     },
     {
-      "gate_id": "PG1048",
+      "gate_id": "VG119",
       "rule_key": "fsm_min_transition_flips",
       "level": "WARNING",
-      "status": "reserved",
+      "status": "active",
       "topic": "状态机结构",
       "summary": "建议尽量减少状态机在状态转换时的改变位数。"
     },
     {
-      "gate_id": "PG1049",
+      "gate_id": "VG120",
       "rule_key": "clk_single_edge",
       "level": "WARNING",
       "status": "active",
@@ -412,7 +802,7 @@
       "summary": "避免同时使用时钟的上升沿和下降沿。"
     },
     {
-      "gate_id": "PG1050",
+      "gate_id": "VG121",
       "rule_key": "func_return_width",
       "level": "BLOCKER",
       "status": "active",
@@ -420,7 +810,7 @@
       "summary": "在function语句中，必须显式指定返回值的位宽。"
     },
     {
-      "gate_id": "PG1051",
+      "gate_id": "VG122",
       "rule_key": "op_no_arith_overflow",
       "level": "BLOCKER",
       "status": "active",
@@ -428,7 +818,7 @@
       "summary": "禁止算术运算结果出现位宽溢出。"
     },
     {
-      "gate_id": "PG1052",
+      "gate_id": "VG123",
       "rule_key": "loop_for_const_bounds",
       "level": "BLOCKER",
       "status": "active",
@@ -436,7 +826,7 @@
       "summary": "for语句的初始值和条件必须为常数，且禁止改变循环变量。"
     },
     {
-      "gate_id": "PG1053",
+      "gate_id": "VG124",
       "rule_key": "initial_forbidden",
       "level": "BLOCKER",
       "status": "active",
@@ -444,15 +834,15 @@
       "summary": "禁止使用initial语句。"
     },
     {
-      "gate_id": "PG1054",
+      "gate_id": "VG125",
       "rule_key": "literal_width_match",
       "level": "BLOCKER",
-      "status": "reserved",
+      "status": "active",
       "topic": "运算符",
       "summary": "在数值<位宽><进制><数字>表示中，数值位宽必须与数值的实际位宽一致。"
     },
     {
-      "gate_id": "PG1055",
+      "gate_id": "VG126",
       "rule_key": "sens_list_complete_minimal",
       "level": "BLOCKER",
       "status": "active",
@@ -460,7 +850,7 @@
       "summary": "敏感信号列表中的敏感信号必须齐全，无遗漏，无冗余。"
     },
     {
-      "gate_id": "PG1056",
+      "gate_id": "VG127",
       "rule_key": "subprogram_no_global_write",
       "level": "BLOCKER",
       "status": "active",
@@ -468,7 +858,7 @@
       "summary": "在function和task语句中，禁止对全局信号进行赋值。"
     },
     {
-      "gate_id": "PG1057",
+      "gate_id": "VG128",
       "rule_key": "case_no_casex_casez",
       "level": "WARNING",
       "status": "active",
@@ -476,7 +866,7 @@
       "summary": "避免使用casex与casez语句。"
     },
     {
-      "gate_id": "PG1058",
+      "gate_id": "VG129",
       "rule_key": "seq_nonblocking_assign",
       "level": "BLOCKER",
       "status": "active",
@@ -484,7 +874,7 @@
       "summary": "时序电路必须使用非阻塞赋值，禁止使用阻塞赋值。"
     },
     {
-      "gate_id": "PG1059",
+      "gate_id": "VG130",
       "rule_key": "array_index_in_range",
       "level": "BLOCKER",
       "status": "active",
@@ -492,7 +882,7 @@
       "summary": "禁止数组索引越界。"
     },
     {
-      "gate_id": "PG1060",
+      "gate_id": "VG131",
       "rule_key": "assign_no_delay",
       "level": "BLOCKER",
       "status": "active",
@@ -500,7 +890,7 @@
       "summary": "禁止使用延时语句。"
     },
     {
-      "gate_id": "PG1061",
+      "gate_id": "VG132",
       "rule_key": "clk_only_clock_pin",
       "level": "BLOCKER",
       "status": "active",
@@ -508,7 +898,7 @@
       "summary": "禁止将时钟信号连接在除寄存器时钟管脚之外的其它信号管脚。"
     },
     {
-      "gate_id": "PG1062",
+      "gate_id": "VG133",
       "rule_key": "task_no_timing_control",
       "level": "BLOCKER",
       "status": "active",
@@ -516,7 +906,7 @@
       "summary": "禁止在task语句中使用时序控制语句。"
     },
     {
-      "gate_id": "PG1063",
+      "gate_id": "VG134",
       "rule_key": "op_no_sign_mix",
       "level": "BLOCKER",
       "status": "active",
@@ -524,7 +914,7 @@
       "summary": "禁止在算术表达式中同时出现无符号数和有符号数。"
     },
     {
-      "gate_id": "PG1064",
+      "gate_id": "VG135",
       "rule_key": "latch_separate_from_comb",
       "level": "WARNING",
       "status": "active",
@@ -532,7 +922,7 @@
       "summary": "建议将锁存器与其它组合逻辑电路分开描述。"
     },
     {
-      "gate_id": "PG1065",
+      "gate_id": "VG136",
       "rule_key": "comb_no_feedback",
       "level": "BLOCKER",
       "status": "active",
@@ -540,7 +930,7 @@
       "summary": "禁止在组合逻辑电路中使用反馈。"
     },
     {
-      "gate_id": "PG1066",
+      "gate_id": "VG137",
       "rule_key": "assign_width_match",
       "level": "BLOCKER",
       "status": "active",
@@ -548,7 +938,7 @@
       "summary": "赋值语句左右两边的数据位宽必须一致。"
     },
     {
-      "gate_id": "PG1067",
+      "gate_id": "VG138",
       "rule_key": "literal_explicit_base_width",
       "level": "WARNING",
       "status": "active",
@@ -556,7 +946,7 @@
       "summary": "建议为parameter 数据和常数指定进制('d,'b,'h,'o)和位宽。"
     },
     {
-      "gate_id": "PG1068",
+      "gate_id": "VG139",
       "rule_key": "func_no_nonblocking",
       "level": "BLOCKER",
       "status": "active",
@@ -564,7 +954,7 @@
       "summary": "禁止在function语句中使用非阻塞赋值。"
     },
     {
-      "gate_id": "PG1069",
+      "gate_id": "VG140",
       "rule_key": "procedural_assign_to_wire",
       "level": "BLOCKER",
       "status": "active",
@@ -572,7 +962,7 @@
       "summary": "禁止在过程块中对 wire 信号赋值。"
     },
     {
-      "gate_id": "PG1070",
+      "gate_id": "VG141",
       "rule_key": "multiple_drivers",
       "level": "BLOCKER",
       "status": "active",
@@ -580,7 +970,7 @@
       "summary": "同一信号禁止存在多个独立驱动源。"
     },
     {
-      "gate_id": "PG1071",
+      "gate_id": "VG142",
       "rule_key": "wire_declaration_inline_assignment",
       "level": "BLOCKER",
       "status": "active",
@@ -588,7 +978,7 @@
       "summary": "禁止在 wire 声明语句中直接附带初始化赋值。"
     },
     {
-      "gate_id": "PG1072",
+      "gate_id": "VG143",
       "rule_key": "simulation_system_task_in_rtl",
       "level": "BLOCKER",
       "status": "active",

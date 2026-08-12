@@ -13,14 +13,14 @@
       }
     },
     {
-      "id": "rtl_pg_gate_regression",
-      "kind": "rtl_pg_gate_regression",
+      "id": "vg_semantic_gate_regression",
+      "kind": "vg_semantic_gate_regression",
       "expectations": {
-        "failed_gate_ids": ["PG1007", "PG1008", "PG1019", "PG1030", "PG1038", "PG1040", "PG1046", "PG1053", "PG1071"],
+        "failed_gate_ids": ["VG078", "VG079", "VG090", "VG101", "VG109", "VG111", "VG117", "VG124", "VG142"],
         "clean_all_active_passed": true,
-        "catalog_total_rules": 72,
+        "catalog_total_rules": 121,
         "prompt_mentions_all_rules": true,
-        "failed_results_use_pg_ids": true
+        "failed_results_use_vg_ids": true
       }
     },
     {
