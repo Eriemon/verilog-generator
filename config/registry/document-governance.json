@@ -1,0 +1,17 @@
+{
+  "catalog": "documents/catalog.json",
+  "enabled": true,
+  "knowledge_index": "knowledge/index.json",
+  "migration": "migrations/initial-document-registration.json",
+  "scan_scope": [
+    "SKILL.md",
+    "references/**/*.md"
+  ],
+  "schema_version": 1,
+  "similarity_policy": {
+    "algorithm": "difflib.SequenceMatcher",
+    "minimum_characters": 80,
+    "threshold": 0.78
+  },
+  "status": "current"
+}

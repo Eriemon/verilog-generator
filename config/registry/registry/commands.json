@@ -1,0 +1,81 @@
+{
+  "schema_version": 2,
+  "category": "registry",
+  "commands": [
+    {
+      "id": "registry.build",
+      "category": "registry",
+      "entrypoint": "scripts.python.registry.build_registry",
+      "subcommand": "",
+      "title": "检查或构建本地命令检索索引",
+      "summary": "验证全部 JSON 注册源、文档治理源、SQLite schema、来源摘要和记录计数；只有 --write 才原子重建 registry.sqlite3。",
+      "when_to_use": "修改 config/registry 下任一 JSON 事实源后，或验证 SQLite 没有漂移时。",
+      "aliases": {"zh": ["构建命令注册表", "检查 SQLite 索引", "重建本地 RAG"], "en": ["build command registry", "check SQLite index", "rebuild local RAG"]},
+      "parameters": [
+        {"name": "skill_dir", "required": false, "description": "可选技能根目录；省略时解析当前内置模块所属技能"},
+        {"name": "--write", "required": false, "description": "原子重建生成式 SQLite 索引"}
+      ],
+      "invocation_templates": ["python -m scripts.python.registry.build_registry [<skill-dir>] [--write]"],
+      "examples": {"valid": ["python -m scripts.python.registry.build_registry . --write"], "invalid": ["不要手工编辑 config/registry/registry.sqlite3"]},
+      "prerequisites": ["全部 JSON 注册源通过 schema 和关系校验", "本机 SQLite 支持 FTS5 trigram"],
+      "outputs": {"format": "json", "success_exit_codes": [0], "failure_exit_codes": [3]},
+      "risk": {"level": "medium", "writes": true, "warning": "默认只检查；只有 --write 会替换生成数据库"},
+      "boundaries": ["JSON 是唯一可编辑事实源", "SQLite 仅为生成式检索索引", "不得从 SQLite 反向覆盖 JSON"],
+      "related_command_ids": ["registry.ask", "registry.document-governance"]
+    },
+    {
+      "id": "registry.ask",
+      "category": "registry",
+      "entrypoint": "scripts.python.registry.query_registry",
+      "subcommand": "ask",
+      "title": "问询命令、工作流、文档与知识用法",
+      "summary": "从技能内置 SQLite FTS5 索引召回完整执行合同、示例、前置条件、输出、风险和停止边界，但不执行结果。",
+      "when_to_use": "SKILL 只保留外层路由，而当前任务需要完整命令或知识细节时。",
+      "aliases": {"zh": ["查询技能命令", "命令怎么用", "查询文档职责"], "en": ["query skill commands", "how to use command", "query document responsibility"]},
+      "parameters": [
+        {"name": "question", "required": true, "description": "中英文自然语言问题"},
+        {"name": "--kind", "required": false, "description": "command、workflow、document 或 knowledge"},
+        {"name": "--category", "required": false, "description": "仅命令查询使用的分类过滤"},
+        {"name": "--limit", "required": false, "description": "一到十条结果，默认五条"},
+        {"name": "--json", "required": false, "description": "输出单个机器可读 JSON 对象"}
+      ],
+      "invocation_templates": ["python -m scripts.python.registry.query_registry ask \"<question>\" [--kind <kind>] [--category <name>] [--limit 1..10] [--json]"],
+      "examples": {"valid": ["python -m scripts.python.registry.query_registry ask \"如何验证生成的 Verilog 交付物\" --category validation --json"], "invalid": ["查询结果不是已执行证据，不得据此声称门禁通过"]},
+      "prerequisites": ["registry.sqlite3 存在且与全部 JSON 来源摘要一致"],
+      "outputs": {"format": "text-or-json", "success_exit_codes": [0], "failure_exit_codes": [1, 2, 3]},
+      "risk": {"level": "low", "writes": false, "warning": "高风险记录只会显示警告，不会被查询器执行"},
+      "boundaries": ["查询器永远只读", "数据库缺失、损坏、陈旧或不兼容时拒绝回答"],
+      "related_command_ids": ["registry.build", "registry.document-governance"]
+    },
+    {
+      "id": "registry.document-governance",
+      "category": "registry",
+      "entrypoint": "scripts.python.registry.manage_document_registry",
+      "subcommand": "<operation>",
+      "title": "管理本技能文档注册化生命周期",
+      "summary": "在显式启用后扫描 SKILL.md 与 references Markdown，登记唯一职责、知识指针、重复裁决、接口映射和当前正文摘要。",
+      "when_to_use": "用户明确要求启用、检查、更新或完成当前技能的 instruction/document registration 时。",
+      "aliases": {"zh": ["启用文档注册", "检查文档重复", "完成知识登记"], "en": ["enable document registry", "check document duplicates", "finalize knowledge registration"]},
+      "parameters": [
+        {"name": "operation", "required": true, "description": "status、scan、init、check 或 finalize"},
+        {"name": "skill_dir", "required": false, "description": "当前技能根；模块方式从技能根调用时使用点号"},
+        {"name": "--enable", "required": false, "description": "init 所需的显式启用信号"},
+        {"name": "--write", "required": false, "description": "init 或 finalize 的显式写入授权"},
+        {"name": "--confirm-user", "required": false, "description": "不确定重复裁决所需的用户确认"},
+        {"name": "--json", "required": false, "description": "单对象机器协议"}
+      ],
+      "invocation_templates": [
+        "python -m scripts.python.registry.manage_document_registry scan . --json",
+        "python -m scripts.python.registry.manage_document_registry init . --enable --write --json",
+        "python -m scripts.python.registry.manage_document_registry check . --json",
+        "python -m scripts.python.registry.manage_document_registry finalize . --write [--confirm-user] --json"
+      ],
+      "examples": {"valid": ["python -m scripts.python.registry.manage_document_registry status . --json"], "invalid": ["不得把摘要快照当作文档职责、重复裁决或接口映射的替代品"]},
+      "prerequisites": ["init 前用户明确启用", "finalize 前 Agent 逐项复核职责、重复候选和接口事实"],
+      "outputs": {"format": "json", "success_exit_codes": [0], "failure_exit_codes": [2, 3]},
+      "risk": {"level": "medium", "writes": true, "warning": "只有带 --write 的 init 和 finalize 会修改 JSON 注册源"},
+      "boundaries": ["Markdown 正文始终是知识权威源", "去重只能迁移等价正文，不能删除唯一合同语义", "不确定裁决必须交还用户确认"],
+      "related_command_ids": ["registry.build", "registry.ask"]
+    }
+  ]
+}

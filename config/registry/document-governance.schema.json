@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "document-governance.schema.json",
+  "title": "Optional document governance configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "enabled", "status", "catalog", "knowledge_index", "migration", "similarity_policy", "scan_scope"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "enabled": {"const": true},
+    "status": {"enum": ["draft", "current"]},
+    "catalog": {"const": "documents/catalog.json"},
+    "knowledge_index": {"const": "knowledge/index.json"},
+    "migration": {"const": "migrations/initial-document-registration.json"},
+    "similarity_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "threshold", "minimum_characters"],
+      "properties": {
+        "algorithm": {"const": "difflib.SequenceMatcher"},
+        "threshold": {"type": "number", "minimum": 0, "maximum": 1},
+        "minimum_characters": {"type": "integer", "minimum": 1}
+      }
+    },
+    "scan_scope": {
+      "const": ["SKILL.md", "references/**/*.md"]
+    }
+  }
+}

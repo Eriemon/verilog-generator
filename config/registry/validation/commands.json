@@ -1,0 +1,22 @@
+{
+  "schema_version": 2,
+  "category": "validation",
+  "commands": [
+    {
+      "id": "validation.skill", "category": "validation", "entrypoint": "scripts.python.validation.validate_verilog_skill", "subcommand": "", "title": "验证 readable-verilog-generator", "summary": "运行技能结构、标准、命令注册、文档治理、编译、smoke、可选仓库回归和外部审计门禁。", "when_to_use": "源码或安装副本需要本地完整性证据时。",
+      "aliases": {"zh": ["验证 Verilog 技能", "运行技能门禁"], "en": ["validate Verilog skill", "run skill gates"]},
+      "parameters": [{"name": "--settings", "required": false, "description": "验证设置 JSON"}, {"name": "--with-remote", "required": false, "description": "同时运行远程信心门禁"}, {"name": "--remote-server", "required": false, "description": "显式远程服务器标识"}, {"name": "--require-remote", "required": false, "description": "要求真实远程证据"}, {"name": "--no-require-remote", "required": false, "description": "允许本地验证保持远程未验证状态"}, {"name": "--with-external-audit", "required": false, "description": "运行技能外部治理审计"}, {"name": "--with-repo-regression", "required": false, "description": "运行仓库根 unittest 和 smoke"}],
+      "invocation_templates": ["python -m scripts.python.validation.validate_verilog_skill --settings <settings> [--with-external-audit] [--with-repo-regression] [--require-remote|--no-require-remote]"],
+      "examples": {"valid": ["python -m scripts.python.validation.validate_verilog_skill --settings .\\config\\defaults.json --with-external-audit --with-repo-regression --no-require-remote"], "invalid": ["没有远程报告时不得把 --no-require-remote 描述成远程已验证"]},
+      "prerequisites": ["设置文件可读", "已启用的 registry JSON 与 SQLite 当前一致"], "outputs": {"format": "human-readable", "success_exit_codes": [0], "failure_exit_codes": [1]}, "risk": {"level": "medium", "writes": false, "warning": "仓库回归可能产生临时报告和缓存，完成后必须审计残留"}, "boundaries": ["本地成功不替代 server_1 pytest 或真实仿真证据", "不隐式发布、安装、提交或推送"], "related_command_ids": ["validation.generated-deliverable", "remote.validate", "registry.build"]
+    },
+    {
+      "id": "validation.generated-deliverable", "category": "validation", "entrypoint": "scripts.python.validation.generated_deliverable_gate", "subcommand": "", "title": "验证生成式 Verilog 交付物", "summary": "对生成的 Verilog 文件或目录运行统一交付门禁，并输出 JSON 与 Markdown 证据。", "when_to_use": "生成、修复或格式化 RTL 后，需要判断是否达到严格交付状态时。",
+      "aliases": {"zh": ["验证生成 RTL", "运行交付门禁", "检查 Verilog 交付物"], "en": ["validate generated RTL", "run deliverable gate", "check Verilog deliverable"]},
+      "parameters": [{"name": "target", "required": true, "description": "Verilog 文件或目录"}, {"name": "--json", "required": false, "description": "JSON 报告路径"}, {"name": "--markdown", "required": false, "description": "Markdown 报告路径"}, {"name": "--non-strict", "required": false, "description": "仅用于历史参考语料的非严格模式"}, {"name": "--warn-only", "required": false, "description": "仅用于历史参考语料的警告模式"}],
+      "invocation_templates": ["python -m scripts.python.validation.generated_deliverable_gate <rtl-file-or-dir> --json <report.json> --markdown <report.md>"],
+      "examples": {"valid": ["python -m scripts.python.validation.generated_deliverable_gate .\\reports\\verilog\\generated\\rtl\\erie_adapter.v --json .\\reports\\verilog\\deliverable_gate.json --markdown .\\reports\\verilog\\deliverable_gate.md"], "invalid": ["生成式交付物不得使用 --non-strict --warn-only 绕过 blocker"]},
+      "prerequisites": ["目标是受支持的 Verilog 文件或目录", "生成任务已经保留需求和生成计划证据"], "outputs": {"format": "json-and-markdown", "success_exit_codes": [0], "failure_exit_codes": [1, 2]}, "risk": {"level": "low", "writes": true, "warning": "仅写显式报告路径，不修改目标 RTL"}, "boundaries": ["质量报告不能替代外部 compile/sim/execute 证据", "缺失目标时不得写伪报告"], "related_command_ids": ["quality.verilog", "quality.lint", "validation.skill"]
+    }
+  ]
+}

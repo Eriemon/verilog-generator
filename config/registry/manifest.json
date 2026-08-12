@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "command_schema": "command.schema.json",
+  "source_files": [
+    "registry/commands.json",
+    "validation/commands.json",
+    "quality/commands.json",
+    "workflow/commands.json",
+    "toolchain/commands.json",
+    "remote/commands.json",
+    "generation/commands.json",
+    "external/commands.json",
+    "workflows/workflows.json"
+  ],
+  "document_schemas": [
+    "document-governance.schema.json",
+    "document.schema.json",
+    "knowledge.schema.json",
+    "migration.schema.json"
+  ],
+  "document_sources": [
+    "document-governance.json",
+    "documents/catalog.json",
+    "knowledge/index.json",
+    "migrations/initial-document-registration.json"
+  ],
+  "generated_database": "registry.sqlite3",
+  "fts_tokenizer": "trigram",
+  "public_entrypoint_count": 40
+}

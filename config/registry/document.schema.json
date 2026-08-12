@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "document.schema.json",
+  "title": "Document responsibility catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "documents"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "status": {"enum": ["draft", "reviewed", "current"]},
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path", "responsibility", "summary", "content_sha256", "status"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^document\\."},
+          "path": {"type": "string", "pattern": "^(SKILL\\.md|references/.+\\.md)$"},
+          "responsibility": {"type": "string", "minLength": 1},
+          "summary": {"type": "string", "minLength": 1},
+          "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "status": {"enum": ["draft", "reviewed", "current"]}
+        }
+      }
+    }
+  }
+}

@@ -931,7 +931,7 @@ def _render_baseline_prompt(dict_spec: dict[str, Any]) -> str:
         + "\n```\n"
     )
 
-# 语义门禁 fixture spec 与 tests/test_verilog_gate_catalog.py 保持一致。
+# 语义门禁 fixture spec 与 tests/quality/test_verilog_gate_catalog.py 保持一致。
 def _rtl_md_fixture_spec() -> dict[str, Any]:
     """返回 RTL Markdown 约束评估使用的最小 RTL spec。
 

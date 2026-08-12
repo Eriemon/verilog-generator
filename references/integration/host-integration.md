@@ -68,7 +68,7 @@ When resuming an RTL repair confirmation, the host may pass `decision_source` so
 
 `improve_existing_verilog(..., improve_goal="merge_assist")` is also assist-only. It emits `merge_plan.json`, `merge_wrapper.v`, `merge_validation.json`, and `merge_equivalence.json` so a host can guide wrapper-first repartition or recompose work without automatically mutating the source RTL.
 
-`improve_existing_verilog(..., improve_goal="optimize_assist")` is an assist-only flow. Without a candidate RTL, it produces an optimization plan, wrapper/probe artifacts, partition maps, and advisory QoR summaries. With a candidate RTL, it additionally runs semantic compare reporting. It does not implicitly rewrite or accept a candidate design.
+`improve_existing_verilog(..., improve_goal="optimize_assist")` follows the assist-only behavior and candidate-compare boundary defined in `references/workflows/workflow-contracts.md`; the host must not reinterpret that flow as implicit rewrite or acceptance.
 
 `verify_existing_verilog(...)` keeps RTL generation scope unchanged: source RTL and verification testbenches remain Verilog-2001 `.v` artifacts. In augment mode, the runtime preserves the original TB body, emits an augment plan and diff artifact, and records original/backup/active TB paths in `tb_contract.json`. In RTL repair mode, the runtime emits `rtl_patch_plan.json`, `rtl_patch_diff.txt`, `rtl_intervention.json`, and post-apply verification artifacts while keeping backup/active RTL paths inside `patch_candidate.json` and `verification_result.json`. Every run also emits `simulation_slice.json`, `timing_diagnostic.json`, `expected_trace.md`, `waveform_diff.json`, `testcase_matrix.json`, `run_summary.json`, `synth_readiness.json`, and `terminal_status.json` so hosts can consume structured closure state instead of scraping logs. The patch planner now classifies deterministic repair candidates such as `reset_initialization_completion`, `case_default_completion`, `state_hold_clear_completion`, and `output_register_completion`; only reset-initialization completion remains eligible for immediate `auto_apply`, while the newer categories intentionally downgrade to confirmation-driven resume.
 
@@ -92,15 +92,7 @@ When `rtl_style_profile=erie_strict`, the runtime also layers in curated Erie st
 
 ## Run Directories
 
-When dict inputs are passed to the workflow runner, the facade materializes stable inputs under `<out_dir>/_adapter_inputs/`:
-
-- `spec.json`
-- `requirements.json`
-- `codegen_plan.json`
-- optional `evidence.json`
-- optional `decision.json`
-
-The host can inspect these files even when the workflow later blocks for a human decision.
+When dict inputs are passed to the workflow runner, the facade materializes the stable `_adapter_inputs/` contract defined in `references/workflows/workflow-contracts.md`. The host can inspect those files even when the workflow later blocks for a human decision.
 
 When `stream=True`, each model-generated stage also writes a streaming transcript file under the stage directory. Hosts should treat the transcript as interaction evidence and the final response file as the extraction source of truth.
 

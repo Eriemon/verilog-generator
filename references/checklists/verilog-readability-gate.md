@@ -1,6 +1,6 @@
 # Verilog readability gate checklist
 
-Use this checklist after deterministic tools pass and before delivering generated or modified RTL. Final delivery requires `scripts/python/validation/verilog_generated_deliverable_gate.py` to report zero errors and zero strict warnings.
+Use this checklist after deterministic tools pass and before delivering generated or modified RTL. Final delivery requires `scripts/python/validation/generated_deliverable_gate.py` to report zero errors and zero strict warnings.
 
 ## Must answer yes
 

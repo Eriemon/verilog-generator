@@ -1,0 +1,23 @@
+{
+  "schema_version": 2,
+  "category": "quality",
+  "commands": [
+    {
+      "id": "quality.verilog", "category": "quality", "entrypoint": "scripts.python.quality.verilog_quality_gate", "subcommand": "", "title": "运行 Verilog VG 质量门禁", "summary": "对 Verilog 文件或目录执行统一 VG 规则检查，生成聚焦的 JSON 与 Markdown 诊断。", "when_to_use": "需要定位命名、注释、结构或格式 VG 规则问题时。",
+      "aliases": {"zh": ["Verilog 质量门禁", "检查 VG 规则"], "en": ["Verilog quality gate", "check VG rules"]},
+      "parameters": [{"name": "target", "required": true, "description": "Verilog 文件或目录"}, {"name": "--json", "required": false, "description": "JSON 报告路径"}, {"name": "--markdown", "required": false, "description": "Markdown 报告路径"}, {"name": "--non-strict", "required": false, "description": "历史语料兼容模式"}, {"name": "--warn-only", "required": false, "description": "历史语料只警告模式"}],
+      "invocation_templates": ["python -m scripts.python.quality.verilog_quality_gate <rtl-file-or-dir> --json <report.json> --markdown <report.md>"], "examples": {"valid": ["python -m scripts.python.quality.verilog_quality_gate input.v --json quality_gate.json --markdown quality_gate.md"], "invalid": ["不得用 focused quality gate 代替生成式交付门禁"]}, "prerequisites": ["目标可读且后缀受支持"], "outputs": {"format": "json-and-markdown", "success_exit_codes": [0], "failure_exit_codes": [1, 2]}, "risk": {"level": "low", "writes": true, "warning": "仅在显式报告路径写入"}, "boundaries": ["默认严格", "非严格模式只适用于历史参考语料"], "related_command_ids": ["validation.generated-deliverable", "quality.comment-only"]
+    },
+    {
+      "id": "quality.comment-only", "category": "quality", "entrypoint": "scripts.python.quality.verify_verilog_comment_only", "subcommand": "", "title": "验证 Verilog 仅注释变化", "summary": "比较不可变 baseline 与候选文件，拒绝任何 RTL token 变化，并可要求存在有效注释增量。", "when_to_use": "用户明确要求只添加或改进 Verilog 注释时，在格式化前后各运行一次。",
+      "aliases": {"zh": ["检查只改注释", "验证 RTL token 不变"], "en": ["verify comment-only change", "check RTL tokens unchanged"]},
+      "parameters": [{"name": "baseline", "required": true, "description": "不可变基线 Verilog"}, {"name": "candidate", "required": true, "description": "待检查候选 Verilog"}, {"name": "--require-comment-delta", "required": false, "description": "要求候选包含有效注释增量"}],
+      "invocation_templates": ["python -m scripts.python.quality.verify_verilog_comment_only <baseline.v> <candidate.v> --require-comment-delta"], "examples": {"valid": ["python -m scripts.python.quality.verify_verilog_comment_only baseline.v annotated.v --require-comment-delta"], "invalid": ["不得把格式化后的文件当成新的 baseline 掩盖 RTL 变化"]}, "prerequisites": ["baseline 在两次检查之间保持不可变"], "outputs": {"format": "human-readable", "success_exit_codes": [0], "failure_exit_codes": [1, 2]}, "risk": {"level": "low", "writes": false, "warning": "只读比较，不修复文件"}, "boundaries": ["只允许注释差异", "最终文件必须重新对原始 baseline 检查"], "related_command_ids": ["quality.verilog", "validation.generated-deliverable"]
+    },
+    {
+      "id": "quality.lint", "category": "quality", "entrypoint": "scripts.python.quality.verilog_lint", "subcommand": "", "title": "运行内置 Verilog 静态 lint", "summary": "检查基础语法、过程赋值、驱动冲突和其他可静态判断的问题。", "when_to_use": "需要快速静态诊断或完整验证链中的 lint 证据时。",
+      "aliases": {"zh": ["运行 Verilog lint", "静态检查 RTL"], "en": ["run Verilog lint", "static check RTL"]},
+      "parameters": [{"name": "target", "required": true, "description": "待 lint 的 Verilog 目标"}], "invocation_templates": ["python -m scripts.python.quality.verilog_lint <rtl-file-or-dir>"], "examples": {"valid": ["python -m scripts.python.quality.verilog_lint .\\reports\\verilog\\generated\\rtl\\erie_adapter.v"], "invalid": ["内置 lint 通过不代表 xsim 或 VCS 编译通过"]}, "prerequisites": ["目标存在且可读"], "outputs": {"format": "human-readable", "success_exit_codes": [0], "failure_exit_codes": [1, 2]}, "risk": {"level": "low", "writes": false, "warning": "只读静态检查"}, "boundaries": ["不替代外部仿真器", "不自动修改 RTL"], "related_command_ids": ["validation.generated-deliverable", "workflow.validate"]
+    }
+  ]
+}

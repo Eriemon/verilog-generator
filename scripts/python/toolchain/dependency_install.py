@@ -27,6 +27,23 @@ from scripts.python.toolchain.dependency_state import (
     utc_now,
 )
 
+# resolve_remote_helper_path 兼容当前与历史 erie-remote-ssh 安装布局。
+def resolve_remote_helper_path(path_skill: Path) -> Path | None:
+    """返回已安装 erie-remote-ssh 的可用 CLI 入口。
+
+    参数：path_skill 为 erie-remote-ssh 技能根目录。
+    返回：优先返回当前 runtime 入口；仅旧副本存在时返回历史入口；均缺失时返回 None。
+    """
+
+    # 当前布局优先，历史布局只用于兼容尚未升级的安装副本。
+    tuple_candidates = (  # 当前和历史 helper 候选路径
+        path_skill / "scripts" / "python" / "runtime" / "remote_ssh.py",  # 当前 runtime 入口
+        path_skill / "scripts" / "remote_ssh.py",  # 历史兼容入口
+    )
+
+    # 返回首个真实文件，稳定保持当前入口优先级。
+    return next((path_candidate for path_candidate in tuple_candidates if path_candidate.is_file()), None)
+
 # adapt_dependencies 把已安装依赖的 helper 路径写入项目本地状态。
 def adapt_dependencies(
     settings: dict,
@@ -94,8 +111,8 @@ def adapt_dependencies(
         # skill_paths 中保存 erie-remote-ssh 的真实安装目录。
         path_skill = Path(dict_remote_status["skill_paths"]["erie-remote-ssh"])  # 已安装 erie-remote-ssh skill 目录
 
-        # remote_ssh.py 是远程操作 helper。
-        path_helper = path_skill / "scripts" / "remote_ssh.py"  # remote-ssh helper 脚本路径
+        # helper 解析同时支持当前 runtime 入口和历史安装副本。
+        path_helper = resolve_remote_helper_path(path_skill)  # remote-ssh helper 脚本路径
 
         # 兼容 config/defaults.json 和 assets/defaults.json 两种布局。
         list_remote_settings_candidates = [  # remote-ssh settings 候选路径
@@ -110,7 +127,7 @@ def adapt_dependencies(
         )
 
         # helper 和 settings 同时存在时才能适配 remote。
-        if path_helper.is_file() and path_remote_settings is not None:
+        if path_helper is not None and path_remote_settings is not None:
 
             # remote adaptation 写入绝对路径，避免后续工作目录变化影响调用。
             dict_adaptations["remote"] = {
@@ -129,7 +146,7 @@ def adapt_dependencies(
                 "adapted": [],  # 未写入任何适配项
                 "blocked": ["erie-remote-ssh"],  # 因 remote-ssh 布局不完整而阻塞
                 "reason": (
-                    "Installed erie-remote-ssh is missing scripts/remote_ssh.py "
+                    "Installed erie-remote-ssh is missing a supported remote_ssh.py entrypoint "
                     "or a supported defaults.json under config/ or assets."
                 ),  # 布局缺失原因
                 "state_path": str(path_state),  # 本次读取的状态路径

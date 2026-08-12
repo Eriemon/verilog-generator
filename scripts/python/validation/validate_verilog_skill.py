@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 # pathlib 和 typing 提供脚本内路径与 JSON 载荷标注。
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 # skill 根目录用于脚本直运行时定位 runtime 包。
@@ -149,7 +150,7 @@ def _load_validation_source_audit_module():
     return module_validation_source_audit
 
 # _load_validation_smoke_gate_module 延迟导入 CLI smoke helper，兼容脚本直运行。
-def _load_validation_smoke_gate_module():
+def _load_validation_smoke_gate_module() -> ModuleType:
     """延迟导入 validation_smoke_gate 模块。
 
     :param: 此函数不接收外部业务参数。
@@ -582,6 +583,22 @@ def run_self_contained_gates(validation_context: ValidationContext) -> Path:
     # skill standards 覆盖 SKILL.md frontmatter 和支持资源。
     verify_skill_standards()
 
+    # runtime 路径就绪后加载技能内置 registry 门禁，不依赖外部脚本。
+    _ensure_runtime_import_path()
+
+    # SQLite 当前性和文档治理共同构成注册语义的本地闭合边界。
+    from scripts.python.registry.document_registry_common import validate_document_governance
+    from scripts.python.registry.registry_common import ensure_database_current
+
+    # 先拒绝缺失、损坏、陈旧或 FTS 不兼容的生成索引。
+    connection_registry, _ = ensure_database_current(PATH_SKILL_ROOT)  # 已通过来源摘要与记录计数门禁的只读连接
+
+    # 主验证链只核对索引，不在此执行任何注册表问询。
+    connection_registry.close()
+
+    # 再验证文档职责、知识指针、重复裁决、接口映射和正文摘要均为当前状态。
+    validate_document_governance(PATH_SKILL_ROOT, bool_require_current=True)
+
     # compileall 和可选 repo regression 共享同一份目标列表。
     run_compile_and_optional_regression(validation_context)
 
@@ -819,20 +836,20 @@ def run_cli_gate(settings: dict, smoke_dir: Path) -> None:
     path_use_case_examples_dir = path_setting(settings, "use_case_examples_dir")  # use-case 示例目录
 
     # smoke helper 模块已经承载具体 CLI 场景逻辑，这里只保留总装协调职责。
-    module_validation_smoke_gate = _load_validation_smoke_gate_module()  # 汇总 canonical、use-case 与 existing-rtl 冒烟场景的 helper 模块
+    module_type_module_validation_smoke_gate = _load_validation_smoke_gate_module()  # 汇总多类冒烟场景的 helper 模块
 
     # 本轮 CLI gate 先清理 smoke 子树，避免旧产物影响断言。
     remove_inside_smoke_root(settings, smoke_dir)
 
     # canonical 流程覆盖 scaffold、prompt、workflow 和 validate 基线。
-    module_validation_smoke_gate.run_canonical_cli_flow(
+    module_type_module_validation_smoke_gate.run_canonical_cli_flow(
         path_example_spec,
         smoke_dir,
         func_run_verilog_cli=run_verilog_cli,
     )
 
     # use-case 示例验证模板选择能贯穿 requirements 和 codegen plan。
-    module_validation_smoke_gate.run_use_case_cli_flows(
+    module_type_module_validation_smoke_gate.run_use_case_cli_flows(
         path_use_case_examples_dir,
         smoke_dir,
         func_run_verilog_cli=run_verilog_cli,
@@ -840,14 +857,14 @@ def run_cli_gate(settings: dict, smoke_dir: Path) -> None:
     )
 
     # existing RTL 流程验证半自动边界和 testbench augment 产物。
-    module_validation_smoke_gate.run_existing_rtl_boundary_flows(
+    module_type_module_validation_smoke_gate.run_existing_rtl_boundary_flows(
         smoke_dir,
         path_skill_root=PATH_SKILL_ROOT,
         func_run_verilog_cli=run_verilog_cli,
     )
 
     # patch resume 流程验证三类 RTL 修复都必须经决策文件恢复。
-    module_validation_smoke_gate.run_existing_rtl_patch_flows(
+    module_type_module_validation_smoke_gate.run_existing_rtl_patch_flows(
         smoke_dir,
         path_skill_root=PATH_SKILL_ROOT,
         func_run_verilog_cli=run_verilog_cli,
@@ -886,7 +903,7 @@ def run_verify_existing(request: VerifyExistingRequest) -> None:
     )
 
 # _load_validation_gate_facade_module 延迟导入兼容门禁子模块，保持脚本直运行可用。
-def _load_validation_gate_facade_module():
+def _load_validation_gate_facade_module() -> ModuleType:
     """延迟导入 validation_gate_facade 模块。
 
     :param: 此函数不接收外部业务参数。
@@ -903,7 +920,7 @@ def _load_validation_gate_facade_module():
     return module_validation_gate_facade
 
 # 公开兼容门禁函数集中迁到子模块；当前文件只回填稳定导出面。
-obj_validation_gate_facade: Any = _load_validation_gate_facade_module().bind_validation_gate_exports(  # 公开兼容门禁绑定对象
+value_validation_gate_facade: Any = _load_validation_gate_facade_module().bind_validation_gate_exports(  # 公开兼容门禁绑定结果
     globals(),  # 当前 validate 模块命名空间
 
     # 这一组 loader 继续保持治理、审计与工作区 helper 的延迟导入边界。

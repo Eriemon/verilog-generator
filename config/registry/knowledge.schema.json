@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "knowledge.schema.json",
+  "title": "Authoritative Markdown knowledge index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "records"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "status": {"enum": ["draft", "reviewed", "current"]},
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "title", "summary", "source_path", "source_anchor", "content_sha256", "keywords"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^knowledge\\."},
+          "kind": {"const": "knowledge"},
+          "title": {"type": "string", "minLength": 1},
+          "summary": {"type": "string", "minLength": 1},
+          "source_path": {"type": "string", "pattern": "^(SKILL\\.md|references/.+\\.md)$"},
+          "source_anchor": {"type": "string"},
+          "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "keywords": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+        }
+      }
+    }
+  }
+}

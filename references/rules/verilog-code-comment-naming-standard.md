@@ -6,7 +6,7 @@
 
 ## 当前门禁对齐状态
 
-以下对齐说明以 `scripts/python/quality/quality_gate.py`、`assets/verilog_style_rules.json`、`tests/test_verilog_readable_deliverable_gate.py` 为真源；当本文档正文与运行时实现冲突时，以这些真源为准。
+以下对齐说明以 `scripts/python/quality/quality_gate.py`、`assets/verilog_style_rules.json`、`tests/validation/test_deliverable_gate.py` 为真源；当本文档正文与运行时实现冲突时，以这些真源为准。
 
 - `VG001`、`VG003`、`VG004`、`VG005`、`VG025`：覆盖 ``timescale 1ns / 1ps``、行尾空白、Tab 缩进、文件末尾换行、控制语句显式 `begin/end`。
 - `VG010`、`VG011`、`VG012`、`VG013`、`VG014`、`VG024`：覆盖端口方向前缀、ANSI header 禁止 `wire/reg/logic` 与 `output reg`、`C_`/`ST_`/内部语义前缀、内部输出 `_o` 约束、输出桥接存在性、实例命名语义。
@@ -1026,7 +1026,7 @@ python -m scripts.python.quality.verilog_quality_gate <input.v> --json quality_g
 最终交付门禁：
 
 ```bash
-python -m scripts.python.validation.verilog_generated_deliverable_gate <input.v> --json deliverable_gate.json --markdown deliverable_gate.md
+python -m scripts.python.validation.generated_deliverable_gate <input.v> --json deliverable_gate.json --markdown deliverable_gate.md
 ```
 
 注释验证：

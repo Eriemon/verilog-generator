@@ -312,9 +312,11 @@
       "scripts/python/remote/remote_validate_snippets.py",
       "scripts/python/toolchain/dependency_fpga_route.py",
       "scripts/python/validation/validation_source_audit.py",
-      "scripts/python/validation/verilog_generated_deliverable_gate.py",
+      "scripts/python/validation/generated_deliverable_gate.py",
       "scripts/python/quality/verilog_quality_gate.py",
-      "scripts/python/validation/verilog_generated_deliverable_gate.py",
+      "config/registry/toolchain/commands.json",
+      "config/registry/registry.sqlite3",
+      "scripts/python/validation/generated_deliverable_gate.py",
       "scripts/python/quality/verilog_quality_gate.py"
     ],
     "forbidden_residuals": [
@@ -332,7 +334,7 @@
   },
   "remote": {
     "integration": {
-      "remote_ssh_helper": "${home}/.codex/skills/erie-remote-ssh/scripts/remote_ssh.py",
+      "remote_ssh_helper": "${home}/.codex/skills/erie-remote-ssh/scripts/python/runtime/remote_ssh.py",
       "remote_ssh_settings": "${home}/.codex/skills/erie-remote-ssh/assets/defaults.json",
       "selection_file": ".settings/remote-selection.local.json",
       "server_list": ".settings/server_list.local.json",

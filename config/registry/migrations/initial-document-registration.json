@@ -1,0 +1,680 @@
+{
+  "exact_reviews": [
+    {
+      "authoritative_location": "",
+      "decision": "keep",
+      "evidence": {
+        "locations": [
+          {
+            "block_index": "1",
+            "path": "references/integration/configuration.md",
+            "preview": "## Table of Contents"
+          },
+          {
+            "block_index": "1",
+            "path": "references/integration/host-integration.md",
+            "preview": "## Table of Contents"
+          },
+          {
+            "block_index": "1",
+            "path": "references/rules/erie-style.md",
+            "preview": "## Table of Contents"
+          },
+          {
+            "block_index": "1",
+            "path": "references/workflows/workflow-contracts.md",
+            "preview": "## Table of Contents"
+          }
+        ],
+        "sha256": "8f69bcfd17f83a1341b4065d1d216e505044e8d06d131085b9aa1fb2dcebb94d"
+      },
+      "id": "exact.8f69bcfd17f83a13",
+      "rationale": "Table of Contents 是各自权威文档的结构导航，不复制合同正文，跨文档合并会破坏局部可读性。"
+    },
+    {
+      "authoritative_location": "",
+      "decision": "keep",
+      "evidence": {
+        "locations": [
+          {
+            "block_index": "7",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "10",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "18",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "27",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "41",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "64",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "94",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "108",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "122",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "130",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "143",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "153",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "165",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "189",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "192",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "203",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "206",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "210",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          },
+          {
+            "block_index": "222",
+            "path": "references/rules/verilog-code-comment-naming-standard.md",
+            "preview": "---"
+          }
+        ],
+        "sha256": "cb3f91d54eee30e53e35b2b99905f70f169ed549fd78909d3dac2defc9ed8d3b"
+      },
+      "id": "exact.cb3f91d54eee30e5",
+      "rationale": "分隔线用于单一长规则书的章节结构与阅读定位，不承载可独立合并的知识语义。"
+    }
+  ],
+  "fuzzy_reviews": [],
+  "interface_reviews": [
+    {
+      "command_ids": [
+        "toolchain.dependencies-install"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--allow-fpga-agent-fallback"
+    },
+    {
+      "command_ids": [
+        "registry.ask"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "SKILL.md"
+      ],
+      "value": "--category"
+    },
+    {
+      "command_ids": [
+        "remote.validate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--cleanup-remote"
+    },
+    {
+      "command_ids": [
+        "registry.document-governance"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/skill/script-guide.md"
+      ],
+      "value": "--confirm-user"
+    },
+    {
+      "command_ids": [
+        "toolchain.dependencies-install"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--dependency-id"
+    },
+    {
+      "command_ids": [
+        "registry.document-governance"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/skill/script-guide.md"
+      ],
+      "value": "--enable"
+    },
+    {
+      "command_ids": [
+        "workflow.evaluate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--evals"
+    },
+    {
+      "command_ids": [
+        "remote.validate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--execute"
+    },
+    {
+      "command_ids": [
+        "registry.ask",
+        "registry.document-governance",
+        "validation.generated-deliverable",
+        "quality.verilog"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "SKILL.md",
+        "references/rules/verilog-code-comment-naming-standard.md",
+        "references/skill/script-guide.md"
+      ],
+      "value": "--json"
+    },
+    {
+      "command_ids": [
+        "remote.validate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--keep-remote"
+    },
+    {
+      "command_ids": [
+        "registry.ask"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "SKILL.md"
+      ],
+      "value": "--kind"
+    },
+    {
+      "command_ids": [
+        "registry.ask"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "SKILL.md"
+      ],
+      "value": "--limit"
+    },
+    {
+      "command_ids": [
+        "external.verilator-lint"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/checklists/lint-checklist.md"
+      ],
+      "value": "--lint-only"
+    },
+    {
+      "command_ids": [
+        "validation.generated-deliverable",
+        "quality.verilog"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "SKILL.md",
+        "references/rules/verilog-code-comment-naming-standard.md"
+      ],
+      "value": "--markdown"
+    },
+    {
+      "command_ids": [
+        "workflow.validate",
+        "workflow.run",
+        "workflow.batch",
+        "workflow.verify-existing"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md",
+        "references/workflows/workflow-contracts.md"
+      ],
+      "value": "--no-external"
+    },
+    {
+      "command_ids": [
+        "validation.skill"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--no-require-remote"
+    },
+    {
+      "command_ids": [
+        "validation.generated-deliverable",
+        "quality.verilog"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "SKILL.md",
+        "references/workflows/verilog_dispatcher.md"
+      ],
+      "value": "--non-strict"
+    },
+    {
+      "command_ids": [
+        "workflow.route",
+        "workflow.scaffold",
+        "workflow.prompt",
+        "workflow.evaluate",
+        "generation.corpus-analysis"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--out"
+    },
+    {
+      "command_ids": [
+        "workflow.validate",
+        "toolchain.preflight"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--readiness"
+    },
+    {
+      "command_ids": [
+        "validation.skill",
+        "remote.validate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--remote-server"
+    },
+    {
+      "command_ids": [
+        "workflow.validate",
+        "workflow.review"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/rules/verilog-code-comment-naming-standard.md",
+        "references/workflows/verilog_dispatcher.md"
+      ],
+      "value": "--report-json"
+    },
+    {
+      "command_ids": [
+        "remote.validate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--report-runs"
+    },
+    {
+      "command_ids": [
+        "quality.comment-only"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/rules/verilog-code-comment-naming-standard.md"
+      ],
+      "value": "--require-comment-delta"
+    },
+    {
+      "command_ids": [
+        "remote.validate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--server"
+    },
+    {
+      "command_ids": [
+        "validation.skill",
+        "toolchain.dependencies-check",
+        "toolchain.dependencies-prompt",
+        "toolchain.dependencies-skip",
+        "toolchain.dependencies-install",
+        "toolchain.dependencies-adapt",
+        "toolchain.fpga-route",
+        "toolchain.fpga-select-vendor",
+        "toolchain.fpga-cleanup",
+        "toolchain.preflight",
+        "remote.validate",
+        "remote.discover",
+        "remote.choices"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "SKILL.md",
+        "references/integration/configuration.md"
+      ],
+      "value": "--settings"
+    },
+    {
+      "command_ids": [
+        "remote.validate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--simulator-backend"
+    },
+    {
+      "command_ids": [
+        "remote.validate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--state-path"
+    },
+    {
+      "command_ids": [
+        "workflow.review"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/rules/verilog-code-comment-naming-standard.md",
+        "references/workflows/verilog_dispatcher.md"
+      ],
+      "value": "--target"
+    },
+    {
+      "command_ids": [
+        "remote.validate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--vivado-settings"
+    },
+    {
+      "command_ids": [
+        "validation.generated-deliverable",
+        "quality.verilog"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "SKILL.md",
+        "references/workflows/verilog_dispatcher.md"
+      ],
+      "value": "--warn-only"
+    },
+    {
+      "command_ids": [
+        "validation.skill"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--with-external-audit"
+    },
+    {
+      "command_ids": [
+        "validation.skill"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--with-repo-regression"
+    },
+    {
+      "command_ids": [
+        "registry.build",
+        "registry.document-governance"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/skill/script-guide.md"
+      ],
+      "value": "--write"
+    },
+    {
+      "command_ids": [
+        "remote.validate"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--write-toolchain-selection"
+    },
+    {
+      "command_ids": [
+        "toolchain.dependencies-install",
+        "toolchain.fpga-cleanup"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--yes"
+    }
+  ],
+  "schema_version": 1,
+  "source_documents": [
+    {
+      "path": "SKILL.md",
+      "sha256": "d100a3634f295d7d4de57446390ed793dd080ae868a4a8f4dfe4831cf7799ceb"
+    },
+    {
+      "path": "references/checklists/capability-distillation-checklist.md",
+      "sha256": "6a7b43ef62f09df968439f68a2569aa920b0f7d79344804a6cd8a60964b041b8"
+    },
+    {
+      "path": "references/checklists/lint-checklist.md",
+      "sha256": "d9bb94604052628a5156d1ed8f082e0280187dadfdeb527834c973b365269506"
+    },
+    {
+      "path": "references/checklists/verilog-readability-gate.md",
+      "sha256": "bbf8664b481dbcafb50e4534f575b6ee0bbe90be73d5894b8de03a7e1c6e67b1"
+    },
+    {
+      "path": "references/corpus/verilog-style-observations.md",
+      "sha256": "21bf4c9e03104e39ee6a422dc3650bf1821175651625699d64f2fa7cff037b06"
+    },
+    {
+      "path": "references/integration/configuration.md",
+      "sha256": "1663b68c9056ead89cca16f88abff98e44351ee7c58ae94265f4763ed3b8a035"
+    },
+    {
+      "path": "references/integration/host-integration.md",
+      "sha256": "e1a70ebdde7232ac6aeef725a563290a7fc98162362e8b36aa077a09e6b21194"
+    },
+    {
+      "path": "references/rules/asic-verilog-quality.md",
+      "sha256": "dccca8bd7ce40c4418469839366585f23426632e18d40f8c910a3da4df162da9"
+    },
+    {
+      "path": "references/rules/erie-style.md",
+      "sha256": "17507abbb0830ceb184c5d910d34518d74dc96a9fc7df8660f17b492b90559a3"
+    },
+    {
+      "path": "references/rules/testbench-patterns.md",
+      "sha256": "339e403b21ed4e267708bdbabde5c14bb10c288b8a811a66faadc0a432c6dd72"
+    },
+    {
+      "path": "references/rules/verilog-code-comment-naming-standard.md",
+      "sha256": "3b374b9ed90a1e5eb91b6d0ef8c796918d4192dca5128a9529f2c7c1643c2db6"
+    },
+    {
+      "path": "references/rules/verilog-comment-placement.md",
+      "sha256": "64e5d42b48c5cd09c715ed77b44a417a3f38c93e9c48d2a82e418b09beff6238"
+    },
+    {
+      "path": "references/rules/verilog-pattern-templates.md",
+      "sha256": "5fbadb2922ef227799e74668b8f4169641fd8499bd138fb8ed5a21612baadb03"
+    },
+    {
+      "path": "references/rules/verilog-quality-gates.md",
+      "sha256": "95db6826c886264131acb1d6fc0623923efbfd2a03bdcac896b6e6842821ae74"
+    },
+    {
+      "path": "references/skill/script-guide.md",
+      "sha256": "0f8be7427686c896ae96c681fefeec61bebe7b3097f61f15af4fbda78302e39a"
+    },
+    {
+      "path": "references/skill/skill-standards.md",
+      "sha256": "0e721cb294758d59d9cc243aba0e2e0618f5072d8803a8621e1b209afd62a78c"
+    },
+    {
+      "path": "references/workflows/verilog_dispatcher.md",
+      "sha256": "63c007e68ed32ba5dfdb47554dff9d55cf56fe0f55d4c55bebed95e295b5f2b6"
+    },
+    {
+      "path": "references/workflows/workflow-contracts.md",
+      "sha256": "4317c60849897b406699e4a565e9ef3a84a1ba1ddbff34bac4aa160c7c2ba73b"
+    }
+  ],
+  "status": "finalized",
+  "user_confirmation": "not_required"
+}

@@ -48,7 +48,7 @@ Existing-asset analysis and reports may locate issues and explain risk, but they
 
 ### `validate`
 
-At minimum, run `python -m scripts.python.validation.verilog_generated_deliverable_gate`. Use strict mode for generated deliverables. Use `python -m scripts.python.quality.verilog_quality_gate` for focused VG debugging only. Use `--non-strict --warn-only` only for historical reference corpora that now live under `tests/cases/ideal/rtl` and `tests/cases/bad/rtl`.
+At minimum, run `python -m scripts.python.validation.generated_deliverable_gate`. Use strict mode for generated deliverables. Use `python -m scripts.python.quality.verilog_quality_gate` for focused VG debugging only. Use `--non-strict --warn-only` only for historical reference corpora that now live under `tests/cases/ideal/rtl` and `tests/cases/bad/rtl`.
 
 The deliverable gate must expose the eight public checks: `compile`, `ast`, `readability`, `comment`, `naming`, `profile`, `testbench`, and `toolchain`. `compile` means local static parser/lint evidence. Simulator compile, execution, synthesis, and remote validation belong to `toolchain`; they are optional unless the user requests them or configuration enables them, and any requested failure blocks delivery.
 

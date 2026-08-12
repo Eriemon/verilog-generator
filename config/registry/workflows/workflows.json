@@ -1,0 +1,37 @@
+{
+  "schema_version": 2,
+  "workflows": [
+    {
+      "id": "workflow.spec-first-generation",
+      "title": "从规范到可验证 RTL",
+      "summary": "依次完成依赖检查、规范骨架或 prompt、受管生成、交付门禁和 readiness 验证。",
+      "aliases": {"zh": ["从 spec 生成 RTL", "规范优先生成流程"], "en": ["spec-first RTL generation", "spec to validated RTL"]},
+      "steps": ["toolchain.dependencies-check", "workflow.scaffold", "workflow.prompt", "workflow.run", "validation.generated-deliverable", "workflow.validate"],
+      "boundaries": ["requirements 和 codegen plan 先于 RTL", "外部 readiness 证据与静态交付门禁分开报告"]
+    },
+    {
+      "id": "workflow.existing-rtl",
+      "title": "已有 RTL 分析、审查与受控修复",
+      "summary": "先只读 review，再按 automation mode 规划或应用修复，并以原始 baseline 和交付门禁复核。",
+      "aliases": {"zh": ["已有 RTL 工作流", "审查修复 Verilog"], "en": ["existing RTL workflow", "review and repair Verilog"]},
+      "steps": ["workflow.review", "workflow.verify-existing", "quality.comment-only", "validation.generated-deliverable", "workflow.validate"],
+      "boundaries": ["没有修改授权时保持只读", "高风险、多文件或语义变更必须等待确认"]
+    },
+    {
+      "id": "workflow.remote-confidence",
+      "title": "server_1 远程验证闭环",
+      "summary": "发现配置、确认目标、检查工具链并通过受审远程请求运行 pytest 和真实仿真。",
+      "aliases": {"zh": ["远程信心闭环", "server_1 pytest xsim"], "en": ["remote confidence workflow", "server_1 pytest xsim"]},
+      "steps": ["remote.discover", "remote.choices", "toolchain.preflight", "remote.validate", "workflow.evaluate"],
+      "boundaries": ["不直接同步技能开发目录", "不部署本地 settings", "真实执行工具和报告必须明确列出"]
+    },
+    {
+      "id": "workflow.registry-update",
+      "title": "命令与文档注册表更新闭环",
+      "summary": "复核 Markdown 语义、更新 JSON 事实源、裁决重复和接口、重建 SQLite 并运行问询与覆盖测试。",
+      "aliases": {"zh": ["更新命令注册表", "文档语义去重流程"], "en": ["update command registry", "semantic document deduplication workflow"]},
+      "steps": ["registry.document-governance", "registry.build", "registry.ask", "validation.skill"],
+      "boundaries": ["JSON 是唯一可编辑注册源", "Markdown 是知识正文权威源", "只去除等价重复，不删除唯一语义"]
+    }
+  ]
+}

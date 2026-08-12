@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "agents-md-generator command registry record",
+  "type": "object",
+  "required": [
+    "id", "category", "entrypoint", "subcommand", "title", "summary",
+    "when_to_use", "aliases", "parameters", "invocation_templates", "examples",
+    "prerequisites", "outputs", "risk", "boundaries", "related_command_ids"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {"$ref": "#/$defs/nonEmptyString"},
+    "category": {"$ref": "#/$defs/nonEmptyString"},
+    "entrypoint": {"$ref": "#/$defs/nonEmptyString"},
+    "subcommand": {"type": "string"},
+    "title": {"$ref": "#/$defs/nonEmptyString"},
+    "summary": {"$ref": "#/$defs/nonEmptyString"},
+    "when_to_use": {"$ref": "#/$defs/nonEmptyString"},
+    "aliases": {"$ref": "#/$defs/aliases"},
+    "parameters": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/parameter"}
+    },
+    "invocation_templates": {"$ref": "#/$defs/nonEmptyStringArray"},
+    "examples": {"$ref": "#/$defs/examples"},
+    "prerequisites": {"$ref": "#/$defs/nonEmptyStringArray"},
+    "outputs": {"$ref": "#/$defs/outputs"},
+    "risk": {"$ref": "#/$defs/risk"},
+    "boundaries": {"$ref": "#/$defs/nonEmptyStringArray"},
+    "related_command_ids": {"$ref": "#/$defs/stringArray"}
+  },
+  "$defs": {
+    "nonEmptyString": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "stringArray": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/nonEmptyString"}
+    },
+    "nonEmptyStringArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/nonEmptyString"}
+    },
+    "aliases": {
+      "type": "object",
+      "required": ["zh", "en"],
+      "additionalProperties": false,
+      "properties": {
+        "zh": {"$ref": "#/$defs/nonEmptyStringArray"},
+        "en": {"$ref": "#/$defs/nonEmptyStringArray"}
+      }
+    },
+    "parameter": {
+      "type": "object",
+      "required": ["name", "required", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"$ref": "#/$defs/nonEmptyString"},
+        "required": {"type": "boolean"},
+        "description": {"$ref": "#/$defs/nonEmptyString"}
+      }
+    },
+    "examples": {
+      "type": "object",
+      "required": ["valid", "invalid"],
+      "additionalProperties": false,
+      "properties": {
+        "valid": {"$ref": "#/$defs/nonEmptyStringArray"},
+        "invalid": {"$ref": "#/$defs/nonEmptyStringArray"}
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "required": ["format", "success_exit_codes", "failure_exit_codes"],
+      "additionalProperties": false,
+      "properties": {
+        "format": {"$ref": "#/$defs/nonEmptyString"},
+        "success_exit_codes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "integer"}
+        },
+        "failure_exit_codes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "integer"}
+        }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "required": ["level", "writes", "warning"],
+      "additionalProperties": false,
+      "properties": {
+        "level": {"$ref": "#/$defs/nonEmptyString"},
+        "writes": {"type": "boolean"},
+        "warning": {"$ref": "#/$defs/nonEmptyString"}
+      }
+    }
+  }
+}

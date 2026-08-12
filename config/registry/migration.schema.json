@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "migration.schema.json",
+  "title": "Initial document registration review record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "user_confirmation", "source_documents", "exact_reviews", "fuzzy_reviews", "interface_reviews"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "status": {"enum": ["pending_agent_review", "agent_reviewed", "finalized"]},
+    "user_confirmation": {"enum": ["not_required", "confirmed"]},
+    "source_documents": {"type": "array"},
+    "exact_reviews": {"type": "array"},
+    "fuzzy_reviews": {"type": "array"},
+    "interface_reviews": {"type": "array"}
+  }
+}

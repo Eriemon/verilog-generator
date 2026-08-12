@@ -1,0 +1,288 @@
+{
+  "records": [
+    {
+      "content_sha256": "d100a3634f295d7d4de57446390ed793dd080ae868a4a8f4dfe4831cf7799ceb",
+      "id": "knowledge.skill",
+      "keywords": [
+        "route",
+        "Verilog-2001",
+        "quality",
+        "registry",
+        "boundaries"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "SKILL.md",
+      "summary": "技能触发、外层路由、强制质量链、停止边界与渐进披露。",
+      "title": "Readable Verilog Generator"
+    },
+    {
+      "content_sha256": "6a7b43ef62f09df968439f68a2569aa920b0f7d79344804a6cd8a60964b041b8",
+      "id": "knowledge.references-checklists-capability-distillation-checklist",
+      "keywords": [
+        "capability",
+        "distillation",
+        "source",
+        "evidence"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/checklists/capability-distillation-checklist.md",
+      "summary": "外部能力蒸馏、来源追溯与吸收边界复核。",
+      "title": "Capability Distillation Checklist"
+    },
+    {
+      "content_sha256": "d9bb94604052628a5156d1ed8f082e0280187dadfdeb527834c973b365269506",
+      "id": "knowledge.references-checklists-lint-checklist",
+      "keywords": [
+        "lint",
+        "Verilator",
+        "static",
+        "blocking"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/checklists/lint-checklist.md",
+      "summary": "独立静态 lint、外部工具证据与阻断解释。",
+      "title": "Lint Checklist"
+    },
+    {
+      "content_sha256": "bbf8664b481dbcafb50e4534f575b6ee0bbe90be73d5894b8de03a7e1c6e67b1",
+      "id": "knowledge.references-checklists-verilog-readability-gate",
+      "keywords": [
+        "readability",
+        "delivery",
+        "review",
+        "gate"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/checklists/verilog-readability-gate.md",
+      "summary": "生成或修改 Verilog 的最终人类可读性复核。",
+      "title": "Verilog Readability Gate"
+    },
+    {
+      "content_sha256": "21bf4c9e03104e39ee6a422dc3650bf1821175651625699d64f2fa7cff037b06",
+      "id": "knowledge.references-corpus-verilog-style-observations",
+      "keywords": [
+        "corpus",
+        "ideal",
+        "bad",
+        "style",
+        "observations"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/corpus/verilog-style-observations.md",
+      "summary": "理想与反例语料中可复现但非规范性的风格观察。",
+      "title": "Verilog Style Observations"
+    },
+    {
+      "content_sha256": "1663b68c9056ead89cca16f88abff98e44351ee7c58ae94265f4763ed3b8a035",
+      "id": "knowledge.references-integration-configuration",
+      "keywords": [
+        "settings",
+        "dependencies",
+        "remote",
+        "toolchain",
+        "validation"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/integration/configuration.md",
+      "summary": "本地设置、依赖、远程目标、工具链和验证配置。",
+      "title": "Configuration"
+    },
+    {
+      "content_sha256": "e1a70ebdde7232ac6aeef725a563290a7fc98162362e8b36aa077a09e6b21194",
+      "id": "knowledge.references-integration-host-integration",
+      "keywords": [
+        "facade",
+        "host",
+        "API",
+        "artifacts",
+        "routing"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/integration/host-integration.md",
+      "summary": "Python facade、宿主输入输出和宿主执行边界。",
+      "title": "Host Integration"
+    },
+    {
+      "content_sha256": "dccca8bd7ce40c4418469839366585f23426632e18d40f8c910a3da4df162da9",
+      "id": "knowledge.references-rules-asic-verilog-quality",
+      "keywords": [
+        "ASIC",
+        "CDC",
+        "reset",
+        "timing",
+        "synthesis"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/rules/asic-verilog-quality.md",
+      "summary": "ASIC 导向的组合逻辑、时钟、复位、CDC、综合与时序规则。",
+      "title": "ASIC Verilog Quality"
+    },
+    {
+      "content_sha256": "17507abbb0830ceb184c5d910d34518d74dc96a9fc7df8660f17b492b90559a3",
+      "id": "knowledge.references-rules-erie-style",
+      "keywords": [
+        "erie_strict",
+        "header",
+        "FSM",
+        "instance",
+        "bus"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/rules/erie-style.md",
+      "summary": "Erie 严格头部、命名、FSM、实例和总线分组风格。",
+      "title": "Erie Style"
+    },
+    {
+      "content_sha256": "339e403b21ed4e267708bdbabde5c14bb10c288b8a811a66faadc0a432c6dd72",
+      "id": "knowledge.references-rules-testbench-patterns",
+      "keywords": [
+        "testbench",
+        "stimulus",
+        "self-checking",
+        "Verilog-2001"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/rules/testbench-patterns.md",
+      "summary": "Verilog-2001 自检 testbench 的结构、激励与检查模式。",
+      "title": "Testbench Patterns"
+    },
+    {
+      "content_sha256": "3b374b9ed90a1e5eb91b6d0ef8c796918d4192dca5128a9529f2c7c1643c2db6",
+      "id": "knowledge.references-rules-verilog-code-comment-naming-standard",
+      "keywords": [
+        "Verilog",
+        "code",
+        "comment",
+        "naming",
+        "format"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/rules/verilog-code-comment-naming-standard.md",
+      "summary": "可读 Verilog 代码、注释、命名、区域和格式的完整规范。",
+      "title": "Verilog Code Comment Naming Standard"
+    },
+    {
+      "content_sha256": "64e5d42b48c5cd09c715ed77b44a417a3f38c93e9c48d2a82e418b09beff6238",
+      "id": "knowledge.references-rules-verilog-comment-placement",
+      "keywords": [
+        "comment",
+        "placement",
+        "entity",
+        "FSM",
+        "instance"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/rules/verilog-comment-placement.md",
+      "summary": "模块实体、过程、FSM、实例和生成块的注释放置。",
+      "title": "Verilog Comment Placement"
+    },
+    {
+      "content_sha256": "5fbadb2922ef227799e74668b8f4169641fd8499bd138fb8ed5a21612baadb03",
+      "id": "knowledge.references-rules-verilog-pattern-templates",
+      "keywords": [
+        "patterns",
+        "templates",
+        "RTL",
+        "reuse"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/rules/verilog-pattern-templates.md",
+      "summary": "从本地 RTL 蒸馏的紧凑结构模式与复用边界。",
+      "title": "Verilog Pattern Templates"
+    },
+    {
+      "content_sha256": "95db6826c886264131acb1d6fc0623923efbfd2a03bdcac896b6e6842821ae74",
+      "id": "knowledge.references-rules-verilog-quality-gates",
+      "keywords": [
+        "VG",
+        "catalog",
+        "severity",
+        "schema",
+        "quality"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/rules/verilog-quality-gates.md",
+      "summary": "VG 规则目录、严重度、结果状态和统一报告合同。",
+      "title": "Verilog Quality Gates"
+    },
+    {
+      "content_sha256": "0f8be7427686c896ae96c681fefeec61bebe7b3097f61f15af4fbda78302e39a",
+      "id": "knowledge.references-skill-script-guide",
+      "keywords": [
+        "SQLite",
+        "FTS5",
+        "registry",
+        "query",
+        "governance"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/skill/script-guide.md",
+      "summary": "自包含 SQLite 注册表查询、构建和文档治理生命周期。",
+      "title": "Script Guide"
+    },
+    {
+      "content_sha256": "0e721cb294758d59d9cc243aba0e2e0618f5072d8803a8621e1b209afd62a78c",
+      "id": "knowledge.references-skill-skill-standards",
+      "keywords": [
+        "skill",
+        "frontmatter",
+        "resources",
+        "progressive disclosure"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/skill/skill-standards.md",
+      "summary": "技能 frontmatter、资源布局、自包含和渐进披露要求。",
+      "title": "Skill Standards"
+    },
+    {
+      "content_sha256": "63c007e68ed32ba5dfdb47554dff9d55cf56fe0f55d4c55bebed95e295b5f2b6",
+      "id": "knowledge.references-workflows-verilog-dispatcher",
+      "keywords": [
+        "dispatcher",
+        "route",
+        "delivery matrix",
+        "repair",
+        "language"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/workflows/verilog_dispatcher.md",
+      "summary": "Verilog 任务分类、公开交付矩阵、语言路由和安全修复边界。",
+      "title": "Verilog Dispatcher"
+    },
+    {
+      "content_sha256": "4317c60849897b406699e4a565e9ef3a84a1ba1ddbff34bac4aa160c7c2ba73b",
+      "id": "knowledge.references-workflows-workflow-contracts",
+      "keywords": [
+        "workflow",
+        "artifacts",
+        "status",
+        "resume",
+        "trace"
+      ],
+      "kind": "knowledge",
+      "source_anchor": "",
+      "source_path": "references/workflows/workflow-contracts.md",
+      "summary": "运行目录、阶段、交付状态、已有 RTL 子流、恢复和 trace。",
+      "title": "Workflow Contracts"
+    }
+  ],
+  "schema_version": 1,
+  "status": "current"
+}
