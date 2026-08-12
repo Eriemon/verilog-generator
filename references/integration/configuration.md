@@ -126,6 +126,21 @@ Board-level ADC or DAC family templates live under `assets/use_case_templates`. 
 
 `rtl_style_profile=erie_strict` now also inherits curated Erie style guidance from `references/rules/erie-style.md` and `assets/style_templates/`. This strengthens bilingual headers, FSM naming (`state_current` / `state_next` / `ST_*`), `_Inst` instance naming, `gen_*` generate labels, and AXI/AXIS/APB/AHB port grouping as prompt-level requirements. Validation reports these newer Erie-strict checks as warnings first, not hard errors.
 
+## File Role Confirmations
+
+The optional top-level spec field `file_role_confirmations` resolves only ordinary `.v`/`.sv` filenames whose content produces an ambiguous VG149 testbench role. It is a JSON object keyed by the source path relative to the scanned directory or by the scanned file's basename. Keys must be canonical POSIX relative paths: no absolute path, drive prefix, backslash, empty segment, `.` segment, or `..` traversal is accepted. Values are exactly `design` or `testbench`.
+
+```json
+{
+  "file_role_confirmations": {
+    "rtl/counter.v": "design",
+    "verification/counter.sv": "testbench"
+  }
+}
+```
+
+A confirmation may not contradict explicit filename/directory testbench evidence. Confirming `testbench` resolves the role only; VG149 still requires renaming `verification/counter.sv` to a `tb_<function>.sv` name. Confirming `design` makes VG149 not applicable to an otherwise ambiguous ordinary filename. Unknown paths, duplicate normalized paths, unsupported role values, and paths outside the current scan root fail closed.
+
 ## Remote Validation
 
 All remote work must go through the `erie-remote-ssh` helper and JSON configuration. Do not add direct `ssh` or `scp` commands to this skill.
@@ -159,7 +174,7 @@ For confidence-sensitive gates, the active server is always the one stored in `.
 
 Remote validation directories are retained by default and printed as `remote_parent` and `remote_skill`. The server-side project path is relative to the configured remote workdir and looks like `.readable-verilog-generator-validation/run-YYYYMMDDTHHMMSS/readable-verilog-generator`. Retained runs keep `_smoke_runs` and `workflow-state.json` so generated RTL, testbenches, validation reports, and workflow traces remain inspectable. Pass `--cleanup-remote` only when the run directory should be deleted after validation. The legacy `--keep-remote` flag is accepted but no longer changes behavior because keeping is the default.
 
-Each remote gate validates authoritative pytest, the canonical workflow, and the fixed RTL fixtures in `assets/examples/remote_fixtures`: `comb_operation_budget`, `comb_parity_mux`, `pipeline_delay`, and `ready_valid_slice`. `comb_operation_budget` first proves that its standalone bad source is rejected by VG146, then simulates the registered replacement and checks its visible two-edge latency, ready/backpressure behavior, stalled-output stability, and accepted-versus-delivered transaction conservation. The pytest console output is retained in `_smoke_runs/remote_pytest.log`; `_smoke_runs/remote_pytest_summary.json` records the exact passed, skipped, xfailed, xpassed, deselected, and duration values. Fixture reports are retained under `_smoke_runs/remote_fixtures/<fixture>/validation.json`, with a combined `_smoke_runs/remote_fixtures/summary.json` that records the selected simulator backend, executed tools, and generated RTL/testbench paths.
+Each remote gate validates authoritative pytest, the canonical workflow, and the fixed RTL fixtures in `assets/examples/remote_fixtures`: `comb_operation_budget`, `comb_hierarchy_budget`, `comb_parity_mux`, `pipeline_delay`, and `ready_valid_slice`. `comb_operation_budget` first proves that its standalone bad source is rejected by VG146, then simulates the registered replacement and checks its visible two-edge latency, ready/backpressure behavior, stalled-output stability, and accepted-versus-delivered transaction conservation. `comb_hierarchy_budget` runs four independent source-closure probes before simulation: child 1 plus parent 2 operations passes VG146, child 2 plus parent 2 fails VG146 with count 4 and a child evidence path, a registered child Q cuts upstream expansion, and a child constant loop is owned and rejected by VG147. Its generated two-module design and self-checking testbench then compile and run with the selected simulator. The pytest console output is retained in `_smoke_runs/remote_pytest.log`; `_smoke_runs/remote_pytest_summary.json` records the exact passed, skipped, xfailed, xpassed, deselected, and duration values. Fixture reports are retained under `_smoke_runs/remote_fixtures/<fixture>/validation.json`, with a combined `_smoke_runs/remote_fixtures/summary.json` that records the selected simulator backend, executed tools, and generated RTL/testbench paths.
 
 List retained runs without staging a new run:
 

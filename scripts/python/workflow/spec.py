@@ -7,7 +7,7 @@ from __future__ import annotations
 import copy
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 # 当前运行时只开放 RTL 规格，保留元组便于后续兼容检查复用。
@@ -36,6 +36,7 @@ SPEC_FIELDS = (
     "reset",  # 复位描述
     "constraints",  # 综合和编码约束
     "outputs",  # 期望输出文件列表
+    "file_role_confirmations",  # 文件相对路径到 design/testbench 角色的确认映射
     "notes",  # 额外设计备注
     "semantic_checkpoints",  # 语义检查点列表
     "subfunctions",  # 子功能拆分描述
@@ -141,8 +142,9 @@ def _rtl_defaults(name: str) -> dict[str, Any]:
         ],  # 默认约束会在缺省输入路径中整体复用
         "outputs": [  # 默认输出文件对象列表
             {"path": f"rtl/{name}.v", "kind": "source", "language": "verilog"},  # RTL 源文件路径
-            {"path": f"tb/{name}_tb.v", "kind": "testbench", "language": "verilog"},  # 测试平台路径
+            {"path": f"tb/tb_{name}.v", "kind": "testbench", "language": "verilog"},  # 测试平台路径
         ],  # 默认输出文件列表
+        "file_role_confirmations": {},  # 尚未确认任何普通命名文件角色
         "notes": [],  # 用户备注列表
         "semantic_checkpoints": [],  # 顶层语义检查点
         "subfunctions": [],  # 子功能列表
@@ -270,6 +272,11 @@ def normalize_spec(raw: dict[str, Any], target: str | None = None) -> dict[str, 
     # 代码计划路径在规格层只做字符串化，不提前假设文件系统边界。
     dict_spec["codegen_plan_path"] = _normalize_codegen_plan_path(  # 代码计划路径
         dict_spec.get("codegen_plan_path")  # 用户提供的计划路径字段
+    )
+
+    # 文件角色确认在规格层只做 JSON shape 与 POSIX 词法校验。
+    dict_spec["file_role_confirmations"] = _normalize_file_role_confirmations(  # 文件角色确认映射
+        dict_spec.get("file_role_confirmations")  # 用户提供的路径到角色映射
     )
 
     # 顶层语义检查点会被后续验证和报告按统一字段读取。
@@ -690,6 +697,90 @@ def _normalize_codegen_plan_path(value: Any) -> str | None:
     # 返回字符串路径，安全性由后续使用位置按上下文校验。
     return str(value)
 
+# 文件角色确认只接受规范 POSIX 相对路径与两个冻结角色值。
+def _normalize_file_role_confirmations(value: Any) -> dict[str, str]:
+    """归一化文件相对路径到 design/testbench 的确认映射。
+
+    参数:
+        value: 用户提供的 JSON object 或空值。
+    返回:
+        与调用方容器隔离的路径角色字典。
+    异常:
+        SpecError: 容器、路径或角色不满足规格词法合同时抛出。
+    """
+
+    # 空值等价于尚未完成任何文件角色确认。
+    if value is None:
+
+        # 每次返回新字典，避免默认容器跨调用共享。
+        return {}
+
+    # JSON object 是确认映射唯一允许的容器形态。
+    if not isinstance(value, dict):
+
+        # 列表或标量无法建立稳定文件身份。
+        raise SpecError("> ERR: [Python] file_role_confirmations must be an object.")
+
+    # 结果容器不复用用户字典，保持归一化输出独立。
+    dict_confirmations: dict[str, str] = {}  # 已通过词法检查的确认映射
+
+    # 每个键值对都必须独立满足路径和角色合同。
+    for obj_path, obj_role in value.items():
+
+        # 非字符串键或值不能来自规范 JSON 文件角色映射。
+        if not isinstance(obj_path, str) or not isinstance(obj_role, str):
+
+            # 类型错误在路径解析前使用稳定规格异常报告。
+            raise SpecError("> ERR: [Python] file role confirmation keys and values must be strings.")
+
+        # 确认键必须直接采用非空 POSIX 相对路径写法。
+        if not obj_path or "\\" in obj_path:
+
+            # Windows 分隔符会产生跨平台身份漂移。
+            raise SpecError("> ERR: [Python] file role confirmation paths must be POSIX relative paths.")
+
+        # POSIX 与 Windows 绝对路径都不能越过后续扫描根。
+        if PurePosixPath(obj_path).is_absolute() or PureWindowsPath(obj_path).is_absolute():
+
+            # 绝对路径不属于可迁移规格合同。
+            raise SpecError("> ERR: [Python] file role confirmation paths must be relative.")
+
+        # 路径段用于拒绝父目录跳转与非规范身份。
+        tuple_parts = PurePosixPath(obj_path).parts  # 当前确认路径的词法段
+
+        # 点段、父段、空段与驱动器冒号都属于非法路径结构。
+        if any(str_part in {".", "..", ""} for str_part in tuple_parts) or ":" in obj_path:
+
+            # 越界或非规范路径必须由用户先行修正。
+            raise SpecError("> ERR: [Python] file role confirmation path contains an invalid segment.")
+
+        # PurePosixPath 折叠后的原文差异会形成重复身份风险。
+        str_normalized_path = PurePosixPath(obj_path).as_posix()  # 规范 POSIX 相对路径
+
+        # 调用方必须直接提供规范形式，规格层不静默改写身份。
+        if str_normalized_path != obj_path:
+
+            # 非规范键可能与另一确认键指向同一文件。
+            raise SpecError("> ERR: [Python] file role confirmation path must be normalized.")
+
+        # 只有 Verilog 与 SystemVerilog 文件参与角色确认。
+        if PurePosixPath(str_normalized_path).suffix.casefold() not in {".v", ".sv"}:
+
+            # 其他文件类型不属于 VG148/VG149 预检范围。
+            raise SpecError("> ERR: [Python] file role confirmation paths must end in .v or .sv.")
+
+        # 冻结角色值不接受别名或大小写自动改写。
+        if obj_role not in {"design", "testbench"}:
+
+            # 未知角色不能进入 quality preflight。
+            raise SpecError("> ERR: [Python] file role confirmation values must be design or testbench.")
+
+        # 保存已经验证的路径与角色原文。
+        dict_confirmations[str_normalized_path] = obj_role  # 当前文件的确认角色
+
+    # 返回独立映射，保证后续修改不影响用户输入。
+    return dict_confirmations
+
 # 用户没有显式字段时回填 RTL 默认输出、说明和约束。
 def _apply_rtl_output_defaults(
     spec: dict[str, Any],
@@ -717,7 +808,7 @@ def _apply_rtl_output_defaults(
         # 默认输出路径必须随规格名更新，避免 name 覆盖后仍写旧文件名。
         spec["outputs"] = [
             {"path": f"rtl/{str_name}.v", "kind": "source", "language": "verilog"},  # 主 RTL 输出路径
-            {"path": f"tb/{str_name}_tb.v", "kind": "testbench", "language": "verilog"},  # 默认测试平台路径
+            {"path": f"tb/tb_{str_name}.v", "kind": "testbench", "language": "verilog"},  # 默认测试平台路径
         ]
 
     # 未显式指定说明时回填通用可综合 RTL 说明。

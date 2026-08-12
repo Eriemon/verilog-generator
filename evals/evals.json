@@ -15,10 +15,29 @@
     {
       "id": "vg_semantic_gate_regression",
       "kind": "vg_semantic_gate_regression",
+      "semantic_cases": "evals/vg_semantic_gate_cases.json",
+      "required_case_ids": [
+        "hierarchy_1_plus_2_pass",
+        "hierarchy_2_plus_2_fail",
+        "hierarchy_q_cut_pass",
+        "hierarchy_child_loop_vg147",
+        "iic_hierarchy_source_closure"
+      ],
+      "required_file_naming_case_ids": [
+        "vg148_version_suffix_reject",
+        "vg148_numeric_suffix_reject",
+        "vg148_width_suffix_allow",
+        "vg148_protocol_digit_allow",
+        "vg149_suffix_tb_reject",
+        "vg149_counter_ambiguous",
+        "vg149_counter_confirmed_testbench_reject"
+      ],
       "expectations": {
-        "failed_gate_ids": ["VG078", "VG079", "VG090", "VG101", "VG109", "VG111", "VG117", "VG124", "VG142", "VG146", "VG147"],
+        "failed_gate_ids": ["VG078", "VG079", "VG090", "VG101", "VG109", "VG111", "VG117", "VG124", "VG142", "VG146", "VG147", "VG149"],
         "clean_all_active_passed": true,
-        "catalog_total_rules": 125,
+        "catalog_total_rules": 127,
+        "file_naming_case_count": 7,
+        "file_naming_cases_ok": true,
         "prompt_mentions_all_rules": true,
         "failed_results_use_vg_ids": true
       }
@@ -229,7 +248,7 @@
       "kind": "verify_existing_augment_regression",
       "source": "assets/examples/existing_rtl/ready_valid_slice.v",
       "spec_source": "assets/examples/existing_rtl/ready_valid_slice_spec.md",
-      "testbench_source": "assets/examples/existing_rtl/ready_valid_slice_tb.v",
+      "testbench_source": "assets/examples/existing_rtl/tb_ready_valid_slice.v",
       "expectations": {
         "explicit_tb_source_supported": true,
         "augment_plan_present": true,

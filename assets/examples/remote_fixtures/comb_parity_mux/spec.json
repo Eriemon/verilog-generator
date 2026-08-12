@@ -64,7 +64,7 @@
       "language": "verilog"
     },
     {
-      "path": "tb/comb_parity_mux_tb.v",
+      "path": "tb/tb_comb_parity_mux.v",
       "kind": "testbench",
       "language": "verilog"
     }

@@ -132,6 +132,9 @@ def _collect_deliverable_context(
     # 统一质量报告的 issues 已包含语义规则，不再重复展开逐规则结果。
     list_vg_issues: list[dict[str, Any]] = []  # 保留上下文字段但禁止重复诊断
 
+    # 逐规则 finding 的文件角色 metadata 合并回对应质量诊断。
+    _merge_vg_finding_metadata(list_quality_issues, dict_vg_report["vg_rule_results"])
+
     # comment gate 诊断补齐 code/rule/severity 字段。
     list_comment_gate_issues = [_comment_placement_issue_to_dict(issue) for issue in tuple_comment_gate[0]]  # 注释诊断字典集合
 
@@ -780,11 +783,97 @@ def _vg_results_to_issues(list_results: list[dict[str, Any]]) -> list[dict[str, 
                 "detail": dict_finding.get("evidence") or dict_result["status"],  # 原始证据或 fail-closed 状态
             }  # 当前 finding 对应的统一交付问题
 
+            # 文件角色 finding 的固定扩展字段继续进入交付报告。
+            dict_metadata = {  # 当前 finding 可供宿主消费的确认元数据
+                str_key: dict_finding[str_key]  # 保留原始 JSON 兼容值
+                for str_key in (  # VG149 声明的固定扩展字段顺序
+                    "role",  # 当前 design/testbench/ambiguous 角色
+                    "role_source",  # 名称、目录、确认或内容证据来源
+                    "role_evidence",  # 确定性证据组列表
+                    "confirmation_required",  # 宿主是否必须二次确认
+                    "confirmed_role",  # 用户已经确认的角色
+                )
+                if str_key in dict_finding  # 旧 finding 不增加空 metadata
+            }
+
+            # 只有文件角色 finding 才增加 metadata 字段。
+            if dict_metadata:
+
+                # 加法字段不改变既有通用 issue 键的含义。
+                dict_issue["metadata"] = dict_metadata  # VG149 角色确认上下文
+
             # 把当前 VG issue 追加到最终问题列表。
             list_issues.append(dict_issue)
 
     # 返回按 catalog 和 finding 顺序排列的 VG issues。
     return list_issues
+
+# 将逐规则 finding 的确认字段合并到已经去重的质量诊断。
+def _merge_vg_finding_metadata(
+    list_quality_issues: list[dict[str, Any]],
+    list_results: list[dict[str, Any]],
+) -> None:
+    """把 VG149 角色确认字段合并到对应交付 issue。
+
+    参数:
+        list_quality_issues: 已由统一质量门生成的去重诊断。
+        list_results: 保留完整 finding 的逐规则结果。
+    返回:
+        无；metadata 原地加入匹配的质量诊断。
+    """
+
+    # 只处理带固定扩展字段的 finding，旧规则完全不变。
+    for dict_result in list_results:
+
+        # 当前结果的公开编号用于和质量诊断 code 对齐。
+        str_gate_id = str(dict_result.get("gate_id") or "")  # 当前 VG 规则编号
+
+        # 每条 finding 独立携带路径、行号与可选角色上下文。
+        for dict_finding in dict_result.get("findings") or []:
+
+            # 固定白名单阻止任意 finding 字段污染交付 issue。
+            dict_metadata = {  # 当前 finding 的固定角色确认字段
+                str_key: dict_finding[str_key]  # 保留列表、布尔值与 null 类型
+                for str_key in (  # VG149 对外声明的 metadata 顺序
+                    "role",  # 当前文件角色
+                    "role_source",  # 角色判定来源
+                    "role_evidence",  # 确定性证据组
+                    "confirmation_required",  # 是否需要用户确认
+                    "confirmed_role",  # 已提供的确认角色
+                )
+                if str_key in dict_finding  # 无扩展字段的旧 finding 跳过
+            }
+
+            # 普通 VG finding 不需要额外合并。
+            if not dict_metadata:
+
+                # 继续检查当前结果的其他 finding。
+                continue
+
+            # 精确路径与行号防止同一规则多文件证据串扰。
+            str_path = str(dict_finding.get("path") or "")  # 当前 finding 相对路径
+
+            # 一基行号与 quality issue 的定位合同保持一致。
+            int_line = int(dict_finding.get("line") or 1)  # 当前 finding 一基行号
+
+            # 查找统一质量门已经生成的同一诊断。
+            for dict_issue in list_quality_issues:
+
+                # code、path 与 line 共同构成匹配身份。
+                if (
+                    str(dict_issue.get("code") or "") != str_gate_id
+                    or str(dict_issue.get("path") or "") != str_path
+                    or int(dict_issue.get("line") or 1) != int_line
+                ):
+
+                    # 非对应 issue 继续参与后续匹配。
+                    continue
+
+                # 加法 metadata 不改变既有 issue 计数与通用字段。
+                dict_issue["metadata"] = dict_metadata  # VG149 宿主确认上下文
+
+                # 单个 finding 只匹配一条已去重质量诊断。
+                break
 
 # _comment_placement_issue_to_dict 补齐注释位置诊断的交付报告字段。
 def _comment_placement_issue_to_dict(issue: dict[str, Any]) -> dict[str, Any]:
@@ -852,6 +941,21 @@ def _deliverable_report_to_markdown(report: dict[str, Any]) -> str:
 
         # 诊断消息中的竖线必须转义，避免破坏 Markdown 表格列。
         str_message = str(dict_issue.get("message") or "").replace("|", "\\|")  # 表格安全诊断文本
+
+        # 结构化确认元数据在 Markdown 中使用稳定键序列展开。
+        dict_metadata = dict(dict_issue.get("metadata") or {})  # 当前 issue 的可选扩展字段
+
+        # VG149 的角色来源、证据与确认要求必须对人工审查可见。
+        if dict_metadata:
+
+            # JSON 编码保留列表、布尔值与 null 的机器语义。
+            str_metadata = ", ".join(  # Markdown 消息尾部的稳定 metadata 文本
+                f"{str_key}={json.dumps(obj_value, ensure_ascii=False)}"  # 单个键值的 JSON 表示
+                for str_key, obj_value in dict_metadata.items()  # 沿固定插入顺序渲染
+            )
+
+            # 分号把原始诊断与确认上下文保持清晰分隔。
+            str_message = f"{str_message}; {str_metadata}"  # 含角色确认信息的诊断文本
 
         # str_line 为空时保持表格单元为空。
         str_line = "" if dict_issue.get("line") is None else str(dict_issue.get("line"))  # 行号文本

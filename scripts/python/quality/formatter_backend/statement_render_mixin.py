@@ -52,6 +52,441 @@ from .textio import read_verilog_text
 # 实例端口连接注释前缀需要避开路径字面量误判。
 INSTANCE_CONNECTION_COMMENT_PREFIX = "//" + "."  # legacy 实例端口连接注释前缀
 
+# compact helper 建立 canonical 文本到原实例字符偏移的映射。
+def _compact_instance_with_offsets(text: str) -> tuple[str, tuple[int, ...]] | None:
+    """压缩实例空白，同时保留每个字符在原实例文本中的偏移。
+
+    参数:
+        text: formatter 已收集的完整实例声明文本。
+    返回:
+        canonical 文本及其逐字符原文偏移；含注释时返回 None。
+    """
+
+    # 注释需要 legacy renderer 保留相对布局，不能安全压缩。
+    if "//" in text or "/*" in text or "*/" in text:
+
+        # None 让调用方保持原始行级实例渲染路径。
+        return None
+
+    # canonical 字符与来源偏移按相同索引同步累积。
+    list_chars: list[str] = []  # 压缩后的实例字符
+
+    # 偏移表用于把 actual 范围换算回原始实例文本。
+    list_offsets: list[int] = []  # canonical 字符对应的原文偏移
+
+    # 待写空格把连续换行和缩进归一成一个分隔符。
+    bool_pending_space = False  # 是否缓存了一段空白
+
+    # 首个空白偏移代表 canonical 分隔符的原文位置。
+    int_pending_offset = 0  # 当前待写空格来源偏移
+
+    # 逐字符扫描避免字符串 replace 破坏 actual 位置映射。
+    for int_offset, str_char in enumerate(text):
+
+        # 任意空白先延迟到遇到下一枚可见字符时再提交。
+        if str_char.isspace():
+
+            # 只保存连续空白区的第一个原文偏移。
+            if list_chars and not bool_pending_space:
+
+                # 待写标志防止连续空白产生多个 canonical 空格。
+                bool_pending_space = True  # 当前空白区尚未写入 canonical 文本
+
+                # 首空白偏移用于分隔符位置的可逆映射。
+                int_pending_offset = int_offset  # 当前空白区起始原文偏移
+
+            # 空白字符本身不直接进入 canonical 字符列表。
+            continue
+
+        # 可见字符到来前提交此前缓存的唯一分隔空格。
+        if bool_pending_space:
+
+            # canonical 空格维持 token 之间的必要边界。
+            list_chars.append(" ")
+
+            # 偏移列表同步记录空格来自哪个原文位置。
+            list_offsets.append(int_pending_offset)
+
+            # 当前空白区已经完成提交。
+            bool_pending_space = False  # 清除待写空格状态
+
+        # 可见字符按原顺序进入 canonical 实例文本。
+        list_chars.append(str_char)
+
+        # 当前字符原文偏移与 canonical 索引保持一一对应。
+        list_offsets.append(int_offset)
+
+    # 返回同步构建的 canonical 文本和不可变偏移表。
+    return "".join(list_chars), tuple(list_offsets)
+
+# 括号匹配 helper 跳过字符串中的括号字符。
+def _matching_paren(text: str, int_open: int) -> int:
+    """返回忽略字符串内容后的匹配右括号下标。
+
+    参数:
+        text: 待扫描的 canonical 实例文本。
+        int_open: 已确认左括号的字符下标。
+    返回:
+        配对右括号下标；无法闭合时返回 -1。
+    """
+
+    # 深度从目标左括号开始统计嵌套结构。
+    int_depth = 0  # 当前圆括号嵌套深度
+
+    # 字符串状态防止参数字符串中的括号参与结构匹配。
+    bool_in_string = False  # 当前字符是否处于双引号字符串
+
+    # 转义状态区分字符串终止引号和普通引号字符。
+    bool_escaped = False  # 前一字符是否转义当前字符
+
+    # 从调用方确认的左括号位置逐字符向后扫描。
+    for int_index in range(int_open, len(text)):
+
+        # 当前字符决定字符串状态或括号深度变化。
+        str_char = text[int_index]  # 圆括号配对扫描字符
+
+        # 字符串内部只维护引号和转义，不读取括号语义。
+        if bool_in_string:
+
+            # 未转义双引号结束当前字符串范围。
+            if str_char == '"' and not bool_escaped:
+
+                # 后续字符恢复普通括号扫描语义。
+                bool_in_string = False  # 当前字符串在此引号闭合
+
+            # 反斜杠奇偶状态决定下一枚引号是否可闭合字符串。
+            bool_escaped = str_char == "\\" and not bool_escaped  # 当前转义状态
+
+            # 普通字符会消费掉上一字符设置的转义状态。
+            if str_char != "\\":
+
+                # 当前字符不是连续反斜杠，清除转义标志。
+                bool_escaped = False  # 下一字符默认未转义
+
+            # 字符串内容不参与下方括号分支。
+            continue
+
+        # 双引号打开字符串，后续括号暂时失去结构作用。
+        if str_char == '"':
+
+            # 标记进入字符串范围。
+            bool_in_string = True  # 后续字符按字符串语义扫描
+
+        # 左括号增加一层待闭合深度。
+        elif str_char == "(":
+
+            # 嵌套参数或 actual 分组都必须成对闭合。
+            int_depth += 1  # 进入一层圆括号
+
+        # 右括号抵消最近一层左括号。
+        elif str_char == ")":
+
+            # 消费当前右括号后的深度用于判断目标是否闭合。
+            int_depth -= 1  # 当前圆括号剩余深度
+
+            # 回到零说明命中了调用方目标左括号的配对位置。
+            if int_depth == 0:
+
+                # 返回真实字符下标供关联区切片。
+                return int_index
+
+    # 扫描耗尽仍未回到零表示实例括号不完整。
+    return -1
+
+# 顶层关联切分 helper 只在所有嵌套结构之外识别逗号。
+def _split_association_ranges(text: str, int_start: int, int_end: int) -> list[tuple[int, int]]:
+    """按顶层逗号切分关联区并返回绝对 canonical 范围。
+
+    参数:
+        text: 包含关联区的 canonical 实例文本。
+        int_start: 关联区第一个字符下标。
+        int_end: 关联区右边界的非包含下标。
+    返回:
+        每个关联条目的有序起止下标列表。
+    """
+
+    # 已闭合条目按源码顺序进入范围列表。
+    list_ranges: list[tuple[int, int]] = []  # 顶层关联字符范围
+
+    # 统一深度覆盖圆括号、花括号和方括号内的逗号。
+    int_depth = 0  # 当前嵌套结构深度
+
+    # 首条关联从调用方提供的关联区起点开始。
+    int_item_start = int_start  # 当前关联条目起始下标
+
+    # 只扫描参数或端口外层括号内部的字符。
+    for int_index in range(int_start, int_end):
+
+        # 当前字符用于更新嵌套深度或关闭一个顶层条目。
+        str_char = text[int_index]  # 当前关联区字符
+
+        # 任一开括号都会屏蔽其内部逗号的关联分隔语义。
+        if str_char in "({[":
+
+            # 进入表达式嵌套结构。
+            int_depth += 1  # 当前嵌套深度增加一层
+
+        # 任一闭括号结束对应的表达式嵌套层。
+        elif str_char in ")}]":
+
+            # 离开表达式嵌套结构。
+            int_depth -= 1  # 当前嵌套深度减少一层
+
+        # 深度为零的逗号才是 formal association 分隔符。
+        elif str_char == "," and int_depth == 0:
+
+            # 当前范围不包含分隔逗号自身。
+            list_ranges.append((int_item_start, int_index))
+
+            # 下一条关联从逗号后一个字符开始。
+            int_item_start = int_index + 1  # 后续关联起始下标
+
+    # 最后一个关联没有尾随逗号，需要在扫描结束时提交。
+    if int_item_start < int_end or text[int_start:int_end].strip():
+
+        # 最后范围延伸到调用方提供的非包含右边界。
+        list_ranges.append((int_item_start, int_end))
+
+    # 返回保持声明顺序的所有关联范围。
+    return list_ranges
+
+# 单条关联解析 helper 统一 named 与 positional 的字段形状。
+def _association_record(text: str, int_start: int, int_end: int, int_position: int) -> dict[str, object]:
+    """解析一个关联并保留 actual 的 canonical 偏移。
+
+    参数:
+        text: 包含当前关联的 canonical 实例文本。
+        int_start: 当前关联起始下标。
+        int_end: 当前关联非包含结束下标。
+        int_position: 当前关联在所属列表中的零基位置。
+    返回:
+        formal、actual、样式、空连接和 actual 范围字段。
+    """
+
+    # 起始空白不属于 actual 的权威字符范围。
+    while int_start < int_end and text[int_start].isspace():
+
+        # 游标推进到当前关联第一个可见字符。
+        int_start += 1  # 去除关联左侧 canonical 空白
+
+    # 结束空白同样需要从关联范围中排除。
+    while int_end > int_start and text[int_end - 1].isspace():
+
+        # 非包含右边界向左收缩到最后一个可见字符之后。
+        int_end -= 1  # 去除关联右侧 canonical 空白
+
+    # 当前条目文本用于判断 named association 语法。
+    str_item = text[int_start:int_end]  # 去除外围空白的关联文本
+
+    # named 匹配只负责 formal 外层，actual 内容已由括号感知切分保护。
+    match_named = re.fullmatch(  # named formal 与 actual 捕获结果
+        r"\.(?P<formal>[A-Za-z_]\w*)\s*\((?P<actual>.*)\)",  # 点名关联形态
+        str_item,  # 当前独立关联文本
+    )
+
+    # named 关联需要把 actual 局部范围平移回实例 canonical 坐标。
+    if match_named:
+
+        # actual 起点由关联起点加命名捕获组局部偏移得到。
+        int_actual_start = int_start + match_named.start("actual")  # 点名实际参数规范文本首字符位置
+
+        # actual 终点保持非包含边界，便于原文切片。
+        int_actual_end = int_start + match_named.end("actual")  # 点名实际参数规范文本非包含终点
+
+        # named 结果保留 formal 名称以及显式空括号语义。
+        return {
+            "formal_name": match_named.group("formal"),  # 被调用侧 formal 名称
+            "position": int_position,  # 当前关联声明位置
+            "actual_text": match_named.group("actual").strip(),  # actual 可见文本
+            "actual_start": int_actual_start,  # actual canonical 起始偏移
+            "actual_end": int_actual_end,  # actual canonical 非包含结束偏移
+            "explicit_unconnected": not match_named.group("actual").strip(),  # 是否显式空括号
+            "style": "named",  # 当前关联采用点名形式
+        }
+
+    # positional 关联的完整条目就是 actual 表达式范围。
+    return {
+        "formal_name": "",  # 位置关联不携带 formal 名称
+        "position": int_position,  # 调用方用于 formal 顺序绑定的位置
+        "actual_text": str_item.strip(),  # positional actual 文本
+        "actual_start": int_start,  # 位置实参沿用完整条目左边界
+        "actual_end": int_end,  # 条目末字符之后界定位置实参切片
+        "explicit_unconnected": not str_item.strip(),  # 是否为空位置连接
+        "style": "positional",  # 当前关联采用位置形式
+    }
+
+# 公开实例关联入口组合 identity、参数区、数组范围与端口区结果。
+def parse_instance_associations(text: str) -> dict[str, object]:
+    """解析实例身份、参数和端口关联，不产生任何渲染副作用。
+
+    参数:
+        text: formatter 收集的完整实例声明原文。
+    返回:
+        实例身份、关联列表、解析状态和局部失败原因。
+    """
+
+    # canonical 文本和偏移表必须来自同一次无副作用压缩。
+    tuple_compact = _compact_instance_with_offsets(text)  # 实例压缩结果与原文偏移表
+
+    # 含注释实例交给 legacy renderer，关联事实保持局部不完整。
+    if tuple_compact is None:
+
+        # 稳定原因让调用方区别注释 fallback 与语法错误。
+        return {"parse_complete": False, "unsupported_reason": "instance_contains_comments"}
+
+    # 解包后两个序列保持相同长度和字符索引。
+    str_compact, tuple_offsets = tuple_compact  # canonical 实例文本及逐字符原文偏移
+
+    # 模块名前缀是后续参数区和实例名扫描的起点。
+    match_module = re.match(r"^(?P<module>[A-Za-z_]\w*)", str_compact)  # 实例模块名匹配
+
+    # 缺模块名或分号说明当前文本不是完整实例声明。
+    if not match_module or not str_compact.endswith(";"):
+
+        # 前缀/终止符错误只污染当前实例。
+        return {"parse_complete": False, "unsupported_reason": "invalid_instance_prefix_or_terminator"}
+
+    # 游标从模块名结束处进入可选参数覆盖区。
+    int_cursor = match_module.end()  # canonical 实例扫描游标
+
+    # 模块名后的分隔空白不属于参数井号或实例名。
+    while int_cursor < len(str_compact) and str_compact[int_cursor].isspace():
+
+        # 跳过 canonical 前缀分隔空格。
+        int_cursor += 1  # 参数区候选起点
+
+    # 无参数实例保持空 override 列表。
+    list_parameters: list[dict[str, object]] = []  # 参数覆盖关联记录
+
+    # 井号表示模块名之后存在参数覆盖外层括号。
+    if int_cursor < len(str_compact) and str_compact[int_cursor] == "#":
+
+        # 参数左括号必须位于井号之后。
+        int_open = str_compact.find("(", int_cursor + 1)  # 参数覆盖左括号下标
+
+        # 左括号存在时再运行字符串感知的配对扫描。
+        int_close = (  # 参数覆盖右括号下标
+            _matching_paren(str_compact, int_open)  # 定位参数列表闭合位置
+            if int_open >= 0  # 只有真实左括号才能进入配对扫描
+            else -1  # 缺少左括号按未闭合处理
+        )
+
+        # 参数括号无法闭合时禁止猜测后续实例名边界。
+        if int_close < 0:
+
+            # 局部原因明确指出参数关联区未闭合。
+            return {"parse_complete": False, "unsupported_reason": "unclosed_parameter_associations"}
+
+        # 顶层逗号切分结果逐项转换为统一关联记录。
+        list_parameters = [
+            _association_record(str_compact, int_start, int_end, int_position)  # 当前参数关联记录
+            for int_position, (int_start, int_end) in enumerate(  # 逐项携带参数声明位置
+                _split_association_ranges(str_compact, int_open + 1, int_close)  # 参数关联范围
+            )
+        ]  # 有序参数覆盖关联
+
+        # 参数区闭合后游标进入实例名和数组范围部分。
+        int_cursor = int_close + 1  # 参数区后的扫描起点
+
+    # 参数区或模块名后的空白需要在实例名匹配前跳过。
+    while int_cursor < len(str_compact) and str_compact[int_cursor].isspace():
+
+        # 推进到实例标识符首字符。
+        int_cursor += 1  # 实例名候选起点
+
+    # 实例头匹配同时保留可选静态数组范围和端口左括号。
+    match_instance = re.match(  # 实例标识符、数组范围和端口头匹配结果
+        r"(?P<name>[A-Za-z_]\w*)\s*(?P<array>\[[^\]]+\])?\s*\(",  # 实例名、数组和端口头
+        str_compact[int_cursor:],  # 参数区之后的 canonical 文本
+    )  # 实例身份匹配结果
+
+    # 缺实例名或端口左括号时无法形成结构化关联。
+    if not match_instance:
+
+        # 保留当前实例原文并报告稳定的身份/端口区原因。
+        return {"parse_complete": False, "unsupported_reason": "invalid_instance_name_or_port_section"}
+
+    # 匹配末字符就是端口列表外层左括号。
+    int_port_open = int_cursor + match_instance.end() - 1  # 端口关联左括号下标
+
+    # 端口右括号必须由同一括号感知 helper 定位。
+    int_port_close = _matching_paren(str_compact, int_port_open)  # 端口关联右括号下标
+
+    # 端口区既要闭合，闭合后也只能剩余实例分号。
+    if int_port_close < 0 or str_compact[int_port_close + 1 :].strip() != ";":
+
+        # 尾随额外语句或缺右括号都按端口区未闭合处理。
+        return {"parse_complete": False, "unsupported_reason": "unclosed_port_associations"}
+
+    # 端口关联按源码位置转换成 named/positional 统一记录。
+    list_ports = [
+        _association_record(str_compact, int_start, int_end, int_position)  # 当前端口关联记录
+        for int_position, (int_start, int_end) in enumerate(  # 逐项携带端口声明位置
+            _split_association_ranges(str_compact, int_port_open + 1, int_port_close)  # 端口关联范围
+        )
+    ]  # 有序端口关联
+
+    # 所有关联样式用于识别非法 named/positional 混用。
+    list_styles = [  # 实例关联样式序列
+        str(item["style"])  # 当前参数或端口关联样式
+        for item in [*list_parameters, *list_ports]  # 遍历实例全部关联记录
+    ]  # 保持参数区后接端口区的声明顺序
+
+    # 空实例、统一样式和混用样式分别得到稳定类别。
+    str_style = (  # 当前实例总体关联风格
+        "mixed"  # 同一实例存在多种关联形式
+        if len(set(list_styles)) > 1  # named 与 positional 同时出现
+        else (list_styles[0] if list_styles else "empty")  # 统一样式或空列表
+    )
+
+    # named formal 用于阻断同一实例中的重复连接。
+    list_formals = [  # 非空 formal 名称序列
+        str(item["formal_name"])  # 当前点名关联 formal
+        for item in [*list_parameters, *list_ports]  # 遍历参数和端口关联
+        if item["formal_name"]  # positional 关联没有 formal 名称
+    ]
+
+    # 同名 formal 重复出现会使绑定关系不唯一。
+    if len(list_formals) != len(set(list_formals)):
+
+        # 重复 formal 只让当前实例解析不完整。
+        return {"parse_complete": False, "unsupported_reason": "duplicate_named_association"}
+
+    # actual canonical 偏移需要逐项换算为原始实例字符偏移。
+    for dict_item in [*list_parameters, *list_ports]:
+
+        # 起始下标当前仍处于 canonical 实例坐标系。
+        int_actual_start = int(dict_item["actual_start"])  # 当前实参在规范实例中的左边界
+
+        # 结束下标保持非包含边界语义。
+        int_actual_end = int(dict_item["actual_end"])  # actual canonical 结束偏移
+
+        # 起始字符映射回原文；空尾部使用实例文本长度兜底。
+        dict_item["actual_start"] = (  # actual 原实例文本起始偏移
+            tuple_offsets[int_actual_start]  # canonical 字符对应的原文位置
+            if int_actual_start < len(tuple_offsets)  # 起始位置仍在字符映射范围内
+            else len(text)  # 空尾部 actual 位于实例文本末端
+        )
+
+        # 结束边界由最后一个 actual 字符原文偏移加一得到。
+        dict_item["actual_end"] = (
+            tuple_offsets[int_actual_end - 1] + 1  # 最后字符之后的原文位置
+            if int_actual_end > int_actual_start  # 非空 actual 具有最后字符
+            else dict_item["actual_start"]  # 空 actual 起止位置相同
+        )  # actual 原实例文本非包含结束偏移
+
+    # 返回 renderer 和 report parser 共用的无副作用结构结果。
+    return {
+        "module_name": match_module.group("module"),  # 被例化模块标识符
+        "instance_name": match_instance.group("name"),  # 当前实例标识符
+        "array_range_text": match_instance.group("array") or "",  # 可选静态实例数组范围
+        "parameter_overrides": list_parameters,  # 有序参数覆盖事实
+        "port_associations": list_ports,  # 有序端口连接事实
+        "association_style": str_style,  # named、positional、mixed 或 empty
+        "parse_complete": str_style != "mixed",  # 混用形式禁止权威绑定
+        "unsupported_reason": "mixed_association_style" if str_style == "mixed" else "",  # 局部解析原因
+    }
+
 # 端口分组 helper 共享的只读上下文。
 @dataclass(frozen=True)
 class PortMarkerContext:

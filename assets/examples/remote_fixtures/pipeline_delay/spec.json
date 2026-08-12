@@ -78,7 +78,7 @@
       "language": "verilog"
     },
     {
-      "path": "tb/pipeline_delay_tb.v",
+      "path": "tb/tb_pipeline_delay.v",
       "kind": "testbench",
       "language": "verilog"
     }

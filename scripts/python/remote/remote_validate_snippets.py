@@ -15,18 +15,25 @@ PATH_SKILL_ROOT = Path(__file__).resolve().parents[3]  # 包含 runtime、script
 # workflow CLI 统一切到 scripts/python/workflow 官方模块入口。
 WORKFLOW_CLI_MODULE = "scripts.python.workflow.cli"  # workflow 官方 CLI 模块名
 
-# 远端固定 fixture 覆盖组合逻辑预算、流水线和 ready-valid 协议。
-REMOTE_FIXTURES = (  # 远端内联 fixture 脚本生成四类 RTL 回归用例
+# 需要进入 simulator 的固定 fixture 不包含故意违规的文件名案例。
+REMOTE_SIMULATION_FIXTURES = (  # 五类合法 RTL 仿真回归用例
     "comb_operation_budget",  # 覆盖 VG146 负例与注册流水修复后的时序行为
+    "comb_hierarchy_budget",  # 覆盖跨实例 source closure、Q 切点与 loop 归属
     "comb_parity_mux",  # 覆盖组合奇偶校验与 mux 输出选择链路
     "pipeline_delay",  # 覆盖多拍寄存器延迟和复位后的数据推进
     "ready_valid_slice",  # 覆盖 ready-valid 反压握手与数据保持约束
 )
 
+# 远端总 fixture 清单额外登记只进入交付门禁的文件名案例。
+REMOTE_FIXTURES = (  # retained run 汇总使用的六类回归身份
+    *REMOTE_SIMULATION_FIXTURES,  # 合法 RTL 仿真 fixture
+    "file_naming_gates",  # VG148/VG149 文件名与角色确认 probe
+)
+
 # remote_execute attempt-001 是远端主流程的稳定证据根。
 REMOTE_EXECUTE_ROOT = PurePosixPath("_smoke_runs") / "remote_execute" / "attempt-001"  # 主流程证据相对根
 
-# remote_fixtures 保存三类小用例聚合报告。
+# remote_fixtures 保存固定小用例聚合报告。
 REMOTE_FIXTURE_ROOT = PurePosixPath("_smoke_runs") / "remote_fixtures"  # fixture 证据相对根
 
 # remote_pytest_summary.json 保存权威远程 pytest 的精确计数和耗时。
@@ -38,8 +45,8 @@ REMOTE_EXECUTE_VALIDATION_JSON = REMOTE_EXECUTE_ROOT / "validation.json"  # 主�
 # erie_adapter.v 是 retained run 摘要中的 RTL 人工复核入口。
 REMOTE_EXECUTE_RTL_PATH = (REMOTE_EXECUTE_ROOT / "rtl" / "generated" / "rtl" / "erie_adapter.v")  # RTL 产物 retained 地址
 
-# erie_adapter_tb.v 是 retained run 摘要中的仿真激励入口。
-REMOTE_EXECUTE_TESTBENCH_PATH = (REMOTE_EXECUTE_ROOT / "rtl" / "generated" / "tb" / "erie_adapter_tb.v")  # 失败复盘的 testbench 入口
+# tb_erie_adapter.v 是 retained run 摘要中的仿真激励入口。
+REMOTE_EXECUTE_TESTBENCH_PATH = (REMOTE_EXECUTE_ROOT / "rtl" / "generated" / "tb" / "tb_erie_adapter.v")  # 失败复盘的 testbench 入口
 
 # summary.json 汇总四类远端 fixture 的执行状态。
 REMOTE_FIXTURE_SUMMARY_JSON = REMOTE_FIXTURE_ROOT / "summary.json"  # fixture 汇总 JSON 证据路径
@@ -112,7 +119,7 @@ def remote_validation_command(
     str_cleanup_snippet = remote_output_cleanup_snippet(cleanup_outputs, str_remote_python)  # smoke 输出处置脚本片段
 
     # fixture 名称通过环境变量传给远端 Python 内联脚本。
-    str_fixture_names = " ".join(REMOTE_FIXTURES)  # 空格分隔的 fixture 名称
+    str_fixture_names = " ".join(REMOTE_SIMULATION_FIXTURES)  # 只含合法仿真 fixture 的名称
 
     # 缺省情况下由远端工具探测选择仿真后端。
     str_selected_vivado = ""  # 未持久化选择时为空的 Vivado settings64.sh 路径
@@ -141,6 +148,9 @@ def remote_validation_command(
 
     # RTL Markdown 约束远端回归独立生成片段。
     str_rtl_md_snippet = rtl_md_constraint_remote_snippet(str_remote_python)  # RTL Markdown 约束回归脚本
+
+    # 文件名门禁 probe 独立验证无效文件不会进入 simulator。
+    str_filename_gate_snippet = filename_gate_remote_snippet(str_remote_python)  # VG148/VG149 远端回归脚本
 
     # bytecode 清理当前保持 retained workspace，不删除远端缓存。
     str_bytecode_cleanup = remote_bytecode_cleanup_snippet(str_remote_python)  # 远端执行结束后的 pycache 保留/清理片段
@@ -186,6 +196,7 @@ mv reports/remote_pytest.log _smoke_runs/remote_pytest.log
 {str_py} -m scripts.python.remote.remote_pytest_summary
 {str_py} -m tests.smoke.run_smoke --settings skills/readable-verilog-generator/config/defaults.json
 {str_rtl_md_snippet}
+{str_filename_gate_snippet}
 if [ -n "$configured_simulator_backend" ]; then
   export VERILOG_GENERATOR_SIMULATOR_PRIORITY="$configured_simulator_backend"
   expected_sim_backend="$configured_simulator_backend"
@@ -218,6 +229,7 @@ mkdir -p _smoke_runs/remote_fixtures
 REMOTE_FIXTURES="{str_fixture_names}" EXPECTED_SIM_BACKEND="$expected_sim_backend" {str_py} - <<'PY'
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -252,9 +264,58 @@ bad_vg146 = next(
 )
 assert bad_payload["ok"] is False, bad_payload
 assert bad_vg146["status"] == "failed", bad_vg146
+hierarchy_root = Path(
+    "skills/readable-verilog-generator/assets/examples/remote_fixtures/comb_hierarchy_budget"
+)
+hierarchy_probes = (
+    ("hierarchy_within_budget.v", "VG146", "passed", None, None),
+    ("hierarchy_over_budget.v", "VG146", "failed", 4, "hierarchy_2_plus_2/u_child"),
+    ("hierarchy_q_cut.v", "VG146", "passed", None, None),
+    ("hierarchy_child_loop.v", "VG147", "failed", 4, "hierarchy_child_loop/u_child"),
+)
+for source_name, gate_id, expected_status, expected_count, expected_path in hierarchy_probes:
+    source_path = hierarchy_root / source_name
+    probe_report = Path("_smoke_runs/remote_fixtures/comb_hierarchy_budget") / (
+        source_path.stem + "_quality_gate.json"
+    )
+    probe_markdown = probe_report.with_suffix(".md")
+    probe_report.parent.mkdir(parents=True, exist_ok=True)
+    probe_result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "scripts.python.quality.verilog_quality_gate",
+            str(source_path),
+            "--json",
+            str(probe_report),
+            "--markdown",
+            str(probe_markdown),
+        ],
+        check=False,
+    )
+    probe_payload = json.loads(probe_report.read_text(encoding="utf-8"))
+    gate_result = next(
+        item for item in probe_payload["vg_rule_results"] if item["gate_id"] == gate_id
+    )
+    assert gate_result["status"] == expected_status, gate_result
+    if expected_status == "failed":
+        assert probe_result.returncode != 0, probe_result.returncode
+    if expected_count is not None:
+        evidence = "\\n".join(item["evidence"] for item in gate_result["findings"])
+        assert f"operation_count={{expected_count}}" in evidence, evidence
+        assert expected_path in evidence, evidence
 for name in fixtures:
-    spec = Path("skills/readable-verilog-generator/assets/examples/remote_fixtures") / name / "spec.json"
-    generated = Path("skills/readable-verilog-generator/assets/examples/remote_fixtures") / name / "generated"
+    source_root = Path("skills/readable-verilog-generator/assets/examples/remote_fixtures") / name
+    staged_root = Path("_smoke_runs/remote_fixtures") / name
+    generated = staged_root / "generated"
+    shutil.copytree(source_root / "generated", generated, dirs_exist_ok=True)
+    staged_testbench = generated / "tb" / ("tb_" + name + ".v")
+    spec_payload = json.loads((source_root / "spec.json").read_text(encoding="utf-8"))
+    for output in spec_payload.get("outputs", []):
+        if output.get("kind") == "testbench":
+            output["path"] = "tb/" + staged_testbench.name
+    spec = staged_root / "spec.json"
+    spec.write_text(json.dumps(spec_payload, indent=2, sort_keys=True), encoding="utf-8")
     report_json = Path("_smoke_runs/remote_fixtures") / name / "validation.json"
     report_json.parent.mkdir(parents=True, exist_ok=True)
     command = [
@@ -287,7 +348,7 @@ for name in fixtures:
         "selected_simulator_backend": metrics["selected_simulator_backend"],
         "executed_tools": metrics["executed_tools"],
         "rtl_path": str(generated / "rtl" / (name + ".v")),
-        "testbench_path": str(generated / "tb" / (name + "_tb.v")),
+        "testbench_path": str(staged_testbench),
         "validation_json": str(report_json),
         "outputs": outputs,
     }})
@@ -339,6 +400,252 @@ fi
 {str_bytecode_cleanup}
 """.strip()
 
+# filename_gate_remote_snippet 生成 VG148/VG149 远端交付门与 xsim 准入片段。
+def filename_gate_remote_snippet(str_remote_python: str) -> str:
+    """生成远端文件名门禁与合法 testbench 仿真片段。
+
+    :param str_remote_python: 远端 Python 命令。
+    :return: 可嵌入主 bash 脚本的文件名回归片段。
+    """
+
+    # 文件名 probe 的解释器名称先做 shell quoting，避免破坏 heredoc 前缀。
+    str_py = sh_quote(str_remote_python)  # 文件名门禁片段使用的 Python 命令
+
+    # 所有故意违规文件只进入 generated-deliverable gate，不进入 simulator。
+    str_template = r"""
+mkdir -p _smoke_runs/remote_fixtures/file_naming_gates
+__PY__ - <<'PY'
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+root = Path("_smoke_runs/remote_fixtures/file_naming_gates")
+cases = (
+    {
+        "case_id": "vg148_version_suffix_reject",
+        "filename": "module_v1.v",
+        "gate_id": "VG148",
+        "command_contract": "generated_deliverable_gate --spec --json --markdown",
+        "source": "module module_v1;\nendmodule\n",
+        "spec": {},
+        "expected_status": "failed",
+        "expected_role": "design",
+        "expected_role_source": "content_evidence",
+        "confirmation_required": False,
+        "confirmed_role": None,
+    },
+    {
+        "case_id": "vg148_numeric_suffix_reject",
+        "filename": "module_123.v",
+        "gate_id": "VG148",
+        "command_contract": "generated_deliverable_gate --spec --json --markdown",
+        "source": "module module_123;\nendmodule\n",
+        "spec": {},
+        "expected_status": "failed",
+        "expected_role": "design",
+        "expected_role_source": "content_evidence",
+        "confirmation_required": False,
+        "confirmed_role": None,
+    },
+    {
+        "case_id": "vg148_protocol_digit_allow",
+        "filename": "axi4_lite.v",
+        "gate_id": "VG148",
+        "command_contract": "generated_deliverable_gate --spec --json --markdown",
+        "source": "module axi4_lite;\nendmodule\n",
+        "spec": {},
+        "expected_status": "passed",
+        "expected_role": "design",
+        "expected_role_source": "content_evidence",
+        "confirmation_required": False,
+        "confirmed_role": None,
+    },
+    {
+        "case_id": "vg149_suffix_tb_reject",
+        "filename": "counter_tb.v",
+        "gate_id": "VG149",
+        "command_contract": "generated_deliverable_gate --spec --json --markdown",
+        "source": "module counter_tb;\nendmodule\n",
+        "spec": {},
+        "expected_status": "failed",
+        "expected_role": "testbench",
+        "expected_role_source": "explicit_name",
+        "confirmation_required": False,
+        "confirmed_role": None,
+    },
+    {
+        "case_id": "vg149_counter_ambiguous",
+        "filename": "counter.v",
+        "gate_id": "VG149",
+        "command_contract": "generated_deliverable_gate --spec --json --markdown",
+        "source": "module counter();\ninitial begin\n    #1;\n    $finish;\nend\nendmodule\n",
+        "spec": {},
+        "expected_status": "inconclusive",
+        "expected_role": "ambiguous",
+        "expected_role_source": "content_evidence",
+        "confirmation_required": True,
+        "confirmed_role": None,
+    },
+    {
+        "case_id": "vg149_counter_confirmed_testbench_reject",
+        "filename": "counter.v",
+        "gate_id": "VG149",
+        "command_contract": "generated_deliverable_gate --spec --json --markdown",
+        "source": "module counter();\ninitial begin\n    #1;\n    $finish;\nend\nendmodule\n",
+        "spec": {"file_role_confirmations": {"counter.v": "testbench"}},
+        "expected_status": "failed",
+        "expected_role": "testbench",
+        "expected_role_source": "confirmed",
+        "confirmation_required": False,
+        "confirmed_role": "testbench",
+    },
+    {
+        "case_id": "vg149_tb_prefix_allow",
+        "filename": "tb_counter.v",
+        "gate_id": "VG149",
+        "command_contract": "generated_deliverable_gate --spec --json --markdown",
+        "source": "module tb_counter;\ninitial begin\n    $finish;\nend\nendmodule\n",
+        "spec": {},
+        "expected_status": "passed",
+        "expected_role": "testbench",
+        "expected_role_source": "explicit_name",
+        "confirmation_required": False,
+        "confirmed_role": None,
+    },
+)
+
+
+def find_named_list(value, key):
+    if isinstance(value, dict):
+        if isinstance(value.get(key), list):
+            return value[key]
+        for child in value.values():
+            found = find_named_list(child, key)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = find_named_list(child, key)
+            if found is not None:
+                return found
+    return None
+
+
+summary = {"cases": []}
+for case in cases:
+    case_root = root / case["case_id"]
+    source_root = case_root / "source"
+    source_root.mkdir(parents=True, exist_ok=True)
+    (source_root / case["filename"]).write_text(case["source"], encoding="utf-8")
+    spec_path = case_root / "spec.json"
+    spec_path.write_text(json.dumps(case["spec"], indent=2, sort_keys=True), encoding="utf-8")
+    report_path = case_root / "report.json"
+    markdown_path = case_root / "report.md"
+    command = [
+        sys.executable,
+        "-m",
+        "scripts.python.validation.generated_deliverable_gate",
+        str(source_root),
+        "--spec",
+        str(spec_path),
+        "--json",
+        str(report_path),
+        "--markdown",
+        str(markdown_path),
+    ]
+    required_command_tokens = case["command_contract"].split()
+    assert required_command_tokens[0] in command[2], command
+    assert all(token in command for token in required_command_tokens[1:]), command
+    result = subprocess.run(command, check=False)
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    gate_results = find_named_list(payload, "vg_rule_results") or []
+    gate_result = next(item for item in gate_results if item["gate_id"] == case["gate_id"])
+    file_facts = find_named_list(payload, "file_facts") or []
+    file_fact = next(item for item in file_facts if item["path"] == case["filename"])
+    assert gate_result["status"] == case["expected_status"], gate_result
+    assert file_fact["role"] == case["expected_role"], file_fact
+    assert file_fact["role_source"] == case["expected_role_source"], file_fact
+    assert isinstance(file_fact["role_evidence"], list), file_fact
+    assert file_fact["confirmation_required"] is case["confirmation_required"], file_fact
+    assert file_fact["confirmed_role"] == case["confirmed_role"], file_fact
+    if case["expected_status"] != "passed":
+        assert result.returncode != 0, result.returncode
+    summary["cases"].append(
+        {
+            "case_id": case["case_id"],
+            "gate_id": case["gate_id"],
+            "status": gate_result["status"],
+            "role": file_fact["role"],
+            "role_source": file_fact["role_source"],
+            "role_evidence": file_fact["role_evidence"],
+            "confirmation_required": file_fact["confirmation_required"],
+            "confirmed_role": file_fact["confirmed_role"],
+            "report": str(report_path),
+            "markdown": str(markdown_path),
+        }
+    )
+(root / "summary.json").write_text(
+    json.dumps(summary, indent=2, sort_keys=True),
+    encoding="utf-8",
+)
+PY
+mkdir -p _smoke_runs/remote_fixtures/file_naming_gates/xsim
+cat > _smoke_runs/remote_fixtures/file_naming_gates/xsim/counter.v <<'VERILOG'
+module counter (
+    input wire i_clk,
+    input wire i_rstn,
+    output reg o_count
+);
+always @(posedge i_clk or negedge i_rstn) begin
+    if (!i_rstn) begin
+        o_count <= 1'b0;
+    end else begin
+        o_count <= ~o_count;
+    end
+end
+endmodule
+VERILOG
+cat > _smoke_runs/remote_fixtures/file_naming_gates/xsim/tb_counter.v <<'VERILOG'
+module tb_counter;
+reg i_clk;
+reg i_rstn;
+wire o_count;
+counter dut (
+    .i_clk(i_clk),
+    .i_rstn(i_rstn),
+    .o_count(o_count)
+);
+initial begin
+    i_clk = 1'b0;
+    forever #5 i_clk = ~i_clk;
+end
+initial begin
+    i_rstn = 1'b0;
+    #12 i_rstn = 1'b1;
+    #30;
+    if ((o_count !== 1'b0) && (o_count !== 1'b1)) begin
+        $display("[TB_ERROR] counter output is unknown");
+        $finish;
+    end
+    $display("[TB_PASS] tb_counter completed");
+    $finish;
+end
+endmodule
+VERILOG
+if [ "$expected_sim_backend" = "xsim" ]; then
+  (
+    cd _smoke_runs/remote_fixtures/file_naming_gates/xsim
+    xvlog counter.v tb_counter.v
+    xelab tb_counter -s tb_counter_snapshot
+    xsim tb_counter_snapshot -runall
+  )
+fi
+""".strip()
+
+    # 唯一解释器占位符替换完成后，文件名 probe 才能嵌入主脚本。
+    return str_template.replace("__PY__", str_py)
+
 # rtl_md_constraint_remote_snippet 生成 RTL Markdown 约束远端回归片段。
 def rtl_md_constraint_remote_snippet(str_remote_python: str) -> str:
     """生成远端 RTL Markdown 约束回归脚本片段。
@@ -383,8 +690,8 @@ def spec(name="remote_verilog_quality_gates"):
 
 
 catalog = load_verilog_quality_gates()
-assert catalog["total_rules"] == 125, catalog
-assert catalog["active_rules"] == 125, catalog
+assert catalog["total_rules"] == 127, catalog
+assert catalog["active_rules"] == 127, catalog
 assert catalog["reserved_rules"] == 0, catalog
 prompt = render_prompt(spec(), stage="rtl")
 for marker in (
@@ -393,10 +700,12 @@ for marker in (
     "VG111",
     "VG145",
     "VG147",
+    "VG148",
+    "VG149",
 ):
     assert marker in prompt, marker
 summary = summarize_constraints_for_prompt(max_rules_per_group=3)
-assert "125 active gates" in summary, summary
+assert "127 active gates" in summary, summary
 assert "reserved gates" not in summary, summary
 
 bad_dir = Path("_smoke_runs/remote_verilog_quality_gates/bad")

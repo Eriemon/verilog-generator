@@ -13,7 +13,7 @@
 - `VG021`、`VG023`、`VG053`、`VG054`、`VG057`：覆盖时钟/复位命名与低有效复位结构、FSM next-state 的 default、默认保持、`if / else if` 显式闭合，以及协议端口 section 顺序。
 - `VG144`：FSM 必须严格使用三个独立过程；下一状态必须在组合过程内用阻塞赋值 `=` 计算，严禁 `assign state_next = ...`。
 - `VG145`：连续赋值与组合 `always` 共用完整 module 局部依赖锥，展开后的运行时来源最多三个；搬入组合 `always` 不能规避。只有输出端口直接连接时序驱动 `_o` `reg` 的单信号 bridge 可豁免。
-- `VG146`/`VG147`：每个静态目标的完整组合操作锥最多使用目录配置的操作数；普通逻辑由 VG146 负责，包含 `for` 展开克隆操作的目标由 VG147 负责。长表达式直接搬入时序 D 输入仍会检查，优先用流水寄存、注册预译码或多周期 FSM 降低组合链路。
+- `VG146`/`VG147`：每个静态目标在完整 source closure 中最多使用目录配置的操作数；formatter 结构化端口关联、参数特化、definition root 与完整 instance path 决定独立硬件身份。已知 child output 会递归展开，inout 保持 resolved boundary，多驱动 wire/tri 合并全部已知驱动，寄存器 Q 是切点而 D 输入仍检查。`loop_presence=unknown` 时两条 gate 共享下界证据并同时 fail 或 inconclusive。优先用流水寄存、注册预译码或多周期 FSM 降低组合链路。
 - `VG031`、`VG052`、`VG061`：覆盖固定区域 banner、output bridge 所属区域、参数/声明/过程块/实例的区域归属。
 - `VG040`、`VG041`、`VG055`、`VG056`、`VG060`、`VG066`：覆盖中文优先注释、占位注释、同线注释覆盖、尾随注释对齐、重复/近似重复注释。
 - `VG063`：覆盖过程块、实例以及 `case(state_current)` 下 `ST_*:begin`、`default:begin` 的前导纯注释贴邻、左对齐和空行布局。
@@ -64,7 +64,16 @@
 - `.vh` include fragment 默认不结构化格式化：`format_include_fragments = false`。include 片段中宏、条件编译、局部 declarations 不应被当作完整模块强行 normalize。
 - 文本 I/O 默认保留 encoding、EOL、BOM、final newline 策略；微格式化内部会使用 LF 进行处理并确保最终换行，交付时应按项目仓库行尾策略统一。
 
-### 2.2 Profile 使用规范
+### 2.2 Verilog/SystemVerilog 文件名角色
+
+- `.v` 与 `.sv` 文件名必须表达真实功能。`axi4_lite.v`、`crc32.v`、`counter_32bit.v`、`i2c_master.v`、`ad9361_if.v` 中的数字属于功能名称，允许使用。
+- `VG148` 只禁止文件主名末尾的独立版本或无功能数字后缀：`_vN`、`-vN`、`_verN`、`-verN`、`_versionN`、`-versionN`、`_N`、`-N`，匹配不区分大小写。例如 `module_v1.v`、`module-ver2.sv`、`module_123.v` 必须改为真实功能名。
+- 通过文件主名 `tb_`、`_tb`、`testbench`，或精确目录段 `tb`、`testbench`、`sim` 识别出的测试文件，统一使用 `tb_<function>.v` 或 `tb_<function>.sv`。`counter_tb.v` 会被识别为 testbench，但因不是 `tb_` 前缀而由 `VG149` 显式拒绝。
+- 普通命名文件若内容同时命中至少两个独立测试证据组，会进入二次确认而不是直接判定。证据组为 `initial_process`、`simulation_task`、`clock_stimulus`、`dut_self_check`；注释或字符串中的关键词不计入证据。
+- 用户通过 `file_role_confirmations` 把文件确认成 `design` 后，`VG149` 对该文件不适用；确认成 `testbench` 后仍必须改名为 `tb_<function>`，确认本身不能豁免命名规则。例如 `counter.v` 确认为 testbench 后仍失败，重命名为 `tb_counter.v` 后才通过。
+- 无法读取的 `.v`/`.sv` 文件不能静默跳过；文件门禁返回 `error`，并由公开报告保留稳定的相对路径读取诊断。
+
+### 2.3 Profile 使用规范
 
 | Profile | 用途 | 改写策略 | 关键行为 |
 |---|---|---|---|
@@ -73,7 +82,7 @@
 | `formatter-lint` | 只检查 | `never` | dry-run/lint；不写出格式化结果，用于 CI 或人工审查。 |
 | `vitis-wrapper` | AMD/Vitis ABI wrapper 专用 | format | 保留 `ap_clk`、`ap_rst_n`、`interrupt`、`s_axi_control_*`、`m_axi_*_*` 顶层 ABI 端口名；仅在明确是 Vitis wrapper 时使用。 |
 
-### 2.3 Rewrite 行为
+### 2.4 Rewrite 行为
 
 - `formatter-preserve` 保留原文，不做结构化重排或自动写回。
 - `formatter-normalize` 才允许结构化渲染，且必须配合 review/quality gate。
@@ -969,6 +978,8 @@ endmodule
 - [ ] reg/cnt/flag/enc/dec 命名符合前缀。
 - [ ] 内部 output 为 `_o`，顶层 output 为 `o_`，二者不混用。
 - [ ] 无 `C_C_`、`ST_ST_`、`reg_reg_`、`cnt_cnt_`、`flag_flag_`、`enc_enc_`、`dec_dec_`、`state_state_` 等重复前缀，无 legacy `_i/_o` 端口尾缀残留。
+- [ ] `.v`/`.sv` 文件名表达真实功能；无 `_vN`、`-vN`、`_verN`、`-verN`、`_versionN`、`-versionN`、`_N`、`-N` 终止后缀，功能数字不被误拒。
+- [ ] 所有已识别或已确认的 testbench 均使用 `tb_<function>`，不存在 `_tb` 输出名；内容疑似 testbench 的普通命名文件已取得角色确认。
 
 ### 18.2 结构检查
 

@@ -128,7 +128,7 @@ def _mock_sequential_tb_declaration_lines(
     list_lines: list[str] = []  # 时序 testbench 声明区缓存
 
     # 写入 testbench module 头。
-    list_lines.append(f"module {layout.top}_tb;")
+    list_lines.append(f"module tb_{layout.top};")
 
     # 时钟寄存器负责驱动 DUT 的 posedge 采样。
     list_lines.append(f"\treg {layout.clock_name} = 1'b0;")
@@ -712,7 +712,7 @@ def _mock_comb_tb_declaration_lines(layout: MockPortLayout) -> list[str]:
     list_lines: list[str] = []  # 组合声明区行缓存
 
     # 写入组合 testbench module 声明。
-    list_lines.append(f"module {layout.top}_tb;")
+    list_lines.append(f"module tb_{layout.top};")
 
     # 组合输入同样用 testbench reg 驱动。
     list_lines.extend(_mock_input_register_lines(layout.inputs))  # 组合输入激励寄存器

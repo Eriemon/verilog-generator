@@ -1,17 +1,23 @@
 {
   "documents": [
     {
-      "content_sha256": "3e0fc79a71a72d461d068988206806a9787274d7363327dcd5a0bdf9d67ffbf5",
+      "content_sha256": "bd6d24308734b561387c38d488b6f5edd04fe37cceb7cb66e21a40062371a56b",
       "id": "document.skill",
       "keywords": [
         "route",
         "Verilog-2001",
         "quality",
         "registry",
-        "boundaries"
+        "boundaries",
+        "source closure",
+        "instance path",
+        "VG148",
+        "VG149",
+        "filename",
+        "testbench"
       ],
       "path": "SKILL.md",
-      "responsibility": "定义技能触发、外层任务路由、强制质量链、停止边界与渐进披露入口。",
+      "responsibility": "定义技能触发、外层任务路由、强制质量链、Verilog 文件名角色合同、跨实例组合锥合同、停止边界与渐进披露入口。",
       "source_anchor": "",
       "status": "current",
       "summary": "readable-verilog-generator 的最外层执行合同。",
@@ -83,7 +89,7 @@
       "title": "Verilog Style Observations"
     },
     {
-      "content_sha256": "80e0ab05d70d75edd6e5575707873738793ce97c73d9b336496a1ea2039c14db",
+      "content_sha256": "1c38c5ca74df650c25846055ff34c2d048c62c168badc3b9d8ee237b99155a02",
       "id": "document.references-integration-configuration",
       "keywords": [
         "settings",
@@ -92,10 +98,13 @@
         "toolchain",
         "validation",
         "workspace",
-        "eval"
+        "eval",
+        "hierarchy fixture",
+        "file_role_confirmations",
+        "relative path"
       ],
       "path": "references/integration/configuration.md",
-      "responsibility": "定义设置文件、依赖、验证、远程目标、工具链选择、效果评估工作区和运行目录配置合同。",
+      "responsibility": "定义设置文件、文件角色确认、依赖、验证、远程目标、层次 source-closure fixture、工具链选择、效果评估工作区和运行目录配置合同。",
       "source_anchor": "",
       "status": "current",
       "summary": "本地、远程与效果评估 Verilog 工作流配置合同。",
@@ -169,17 +178,24 @@
       "title": "Testbench Patterns"
     },
     {
-      "content_sha256": "d4d990abf1ac5adefd0adb91fd340324279423bb1dd2fb2706122654b211ac4d",
+      "content_sha256": "5981c61c4ade1fa64f062679d4eb8e36a08a455af73888307c78fa3693acda35",
       "id": "document.references-rules-verilog-code-comment-naming-standard",
       "keywords": [
         "Verilog",
         "code",
         "comment",
         "naming",
-        "format"
+        "format",
+        "VG146",
+        "VG147",
+        "VG148",
+        "VG149",
+        "source closure",
+        "filename",
+        "testbench"
       ],
       "path": "references/rules/verilog-code-comment-naming-standard.md",
-      "responsibility": "保存可读 Verilog 代码、注释、命名、区域与格式的完整规范正文。",
+      "responsibility": "保存可读 Verilog 代码、注释、文件名角色、命名、区域、格式与跨实例组合锥约束的完整规范正文。",
       "source_anchor": "",
       "status": "current",
       "summary": "Verilog 代码注释命名规范的权威规则书。",
@@ -219,15 +235,25 @@
       "title": "Verilog Pattern Templates"
     },
     {
-      "content_sha256": "ad706d9558a05ce64bd01c890abff1eb21af49bd640029359eb08fc09978a8a8",
+      "content_sha256": "f1f3d2478d15e3a95c61e85eba8bf0f7034f7b4ec1d248697e874019c0035d28",
       "id": "document.references-rules-verilog-quality-gates",
       "keywords": [
         "VG",
         "VG078",
         "VG146",
         "VG147",
+        "VG148",
+        "VG149",
+        "file_role_confirmations",
+        "tb_",
         "catalog",
         "combinational operations",
+        "source closure",
+        "structured associations",
+        "parameter specialization",
+        "definition root",
+        "instance path",
+        "loop_presence",
         "for elaboration",
         "open-drain",
         "X/Z",
@@ -237,7 +263,7 @@
         "quality"
       ],
       "path": "references/rules/verilog-quality-gates.md",
-      "responsibility": "定义 VG 规则目录、严重度、结果状态、统一执行和报告 schema。",
+      "responsibility": "定义 VG 规则目录、严重度、结果状态、文件名角色与确认语义、跨实例 source-closure 计数、loop unknown 双 gate 语义、统一执行和报告 schema。",
       "source_anchor": "",
       "status": "current",
       "summary": "统一 Verilog VG 质量门禁合同。",

@@ -235,8 +235,14 @@ def _mock_rtl_stage_file_text(
     # str_suffix 用来区分 DUT 主模块和 testbench。
     str_suffix = Path(relative_path).suffix.lower()  # 决定生成 RTL 或 testbench
 
+    # 文件名词干同时承担新旧 testbench 命名的兼容识别。
+    str_stem = Path(relative_path).stem.lower()  # 兼容识别新旧 testbench 文件名
+
+    # VG149 前缀用于正常输出，旧后缀仅保留给负向样例识别。
+    bool_testbench_name = str_stem.startswith("tb_") or "_tb" in str_stem  # VG149 前缀与旧负向样例
+
     # 主模块文件只承载 DUT 骨架，不能混入仿真逻辑。
-    if str_suffix == ".v" and "_tb" not in Path(relative_path).stem.lower():
+    if str_suffix == ".v" and not bool_testbench_name:
 
         # 返回 DUT Verilog 源码文本。
         return _mock_erie_rtl_source_text(spec)

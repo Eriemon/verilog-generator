@@ -59,6 +59,6 @@
   "constraints": ["Use synthesizable Verilog-2001."],
   "outputs": [
     {"path": "rtl/axi_dma_interconnect_stub.v", "kind": "source", "language": "verilog"},
-    {"path": "tb/axi_dma_interconnect_stub_tb.v", "kind": "testbench", "language": "verilog"}
+    {"path": "tb/tb_axi_dma_interconnect_stub.v", "kind": "testbench", "language": "verilog"}
   ]
 }

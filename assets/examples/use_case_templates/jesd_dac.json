@@ -80,7 +80,7 @@
       "language": "verilog"
     },
     {
-      "path": "tb/jesd_dac_playback_bridge_tb.v",
+      "path": "tb/tb_jesd_dac_playback_bridge.v",
       "kind": "testbench",
       "language": "verilog"
     }

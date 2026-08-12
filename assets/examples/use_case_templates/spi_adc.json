@@ -95,7 +95,7 @@
       "language": "verilog"
     },
     {
-      "path": "tb/spi_adc_capture_bridge_tb.v",
+      "path": "tb/tb_spi_adc_capture_bridge.v",
       "kind": "testbench",
       "language": "verilog"
     }

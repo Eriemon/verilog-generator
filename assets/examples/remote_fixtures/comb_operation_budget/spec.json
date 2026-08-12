@@ -92,7 +92,7 @@
       "language": "verilog"
     },
     {
-      "path": "tb/comb_operation_budget_tb.v",
+      "path": "tb/tb_comb_operation_budget.v",
       "kind": "testbench",
       "language": "verilog"
     }

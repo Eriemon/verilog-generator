@@ -2,14 +2,14 @@
   "version": 6,
   "name": "verilog_quality_gate_catalog",
   "description": "Unified VG catalog for readable Verilog RTL generation, review, and semantic validation.",
-  "total_rules": 125,
-  "active_rules": 125,
+  "total_rules": 127,
+  "active_rules": 127,
   "reserved_rules": 0,
   "status_counts": {
-    "active": 125
+    "active": 127
   },
   "active_level_counts": {
-    "BLOCKER": 55,
+    "BLOCKER": 57,
     "WARNING": 70
   },
   "policy": {
@@ -1010,7 +1010,7 @@
       "level": "BLOCKER",
       "status": "active",
       "topic": "赋值语句和块语句",
-      "summary": "每个静态目标的普通组合操作锥不得超过目录配置上限；时序寄存器只隔断 Q 输出，D 输入表达式仍必须检查。"
+      "summary": "在完整 source closure 中，按 definition root、instance path、parameter specialization 与静态目标累计普通组合操作；structured associations 绑定 output，inout 保持 resolved boundary，寄存器只在 Q 输出切断。报告必须给出 root/path/specialization/target/child output/count/limit；未知 loop_presence 与 VG147 共享下界证据。"
     },
     {
       "gate_id": "VG147",
@@ -1018,7 +1018,23 @@
       "level": "BLOCKER",
       "status": "active",
       "topic": "循环语句",
-      "summary": "包含可展开 for 操作节点的静态目标必须按每次迭代克隆后的完整组合操作锥执行目录配置上限。"
+      "summary": "在完整 source closure 中，包含展开 for occurrence 的目标按 definition root、instance path 与 parameter specialization 累计克隆操作。loop_presence=unknown 时 VG146/VG147 均 applicable：已知下界超限则两者 failed，否则两者 inconclusive，并共享 root/path/count/reason 证据。"
+    },
+    {
+      "gate_id": "VG148",
+      "rule_key": "functional_verilog_filename",
+      "level": "BLOCKER",
+      "status": "active",
+      "topic": "文件命名",
+      "summary": "Verilog/SystemVerilog 文件名不得以独立版本号或无功能含义的纯数字段结尾；功能标准中的数字 token 保持允许，工具只报告建议而不自动重命名。"
+    },
+    {
+      "gate_id": "VG149",
+      "rule_key": "testbench_filename_prefix",
+      "level": "BLOCKER",
+      "status": "active",
+      "topic": "文件命名",
+      "summary": "经名称、精确测试目录或用户确认识别的 testbench 必须使用非空 tb_<功能名> 文件名；普通命名但内容双证据疑似 testbench 时必须二次确认。"
     }
   ]
 }

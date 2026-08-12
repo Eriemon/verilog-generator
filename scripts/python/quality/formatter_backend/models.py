@@ -386,6 +386,193 @@ class AlwaysBlock:
     # 过程块前的用户说明在重排后仍需贴回同一 always 区域。
     leading_comments: list[str] = field(default_factory=list)  # always 区域前置说明行
 
+# 源位置模型为跨层事实提供一基、闭区间位置合同。
+@dataclass(frozen=True)
+class SourceSpan:
+    """描述 formatter 事实在源文件中的一基起止位置。"""
+
+    # 起始行定位事实所属的完整源文件行。
+    line_start: int  # 一基起始行号
+
+    # 起始列区分同一行中的多个语法 occurrence。
+    column_start: int  # 一基起始列号
+
+    # 结束行覆盖跨行实例或函数定义的完整范围。
+    line_end: int  # 一基结束行号
+
+    # 结束列闭合当前事实最后一个源码字符。
+    column_end: int  # 一基结束列号
+
+# 表达式节点模型冻结 formatter typed tree，供后续组合锥直接消费。
+@dataclass(frozen=True)
+class ExpressionNodeFact:
+    """保存一个不可变、可递归序列化的表达式节点事实。"""
+
+    # 节点类别区分运算、标识符、常量、选择和函数调用。
+    node_kind: str  # formatter typed tree 节点类别
+
+    # 文本保留 actual 根表达式或叶节点的源码含义。
+    text: str  # 当前节点表达式文本
+
+    # 运算符用于识别真实逻辑操作或函数 callee。
+    operator: str  # 当前节点操作符文本
+
+    # 操作类别把零成本 marker 与真实组合操作分开。
+    operation_kind: str  # 冻结后的操作目录类别
+
+    # 出现身份确保相同文本的不同源码位置不会合并。
+    occurrence_id: str  # source-local 节点身份
+
+    # 源位置让诊断能够回贴到 actual 的真实列范围。
+    span: SourceSpan  # 当前节点完整源位置
+
+    # 完整标志区分 report 权威路径与 legacy renderer 路径。
+    span_complete: bool  # 源位置是否权威完整
+
+    # 引用集合按源码首次出现顺序保存上游信号。
+    references: tuple[str, ...] = ()  # 当前子树标识符引用
+
+    # 子节点递归表达运算操作数和函数 actual。
+    children: tuple["ExpressionNodeFact", ...] = ()  # 有序表达式子树
+
+    # 附加属性冻结 select、call 等节点的专用元数据。
+    attributes: tuple[tuple[str, object], ...] = ()  # 冻结节点扩展属性
+
+    # 不支持原因只污染当前节点，不阻断整个 module。
+    unsupported_reason: str = ""  # 局部类型化失败原因
+
+# actual 构建上下文集中承载位置完整性和编号前缀。
+@dataclass(frozen=True)
+class ExpressionFactContext:
+    """提供 actual 表达式的位置和 occurrence 身份上下文。"""
+
+    # actual 的完整范围是内部节点定位的权威边界。
+    span: SourceSpan  # 实际参数在完整源码中的行列区间
+
+    # legacy 调用缺少完整文件上下文时保持 False。
+    span_complete: bool  # actual span 是否完整
+
+    # 编号前缀组合定义、调用点、关联位置和 actual span。
+    occurrence_prefix: str  # 节点身份前缀
+
+# actual 模型统一实例端口、参数覆盖和函数实参的表达式事实。
+@dataclass(frozen=True)
+class InstanceActualFact:
+    """描述实例或函数调用中的一个 actual。"""
+
+    # 原文必须原样保留，避免 enrichment 改变 formatter 输出。
+    text: str  # actual 原始表达式文本
+
+    # 类别区分端口、参数、函数实参或显式未连接。
+    kind: str  # actual 业务类别
+
+    # 默认位置只服务无权威上下文的兼容调用。
+    span: SourceSpan = SourceSpan(1, 1, 1, 1)  # 兼容路径默认实际参数行列区间
+
+    # report 主路径为 True，renderer/rename 兼容路径为 False。
+    span_complete: bool = False  # 实际参数行列证据是否完备
+
+    # 引用用于把调用方信号绑定到被调用模块 formal。
+    references: tuple[str, ...] = ()  # actual 标识符引用
+
+    # 静态段只记录 elaboration 后可确定的端点。
+    static_lvalue_segments: tuple[dict[str, object], ...] = ()  # 静态端点片段
+
+    # 表达式树复用 formatter parser，不在 VG 层重新解析。
+    expression: ExpressionNodeFact | None = None  # 实际参数递归类型表达式树
+
+    # 动态选择或未支持语法保留局部失败原因。
+    unsupported_reason: str = ""  # actual 局部不支持原因
+
+# 实例关联模型保留 formal、位置以及 actual 的绑定关系。
+@dataclass(frozen=True)
+class InstanceAssociation:
+    """保存一个有序实例参数或端口关联。"""
+
+    # named 关联保存 formal，positional 关联保持空字符串。
+    formal_name: str  # 被调用模块 formal 名称
+
+    # 位置在 named 和 positional 两种形式中都保持声明顺序。
+    position: int  # 当前关联零基位置
+
+    # actual 承载表达式、引用和局部失败信息。
+    actual: InstanceActualFact  # 当前关联实际值
+
+    # 空括号需要区别于缺少关联条目。
+    explicit_unconnected: bool  # 是否显式空连接
+
+    # 关联范围当前与 actual 范围对齐，供诊断定位。
+    span: SourceSpan  # 当前关联源位置
+
+    # 完整性沿用实例 block 的权威上下文状态。
+    span_complete: bool = False  # 关联 span 完整性
+
+# 函数 formal 模型记录声明顺序、方向和宽度文本。
+@dataclass(frozen=True)
+class FunctionFormalFact:
+    """保存 Verilog function 的一个位置 formal。"""
+
+    # 名称用于 function actual 的位置绑定结果展示。
+    name: str  # 函数形参标识符
+
+    # 位置严格沿用声明顺序，不按名称排序。
+    position: int  # formal 零基位置
+
+    # Verilog-2001 function formal 当前只接受 input。
+    direction: str  # 函数形参输入方向
+
+    # 宽度保留 signed 和 range 的声明文本。
+    width_text: str  # formal 位宽文本
+
+    # 声明位置用于后续将 formal 诊断回贴源码。
+    span: SourceSpan  # 函数形参声明行列区间
+
+# 函数定义事实由唯一 formatter function block parser 产生。
+@dataclass(frozen=True)
+class FunctionDefinitionFact:
+    """保存 formatter 解析出的 function 定义事实。"""
+
+    # 定义名同时是 Verilog function 的隐式返回目标。
+    name: str  # function 定义名称
+
+    # formal 元组保留 parser 捕获的声明顺序。
+    formals: tuple[FunctionFormalFact, ...]  # 有序 formal 集合
+
+    # 返回目标供函数体表达式绑定到调用点。
+    return_target: str  # function 返回信号名
+
+    # 函数体表达式保存 formatter 分离出的返回赋值事实。
+    body_expressions: tuple[dict[str, object], ...]  # 函数体表达式事实
+
+    # 定义范围覆盖 function 到 endfunction。
+    span: SourceSpan  # function 定义源位置
+
+    # 完整标志决定函数体是否可以进入跨层 tracing。
+    parse_complete: bool  # function 定义是否完整
+
+    # 递归或不支持声明只在当前 function 内标记。
+    unsupported_reason: str = ""  # 函数定义无法完整展开的局部原因
+
+# 函数调用事实保存 callee、位置 actual 和调用点身份。
+@dataclass(frozen=True)
+class FunctionCallFact:
+    """保存 formatter 表达式树中的 function 调用事实。"""
+
+    # callee 与同 module function definition 建立绑定。
+    callee: str  # 被调用 function 名称
+
+    # actual 元组严格按照调用表达式位置排列。
+    actuals: tuple[InstanceActualFact, ...]  # 有序函数实参
+
+    # 调用点范围区分同行同文本的多个 function call。
+    call_site_span: SourceSpan  # function 调用源位置
+
+    # 完整标志控制递归展开和不确定证据传播。
+    parse_complete: bool  # 函数调用事实是否可完整绑定
+
+    # 递归边或 actual 失败原因保持调用点局部化。
+    unsupported_reason: str = ""  # function call 局部原因
+
 # 实例块模型保存 module instantiation 原文和连接摘要。
 @dataclass
 class InstanceBlock:
@@ -405,6 +592,30 @@ class InstanceBlock:
 
     # 前导注释保留实例块之前的用户说明。
     leading_comments: list[str] = field(default_factory=list)  # 实例前导注释行
+
+    # 默认位置让旧 renderer/rename 单参数调用保持有效。
+    span: SourceSpan = SourceSpan(1, 1, 1, 1)  # 实例块源位置
+
+    # report 主路径才提供可进入 gate 的权威位置。
+    span_complete: bool = False  # 实例 span 完整性
+
+    # 关联风格区分 named、positional、mixed 和 empty。
+    association_style: str = ""  # 实例关联风格
+
+    # 端口关联按实例声明顺序保存。
+    port_associations: tuple[InstanceAssociation, ...] = ()  # 实例端口关联
+
+    # 参数覆盖独立于端口 formal 绑定保存。
+    parameter_overrides: tuple[InstanceAssociation, ...] = ()  # 实例参数覆盖
+
+    # 数组范围保留静态 instance array 的原始声明。
+    array_range_text: str = ""  # 实例数组范围文本
+
+    # 完整解析要求括号、风格和 formal 唯一性均有效。
+    parse_complete: bool = False  # 实例关联是否完整
+
+    # 不支持原因只影响当前实例，不清空其他 module 事实。
+    unsupported_reason: str = ""  # 实例局部失败原因
 
 # generate block 模型承载 generate 区域的原文和控制树。
 @dataclass
@@ -453,6 +664,9 @@ class FunctionBlock:
 
     # 函数说明通常描述组合辅助逻辑，必须随 function 一起移动。
     leading_comments: list[str] = field(default_factory=list)  # function 语义说明行
+
+    # definition 由 function block parser 产生，VG 层只消费结构化事实。
+    definition: FunctionDefinitionFact | None = None  # 结构化函数定义事实
 
 # task block 模型保存 Verilog task 的调用式过程内容。
 @dataclass

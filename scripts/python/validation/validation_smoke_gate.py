@@ -395,7 +395,7 @@ def run_existing_rtl_boundary_flows(
     path_existing_spec = path_existing_examples_dir / "ready_valid_slice_spec.md"  # 半自动确认边界对应的规格文档
 
     # augment 场景显式提供一个现成 testbench，验证原路径能否被保留。
-    path_existing_tb = path_existing_examples_dir / "ready_valid_slice_tb.v"  # augment 场景显式传入的 testbench
+    path_existing_tb = path_existing_examples_dir / "tb_ready_valid_slice.v"  # augment 场景显式传入的 testbench
 
     # semi_auto 路径单独落在专属目录里，便于读取确认边界结果。
     path_verify_existing_dir = path_smoke_dir / "cli-verify-existing"  # 半自动确认边界场景的运行目录

@@ -174,8 +174,11 @@ def run_verilog_quality_gate(
     # path_root 统一绝对路径，保证报告 root 字段稳定。
     path_root = root.resolve()  # 本次检查的规范化入口路径
 
-    # list_files 只包含需要进入质量门的 Verilog 文件。
-    list_files = _quality_gate_source_files(path_root, include_testbench)  # 待检查 RTL 文件集合
+    # list_ast_files 只包含需要进入 formatter AST 的 Verilog-2001 文件。
+    list_ast_files = _quality_gate_source_files(path_root, include_testbench)  # 待解析 .v 文件集合
+
+    # list_naming_files 独立覆盖所有 .v/.sv 文件，不应用 AST testbench 过滤。
+    list_naming_files = _file_naming_source_files(path_root)  # 文件命名预检输入集合
 
     # list_issues 汇总文件发现、AST、文本和结构规则诊断。
     list_issues: list[QualityIssue] = []  # 本次质量门累计诊断
@@ -196,7 +199,7 @@ def run_verilog_quality_gate(
     )
 
     # 没有源文件时直接登记文件发现错误。
-    if not list_files:
+    if not list_ast_files and not list_naming_files:
 
         # 空输入会让质量门失败，避免误报成功。
         list_issues.append(
@@ -210,7 +213,7 @@ def run_verilog_quality_gate(
         )
 
     # 逐文件执行唯一 formatter AST 解析入口和所有质量规则。
-    for path_source in list_files:
+    for path_source in list_ast_files:
 
         # 单文件 helper 负责读取、AST、规则和编码 metrics 合并。
         _append_file_quality_results(
@@ -259,11 +262,17 @@ def run_verilog_quality_gate(
     # 第二项提供 VG072 至 VG147 的逐规则结论。
     dict_semantic_report = tuple_semantic_results[1]  # 本轮语义门禁报告
 
+    # 文件事实公开在聚合报告内，便于宿主定位确认请求。
+    dict_ast_tree_report["file_facts"] = list(dict_semantic_report["file_facts"])  # .v/.sv 文件事实
+
+    # 不可读文件沿用既有 VG000/file.encoding 诊断并按路径去重。
+    _append_file_fact_read_issues(list_issues, dict_semantic_report["file_facts"])
+
     # 原生规则结果与迁移语义结果采用相同公开模型。
     list_native_results = _native_vg_rule_results(  # 49 条原生规则结果
         dict_catalog,  # 统一规则元数据和稳定顺序
         list_issues,  # 原生质量门诊断
-        bool(list_files),  # 是否发现可检查 RTL
+        bool(list_ast_files),  # 是否发现 formatter AST 可检查的 .v 输入
     )
 
     # 两段结果严格按 catalog 顺序拼成完整统一报告。
@@ -435,6 +444,97 @@ def _summarize_vg_rule_results(list_results: list[dict[str, Any]]) -> dict[str, 
             for str_status in tuple_statuses
         },
     }
+
+# 从检查入口收集文件命名门禁覆盖的 .v 与 .sv 来源。
+def _file_naming_source_files(path_root: Path) -> list[Path]:
+    """返回文件命名预检需要扫描的 `.v/.sv` 文件。
+
+    参数:
+        path_root: 质量门入口文件或目录。
+    返回:
+        按 POSIX 相对路径稳定排序的来源文件。
+    """
+
+    # 单文件入口只在扩展名受支持时进入命名预检。
+    if path_root.is_file():
+
+        # 大小写扩展名共享相同发现语义。
+        return [path_root] if path_root.suffix.casefold() in {".v", ".sv"} else []
+
+    # 目录入口递归发现全部 Verilog 与 SystemVerilog 文件。
+    list_files = [  # 尚未排序的命名预检来源
+        path_source.resolve()  # 统一使用规范绝对路径
+        for path_source in path_root.rglob("*")  # 递归遍历质量门入口
+        if path_source.is_file()  # 排除目录和其他非文件项
+        and path_source.suffix.casefold() in {".v", ".sv"}  # 只保留受支持扩展名
+    ]
+
+    # 路径大小写折叠后再以原文打破平局，保持跨平台确定性。
+    list_files.sort(
+        key=lambda path_source: (  # 相对路径的稳定双重排序键
+            path_source.relative_to(path_root).as_posix().casefold(),  # 大小写无关主键
+            path_source.relative_to(path_root).as_posix(),  # 原始路径次键
+        )
+    )
+
+    # 返回可供空输入判断复用的来源集合。
+    return list_files
+
+# 把文件事实读取失败映射为既有 VG000 编码诊断。
+def _append_file_fact_read_issues(
+    list_issues: list[QualityIssue],
+    list_file_facts: list[dict[str, Any]],
+) -> None:
+    """追加文件事实中的读取错误并避免 `.v` 同路径重复。
+
+    参数:
+        list_issues: 统一质量门当前累计的诊断。
+        list_file_facts: 语义报告公开的 `.v/.sv` 文件事实。
+    返回:
+        无；新增诊断直接写入传入列表。
+    """
+
+    # 已由 Verilog 读取器登记的路径不能再次生成相同 VG000。
+    set_existing_paths = {  # 已存在的文件编码错误路径
+        str(quality_issue.path or "")  # 统一路径文本用于精确去重
+        for quality_issue in list_issues  # 扫描当前全部原生诊断
+        if quality_issue.code == "VG000" and quality_issue.rule == "file.encoding"  # 编码错误范围
+    }
+
+    # 每个文件事实只在确有读取错误时参与映射。
+    for dict_file_fact in list_file_facts:
+
+        # read_error 为空表示 collector 已完整读取当前文件。
+        str_read_error = str(dict_file_fact.get("read_error") or "")  # 可选稳定读取错误
+
+        # 可读文件不产生额外输入诊断。
+        if not str_read_error:
+
+            # 可读文件不进入 VG000 编码诊断集合。
+            continue
+
+        # 公开相对路径是跨 AST 与命名预检的去重身份。
+        str_path = str(dict_file_fact.get("path") or "")  # 当前文件事实路径
+
+        # 同路径 `.v` 错误已由原生读取器登记时保持单条。
+        if str_path in set_existing_paths:
+
+            # 原生 Verilog 读取器已经拥有该路径诊断。
+            continue
+
+        # `.sv` 与尚未登记的 `.v` 使用既有公开 issue shape。
+        list_issues.append(
+            QualityIssue(
+                "VG000",  # 文件输入诊断编号
+                "error",  # 读取失败阻断交付
+                str_read_error,  # 不泄露绝对路径的稳定诊断
+                str_path,  # 相对扫描根的文件路径
+                rule="file.encoding",  # 既有文件编码规则身份
+            )
+        )
+
+        # 新增路径立即加入集合，避免事实列表内重复。
+        set_existing_paths.add(str_path)
 
 # 从检查入口收集需要进入质量门的 Verilog 源文件。
 def _quality_gate_source_files(path_root: Path, include_testbench: bool) -> list[Path]:

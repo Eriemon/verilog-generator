@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module comb_operation_budget_tb;              // 模块: 自检测试平台 - 验证流水握手与停顿保持
+module tb_comb_operation_budget;              // 模块: 自检测试平台 - 验证流水握手与停顿保持
 	reg i_clk = 1'b0;                          // 寄存器: 测试时钟 - 驱动同步逻辑
 	reg i_rstn = 1'b0;                         // 寄存器: 低有效复位 - 初始化被测模块
 	reg i_valid = 1'b0;                        // 寄存器: 输入有效 - 标记测试事务

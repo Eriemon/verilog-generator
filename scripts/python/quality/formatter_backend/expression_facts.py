@@ -12,6 +12,14 @@ from dataclasses import dataclass, replace
 # Any 描述 formatter JSON 叶节点，Iterator 描述无副作用词元流。
 from typing import Any, Iterator
 
+from .models import (
+    ExpressionFactContext,
+    ExpressionNodeFact,
+    FunctionCallFact,
+    InstanceActualFact,
+    SourceSpan,
+)
+
 # 二元优先级与 Verilog-2001 常见表达式绑定规则一致。
 dict__binary_precedence = {  # 决定二元表达式树结合顺序并直接影响组合操作锥依赖结构
     "||": 1,  # 最低层逻辑或
@@ -140,6 +148,7 @@ class NodeFactContext:
     branch_path: tuple[dict[str, Any], ...] = ()  # 当前赋值所在的运行时分支路径
 
 # Pratt 解析器只消费一个 formatter 已隔离表达式。
+@dataclass(init=False)
 class ExpressionParser:
     """使用确定优先级把 Verilog-2001 表达式解析为字典 AST。"""
 
@@ -157,6 +166,9 @@ class ExpressionParser:
 
         # 一次性固化词元，便于安全前视且不重复运行正则。
         self._tuple_tokens = tuple(_tokenize(str_expression))  # 当前表达式全部词元
+
+        # 原表达式用于 call actual 保留源码文本和精确相对范围。
+        self._str_expression = str_expression  # 函数实参切片所需的原始表达式文本
 
         # 游标始终指向下一枚尚未消费的词元。
         self._int_index = 0  # 当前词元索引
@@ -200,6 +212,9 @@ class ExpressionParser:
             raise ExpressionParseError(
                 f"> ERR: [Python] unexpected Verilog token {str_unexpected!r}"
             )
+
+        # additive aliases 让 ExpressionNodeFact 消费方无需猜测旧 `kind` 字段。
+        _decorate_expression_nodes(dict_expression)
 
         # 返回唯一根节点供赋值或控制事实引用。
         return dict_expression
@@ -464,7 +479,92 @@ class ExpressionParser:
 
         返回:
             包含全部连续选择器的类型化表达式节点。
+
+        异常:
+            ExpressionParseError: 函数调用或选择器缺少配对闭合符号。
         """
+
+        # identifier(...) 由 formatter 词元流形成零成本 function_call marker。
+        if (
+            dict_base.get("kind") == "identifier"
+            and self._peek() is not None
+            and self._peek().text == "("
+        ):
+
+            # 左括号位置是调用点身份和源码范围的共同锚点。
+            obj_open = self._advance()  # 已消费的函数调用左括号词元
+
+            # 操作数列表延续现有表达式树的递归消费接口。
+            list_operands: list[dict[str, Any]] = []  # 按源码顺序保存实参表达式树
+
+            # actual 列表额外保留文本切片和局部偏移供事实层使用。
+            list_actuals: list[dict[str, Any]] = []  # 函数实参的文本与范围事实
+
+            # 逐个消费逗号分隔的实参，直到函数调用右括号。
+            while self._peek() is not None and self._peek().text != ")":
+
+                # 起始偏移在递归解析前捕获，避免游标前移后丢失边界。
+                int_actual_start = self._peek().offset  # 当前实参在表达式内的零基起点
+
+                # 每个实参沿用 Pratt 表达式解析以保留操作语义。
+                dict_actual = self._parse_expression(0)  # 当前实参的类型化表达式树
+
+                # 下一个分隔词元位置即当前实参的排他结束偏移。
+                int_actual_end = (
+                    self._peek().offset  # 逗号或右括号之前的排他边界
+                    if self._peek() is not None  # 正常调用仍存在尾部分隔词元
+                    else len(self._str_expression)  # 异常尾部仍限制在原表达式长度内
+                )
+
+                # 现有表达式消费者通过 operands 递归访问实参。
+                list_operands.append(dict_actual)
+
+                # additive actual 事实保留原文而不要求下游重新切词。
+                list_actuals.append(
+                    {
+                        "text": self._str_expression[int_actual_start:int_actual_end].strip(),  # 当前实参原文
+                        "start": int_actual_start,  # 当前实参局部起点
+                        "end": int_actual_end,  # 当前实参局部排他终点
+                        "expression": dict_actual,  # 当前实参已解析表达式树
+                    }
+                )
+
+                # 逗号只分隔相邻实参，不属于任何实参表达式。
+                if self._peek() is not None and self._peek().text == ",":
+
+                    # 消费逗号后继续建立下一项的独立范围。
+                    self._advance()
+
+                    # 循环游标已定位到下一实参的首词元。
+                    continue
+
+                # 非逗号词元只能是调用闭合符，由下方统一校验。
+                break
+
+            # 取出闭合词元以完成调用源码范围。
+            obj_close = self._advance()  # 期望为右括号的闭合词元
+
+            # 非右括号表示调用结构不完整，禁止产生伪完整事实。
+            if obj_close.text != ")":
+
+                # 解析异常由目标级容错路径转换成局部不确定证据。
+                raise ExpressionParseError(
+                    f"> ERR: [Python] expected ')', got {obj_close.text!r}"
+                )
+
+            # marker 记录调用边界和实参，但 operation_kind 后续固定为零成本。
+            dict_base = {
+                "kind": "function_call",  # 区分调用 marker 与普通运算节点
+                "callee": str(dict_base.get("name") or ""),  # 被调用函数名称
+                "operator": str(dict_base.get("name") or ""),  # 兼容表达式节点的操作符字段
+                "operands": list_operands,  # 供递归消费者遍历的实参树
+                "actuals": list_actuals,  # 带原文与范围的实参事实
+                "offset": obj_open.offset,  # 调用左括号局部位置
+                "end_offset": obj_close.offset + 1,  # 调用右括号后的排他位置
+                "occurrence_id": (  # 函数调用在当前赋值表达式中的稳定身份
+                    f"{self._str_occurrence_prefix}:call@{obj_open.offset}"  # 同行调用的稳定源码身份
+                ),  # 当前函数调用 marker 的 source-local 编号
+            }
 
         # 只要下一词元是左方括号就继续包装一层选择节点。
         while self._peek() is not None and self._peek().text == "[":
@@ -644,6 +744,506 @@ class ExpressionParser:
                 f"> ERR: [Python] expected {str_text!r}, got {obj_token.text!r}"
             )
 
+# 不可变事实需要把容器递归转换成顺序稳定的元组。
+def _freeze_fact_value(value: object) -> object:
+    """递归冻结表达式附加属性。
+
+    参数:
+        value: 字典、序列或无需转换的标量属性。
+
+    返回:
+        可哈希且遍历顺序稳定的属性值。
+    """
+
+    # 字典按键排序后转成键值元组，消除构造顺序差异。
+    if isinstance(value, dict):
+
+        # 键统一转为字符串，与 JSON 报告的字段模型保持一致。
+        return tuple((str(key), _freeze_fact_value(item)) for key, item in sorted(value.items()))
+
+    # 列表和元组都递归冻结成同一种不可变序列。
+    if isinstance(value, (list, tuple)):
+
+        # 元素原有次序承载操作数语义，不能在冻结时排序。
+        return tuple(_freeze_fact_value(item) for item in value)
+
+    # 标量已经满足不可变事实的存储要求。
+    return value
+
+# typed tree 的 additive 字段由单一递归入口统一补齐。
+def _decorate_expression_nodes(dict_node: dict[str, Any]) -> None:
+    """为现有 typed tree 递归补充 additive 字段。
+
+    参数:
+        dict_node: ExpressionParser 生成的当前表达式节点。
+
+    返回:
+        本函数原位更新节点及子树，不返回业务值。
+    """
+
+    # 原有 kind 是节点分类的权威来源，缺失时显式标为不支持。
+    str_kind = str(dict_node.get("kind") or "unsupported")  # 当前节点的解析类别
+
+    # node_kind 是面向新事实消费者的兼容别名。
+    dict_node.setdefault("node_kind", str_kind)
+
+    # 函数调用只是结构 marker，不能增加组合操作预算。
+    dict_node.setdefault(
+        "operation_kind",  # 下游区分真实运算与零成本 marker 的字段
+        "marker" if str_kind == "function_call" else str_kind,  # 调用节点固定映射为 marker
+    )
+
+    # 每个操作数递归获得相同的 additive 字段合同。
+    for dict_child in dict_node.get("operands", []) or []:
+
+        # 非字典兼容值不属于 typed expression 子节点。
+        if isinstance(dict_child, dict):
+
+            # 子树沿用当前装饰规则，保证任意深度字段一致。
+            _decorate_expression_nodes(dict_child)
+
+# 源码范围从赋值表达式的一基起始列映射到每个局部节点。
+def _attach_expression_source_spans(
+    dict_node: dict[str, Any],
+    int_line: int,
+    int_source_column: int,
+) -> None:
+    """按表达式局部偏移补充一基源码范围。
+
+    参数:
+        dict_node: 需要写入范围的当前表达式节点。
+        int_line: 当前表达式所在的一基源码行。
+        int_source_column: 当前表达式首字符的一基源码列。
+
+    返回:
+        本函数原位更新当前节点及其子树，不返回业务值。
+    """
+
+    # 起始偏移缺失时锚定表达式首字符，避免制造零列坐标。
+    int_offset = int(dict_node.get("offset") or 0)  # 当前节点相对表达式的零基起点
+
+    # 结束偏移采用排他语义，叶节点至少覆盖一个字符。
+    int_end_offset = int(dict_node.get("end_offset") or int_offset + 1)  # 当前节点局部排他终点
+
+    # 报告统一使用一基闭区间，便于跨模块证据直接比较。
+    dict_node["span"] = {
+        "line_start": int_line,  # 节点起始源码行
+        "column_start": int_source_column + int_offset,  # 节点起始源码列
+        "line_end": int_line,  # 当前 parser 事实限定在单行表达式
+        "column_end": int_source_column + max(int_end_offset - 1, int_offset),  # 节点闭区间末列
+    }
+
+    # formatter 路径提供了真实行列，因此范围可作为权威证据。
+    dict_node["span_complete"] = True  # 当前节点范围已由 formatter 源码位置确认
+
+    # 子节点使用相同表达式原点换算各自局部偏移。
+    for dict_child in dict_node.get("operands", []) or []:
+
+        # 仅 typed tree 字典节点参与范围递归。
+        if isinstance(dict_child, dict):
+
+            # 递归写入不会改变原有表达式结构或操作身份。
+            _attach_expression_source_spans(dict_child, int_line, int_source_column)
+
+# JSON 映射和 dataclass 范围在事实入口统一归一化。
+def _span_from_mapping(value: object) -> SourceSpan:
+    """把报告映射恢复为源码范围对象。
+
+    参数:
+        value: SourceSpan、等价字典或缺失范围值。
+
+    返回:
+        可供不可变事实持有的 SourceSpan。
+    """
+
+    # 已类型化的范围无需重复构造。
+    if isinstance(value, SourceSpan):
+
+        # 保留调用方已经确认的范围对象。
+        return value
+
+    # formatter JSON 字段按四个一基坐标恢复。
+    if isinstance(value, dict):
+
+        # 缺失坐标回落到一基最小值，完整性由独立字段判定。
+        return SourceSpan(
+            int(value.get("line_start", 1)),  # 起始行
+            int(value.get("column_start", 1)),  # 起始列
+            int(value.get("line_end", 1)),  # 结束行
+            int(value.get("column_end", 1)),  # 结束列
+        )
+
+    # 兼容旧调用时返回非权威占位范围。
+    return SourceSpan(1, 1, 1, 1)
+
+# 引用集合从 typed tree 提取，避免再次扫描 Verilog 文本。
+def _node_references(dict_node: dict[str, Any]) -> tuple[str, ...]:
+    """按首次出现顺序收集表达式标识符引用。
+
+    参数:
+        dict_node: 需要遍历的 typed expression 根节点。
+
+    返回:
+        去重且保持首次出现顺序的标识符元组。
+    """
+
+    # 列表同时承担稳定次序和去重结果的存储。
+    list_references: list[str] = []  # 当前表达式已发现的标识符
+
+    # 内层访问器共享外层顺序列表以完成深度优先收集。
+    def visit(dict_current: dict[str, Any]) -> None:
+        """访问一个 typed expression 节点。
+
+        参数:
+            dict_current: 深度优先遍历中的当前节点。
+
+        返回:
+            本函数原位更新引用列表，不返回业务值。
+        """
+
+        # 只有 identifier 叶节点贡献信号或参数引用。
+        if dict_current.get("kind") == "identifier":
+
+            # 空名称不能成为跨模块端点。
+            str_name = str(dict_current.get("name") or "")  # 当前标识符文本
+
+            # 首次出现时登记，保留表达式的自然阅读顺序。
+            if str_name and str_name not in list_references:
+
+                # 同名引用只保留一个事实条目。
+                list_references.append(str_name)
+
+        # 操作数按 parser 输出顺序递归，确保结果确定。
+        for dict_child in dict_current.get("operands", []) or []:
+
+            # 非字典兼容值不属于可访问表达式节点。
+            if isinstance(dict_child, dict):
+
+                # 子树中的 identifier 进入同一个有序集合。
+                visit(dict_child)
+
+    # 从调用方给出的根节点开始完整遍历。
+    visit(dict_node)
+
+    # 元组防止消费者意外改写引用证据。
+    return tuple(list_references)
+
+# 动态选择是静态实例端点合同的局部不支持条件。
+def _contains_dynamic_select(dict_node: dict[str, Any]) -> bool:
+    """判断表达式树是否包含运行期动态选择。
+
+    参数:
+        dict_node: 需要检查的 typed expression 根节点。
+
+    返回:
+        任意层级存在动态选择时为 True，否则为 False。
+    """
+
+    # 当前节点直接标记 dynamic 时可立即结束搜索。
+    if dict_node.get("kind") == "select" and bool(dict_node.get("dynamic")):
+
+        # 动态索引无法静态映射到唯一实例端点。
+        return True
+
+    # 其余节点递归检查所有字典操作数。
+    return any(
+        _contains_dynamic_select(dict_child)  # 子树动态选择判定
+        for dict_child in dict_node.get("operands", []) or []  # 当前节点全部操作数
+        if isinstance(dict_child, dict)  # 只遍历 typed expression 节点
+    )
+
+# 不可变节点事实保留表达式结构、引用和稳定操作身份。
+def _expression_node_fact(
+    dict_node: dict[str, Any],
+    *,
+    text: str,
+    context: ExpressionFactContext,
+) -> ExpressionNodeFact:
+    """把 parser 字典树递归转换为不可变事实。
+
+    参数:
+        dict_node: ExpressionParser 生成的当前节点。
+        text: 当前 actual 的原始表达式文本。
+        context: actual 范围和 occurrence 前缀上下文。
+
+    返回:
+        可安全序列化和复用的 ExpressionNodeFact。
+    """
+
+    # 缺失解析类别时明确标记 unsupported，禁止静默按连线放行。
+    str_kind = str(dict_node.get("kind") or "unsupported")  # 当前节点类别
+
+    # 子节点先递归固化，维持原有操作数次序。
+    tuple_children = tuple(  # 按 parser 次序冻结的子节点事实
+        _expression_node_fact(dict_child, text=text, context=context)  # 当前操作数的不可变事实
+        for dict_child in dict_node.get("operands", []) or []  # parser 原始操作数序列
+        if isinstance(dict_child, dict)  # 忽略非节点兼容值
+    )
+
+    # 核心字段拥有专用 dataclass 属性，不重复进入 attributes。
+    set_reserved = {
+        "kind",  # 节点类别字段
+        "operator",  # 操作符字段
+        "operands",  # 子节点字段
+        "occurrence_id",  # 操作身份字段
+        "offset",  # 局部定位字段
+        "name",  # 标识符文本字段
+        "value",  # 字面量文本字段
+    }
+
+    # 其余 additive 属性排序并冻结，确保 JSON 与哈希稳定。
+    tuple_attributes = tuple(  # 排除核心字段后的稳定附加属性
+        (str_key, _freeze_fact_value(value))  # 当前附加属性的不可变键值对
+        for str_key, value in sorted(dict_node.items())  # 按字段名稳定排序
+        if str_key not in set_reserved  # 排除已有专用属性的核心字段
+    )
+
+    # 非运算叶节点只保存自身文本，避免每层复制完整 actual。
+    str_leaf_text = str(dict_node.get("name") or dict_node.get("value") or "")  # 标识符或字面量文本
+
+    # 构造结果同时暴露结构类别与预算操作类别。
+    return ExpressionNodeFact(
+        node_kind=str_kind,  # parser 节点分类
+        text=text if dict_node.get("occurrence_id") else str_leaf_text,  # 操作节点或叶节点文本
+        operator=str(dict_node.get("operator") or ""),  # 运算符或被调用函数名
+        operation_kind=("marker" if str_kind == "function_call" else str_kind),  # 预算类别
+        occurrence_id=str(dict_node.get("occurrence_id") or ""),  # source-local 操作身份
+        span=context.span,  # actual 的权威源码范围
+        span_complete=context.span_complete,  # 范围证据是否完整
+        references=_node_references(dict_node),  # 当前子树引用集合
+        children=tuple_children,  # 不可变操作数事实
+        attributes=tuple_attributes,  # 排序后的附加属性
+    )
+
+# 实例与函数实参共用同一个容错表达式事实入口。
+def build_instance_actual_fact(
+    text: str,
+    *,
+    context: ExpressionFactContext | None = None,
+) -> dict[str, Any]:
+    """使用现有 parser 构建实例或函数 actual 事实。
+
+    参数:
+        text: actual 的原始表达式文本。
+        context: 可选的源码范围和 occurrence 身份上下文。
+
+    返回:
+        包含引用、表达式树和局部不支持原因的事实字典。
+    """
+
+    # 旧调用缺少 formatter 范围时使用显式非完整上下文。
+    obj_context = context or ExpressionFactContext(  # 当前 actual 的范围与身份上下文
+        span=SourceSpan(1, 1, 1, 1),  # 非权威占位范围
+        span_complete=False,  # 禁止把兼容路径当作完整证据
+        occurrence_prefix="legacy:instance-actual",  # 兼容调用的隔离身份前缀
+    )
+
+    # 所有路径先建立字段完整的基础结果。
+    dict_result: dict[str, Any] = {
+        "text": text,  # actual 原始文本
+        "kind": "expression" if text.strip() else "unconnected",  # 连接状态类别
+        "span": obj_context.span,  # actual 源码范围
+        "span_complete": obj_context.span_complete,  # 范围完整性证据
+        "references": (),  # 成功解析后填充的引用集合
+        "static_lvalue_segments": (),  # 可静态映射的端点片段
+        "expression": None,  # 成功解析后填充的不可变表达式事实
+        "unsupported_reason": "",  # 当前 actual 的局部不支持原因
+    }
+
+    # 空 actual 表示显式未连接，不需要进入表达式 parser。
+    if not text.strip():
+
+        # 保留 unconnected 类别并返回字段完整的事实。
+        return dict_result
+
+    # parser 错误在 actual 粒度容错，不能中断整个模块报告。
+    try:
+
+        # 复用权威 parser 生成 typed expression tree。
+        dict_expression = ExpressionParser(text, obj_context.occurrence_prefix).parse()  # 当前 actual 表达式树
+
+        # 标识符引用由解析树提取，避免正则误认函数名或常量。
+        dict_result["references"] = _node_references(dict_expression)  # 当前 actual 的标识符引用
+
+        # 动态选择不能声称拥有静态实例端点。
+        dict_result["static_lvalue_segments"] = (
+            ()  # 动态选择没有唯一静态端点
+            if _contains_dynamic_select(dict_expression)  # 当前树包含运行期索引
+            else tuple({"name": str_name} for str_name in dict_result["references"])  # 静态引用端点
+        )
+
+        # 不支持原因只污染包含动态选择的当前 actual。
+        if _contains_dynamic_select(dict_expression):
+
+            # 文本明确指出失败的是实例静态端点合同。
+            dict_result["unsupported_reason"] = (
+                "dynamic selection is not a static instance endpoint"  # 局部不确定证据
+            )
+
+        # 最终表达式事实冻结结构并携带 actual 上下文。
+        dict_result["expression"] = _expression_node_fact(  # 不可变节点锁定实参引用关系与源码操作编号
+            dict_expression,  # 保留运算符层级与操作数次序的解析树
+            text=text,  # 操作身份冲突诊断时展示的完整实参原文
+            context=obj_context,  # 限定实参源码范围和独立操作编号空间
+        )
+
+    # 解析异常转成局部 unsupported_reason，不隐藏原始原因。
+    except ExpressionParseError as obj_error:
+
+        # 去除空白后识别 parser 尚未支持的稳定语法家族。
+        str_compact = "".join(text.split())  # 仅用于语法形状分类的紧凑文本
+
+        # 重复拼接需要专用原因，避免消费者误判为普通解析错误。
+        if re.match(r"^\{\d+\{", str_compact):
+
+            # replication 在当前版本保持 actual 级不确定。
+            dict_result["unsupported_reason"] = "unsupported replication expression"  # 重复拼接不支持原因
+
+        # 流式拼接同样不能由 Verilog-2001 parser 安全展开。
+        elif str_compact.startswith("{<<{") or str_compact.startswith("{>>{"):
+
+            # streaming 语法只阻断当前 actual 的跨层传播。
+            dict_result["unsupported_reason"] = "unsupported streaming expression"  # 流式拼接不支持原因
+
+        # 其他失败保留 parser 的精确诊断文本。
+        else:
+
+            # 原始异常描述帮助定位未知语法或缺失闭合符号。
+            dict_result["unsupported_reason"] = str(obj_error)  # parser 返回的精确局部失败原因
+
+    # 无论成功或失败都返回字段稳定的 actual 事实。
+    return dict_result
+
+# dataclass 事实在 formatter JSON 边界统一转换成普通容器。
+def _fact_to_plain(value: object) -> object:
+    """把 additive 事实转换成 JSON 兼容值。
+
+    参数:
+        value: dataclass、元组、字典或普通标量值。
+
+    返回:
+        仅由 JSON 兼容容器和标量组成的等价值。
+    """
+
+    # dataclass 字段按声明次序递归展开。
+    if hasattr(value, "__dataclass_fields__"):
+
+        # getattr 读取不可变事实的公开字段，不触碰内部状态。
+        return {
+            str_name: _fact_to_plain(getattr(value, str_name))  # 当前 dataclass 字段值
+            for str_name in value.__dataclass_fields__  # 声明顺序稳定的字段名称
+        }
+
+    # 元组在 JSON 边界转换成保持顺序的列表。
+    if isinstance(value, tuple):
+
+        # 元素继续递归处理潜在的嵌套 dataclass。
+        return [_fact_to_plain(item) for item in value]
+
+    # 字典值递归转换，键统一为 JSON 字符串。
+    if isinstance(value, dict):
+
+        # 保留现有插入顺序以维持报告幂等性。
+        return {str(key): _fact_to_plain(item) for key, item in value.items()}
+
+    # 普通标量无需转换即可进入 JSON 编码器。
+    return value
+
+# occurrence 前缀组合模块、实例、关联和 actual 四层源码身份。
+def _instance_occurrence_prefix(
+    dict_module: dict[str, Any],
+    dict_instance: dict[str, Any],
+    str_kind: str,
+    int_position: int,
+    obj_actual_span: SourceSpan,
+) -> str:
+    """构建实例 actual 的 source-local 身份。
+
+    参数:
+        dict_module: 当前实例所属的 formatter 模块报告。
+        dict_instance: 当前模块实例报告。
+        str_kind: parameter 或 port 关联类别。
+        int_position: 当前关联在类别内的位置。
+        obj_actual_span: 当前 actual 的权威源码范围。
+
+    返回:
+        隔离同名、同行和重复实例的 occurrence 前缀。
+    """
+
+    # 模块范围为跨定义身份提供第一层稳定边界。
+    obj_module_span = SourceSpan(  # 当前模块定义的一基源码范围
+        int(dict_module.get("line_start") or 1),  # 模块起始行
+        1,  # 模块身份不依赖声明缩进列
+        int(dict_module.get("line_end") or dict_module.get("line_start") or 1),  # 模块结束行
+        1,  # 模块结束列仅作身份分隔占位
+    )
+
+    # 实例范围区分同模块内同类型的多个调用点。
+    source_span_instance = _span_from_mapping(dict_instance.get("span"))  # 当前实例源码范围
+
+    # 关联类别、序号和 actual 范围共同区分端口与参数位置。
+    return (
+        f"module:{obj_module_span}|instance:{source_span_instance}|"  # 模块与实例身份段
+        f"{str_kind}:{int_position}|actual:{obj_actual_span}"  # 关联与 actual 身份段
+    )
+
+# formatter 实例关联在报告边界附加不可变表达式事实。
+def attach_instance_expression_facts(list_modules: list[dict[str, Any]]) -> None:
+    """原位丰富实例 association actual。
+
+    参数:
+        list_modules: formatter 已构建且带实例范围的模块报告。
+
+    返回:
+        本函数原位写入 actual 事实，不返回业务值。
+    """
+
+    # 每个模块独立建立 occurrence 身份空间。
+    for dict_module in list_modules:
+
+        # 实例按 formatter 源码顺序处理以维持报告稳定。
+        for dict_instance in dict_module.get("instances", []) or []:
+
+            # 参数覆盖和端口连接共享 actual 解析但保留关联类别。
+            for str_key, str_kind in (
+                ("parameter_overrides", "parameter"),  # 参数覆盖关联集合
+                ("port_associations", "port"),  # 端口连接关联集合
+            ):
+
+                # 每项关联都只替换自己的 actual 字段。
+                for dict_association in dict_instance.get(str_key, []) or []:
+
+                    # 原始 actual 已由 bracket-aware 实例解析器提供文本与范围。
+                    dict_actual = dict_association.get("actual") or {}  # 当前关联的原始 actual 映射
+
+                    # 范围对象进入不可变 expression context。
+                    source_span_actual = _span_from_mapping(dict_actual.get("span"))  # 当前 actual 源码范围
+
+                    # 位置参与身份构造，避免同名关联发生碰撞。
+                    int_position = int(dict_association.get("position") or 0)  # 当前关联顺序号
+
+                    # 上下文把 formatter 权威范围传入 expression fact。
+                    obj_context = ExpressionFactContext(  # 当前 actual 的解析与定位上下文
+                        span=source_span_actual,  # 当前 actual 的权威一基源码范围
+                        span_complete=bool(dict_actual.get("span_complete", False)),  # formatter 范围完整性
+                        occurrence_prefix=_instance_occurrence_prefix(  # 当前关联独占的操作编号前缀
+                            dict_module,  # 当前模块身份
+                            dict_instance,  # 当前实例身份
+                            str_kind,  # 当前关联类别
+                            int_position,  # 当前关联位置
+                            source_span_actual,  # 当前 actual 范围
+                        ),
+                    )
+
+                    # actual 文本通过共享 parser 建立结构化事实。
+                    dict_enriched = build_instance_actual_fact(  # parser 丰富后的 actual 事实
+                        str(dict_actual.get("text") or ""),  # formatter 已切分的 actual 原文
+                        context=obj_context,  # 当前关联的定位上下文
+                    )
+
+                    # JSON 报告边界只保存普通容器，不暴露 dataclass 实例。
+                    dict_association["actual"] = _fact_to_plain(dict_enriched)  # JSON 兼容的结构化 actual 报告
+
 # module 入口附加连续赋值和过程赋值的类型化表达式事实。
 def attach_expression_facts(list_modules: list[dict[str, Any]]) -> None:
     """原位为 formatter module 报告附加组合表达式事实。
@@ -676,6 +1276,7 @@ def attach_expression_facts(list_modules: list[dict[str, Any]]) -> None:
                         or 1
                     ),
                     "continuous",
+                    int_source_column=int(dict_assign.get("column_start") or 1),
                 )
             )
 
@@ -704,6 +1305,188 @@ def attach_expression_facts(list_modules: list[dict[str, Any]]) -> None:
 
         # module 报告只新增一个类型化事实字段，不改变既有结构节点。
         dict_module["comb_expressions"] = list_facts  # 暴露给 VG 语义引擎的类型化事实
+
+        # function_call marker 从同一 typed tree 收集，不二次扫描 Verilog 原文。
+        list_function_calls: list[dict[str, Any]] = []  # 当前模块内按源码顺序发现的函数调用
+
+        # 每条赋值事实都可能在任意表达式深度包含函数调用。
+        for dict_fact in list_facts:
+
+            # 调用事实携带赋值表达式原点以换算权威源码范围。
+            _append_function_call_facts(
+                dict_fact.get("expression"),  # 当前赋值的 typed expression tree
+                int(dict_fact.get("line") or dict_module.get("line_start") or 1),  # 表达式源码行
+                int(dict_fact.get("source_column") or 1),  # 表达式源码起始列
+                list_function_calls,  # 当前模块共享的调用事实集合
+            )
+
+        # 模块报告暴露调用事实供后续函数体专化消费。
+        dict_module["function_calls"] = list_function_calls  # 当前模块的函数调用事实
+
+        # 模板保留 formatter 已解析结构，参数特化层无需回头解析源码文本。
+        dict_module["comb_materialization_template"] = {  # 参数覆盖绑定时复用声明、控制树及子实例连接
+            "parameters": list(dict_module.get("params", [])),  # 实例覆盖值需要绑定的公开参数声明
+            "localparams": list(dict_module.get("localparams", [])),  # 参数绑定后继续求值的局部常量声明
+            "comb_expressions": list(list_facts),  # 默认参数环境下已经类型化的目标表达式事实
+            "continuous_assigns": list(dict_module.get("assigns", [])),  # 特化后重新求值的连续赋值结构
+            "control_processes": list(dict_module.get("always", [])),  # 保留分支和循环关系的过程控制树
+            "generates": list(dict_module.get("generates", [])),  # 参数确定后选择分支或展开循环的生成结构
+            "instances": list(dict_module.get("instances", [])),  # 递归跨入子模块所需的实例连接结构
+            "functions": list(dict_module.get("functions", [])),  # 调用点内联时查找函数体的本地定义集合
+            "storage_driver_templates": build_storage_driver_templates(dict_module),  # 在寄存器和锁存器边界截断组合传播的驱动模板
+        }
+
+# 函数调用从 typed tree 递归抽取为带 actual 范围的独立事实。
+def _append_function_call_facts(
+    value: object,
+    int_line: int,
+    int_source_column: int,
+    list_calls: list[dict[str, Any]],
+) -> None:
+    """递归收集 typed tree 中的函数调用 marker。
+
+    参数:
+        value: 当前 typed expression 节点或兼容空值。
+        int_line: 所属赋值表达式的一基源码行。
+        int_source_column: 所属表达式首字符的一基源码列。
+        list_calls: 当前模块共享的函数调用事实列表。
+
+    返回:
+        本函数原位追加调用事实，不返回业务值。
+    """
+
+    # 空值和非节点值不能包含函数调用子树。
+    if not isinstance(value, dict):
+
+        # 局部结束不影响同模块其他表达式事实。
+        return
+
+    # 仅 function_call 节点产生调用事实，普通操作继续递归。
+    if value.get("kind") == "function_call":
+
+        # 调用左括号偏移定位同一表达式内的独立调用点。
+        int_call_offset = int(value.get("offset") or 0)  # 调用在表达式内的零基起点
+
+        # 排他终点覆盖完整调用范围，缺失时至少覆盖一个字符。
+        int_call_end = int(value.get("end_offset") or int_call_offset + 1)  # 调用局部排他终点
+
+        # 表达式原点与局部偏移共同换算调用的一基闭区间。
+        obj_call_span = SourceSpan(  # 当前函数调用的一基闭区间
+            int_line,  # 调用起始行
+            int_source_column + int_call_offset,  # 调用起始列
+            int_line,  # 当前 parser 调用限定在单行表达式
+            int_source_column + max(int_call_end - 1, int_call_offset),  # 调用结束列
+        )
+
+        # 每个实参转换成不可变 actual 事实供函数体绑定。
+        list_actuals: list[InstanceActualFact] = []  # 当前调用的实参事实
+
+        # 实参按源码次序处理，位置直接对应函数 formal 顺序。
+        for int_position, dict_actual in enumerate(value.get("actuals", []) or []):
+
+            # parser 保存的局部起点用于精确区分同行多个实参。
+            int_start = int(dict_actual.get("start") or int_call_offset)  # 实参切片在调用表达式内的首字符偏移
+
+            # 排他终点缺失时允许零长度 unconnected 实参。
+            int_end = int(dict_actual.get("end") or int_start)  # 实参切片末字符之后的排他偏移
+
+            # actual 范围使用与调用点相同的表达式原点。
+            obj_actual_span = SourceSpan(  # 当前函数实参的一基闭区间
+                int_line,  # 实参起始行
+                int_source_column + int_start,  # 实参起始列
+                int_line,  # 当前实参结束行
+                int_source_column + max(int_end - 1, int_start),  # 实参结束列
+            )
+
+            # 前缀组合调用范围、位置和实参范围，防止操作身份碰撞。
+            str_prefix = (
+                f"function-call:{obj_call_span}|position:{int_position}|"  # 调用点与 formal 位置身份
+                f"actual:{obj_actual_span}"  # 当前实参源码范围身份
+            )
+
+            # 实参复用实例 actual parser，保持表达式支持集合一致。
+            dict_built = build_instance_actual_fact(  # 共享 parser 生成的当前函数实参事实
+                str(dict_actual.get("text") or ""),  # parser 保存的当前实参原文
+                context=ExpressionFactContext(  # 当前函数实参的权威定位与操作编号上下文
+                    span=obj_actual_span,  # 当前实参权威源码范围
+                    span_complete=True,  # formatter 调用路径提供完整范围
+                    occurrence_prefix=str_prefix,  # 当前实参独立操作身份空间
+                ),
+            )
+
+            # 函数 actual 用专用 kind 包装共享 expression fact。
+            list_actuals.append(
+                InstanceActualFact(
+                    text=str(dict_built["text"]),  # formal 绑定时保留的实参源码文本
+                    kind="function_actual",  # 区分实例连接和函数调用实参
+                    span=obj_actual_span,  # 当前实参源码范围
+                    span_complete=True,  # 当前范围可作为权威证据
+                    references=tuple(dict_built["references"]),  # 当前实参引用集合
+                    static_lvalue_segments=tuple(dict_built["static_lvalue_segments"]),  # 静态端点集合
+                    expression=dict_built["expression"],  # 当前实参不可变表达式树
+                    unsupported_reason=str(dict_built["unsupported_reason"]),  # 局部不支持原因
+                )
+            )
+
+        # 调用事实绑定 callee、actual 顺序和 source-local 调用点。
+        obj_fact = FunctionCallFact(  # 当前 typed marker 对应的不可变调用事实
+            callee=str(value.get("callee") or ""),  # 被调用的本地函数名
+            actuals=tuple(list_actuals),  # 按 formal 位置排列的实参事实
+            call_site_span=obj_call_span,  # 当前调用点源码范围
+            parse_complete=True,  # 调用括号和实参均已由 parser 闭合
+        )
+
+        # formatter JSON 只保存普通容器表示。
+        list_calls.append(_fact_to_plain(obj_fact))
+
+    # 操作数子树可能包含嵌套函数调用，需要继续深度优先遍历。
+    for dict_child in value.get("operands", []) or []:
+
+        # 子节点沿用同一表达式源码原点和结果列表。
+        _append_function_call_facts(
+            dict_child,  # 当前操作数子树
+            int_line,  # 所属表达式源码行
+            int_source_column,  # 所属表达式源码起始列
+            list_calls,  # 当前模块共享的调用事实列表
+        )
+
+# 时序过程驱动从组合表达式事实中单独形成存储模板。
+def build_storage_driver_templates(dict_module: dict[str, Any]) -> list[dict[str, Any]]:
+    """按过程分类和目标事实生成存储驱动模板。
+
+    参数:
+        dict_module: 已附加 comb_expressions 的 formatter 模块报告。
+
+    返回:
+        仅包含非组合驱动的 storage driver 模板列表。
+    """
+
+    # 连续赋值和组合过程不属于存储边界，结果只收集其余过程。
+    list_templates: list[dict[str, Any]] = []  # 当前模块的存储驱动模板
+
+    # 每条目标事实独立判定，避免一个时序目标污染其他目标。
+    for dict_fact in dict_module.get("comb_expressions", []) or []:
+
+        # formatter 过程分类是存储边界判定的权威来源。
+        str_process_kind = str(dict_fact.get("process_kind") or "unknown")  # 当前目标的过程类别
+
+        # continuous 和 comb 事实留在组合材料化路径。
+        if str_process_kind not in {"continuous", "comb"}:
+
+            # 存储模板保留右值与控制条件，供跨层锥在寄存器处切断。
+            list_templates.append(
+                {
+                    "target": str(dict_fact.get("target") or ""),  # 被存储过程驱动的目标
+                    "process_kind": str_process_kind,  # seq 或 unknown 过程类别
+                    "driver_id": str(dict_fact.get("driver_id") or ""),  # 独立过程驱动身份
+                    "expression": dict_fact.get("expression"),  # 存储数据输入表达式
+                    "controls": list(dict_fact.get("controls", [])),  # 数据更新控制条件
+                    "reset": "",  # 复位绑定由后续材料化阶段补充
+                }
+            )
+
+    # 返回列表顺序与 formatter 目标事实顺序一致。
+    return list_templates
 
 # 控制树分派函数把不同节点交给语义专用处理方法。
 def _append_node_facts(
@@ -1056,6 +1839,7 @@ def _expression_fact(
     int_line: int,
     str_process_kind: str,
     str_assignment_operator: str = "=",
+    int_source_column: int = 1,
 ) -> dict[str, Any]:
     """构造一条目标表达式事实并保留局部解析错误。
 
@@ -1066,6 +1850,7 @@ def _expression_fact(
         int_line: 当前赋值附近的源码行号。
         str_process_kind: continuous、comb、seq 或 unknown。
         str_assignment_operator: 当前赋值使用的 = 或 <=。
+        int_source_column: 右值表达式首字符的一基源码列。
 
     返回:
         可供组合锥分析器消费的单条赋值事实。
@@ -1074,7 +1859,9 @@ def _expression_fact(
     # 基础字段在解析成功或失败时都保持稳定存在。
     dict_fact: dict[str, Any] = {  # 当前目标表达式事实
         "target": str_target.strip(),  # 去除左值外围空白
+        "expression_text": str_expression,  # 保留 formatter 已隔离右值供参数化物化重建 typed occurrence
         "line": int_line,  # 赋值附近源码行号
+        "source_column": int_source_column,  # 当前表达式所在语句的一基起始列
         "process_kind": str_process_kind,  # 当前驱动过程类别
         "assignment_operator": str_assignment_operator,  # 阻塞或非阻塞语义
         "driver_id": str_prefix.split(":node", 1)[0],  # assign 或 always 独立来源
@@ -1113,7 +1900,17 @@ def _expression_fact(
     try:
 
         # 成功时保存完整类型化表达式树。
-        dict_fact["expression"] = _parsed_expression(str_expression, str_prefix)  # 类型化右值根节点
+        dict_expression = _parsed_expression(str_expression, str_prefix)  # 当前赋值右值的 typed tree
+
+        # parser 局部偏移通过赋值行列原点换算成权威源码范围。
+        _attach_expression_source_spans(
+            dict_expression,  # 需要递归附加范围的右值树
+            int_line,  # 当前赋值源码行
+            int_source_column,  # 当前右值源码起始列
+        )
+
+        # 成功事实暴露已定位的完整表达式树。
+        dict_fact["expression"] = dict_expression  # 类型化右值根节点
 
     # 专用解析异常仅影响当前目标事实。
     except ExpressionParseError as obj_error:

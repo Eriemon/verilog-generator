@@ -29,6 +29,33 @@ class VgFinding:
     # severity 允许单条规则同时产生 BLOCKER 与 WARNING 发现。
     severity: str | None = None  # finding 级治理等级；缺省时继承 catalog
 
+    # metadata 承载文件级门禁声明的固定扩展字段。
+    metadata: tuple[tuple[str, Any], ...] = ()  # 不改变旧 finding 的默认 JSON shape
+
+    # __post_init__ 阻止扩展字段覆盖既有公共合同。
+    def __post_init__(self) -> None:
+        """校验 finding 扩展字段不会覆盖稳定公共字段。
+
+        参数:
+            self: 当前不可变 VG 证据对象。
+        返回:
+            无业务返回值。
+        异常:
+            ValueError: metadata 使用保留公共字段名时抛出。
+        """
+
+        # 公共字段只能由 dataclass 的显式参数提供。
+        set_reserved_keys = {"path", "line", "message", "evidence", "severity"}  # 禁止覆盖的报告键
+
+        # 逐项检查扩展键，避免 payload.update 改写定位或等级。
+        for str_key, _ in self.metadata:
+
+            # 保留键会破坏既有 finding JSON 合同。
+            if str_key in set_reserved_keys:
+
+                # 非法扩展必须在构造阶段明确失败。
+                raise ValueError("> ERR: [Python] finding metadata 不得覆盖公共字段")
+
     # to_dict 把不可变证据模型转换为报告字典。
     def to_dict(self) -> dict[str, Any]:
         """返回 JSON 友好的证据字典。
@@ -40,13 +67,22 @@ class VgFinding:
         """
 
         # 报告字段保持与门禁结果合同一致。
-        return {
+        dict_payload = {
             "path": self.path,  # 定位触发门禁的 RTL 文件
             "line": self.line,  # 定位文件内的具体触发行
             "message": self.message,  # 面向审查者的规则诊断
             "evidence": self.evidence,  # 触发规则的最小结构证据
             "severity": self.severity,  # 可选 finding 级治理等级
-        }
+        }  # 旧 finding 的稳定报告字典
+
+        # 只有文件级门禁提供扩展事实时才增加新键。
+        if self.metadata:
+
+            # 扩展键已在构造阶段完成保留字段检查。
+            dict_payload.update(dict(self.metadata))
+
+        # 返回可直接写入 JSON 报告的字段集合。
+        return dict_payload
 
 # VgEvaluation 固定单条 active 门禁的内部执行结论。
 @dataclass(frozen=True)

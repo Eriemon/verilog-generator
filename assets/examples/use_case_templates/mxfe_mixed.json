@@ -90,7 +90,7 @@
       "language": "verilog"
     },
     {
-      "path": "tb/mxfe_mixed_bridge_tb.v",
+      "path": "tb/tb_mxfe_mixed_bridge.v",
       "kind": "testbench",
       "language": "verilog"
     }

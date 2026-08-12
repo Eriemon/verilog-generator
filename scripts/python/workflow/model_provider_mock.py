@@ -74,7 +74,9 @@ class MockModelProvider:
                 (
                     str(entry["path"])  # 命中的 testbench 路径文本
                     for entry in list_files  # 在候选输出里查找最适合故意删掉的测试台文件
-                    if entry.get("kind") == "testbench" or "_tb." in str(entry["path"]).lower()  # 优先选择测试台文件
+                    if entry.get("kind") == "testbench"  # 优先接受 manifest 显式测试台类型
+                    or str(entry["path"]).lower().replace("\\", "/").rsplit("/", 1)[-1].startswith("tb_")  # 识别规范前缀文件名
+                    or "_tb." in str(entry["path"]).lower()  # 优先选择测试台文件
                 ),
                 str(list_files[-1]["path"]),  # 没有测试台时回退到最后一个文件
             )  # 当前要剔除的错误样例文件路径

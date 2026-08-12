@@ -93,7 +93,7 @@
       "language": "verilog"
     },
     {
-      "path": "tb/ready_valid_slice_tb.v",
+      "path": "tb/tb_ready_valid_slice.v",
       "kind": "testbench",
       "language": "verilog"
     }

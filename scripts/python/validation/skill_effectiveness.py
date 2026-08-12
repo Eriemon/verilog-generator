@@ -40,7 +40,13 @@ from scripts.python.workflow.verilog_gate_catalog import (
     load_verilog_quality_gates,
     summarize_constraints_for_prompt,
 )
+# 质量门公开报告与组合锥入口共同提供状态和真实操作数证据。
 from scripts.python.quality.quality_gate import run_verilog_quality_gate
+from scripts.python.quality.vg_comb_cone import build_comb_target_cones
+from scripts.python.quality.vg_comb_model import CombTargetCone
+from scripts.python.quality.vg_semantic_facts import build_vg_facts
+
+# JSON 写出继续复用 workflow 层的确定性实现。
 from scripts.python.workflow.workspace import write_json
 
 # case 基础工具负责最核心的检查计算与文件复制。
@@ -723,6 +729,449 @@ def _evaluate_rtl_md_constraint_case(
         },
     )
 
+# 缺失或非法案例使用统一 shape，保证报告调用方无需猜测字段。
+def _semantic_case_failure(
+    str_case_id: str,
+    str_status: str,
+    str_evidence_path: str = "",
+) -> dict[str, Any]:
+    """构造无法执行的语义案例结果。
+
+    参数:
+        str_case_id: 无法执行的案例 ID。
+        str_status: missing 或 invalid 诊断状态。
+        str_evidence_path: 案例已声明的可选证据路径。
+
+    返回:
+        字段稳定且 passed 为 False 的案例结果。
+    """
+
+    # 固定字段让缺失配置也能进入标准诊断报告。
+    return {
+        "case_id": str_case_id,
+        "status": str_status,
+        "operation_count": None,
+        "evidence_path": str_evidence_path,
+        "passed": False,
+    }
+
+# 语义案例索引拒绝空 ID 和重复 ID，避免后项覆盖前项。
+def _semantic_cases_by_id(path_semantic_cases: Path) -> tuple[dict[str, dict[str, Any]], bool]:
+    """读取层次语义案例并建立唯一 ID 索引。
+
+    参数:
+        path_semantic_cases: 发布包内的语义案例 JSON 路径。
+
+    返回:
+        唯一案例索引和清单整体有效性。
+    """
+
+    # 发布包内 JSON 是 semantic case 的唯一数据源。
+    dict_payload = _read_json(path_semantic_cases)  # 完整语义案例 JSON
+
+    # 非列表输入视为不可执行配置。
+    object_declared_cases = dict_payload.get("semantic_cases", [])  # additive 案例字段
+
+    # 唯一索引只接收结构正确的列表内容。
+    dict_cases_by_id: dict[str, dict[str, Any]] = {}  # case_id 到案例定义
+
+    # 初始状态只由顶层字段类型决定。
+    bool_cases_valid = isinstance(object_declared_cases, list)  # 案例列表类型是否有效
+
+    # 无效顶层字段不会进入逐项遍历。
+    list_declared_cases = object_declared_cases if bool_cases_valid else []  # 可安全遍历的案例列表
+
+    # 每个案例必须提供非空且唯一的稳定 ID。
+    for dict_semantic_case in list_declared_cases:
+
+        # 当前案例 ID 用于查重和后续 required 选择。
+        str_semantic_id = str(dict_semantic_case.get("case_id", ""))  # 当前案例稳定 ID
+
+        # 空值或重复值使整个案例集合失败，但保留其他条目供诊断。
+        if not str_semantic_id or str_semantic_id in dict_cases_by_id:
+
+            # 重复案例不能被静默覆盖。
+            bool_cases_valid = False  # 当前案例清单包含非法 ID
+
+            # 当前非法条目不进入索引。
+            continue
+
+        # 唯一案例进入查找表。
+        dict_cases_by_id[str_semantic_id] = dict_semantic_case  # 登记当前唯一案例
+
+    # 返回索引与全局有效性。
+    return dict_cases_by_id, bool_cases_valid
+
+# 源码写入限制在隔离案例根，防止 eval JSON 越过工作区边界。
+def _write_semantic_sources(
+    path_case_root: Path,
+    object_sources: object,
+) -> bool:
+    """把一个 semantic case 的完整 source closure 写入隔离目录。
+
+    参数:
+        path_case_root: 当前案例的隔离工件根。
+        object_sources: 文件名到 Verilog 正文的映射。
+
+    返回:
+        全部路径合法且源码写入成功时返回 True。
+    """
+
+    # 案例必须声明至少一个文件名到正文的映射。
+    if not isinstance(object_sources, dict) or not object_sources:
+
+        # 空 closure 无法证明层次语义。
+        return False
+
+    # 逐文件验证相对路径后写入 Verilog 正文。
+    for str_relative_path, str_source in object_sources.items():
+
+        # Path 规范化用于拒绝绝对路径和父级跳转。
+        path_relative = Path(str(str_relative_path))  # 当前 source 的相对路径
+
+        # 任何越界路径都使该案例无效。
+        if path_relative.is_absolute() or ".." in path_relative.parts:
+
+            # 禁止继续写入未验证的路径。
+            return False
+
+        # 当前源码只会落在已隔离的案例目录下。
+        path_source = path_case_root / path_relative  # 当前 Verilog 输出文件
+
+        # 多文件 closure 可创建案例根内的必要子目录。
+        path_source.parent.mkdir(parents=True, exist_ok=True)
+
+        # JSON 正文按 UTF-8 原样写入，供 formatter 解析。
+        path_source.write_text(str(str_source), encoding="utf-8")
+
+    # 全部相对源码均已成功写入。
+    return True
+
+# gate 归属筛选与报告运行时保持相同的 loop 三态合同。
+def _semantic_cone_owned_by_gate(obj_cone: CombTargetCone, str_gate_id: str) -> bool:
+    """判断一个目标锥是否由指定 VG146/VG147 案例评估。
+
+    参数:
+        obj_cone: 当前静态目标组合锥。
+        str_gate_id: VG146 或 VG147 固定编号。
+
+    返回:
+        当前 gate 按 loop_presence 三态拥有该目标时返回 True。
+    """
+
+    # 普通 gate 接收 absent 和需要双 gate 评估的 unknown。
+    if str_gate_id == "VG146":
+
+        # VG146 的显式归属集合。
+        return obj_cone.loop_presence in {"absent", "unknown"}
+
+    # VG147 接收 present 和需要双 gate 评估的 unknown。
+    return obj_cone.loop_presence in {"present", "unknown"}
+
+# 目标选择同时绑定实例路径和静态目标，避免同名 cone 误配。
+def _select_semantic_cone(
+    tuple_cones: tuple[CombTargetCone, ...],
+    str_gate_id: str,
+    str_expected_path: str,
+    str_expected_target: str,
+) -> CombTargetCone | None:
+    """选择案例声明身份下操作数最大的唯一语义锥。
+
+    参数:
+        tuple_cones: 当前 source closure 的全部组合锥。
+        str_gate_id: 当前案例指定的 gate 编号。
+        str_expected_path: 当前案例指定的实例路径。
+        str_expected_target: 当前案例指定的静态目标。
+
+    返回:
+        完整身份匹配的最大组合锥；没有匹配时返回 None。
+    """
+
+    # 尚未发现匹配目标时保持空值。
+    obj_selected_cone: CombTargetCone | None = None  # 当前最佳身份匹配锥
+
+    # 遍历真实 semantic cone，并按完整身份过滤。
+    for obj_cone in tuple_cones:
+
+        # occurrence path 是报告中的可读实例身份。
+        str_cone_path = "/".join(obj_cone.instance_path)  # 当前 cone 的完整实例路径
+
+        # gate、路径或目标任一不匹配时跳过。
+        if (
+            not _semantic_cone_owned_by_gate(obj_cone, str_gate_id)
+            or str_cone_path != str_expected_path
+            or obj_cone.target != str_expected_target
+        ):
+
+            # 非目标 cone 不参与该案例计数。
+            continue
+
+        # 首个匹配或更大操作锥成为当前证据。
+        if obj_selected_cone is None or obj_cone.operation_count > obj_selected_cone.operation_count:
+
+            # 保留最大的完整锥，避免选中局部中间目标。
+            obj_selected_cone = obj_cone  # 更新为操作数更大的完整锥
+
+    # 返回匹配的真实锥；缺失时由调用方标记失败。
+    return obj_selected_cone
+
+# 单案例执行器同时取得公开 gate 状态和 semantic cone 计数。
+def _evaluate_registered_semantic_case(
+    dict_semantic_case: dict[str, Any],
+    str_semantic_id: str,
+    str_parent_case_id: str,
+    temp_root: Path,
+) -> dict[str, Any]:
+    """执行一个已登记的层次语义案例。
+
+    参数:
+        dict_semantic_case: 当前案例的 source closure 与期望。
+        str_semantic_id: 当前案例稳定 ID。
+        str_parent_case_id: 父 effectiveness case ID。
+        temp_root: 本轮 effectiveness 临时根。
+
+    返回:
+        含实际 gate 状态、操作数、证据路径和通过标记的结果。
+    """
+
+    # 每个案例使用独立 source closure 目录。
+    path_case_root = _prepare_case_root(  # 隔离当前案例的完整 source closure
+        temp_root,  # 父评测分配的共享临时根
+        f"{str_parent_case_id}-{str_semantic_id}",  # 当前案例的唯一目录名
+    )
+
+    # source 映射经边界检查后写入隔离目录。
+    bool_sources_ok = _write_semantic_sources(  # 当前案例源码是否全部安全写入
+        path_case_root,  # 当前案例的隔离源码目录
+        dict_semantic_case.get("sources", {}),  # JSON 声明的多文件 closure
+    )
+
+    # expected 字段声明 gate/status/count/path/target 合同。
+    dict_expected = dict_semantic_case.get("expected", {})  # 当前案例期望
+
+    # gate ID 决定选择 VG146 或 VG147 结果。
+    str_gate_id = str(dict_expected.get("gate_id", ""))  # 当前案例 gate ID
+
+    # 实例路径用于定位独立硬件 occurrence。
+    str_expected_path = str(dict_expected.get("evidence_path", ""))  # 期望实例路径
+
+    # 静态目标防止同一路径下的中间节点误配。
+    str_expected_target = str(dict_expected.get("target", ""))  # 期望目标名称
+
+    # 无效 closure 或未知 gate 不进入质量门执行。
+    if not bool_sources_ok or str_gate_id not in {"VG146", "VG147"}:
+
+        # 非法配置返回固定失败 shape。
+        return _semantic_case_failure(str_semantic_id, "invalid", str_expected_path)
+
+    # 公开质量门提供最终 gate 三态状态。
+    dict_gate_report = run_verilog_quality_gate(path_case_root).to_dict()  # source closure 的公开报告
+
+    # 从逐规则结果中提取指定 gate。
+    dict_gate_result = next(  # 当前案例指定 gate 的真实结果
+        (
+            dict_result  # 当前逐规则结果
+            for dict_result in dict_gate_report.get("vg_rule_results", [])  # 遍历公开逐规则结果
+            if dict_result.get("gate_id") == str_gate_id  # 只选择当前 gate
+        ),
+        {},
+    )
+
+    # 现有 semantic cone 入口为通过案例提供真实操作数证据。
+    tuple_cones = build_comb_target_cones(build_vg_facts(path_case_root))  # 当前 closure 的静态目标锥
+
+    # 完整身份选择结果不能从 gate aggregate 状态猜测。
+    obj_selected_cone = _select_semantic_cone(  # 与 expected 身份匹配的目标锥
+        tuple_cones,  # 当前 closure 的全部目标锥
+        str_gate_id,  # 当前案例指定的 VG146 或 VG147
+        str_expected_path,  # 当前案例指定的实例 occurrence 路径
+        str_expected_target,  # 当前案例指定的静态目标
+    )
+
+    # 缺少目标锥时计数保持 None，不使用期望值填充。
+    int_operation_count = obj_selected_cone.operation_count if obj_selected_cone else None  # 真实操作数
+
+    # IIC 案例可声明不得回归的旧 hierarchy 原因。
+    str_forbidden_reason = str(dict_expected.get("forbidden_reason", ""))  # 禁止出现的原因文本
+
+    # 原因检查覆盖当前 closure 的全部目标锥。
+    bool_forbidden_absent = not str_forbidden_reason or all(  # 禁止原因是否完全消失
+        str_forbidden_reason not in str(reason)  # 当前原因不得包含旧 hierarchy 文本
+        for obj_cone in tuple_cones  # 遍历 closure 的全部目标锥
+        for reason in obj_cone.inconclusive_reasons  # 遍历当前锥的局部原因
+    )
+
+    # 状态、计数、身份和禁止原因必须同时匹配。
+    bool_case_ok = (  # 当前 semantic case 的最终通过状态
+        dict_gate_result.get("status") == dict_expected.get("status")  # gate 三态必须匹配
+        and int_operation_count == dict_expected.get("operation_count")  # 操作数必须匹配
+        and obj_selected_cone is not None  # 完整身份必须找到真实 cone
+        and bool_forbidden_absent  # 禁止的旧 hierarchy 原因必须消失
+    )
+
+    # 返回实际观测值，避免效果报告只证明 JSON 存在。
+    return {
+        "case_id": str_semantic_id,
+        "gate_id": str_gate_id,
+        "status": dict_gate_result.get("status", "missing"),
+        "operation_count": int_operation_count,
+        "evidence_path": str_expected_path,
+        "passed": bool_case_ok,
+    }
+
+# required_case_ids 是本轮唯一执行集合，并保持声明顺序。
+def _run_required_semantic_cases(
+    case: dict[str, Any],
+    str_case_id: str,
+    temp_root: Path,
+) -> tuple[list[dict[str, Any]], bool]:
+    """加载并执行 eval case 明确要求的语义案例。
+
+    参数:
+        case: 含清单路径和 required ID 的父 eval case。
+        str_case_id: 父 eval case 的稳定 ID。
+        temp_root: 本轮 effectiveness 临时根。
+
+    返回:
+        按 required 顺序排列的逐例结果和总体通过状态。
+    """
+
+    # 发布包中的相对路径必须解析到固定 skill 根。
+    path_semantic_cases = SKILL_ROOT / str(case.get("semantic_cases", ""))  # 语义案例清单
+
+    # required ID 转为稳定字符串顺序。
+    list_required_ids = [str(item) for item in case.get("required_case_ids", [])]  # 必跑案例 ID
+
+    # 缺路径、空列表或重复 required ID 都是整体失败。
+    if (
+        not path_semantic_cases.is_file()
+        or not list_required_ids
+        or len(list_required_ids) != len(set(list_required_ids))
+    ):
+
+        # 无法安全选择案例时不执行任何隐式回退。
+        return [], False
+
+    # 已登记案例索引同时返回重复 ID 有效性。
+    tuple_case_index = _semantic_cases_by_id(path_semantic_cases)  # 案例索引和有效性
+
+    # 唯一案例索引用于 required ID 查找。
+    dict_cases_by_id = tuple_case_index[0]  # 唯一案例索引
+
+    # 清单有效性进入最终总状态。
+    bool_cases_valid = tuple_case_index[1]  # 案例清单有效性
+
+    # 结果按 required ID 原始顺序累积。
+    list_case_results: list[dict[str, Any]] = []  # 本轮逐案例报告
+
+    # 全局通过先继承案例清单有效性。
+    bool_semantic_cases_ok = bool_cases_valid  # 本轮语义案例总状态
+
+    # 只运行显式要求的案例。
+    for str_semantic_id in list_required_ids:
+
+        # 当前 ID 必须能在清单中唯一解析。
+        dict_semantic_case = dict_cases_by_id.get(str_semantic_id)  # 当前案例定义
+
+        # 缺失 ID 留下明确结果并继续报告其他案例。
+        if dict_semantic_case is None:
+
+            # 缺失案例使整体失败。
+            bool_semantic_cases_ok = False  # 缺失 required 案例
+
+            # 结果保留缺失 ID 供定位配置。
+            list_case_results.append(_semantic_case_failure(str_semantic_id, "missing"))
+
+            # 当前缺失案例没有可执行源码。
+            continue
+
+        # 实际执行公开 gate 和 semantic cone 入口。
+        dict_case_result = _evaluate_registered_semantic_case(  # 当前必跑案例结果，后续写入报告并累计总状态
+            dict_semantic_case,  # 提供当前必跑案例的源码映射和期望合同
+            str_semantic_id,  # 绑定逐例报告中的稳定案例身份
+            str_case_id,  # 派生隔离目录所需的父评测身份
+            temp_root,  # 限制案例源码写入本轮临时工作区
+        )
+
+        # 逐例结果原样进入 additive 报告。
+        list_case_results.append(dict_case_result)
+
+        # 任一案例失败都会拉低整体状态。
+        bool_semantic_cases_ok = (  # 累积后的案例总状态
+            bool_semantic_cases_ok and bool(dict_case_result["passed"])  # 累积单例通过状态
+        )
+
+    # 返回逐例报告与总状态。
+    return list_case_results, bool_semantic_cases_ok
+
+# VG semantic regression 在既有 catalog 检查后执行声明的层次语义案例。
+def _evaluate_vg_semantic_gate_regression_case(
+    case: dict[str, Any],
+    str_case_id: str,
+    temp_root: Path,
+) -> dict[str, Any]:
+    """执行 VG catalog 回归及其显式登记的层次组合锥案例。
+
+    参数:
+        case: 含 semantic 清单和原有 catalog 期望的 eval case。
+        str_case_id: 当前 eval case 的稳定 ID。
+        temp_root: 本轮 effectiveness 临时根。
+
+    返回:
+        保留旧字段并追加逐例 semantic 证据的效果报告。
+    """
+
+    # 先运行原有 blocked/clean/catalog/prompt 合同，避免削弱既有覆盖。
+    dict_report = _evaluate_rtl_md_constraint_case(  # 保存旧违规命中、clean 放行和目录覆盖报告
+        case,  # 同时携带旧 expectations 与新增 semantic 清单
+        str_case_id,  # 当前父 eval case 的稳定 ID
+        temp_root,  # 本轮评测共享的临时根
+    )
+
+    # 新入口实际加载并执行 required semantic cases。
+    tuple_semantic_results = _run_required_semantic_cases(case, str_case_id, temp_root)  # 语义结果与总状态
+
+    # 逐案例实际结果进入 additive 报告。
+    list_case_results = tuple_semantic_results[0]  # 层次语义逐案例结果
+
+    # 总状态控制顶层通过结论。
+    bool_semantic_cases_ok = tuple_semantic_results[1]  # 层次语义总状态
+
+    # additive 字段挂在既有 with_skill 报告中。
+    dict_with_skill = dict_report["with_skill"]  # 可扩展的技能侧报告
+
+    # 逐例结果包含真实 status/count/path。
+    dict_with_skill["semantic_case_results"] = list_case_results  # 逐案例实际结果
+
+    # 计数证明 required 案例确实被执行。
+    dict_with_skill["semantic_case_count"] = len(list_case_results)  # 实际执行案例数
+
+    # 总状态单独暴露给外层 confidence runner。
+    dict_with_skill["semantic_cases_ok"] = bool_semantic_cases_ok  # 五项层次案例是否全部匹配
+
+    # 标准检查集合纳入 semantic 总状态。
+    dict_with_skill["expectation_checks"]["semantic_cases_ok"] = bool_semantic_cases_ok  # 纳入标准检查
+
+    # stable 重新依据完整检查集合计算。
+    dict_with_skill["stable"] = all(dict_with_skill["expectation_checks"].values())  # 完整检查稳定性
+
+    # 顶层 passed 不允许忽略 semantic case 失败。
+    dict_report["passed"] = bool(dict_report["passed"] and bool_semantic_cases_ok)  # 顶层综合状态
+
+    # 比较计数反映新增检查项。
+    dict_report["comparison"]["with_skill_pass_count"] = sum(  # 技能侧通过检查项总数
+        1 for value in dict_with_skill["expectation_checks"].values() if value  # 仅统计通过项
+    )
+
+    # improved 保持与更新后计数一致。
+    dict_report["comparison"]["improved"] = (  # 更新后的比较结论
+        dict_report["comparison"]["with_skill_pass_count"]  # 技能侧通过项数
+        > dict_report["comparison"]["without_skill_pass_count"]  # 必须优于无技能基线
+    )
+
+    # 返回兼容旧字段且包含真实 semantic 证据的报告。
+    return dict_report
+
 # transform case 验证分析、脚手架、分区辅助和语义比较链路。
 def _evaluate_transform_case(
     case: dict[str, Any],
@@ -1143,13 +1592,13 @@ def _evaluate_batch_case(
         # 第二个及之后的 spec 会追加序号，避免输出路径互相覆盖。
         if int_index > 1:
 
-            # 模块名加后缀后，能够直接从输出文件名看出 batch 序号。
-            dict_spec["name"] = f"{dict_spec['name']}_{int_index}"  # batch 内的唯一模块名
+            # batch 序号放入功能名前缀，避免形成 VG148 禁止的独立数字后缀。
+            dict_spec["name"] = f"batch{int_index}_{dict_spec['name']}"  # batch 内的唯一功能名
 
             # outputs 列表也要同步改名，才能验证 batch 输出隔离。
             dict_spec["outputs"] = [
                 {"path": f"rtl/{dict_spec['name']}.v", "kind": "source", "language": "verilog"},  # 主 RTL 输出路径
-                {"path": f"tb/{dict_spec['name']}_tb.v", "kind": "testbench", "language": "verilog"},  # 对应 testbench 输出路径
+                {"path": f"tb/tb_{dict_spec['name']}.v", "kind": "testbench", "language": "verilog"},  # 对应 testbench 输出路径
             ]  # 当前 batch spec 的输出契约
 
         # 加入 batch 输入列表，保持原顺序。
@@ -1918,5 +2367,5 @@ CASE_EVALUATORS: dict[str, CaseEvaluator] = {  # 供 _evaluate_case 按 kind 查
     "verify_existing_rtl_repair_regression": _evaluate_verify_existing_rtl_repair_case,  # 核对 RTL repair 的应用边界
     "verify_existing_rtl_patch_library_regression": _evaluate_verify_existing_rtl_patch_library_case,  # 核对 patch-library 分类路径
     "routing_regression": _evaluate_routing_case,  # 核对只读 route 决策字段
-    "vg_semantic_gate_regression": _evaluate_rtl_md_constraint_case,  # 核对固定 RTL VG 门禁注入与执行
+    "vg_semantic_gate_regression": _evaluate_vg_semantic_gate_regression_case,  # 核对固定 VG 门禁与层次语义案例
 }  # kind 到具体 evaluator 的查找表

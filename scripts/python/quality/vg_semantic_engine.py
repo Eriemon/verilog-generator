@@ -24,6 +24,7 @@ from .vg_comb_cone import build_comb_target_cones, evaluate_comb_operation_gate
 
 # 状态机、复位和结构模块承载本轮新增的语义域。
 from .vg_fsm_rules import evaluate_fsm_gate
+from .vg_file_rules import evaluate_file_gate
 from .vg_reset_rules import evaluate_reset_gate
 from .vg_structure_rules import evaluate_structure_gate
 
@@ -78,6 +79,9 @@ STRUCTURE_GATES = frozenset({"VG104", "VG130", "VG136", "VG145"})  # 组合结�
 # 组合预算规则共享一次分析合同，但按是否包含 for 克隆节点分配所有权。
 COMB_OPERATION_GATES = frozenset({"VG146", "VG147"})  # 普通与循环组合操作预算编号
 
+# 文件命名规则独立于 formatter AST 来源与解析状态执行。
+FILE_NAMING_GATES = frozenset({"VG148", "VG149"})  # .v/.sv 文件级预检编号
+
 # run_vg_semantic_gate 是迁移语义规则的内部执行入口。
 def run_vg_semantic_gate(
     root: Path,
@@ -91,7 +95,7 @@ def run_vg_semantic_gate(
     external_interface_sources: tuple[Path, ...] = (),
     catalog: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """运行 VG072 至 VG147 语义门禁并返回 fail-closed 报告。
+    """运行 VG072 至 VG149 语义门禁并返回 fail-closed 报告。
 
     参数:
         root: 待检查的 Verilog 文件或目录。
@@ -103,7 +107,7 @@ def run_vg_semantic_gate(
         catalog: 可选的已验证统一目录；由外层质量门提供时禁止再次加载。
 
     返回:
-        包含 76 条逐门禁结果、摘要和交付结论的字典。
+        包含 78 条逐门禁结果、摘要和交付结论的字典。
     """
 
     # 绝对路径保证报告和 formatter 扫描使用同一目标。
@@ -120,7 +124,7 @@ def run_vg_semantic_gate(
     int_comb_operation_limit = int(dict_catalog["config"][COMB_OPERATION_LIMIT_KEY])  # 每目标组合操作预算
 
     # 单次事实构建避免每条规则重复解析 RTL。
-    vg_facts = facts or build_vg_facts(  # 当前目标的可信 VG 扫描事实
+    vg_facts_vg_facts: VgFacts = facts or build_vg_facts(  # 当前目标的可信 VG 扫描事实
         path_root,  # 待分析的规范 RTL 入口
         spec=spec,  # 可选设计规格
         include_testbench=include_testbench,  # testbench 纳入策略
@@ -128,10 +132,10 @@ def run_vg_semantic_gate(
     )
 
     # 两条组合预算规则共享一次不可变锥构建，禁止重复分析产生漂移。
-    tuple_comb_cones = build_comb_target_cones(vg_facts)  # VG146/VG147 共享目标锥快照
+    tuple_comb_cones = build_comb_target_cones(vg_facts_vg_facts)  # VG146/VG147 共享目标锥快照
 
     # 结果列表严格按 catalog 顺序保留全部激活和预留编号。
-    list_results: list[dict[str, Any]] = []  # 76 条逐门禁结果
+    list_results: list[dict[str, Any]] = []  # 78 条逐门禁结果
 
     # 只执行迁移后的语义段；既有 VG000-VG071 由统一质量门原生规则负责。
     for dict_rule in dict_catalog["rules"]:
@@ -146,7 +150,7 @@ def run_vg_semantic_gate(
         list_results.append(
             _evaluate_catalog_rule(
                 dict_rule,
-                vg_facts,
+                vg_facts_vg_facts,
                 int_comb_operation_limit,
                 tuple_comb_cones,
             )
@@ -162,15 +166,23 @@ def run_vg_semantic_gate(
     bool_delivery_ready = not dict_delivery_issues  # 当前 strict 策略下的交付结论
 
     # 公开报告由独立构造函数保持执行流程紧凑。
-    return _build_report(
-        path_root=path_root,
-        strict=strict,
-        catalog_version=str(dict_catalog["version"]),
-        delivery_ready=bool_delivery_ready,
-        delivery_issues=dict_delivery_issues,
-        summary=dict_summary,
-        results=list_results,
+    dict_report = _build_report(  # 当前语义门禁的稳定公开报告
+        path_root=path_root,  # 报告绑定的规范扫描根
+        strict=strict,  # WARNING 级规则阻断策略
+        catalog_version=str(dict_catalog["version"]),  # 目录版本
+        delivery_ready=bool_delivery_ready,  # 当前交付结论
+        delivery_issues=dict_delivery_issues,  # 规则阻断计数
+        summary=dict_summary,  # 全部状态汇总
+        results=list_results,  # catalog 顺序的逐规则结果
     )
+
+    # 文件事实作为加法字段公开，不扩大报告构造 helper 的参数面。
+    dict_report["file_facts"] = [  # 宿主确认流程消费的公开文件角色事实
+        file_fact.to_dict() for file_fact in vg_facts_vg_facts.files  # 移除内部绝对路径
+    ]
+
+    # 返回同时包含逐规则结果和文件角色事实的报告。
+    return dict_report
 
 # _build_report 统一稳定的公开字段和修复语义。
 def _build_report(
@@ -233,6 +245,15 @@ def _evaluate_catalog_rule(
 
     # 固定编号同时用于路由和最终报告主键。
     str_gate_id = str(dict_rule["gate_id"])  # 当前 catalog 规则编号
+
+    # 文件门禁必须先于 AST 空输入与解析错误短路独立执行。
+    if str_gate_id in FILE_NAMING_GATES:
+
+        # VG148/VG149 只读取独立收集的 .v/.sv 文件事实。
+        vg_file_evaluation = evaluate_file_gate(str_gate_id, facts.files)  # 当前文件门结论
+
+        # 文件门结论沿用统一 catalog 报告 shape。
+        return _result_dict(dict_rule, vg_file_evaluation)
 
     # 没有 RTL 输入时激活门禁统一 fail-closed 为 not_run。
     if not facts.sources:
@@ -311,6 +332,12 @@ def _run_active_evaluator(
         对应语义模块生成的逐门禁结论。
     """
 
+    # 文件门路由保留显式分支，供直接 evaluator 调用保持一致。
+    if str_gate_id in FILE_NAMING_GATES:
+
+        # 文件门只消费预检事实，不读取 formatter AST。
+        return evaluate_file_gate(str_gate_id, facts.files)
+
     # 新组合预算组必须先于旧结构组接管 VG146/VG147。
     if str_gate_id in COMB_OPERATION_GATES:
 
@@ -373,6 +400,64 @@ def _run_active_evaluator(
     # 其余激活编号属于既有控制结构组。
     return evaluate_control_gate(str_gate_id, facts)
 
+# 组合预算 finding 按公开定位与层次 evidence 稳定排序。
+def _ordered_findings(dict_rule: dict[str, Any], evaluation: VgEvaluation) -> tuple[VgFinding, ...]:
+    """返回保持兼容或按组合预算身份排序的 finding 集合。
+
+    参数:
+        dict_rule: 当前固定规则的 catalog 元数据。
+        evaluation: 对应规则实现生成的执行结论。
+
+    返回:
+        普通规则保持原顺序，VG146/VG147 使用确定性顺序的 finding 元组。
+    """
+
+    # 非组合预算规则继续保持各自既有 finding 顺序合同。
+    if str(dict_rule["gate_id"]) not in COMB_OPERATION_GATES:
+
+        # 原始不可变元组无需复制或重新排序。
+        return evaluation.findings
+
+    # evidence 已按固定 key=value 字段包含完整报告身份和 gate ID。
+    return tuple(
+        sorted(
+            evaluation.findings,
+            key=lambda obj_finding: (
+                obj_finding.path,
+                obj_finding.line,
+                obj_finding.evidence,
+                str(dict_rule["gate_id"]),
+            ),
+        )
+    )
+
+# 组合预算 finding 在 message 中镜像 evidence，供既有 issue-only Markdown writer 展示。
+def _public_finding_dict(dict_rule: dict[str, Any], obj_finding: VgFinding) -> dict[str, Any]:
+    """把 finding 映射为保持 schema-v2 的公开字典。
+
+    参数:
+        dict_rule: 当前固定规则的 catalog 元数据。
+        obj_finding: 当前规则生成的不可变定位证据。
+
+    返回:
+        字段结构不变且组合预算 message 可被 Markdown 完整展示的字典。
+    """
+
+    # 标准模型先生成 path、line、message、evidence 和 severity 固定字段。
+    dict_finding = obj_finding.to_dict()  # 当前 finding 的 schema-v2 字典
+
+    # 普通 VG 规则继续保持既有 message 文本和 evidence 分离合同。
+    if str(dict_rule["gate_id"]) not in COMB_OPERATION_GATES or not obj_finding.evidence:
+
+        # 未变化的 finding 字典直接进入公开结果。
+        return dict_finding
+
+    # 既有 Markdown writer 只读取 message，因此镜像同一层次 evidence 文本。
+    dict_finding["message"] = f"{obj_finding.message} Evidence: {obj_finding.evidence}"  # Markdown 可见组合证据
+
+    # evidence 字段继续作为机器读取的权威结构化字符串。
+    return dict_finding
+
 # _result_dict 集中定义单条 VG 结果的公开字段。
 def _result_dict(dict_rule: dict[str, Any], evaluation: VgEvaluation) -> dict[str, Any]:
     """合并 catalog 元数据与执行结论。
@@ -384,6 +469,9 @@ def _result_dict(dict_rule: dict[str, Any], evaluation: VgEvaluation) -> dict[st
         可序列化的单条 VG 公开结果。
     """
 
+    # 组合预算结果在公开序列化前执行最后一道确定性 finding 排序。
+    tuple_findings = _ordered_findings(dict_rule, evaluation)  # 当前规则公开输出顺序的 finding 集合
+
     # 所有字段在此集中映射，避免各规则模块形成报告漂移。
     return {
         "gate_id": dict_rule["gate_id"],
@@ -393,7 +481,7 @@ def _result_dict(dict_rule: dict[str, Any], evaluation: VgEvaluation) -> dict[st
         "status": evaluation.status,
         "applicable": evaluation.applicable,
         "message": evaluation.message,
-        "findings": [obj_finding.to_dict() for obj_finding in evaluation.findings],
+        "findings": [_public_finding_dict(dict_rule, obj_finding) for obj_finding in tuple_findings],
     }
 
 # _summarize_results 同时统计目录状态和执行状态。

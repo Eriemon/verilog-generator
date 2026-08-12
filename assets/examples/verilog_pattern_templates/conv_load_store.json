@@ -35,6 +35,6 @@
   "constraints": ["Use synthesizable Verilog-2001."],
   "outputs": [
     {"path": "rtl/conv_load_store_engine.v", "kind": "source", "language": "verilog"},
-    {"path": "tb/conv_load_store_engine_tb.v", "kind": "testbench", "language": "verilog"}
+    {"path": "tb/tb_conv_load_store_engine.v", "kind": "testbench", "language": "verilog"}
   ]
 }

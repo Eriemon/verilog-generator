@@ -15,6 +15,9 @@ from typing import Any, Iterator
 # formatter_ast 提供唯一受信任的 Verilog 解析入口。
 from .formatter_ast import build_ast_report_for_path, iter_verilog_sources, read_verilog_source
 
+# 文件命名预检独立覆盖 .v 与 .sv，不受 formatter AST 支持边界限制。
+from .vg_file_rules import VgFileFacts, collect_vg_file_facts
+
 # VgSourceFacts 保存单个文件的原文与 formatter AST。
 @dataclass(frozen=True)
 class VgSourceFacts:
@@ -51,6 +54,9 @@ class VgFacts:
 
     # spec 保留调用方提供的归一化设计合同。
     spec: dict[str, Any]  # 可供接口和时钟规则消费的规格
+
+    # files 保存独立于 formatter AST 的 .v/.sv 文件预检事实。
+    files: tuple[VgFileFacts, ...] = ()  # VG148/VG149 消费的文件事实
 
     # external_modules 只供需要跨模块接口的规则消费，不进入普通 RTL 规则扫描。
     external_modules: tuple[dict[str, Any], ...] = ()  # 受治理 stub 提供的模块接口
@@ -131,13 +137,24 @@ def build_vg_facts(
             )
         )
 
+    # 在主返回对象外预先完成可选依赖读取，避免表达式过度密集。
+    tuple_external_modules = _load_external_modules(external_interface_sources)  # 供下游规则使用
+
+    # 文件角色事实复用本轮已经构建的 formatter 报告。
+    tuple_file_facts = collect_vg_file_facts(  # 全部 `.v/.sv` 文件角色事实
+        path_root,  # 当前扫描根
+        spec,  # 可选角色确认规格
+        reports=tuple(source.report for source in list_sources),  # 本轮唯一 formatter 报告集合
+    )
+
     # 不可变事实对象防止规则之间相互污染输入。
     return VgFacts(
         root=path_root,  # 本轮扫描的规范根路径
         sources=tuple(list_sources),  # 稳定顺序的文件事实
         parse_errors=tuple(list_parse_errors),  # 所有阻断解析诊断
         spec=dict(spec or {}),  # 复制可选规格，隔离调用方后续修改
-        external_modules=_load_external_modules(external_interface_sources),
+        external_modules=tuple_external_modules,  # 已冻结的可选依赖
+        files=tuple_file_facts,  # 文件命名与角色事实
     )
 
 # build_vg_facts_from_reports 复用统一质量门的 AST，避免二次解析。
@@ -213,6 +230,7 @@ def build_vg_facts_from_reports(
         parse_errors=tuple(list_parse_errors),  # 复用报告内的 formatter 错误集合
         spec=dict(spec or {}),  # 为语义规则复制可选设计合同
         external_modules=_load_external_modules(external_interface_sources),  # VG097 外部接口集合
+        files=collect_vg_file_facts(path_root, spec, reports=reports),  # 复用报告并补齐 .sv
     )
 
 # 外部接口装载与普通 RTL 事实隔离，避免 stub 触发无关规则。

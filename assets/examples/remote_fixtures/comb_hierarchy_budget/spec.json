@@ -1,0 +1,49 @@
+{
+  "name": "comb_hierarchy_budget",
+  "target": "rtl",
+  "rtl_dialect": "verilog",
+  "design_requirements": {
+    "target": "rtl",
+    "pipeline_required": false,
+    "streamability": "non_streamable",
+    "interface_family": "native",
+    "interface_profile": {},
+    "confirmed_by_user": true,
+    "confirmation_notes": "Remote fixture proving a complete hierarchical combinational source closure."
+  },
+  "streamability": "non_streamable",
+  "interface_family": "native",
+  "interface_profile": {},
+  "pipeline_required": false,
+  "codegen_plan_required": true,
+  "description": "Compile and simulate a three-operation representative after separate hierarchical source-closure probes.",
+  "interfaces": {
+    "ports": [
+      {"name": "i_a", "direction": "input", "width": 1},
+      {"name": "i_b", "direction": "input", "width": 1},
+      {"name": "i_c", "direction": "input", "width": 1},
+      {"name": "o_y", "direction": "output", "width": 1}
+    ]
+  },
+  "behavior": [
+    "Compute i_a AND i_b as the first operation.",
+    "OR the intermediate with i_c as the second operation.",
+    "Invert the two-operation intermediate to form a three-operation simulation fixture."
+  ],
+  "clock": {},
+  "reset": {},
+  "constraints": [
+    "Use synthesizable Verilog-2001.",
+    "Keep the representative simulation operation cone at three operations."
+  ],
+  "outputs": [
+    {"path": "rtl/comb_hierarchy_budget.v", "kind": "source", "language": "verilog"},
+    {"path": "tb/tb_comb_hierarchy_budget.v", "kind": "testbench", "language": "verilog"}
+  ],
+  "notes": [
+    "Sibling .v files are quality-gate probes and are intentionally excluded from simulation outputs."
+  ],
+  "subfunctions": [],
+  "workflow": {},
+  "performance": {}
+}

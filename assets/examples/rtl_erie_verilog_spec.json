@@ -77,7 +77,7 @@
       "language": "verilog"
     },
     {
-      "path": "tb/erie_adapter_tb.v",
+      "path": "tb/tb_erie_adapter.v",
       "kind": "testbench",
       "language": "verilog"
     }

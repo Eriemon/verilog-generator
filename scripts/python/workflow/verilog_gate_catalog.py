@@ -18,8 +18,8 @@ from typing import Any
 # 资产路径相对技能根解析，安装后无需依赖当前工作目录。
 ASSET_PATH = Path(__file__).resolve().parents[3] / "assets" / "verilog_quality_gates.json"  # 统一 VG catalog 路径
 
-# 编号序列保留既有 VG 空洞，并追加连续 VG072 至 VG147。
-EXPECTED_GATE_IDS = (  # 125 个实际发射的统一 VG 编号
+# 编号序列保留既有 VG 空洞，并追加连续 VG072 至 VG149。
+EXPECTED_GATE_IDS = (  # 127 个实际发射的统一 VG 编号
     *(f"VG{int_index:03d}" for int_index in range(0, 16)),  # 首段连续编号
     *(f"VG{int_index:03d}" for int_index in range(20, 26)),  # 第二段连续编号
     "VG030",  # 原生检查单点编号一
@@ -27,7 +27,7 @@ EXPECTED_GATE_IDS = (  # 125 个实际发射的统一 VG 编号
     "VG040",  # 中段原生规则起点
     "VG041",  # 中段原生规则次项
     "VG042",  # 中段原生规则末项
-    *(f"VG{int_index:03d}" for int_index in range(50, 148)),  # 主体连续编号
+    *(f"VG{int_index:03d}" for int_index in range(50, 150)),  # 主体连续编号
 )
 
 # 目录只允许阻断和警告两种治理等级。
@@ -37,7 +37,7 @@ ALLOWED_LEVELS = frozenset({"BLOCKER", "WARNING"})  # 合法 catalog 等级
 ALLOWED_STATUSES = frozenset({"active"})  # 合法 catalog 状态
 
 # v6 统一目录的固定版本、总数、状态和等级计数。
-EXPECTED_CATALOG_COUNTS = (6, 125, 125, 0, 125, 0, 55, 70)  # 统一 catalog 不变量期望元组
+EXPECTED_CATALOG_COUNTS = (6, 127, 127, 0, 127, 0, 57, 70)  # 统一 catalog 不变量期望元组
 
 # 组合逻辑预算配置键由目录统一拥有，规则实现不得内置业务阈值。
 COMB_OPERATION_LIMIT_KEY = "max_combinational_operations_per_target"  # 每目标组合操作上限键
@@ -174,16 +174,16 @@ def _validate_catalog(dict_payload: dict[str, Any]) -> None:
     # rules 是后续所有固定合同检查的基础列表。
     list_rules = dict_payload.get("rules")  # catalog 的规则记录集合
 
-    # 统一目录必须始终完整包含 125 条实际规则。
-    if not isinstance(list_rules, list) or len(list_rules) != 125:
+    # 统一目录必须始终完整包含 127 条实际规则。
+    if not isinstance(list_rules, list) or len(list_rules) != 127:
 
         # 缺项或额外项都会破坏固定编号合同。
-        raise ValueError("> ERR: [Python] Verilog VG catalog must contain exactly 125 rules.")
+        raise ValueError("> ERR: [Python] Verilog VG catalog must contain exactly 127 rules.")
 
     # 编号列表用于一次性核对连续性、顺序和唯一性。
     list_gate_ids = [  # catalog 实际固定编号顺序
         str(dict_rule.get("gate_id") or "")  # 当前规则编号或空占位
-        for dict_rule in list_rules  # 遍历全部 125 条记录
+        for dict_rule in list_rules  # 遍历全部 127 条记录
     ]
 
     # 精确元组比较同时防止重复、跳号和乱序。

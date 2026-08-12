@@ -1,4 +1,4 @@
-module comb_parity_mux_tb;	//模块声明，定义当前 mock 设计单元。
+module tb_comb_parity_mux;	//模块声明，定义当前 mock 设计单元。
 	reg i_sel = 1'b0;	//寄存器声明，保存时序路径中的中间状态。
 	reg [7:0] i_a = 8'd0;	//寄存器声明，保存时序路径中的中间状态。
 	reg [7:0] i_b = 8'd0;	//寄存器声明，保存时序路径中的中间状态。

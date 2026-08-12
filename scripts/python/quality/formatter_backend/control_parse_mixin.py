@@ -42,14 +42,26 @@ from .models import (
     # 过程块模型覆盖 always、initial、function 和 task。
     AlwaysBlock,
     InstanceBlock,
+    InstanceActualFact,
+    InstanceAssociation,
+    SourceSpan,
+    # generate、initial 和 function 容器保留各自结构边界。
     GenerateBlock,
     InitialBlock,
     FunctionBlock,
+    FunctionDefinitionFact,
+    FunctionFormalFact,
     TaskBlock,
     # raw/preprocessor 模型保留无法结构化重写的 body 片段。
     RawBlock,
     PreprocessorConditional,
 )
+
+# 实例关联 helper 与 canonical renderer 共用同一套括号感知切分结果。
+from .statement_render_mixin import parse_instance_associations
+
+# 本地函数返回赋值复用 formatter 唯一表达式解析器生成 typed tree。
+from .expression_facts import ExpressionParseError, ExpressionParser
 
 # header 元数据模型由顶层解析结果继续复用。
 from .models import (
@@ -944,6 +956,36 @@ class ControlParseMixin(ControlNodeParseMixin):
             int_line_index,  # assign 关键字所在行
         )  # continuous assign 收集结果
 
+        # 同行多个 assign 在 formatter 层拆成独立事实和调用点身份。
+        list_assign_statements = self._split_instance_declarations(  # 同行 continuous assign 片段
+            tuple_assign_declaration[0]  # 完整声明文本可能包含多个顶层分号
+        )  # 按括号外分号得到的独立语句
+
+        # 多条语句递归复用单 assign parser，避免复制 lhs/rhs 合同。
+        if len(list_assign_statements) > 1:
+
+            # 每个片段只含一个完整 assign，递归深度固定为一层。
+            for int_assign_index, str_assign_statement in enumerate(list_assign_statements):
+
+                # 前导注释只属于同行的第一条 continuous assign。
+                list_assign_comments = (  # 当前拆分 assign 的前导注释
+                    list(list_pending_comments)  # 首条 assign 继承原行前导说明
+                    if int_assign_index == 0  # 同行后续 assign 不重复复制说明
+                    else []  # 非首条 assign 保持空前导注释
+                )
+
+                # 单语句递归路径复用原有结构化解析和 block 记录。
+                self._handle_assign_body_line(
+                    dict_body_items,
+                    [str_assign_statement],
+                    0,
+                    str_assign_statement,
+                    list_assign_comments,
+                )
+
+            # 外层扫描仍消费原始源码中的这一整行。
+            return True, tuple_assign_declaration[2], []
+
         # match_assign 捕获 formatter 需要拆开的 delay、lhs 和 rhs 片段。
         match_assign = re.search(  # continuous assign 字段捕获结果
             r"assign\s+(?P<delay>#\s*(?:\([^)]*\)|\S+)\s+)?(?P<lhs>.+?)\s*=\s*(?P<rhs>.+?);$",  # delay/lhs/rhs 提取表达式
@@ -1487,20 +1529,111 @@ class ControlParseMixin(ControlNodeParseMixin):
         # str_instance_text 保留完整实例声明文本。
         str_instance_text = "\n".join(list_block_lines).strip()  # 完整实例声明文本
 
-        # payload_instance 提取模块名、实例名和参数化标志。
-        payload_instance = self._parse_instance_block(str_instance_text)  # 实例结构模型
+        # 同一源码行允许连续出现多个完整实例声明，每个实例保持独立身份。
+        list_instance_texts = self._split_instance_declarations(str_instance_text)  # 独立实例声明文本
 
-        # 实例前导注释只挂到当前实例，不传给后续声明。
-        payload_instance.leading_comments = list(list_pending_comments)  # 实例前导注释副本
+        # 每个独立声明分别进入实例和 block 顺序集合。
+        for int_instance_index, str_single_instance in enumerate(list_instance_texts):
 
-        # instances 分类保留实例结构。
-        dict_body_items["instances"].append(payload_instance)
+            # payload_instance 提取模块名、实例名和参数化标志。
+            payload_instance = self._parse_instance_block(str_single_instance)  # 实例结构模型
 
-        # blocks 顺序列表保留实例声明位置。
-        dict_body_items["blocks"].append(BodyBlock("instance_block", str_instance_text, payload_instance))
+            # 同行多实例只让第一个实例继承这一组前导注释。
+            payload_instance.leading_comments = (  # 当前实例前导注释副本
+                list(list_pending_comments)  # 同行首实例继承原结构说明
+                if int_instance_index == 0  # 仅第一条声明拥有该前导注释
+                else []  # 后续实例避免重复同一说明
+            )
+
+            # instances 分类保留实例结构。
+            dict_body_items["instances"].append(payload_instance)
+
+            # blocks 顺序列表保留实例声明位置。
+            dict_body_items["blocks"].append(
+                BodyBlock("instance_block", str_single_instance, payload_instance)
+            )
 
         # 实例声明消费到闭合行之后。
         return True, int_scan_index + 1, []
+
+    # 顶层分号 splitter 同时服务同行实例和同行 continuous assign。
+    def _split_instance_declarations(self, text: str) -> list[str]:
+        """在括号深度为零处分割同行的多个声明。
+
+        参数:
+            text: 可能含多个顶层 Verilog 声明的完整文本。
+        返回:
+            按源码顺序排列的独立分号闭合声明。
+        """
+
+        # 已闭合声明按出现顺序累积。
+        list_items: list[str] = []  # 顶层分号切分出的声明
+
+        # 圆括号深度屏蔽函数调用或实例 actual 内部字符。
+        int_depth = 0  # 当前圆括号嵌套深度
+
+        # 当前声明从上一顶层分号之后开始。
+        int_start = 0  # 当前声明起始偏移
+
+        # 字符串内的分号和括号都不具有结构含义。
+        bool_in_string = False  # 当前是否位于双引号字符串
+
+        # 逐字符扫描保持每条声明的原始文本顺序。
+        for int_index, str_char in enumerate(text):
+
+            # 未转义引号切换字符串扫描状态。
+            if str_char == '"' and (int_index == 0 or text[int_index - 1] != "\\"):
+
+                # 后续字符是否忽略结构符号由新状态决定。
+                bool_in_string = not bool_in_string  # 当前双引号范围状态
+
+                # 引号本身不参与括号或分号判断。
+                continue
+
+            # 字符串内部保持原文，但跳过结构扫描。
+            if bool_in_string:
+
+                # 当前字符不能关闭声明或改变括号深度。
+                continue
+
+            # 左括号打开实际参数或函数调用范围。
+            if str_char == "(":
+
+                # 嵌套深度阻止内部内容被误拆成新声明。
+                int_depth += 1  # 进入一层圆括号
+
+            # 右括号关闭最近一层表达式范围。
+            elif str_char == ")":
+
+                # 回到零后下一个分号才可以闭合声明。
+                int_depth -= 1  # 离开一层圆括号
+
+            # 只有括号外分号才是声明边界。
+            elif str_char == ";" and int_depth == 0:
+
+                # 当前片段包含终止分号，去除声明外围空白。
+                str_item = text[int_start : int_index + 1].strip()  # 当前完整声明文本
+
+                # 空片段不应生成伪实例或伪 assign。
+                if str_item:
+
+                    # 非空声明保持源码位置顺序写入结果。
+                    list_items.append(str_item)
+
+                # 下一条声明从当前分号后一字符开始。
+                int_start = int_index + 1  # 后续声明起始偏移
+
+        # 尾部文本用于识别没有分号的保守 fallback 片段。
+        str_tail = text[int_start:].strip()  # 最后顶层分号之后的文本
+
+        # 非空尾部仍需保留，后续 parser 决定是否完整。
+        if str_tail:
+
+            # 未闭合尾部不得静默丢失。
+            list_items.append(str_tail)
+
+        # 没有切出条目时保留调用方原文本以维持 legacy 行为。
+        return list_items or [text]
 
     # 实例识别前先排除明显属于控制流或声明的 Verilog 行。
     def _is_disallowed_instance_start(self, stripped: str) -> bool:
@@ -1870,57 +2003,201 @@ class ControlParseMixin(ControlNodeParseMixin):
         )
 
     # 实例块解析只提取模块名、实例名和参数化标志，不重写端口文本。
-    def _parse_instance_block(self, text: str) -> InstanceBlock:
+    def _parse_instance_block(
+        self,
+        text: str,
+        *,
+        span: SourceSpan | None = None,
+    ) -> InstanceBlock:
         """
         从完整实例声明文本中提取实例元数据。
 
         :param text: 已收集完整的 Verilog 实例声明文本。
+        :param span: report 主路径提供的实例绝对源位置；兼容调用可省略。
         :return: 保留原始文本并带模块名、实例名和参数化标志的 InstanceBlock。
         """
 
-        # str_first_line 提供实例模块名和简单实例名的首行候选。
-        str_first_line = text.splitlines()[0].strip()  # 实例声明首行
+        # 共用 helper 先产生 renderer 与 report 一致的关联结构。
+        dict_parsed = parse_instance_associations(text)  # 无副作用实例关联解析结果
 
-        # match_module 提取模块名和是否存在参数列表。
-        match_module = re.match(r"(?P<module>\w+)\s*(?P<params>#\s*\()?", str_first_line)  # 模块名匹配结果
-
-        # str_module_name 是实例所属模块类型。
-        str_module_name = match_module.group("module") if match_module else ""  # 实例模块名
-
-        # bool_has_params 标记实例是否带参数化 `#(...)`。
-        bool_has_params = bool(match_module and match_module.group("params"))  # 实例参数化标志
-
-        # str_instance_name 后续会被简单实例名或参数化实例名覆盖。
-        str_instance_name = ""  # 实例名候选
-
-        # match_simple_name 处理非参数化实例的常见首行形态。
-        match_simple_name = re.match(r"^\w+\s+(\w+)(?:\s*\[[^\]]+\])?\s*\(", str_first_line)  # 简单实例名匹配
-
-        # 简单实例声明可直接从首行得到实例名。
-        if match_simple_name:
-
-            # str_instance_name 保存首行匹配到的实例标识符。
-            str_instance_name = match_simple_name.group(1)  # 简单实例名
-
-        # str_compact_text 压缩多行实例声明，便于参数化实例名匹配。
-        str_compact_text = " ".join(text.split())  # 压缩后的实例声明文本
-
-        # match_param_name 在 `#(...) instance (` 后提取实例名。
-        match_param_name = re.search(r"\)\s*(\w+)(?:\s*\[[^\]]+\])?\s*\(", str_compact_text)  # 参数化实例名匹配
-
-        # 参数化实例名优先覆盖简单候选。
-        if match_param_name:
-
-            # str_instance_name 保存参数列表之后的实例标识符。
-            str_instance_name = match_param_name.group(1)  # 参数化实例名
-
-        # 返回实例模型，保留原始声明文本供渲染阶段直接输出。
-        return InstanceBlock(
-            text=text,
-            module_name=str_module_name,
-            instance_name=str_instance_name,
-            has_params=bool_has_params,
+        # 首行仍用于带注释 legacy 实例的基础 module identity fallback。
+        str_first_line = (  # 实例声明首个可见源码行
+            text.splitlines()[0].strip()  # 首行去除外围空白
+            if text.splitlines()  # 非空实例文本才可读取首行
+            else ""  # 空文本保持空 identity
         )
+
+        # legacy 模块匹配保留旧 renderer 对注释实例的兼容识别。
+        match_legacy_module = re.match(  # legacy 模块名和参数井号匹配
+            r"(?P<module>[A-Za-z_]\w*)\s*(?P<params>#\s*\()?",  # 实例模块头形态
+            str_first_line,  # 只读取实例声明首行
+        )
+
+        # 压缩文本只用于兼容提取实例名，不参与 actual 事实构建。
+        str_legacy_compact = " ".join(text.split())  # legacy identity 单行候选文本
+
+        # 非参数化 legacy 实例名位于模块名之后。
+        match_legacy_name = re.match(  # 普通实例名称匹配
+            r"^[A-Za-z_]\w*\s+(?P<name>[A-Za-z_]\w*)",  # 模块名后首标识符
+            str_legacy_compact,  # 压缩后的完整实例声明
+        )
+
+        # 参数化实例需要从参数右括号之后重新定位实例名。
+        if match_legacy_module and match_legacy_module.group("params"):
+
+            # 参数区后的名称匹配覆盖普通模块后首标识符候选。
+            match_legacy_name = re.search(  # 参数化实例名称匹配
+                r"\)\s*(?P<name>[A-Za-z_]\w*)(?:\s*\[[^\]]+\])?\s*\(",  # 参数闭合后的实例头
+                str_legacy_compact,  # 压缩后的参数化实例文本
+            )
+
+        # 缺少 report 上下文的旧调用使用固定默认 span。
+        source_span_obj_span: SourceSpan = span or SourceSpan(1, 1, 1, 1)  # 实例块行列范围
+
+        # 只有显式传入 span 的 report 主路径可以声明位置完整。
+        bool_span_complete = span is not None  # 实例位置是否来自完整源码
+
+        # 局部构造器把参数或端口 helper 记录转换成不可变模型。
+        def build_associations(str_key: str, str_kind: str) -> tuple[InstanceAssociation, ...]:
+            """把 helper 记录转换为兼容的不可变关联事实。
+
+            参数:
+                str_key: 需要读取的参数或端口关联字段名。
+                str_kind: 写入 actual 的 parameter 或 port 类别。
+            返回:
+                保持声明顺序的不可变关联元组。
+            """
+
+            # 当前关联集合独立累积，避免参数和端口交叉污染。
+            list_result: list[InstanceAssociation] = []  # 已转换关联模型
+
+            # helper 记录已经按源码顺序完成括号感知切分。
+            for dict_item in dict_parsed.get(str_key, []):
+
+                # actual 原实例文本起点用于完整源码 span 换算。
+                int_start = int(dict_item.get("actual_start", 0))  # actual 相对起始偏移
+
+                # actual 非包含终点确保空连接也能表达零长度范围。
+                int_end = int(dict_item.get("actual_end", int_start))  # actual 相对结束偏移
+
+                # actual 行列范围从实例绝对起点和相对字符范围共同计算。
+                source_span_obj_actual_span: SourceSpan = self._relative_source_span(  # actual 完整源位置
+                    text,  # 原始实例声明文本
+                    source_span_obj_span,  # 实例块绝对行列范围
+                    int_start,  # actual 在实例中的起始偏移
+                    int_end,  # actual 在实例中的非包含结束偏移
+                )
+
+                # actual 基础事实先保留文本、类别和权威位置状态。
+                instance_actual_fact_obj_actual: InstanceActualFact = InstanceActualFact(  # 当前关联 actual 模型
+                    text=str(dict_item.get("actual_text", "")),  # helper 保留的 actual 原文
+                    kind=str_kind,  # 参数覆盖或端口连接类别
+                    span=(  # legacy 路径禁止暴露伪绝对位置
+                        source_span_obj_actual_span  # report 主路径的真实行列范围
+                        if bool_span_complete  # 仅完整实例上下文可使用换算位置
+                        else SourceSpan(1, 1, 1, 1)  # 兼容调用保持默认位置
+                    ),
+                    span_complete=bool_span_complete,  # actual 位置证据完整性
+                )
+
+                # 关联模型复用 actual span 并保留 formal 和显式空连接。
+                list_result.append(
+                    InstanceAssociation(
+                        formal_name=str(dict_item.get("formal_name", "")),  # named formal 或空字符串
+                        position=int(dict_item.get("position", len(list_result))),  # 所属关联区位置
+                        actual=instance_actual_fact_obj_actual,  # 当前实际参数基础事实
+                        explicit_unconnected=bool(dict_item.get("explicit_unconnected", False)),  # 显式空括号标志
+                        span=instance_actual_fact_obj_actual.span,  # 关联诊断沿用 actual 范围
+                        span_complete=bool_span_complete,  # 关联位置证据完整性
+                    )
+                )
+
+            # 不可变元组防止 enrichment 阶段重排关联顺序。
+            return tuple(list_result)
+
+        # 返回实例模型时保留旧字段并追加结构化关联事实。
+        return InstanceBlock(
+            text=text,  # 原实例声明文本
+            module_name=str(
+                dict_parsed.get("module_name")  # 首选完整关联 parser 的模块名
+                or (match_legacy_module.group("module") if match_legacy_module else "")  # 注释实例 fallback
+            ),  # 被例化模块 identity
+            instance_name=str(
+                dict_parsed.get("instance_name")  # 首选结构化实例名
+                or (match_legacy_name.group("name") if match_legacy_name else "")  # legacy 名称候选
+            ),  # 当前实例 identity
+            has_params=bool(
+                dict_parsed.get("parameter_overrides", [])  # 结构化参数覆盖存在标志
+                or (match_legacy_module and match_legacy_module.group("params"))  # legacy 参数井号标志
+            ),  # 实例是否包含参数区
+            span=source_span_obj_span,  # 实例块绝对或兼容默认位置
+            span_complete=bool_span_complete,  # 实例位置证据是否完整
+            association_style=str(dict_parsed.get("association_style", "")),  # 实例连接总体形式
+            port_associations=build_associations("port_associations", "port"),  # 端口连接事实
+            parameter_overrides=build_associations("parameter_overrides", "parameter"),  # 参数覆盖事实
+            array_range_text=str(dict_parsed.get("array_range_text", "")),  # 静态实例数组范围
+            parse_complete=bool(dict_parsed.get("parse_complete", False)),  # 关联是否可权威绑定
+            unsupported_reason=str(dict_parsed.get("unsupported_reason", "")),  # 当前实例局部原因
+        )
+
+    # 相对 span helper 将 actual 字符范围平移到完整源文件坐标。
+    def _relative_source_span(
+        self,
+        text: str,
+        block_span: SourceSpan,
+        int_start: int,
+        int_end: int,
+    ) -> SourceSpan:
+        """把实例块内字符范围换算成完整源文件的一基位置。
+
+        参数:
+            text: 原始实例声明文本。
+            block_span: 实例块在完整源文件中的位置。
+            int_start: actual 相对实例文本的起始偏移。
+            int_end: actual 相对实例文本的非包含结束偏移。
+        返回:
+            actual 在完整源文件中的一基闭区间位置。
+        """
+
+        # actual 之前的文本决定其相对行增量和当前行前缀长度。
+        str_before = text[:int_start]  # 实例起点到 actual 起点之前的文本
+
+        # 换行数量直接平移到实例起始行号。
+        int_line_delta = str_before.count("\n")  # actual 相对实例起点的行增量
+
+        # actual 起始行由实例绝对行加相对换行数得到。
+        int_line_start = block_span.line_start + int_line_delta  # actual 一基起始行
+
+        # 同首行时继承实例起始列，后续行从第一列重新计数。
+        int_column_start = (
+            block_span.column_start + len(str_before.rsplit("\n", 1)[-1])  # 首行沿用实例列偏移
+            if int_line_delta == 0  # actual 仍在实例首行
+            else len(str_before.rsplit("\n", 1)[-1]) + 1  # 后续行使用一基列号
+        )  # actual 一基起始列
+
+        # actual 原文用于计算跨行结束位置。
+        str_actual = text[int_start:int_end]  # actual 精确源码切片
+
+        # actual 内部换行数决定结束行相对起始行的增量。
+        int_end_line_delta = str_actual.count("\n")  # actual 自身行跨度
+
+        # 结束行覆盖 actual 最后一个字符所在行。
+        int_line_end = int_line_start + int_end_line_delta  # actual 一基结束行
+
+        # 跨行 actual 的结束列只由最后一行文本长度决定。
+        if int_end_line_delta:
+
+            # 空末行仍保持合法的一基列号。
+            int_column_end = len(str_actual.rsplit("\n", 1)[-1]) or 1  # 跨行 actual 结束列
+
+        # 单行 actual 的结束列从起始列和字符长度计算。
+        else:
+
+            # 空 actual 起止列相同，非空切片使用闭区间末列。
+            int_column_end = int_column_start + max(len(str_actual) - 1, 0)  # 单行 actual 结束列
+
+        # 返回 immutable span 供 association 和 expression context 复用。
+        return SourceSpan(int_line_start, int_column_start, int_line_end, int_column_end)
 
     # generate 块需要按嵌套深度收集到匹配的 endgenerate。
     def _collect_generate_block(self, lines: list[str], start: int) -> tuple[list[str], int]:
@@ -2080,7 +2357,10 @@ class ControlParseMixin(ControlNodeParseMixin):
             if str_normalized_line.startswith("endfunction"):
 
                 # payload_function 封装已闭合函数源码，供 body 分类桶引用。
-                payload_function = FunctionBlock(lines=list_block_lines)  # 完整 function 源码模型
+                payload_function = FunctionBlock(  # 当前已闭合函数块模型
+                    lines=list_block_lines,  # function 到 endfunction 的规范化行
+                    definition=self._build_function_definition(list_block_lines),  # 结构化函数定义事实
+                )  # 完整 function 源码模型
 
                 # 返回函数模型和 endfunction 后的继续扫描位置。
                 return payload_function, int_index + 1
@@ -2093,6 +2373,139 @@ class ControlParseMixin(ControlNodeParseMixin):
             "unsupported_shape",
             lines[start].strip(),
             "> ERR: [Python] Close each function block with endfunction before formatting.",
+        )
+
+    # function 事实构建只消费 FunctionBlock 已收集的边界内文本。
+    def _build_function_definition(self, lines: list[str]) -> FunctionDefinitionFact:
+        """从已闭合 function block 构建声明顺序稳定的定义事实。
+
+        参数:
+            lines: formatter 已确认闭合的 function 源码行。
+        返回:
+            包含名称、formal、返回目标和局部原因的定义事实。
+        """
+
+        # 完整函数文本用于查找 formal 和返回赋值，边界仍由 parser 保证。
+        str_source = "\n".join(lines)  # 已闭合 function block 文本
+
+        # 声明头只读取第一行，避免函数体标识符误作定义名。
+        str_header = lines[0] if lines else ""  # function 声明头文本
+
+        # 定义名匹配兼容 automatic、signed 和返回位宽前缀。
+        match_name = re.search(  # 未命中触发不支持声明分支，命中后读取名称捕获组
+            r"\bfunction\b(?:\s+automatic)?(?:\s+signed)?(?:\s+\[[^\]]+\])?\s+(?P<name>[A-Za-z_]\w*)",  # 允许自动修饰、符号位和返回宽度的函数声明形态
+            str_header,  # 仅函数声明头参与名称提取
+        )
+
+        # 无法识别定义名时保留稳定局部不完整事实。
+        if not match_name:
+
+            # 默认 span 表示当前 parser 尚未接收完整文件位置上下文。
+            return FunctionDefinitionFact(
+                name="",  # 未识别函数名称
+                formals=(),  # 无法安全绑定 formal
+                return_target="",  # 缺名称时没有隐式返回目标
+                body_expressions=(),  # 禁止从不完整声明推导函数体事实
+                span=SourceSpan(1, 1, 1, 1),  # 兼容默认函数位置
+                parse_complete=False,  # 定义声明不完整
+                unsupported_reason="unsupported_function_declaration",  # 稳定局部失败原因
+            )
+
+        # Verilog function 名称同时承担返回赋值目标。
+        str_name = match_name.group("name")  # 当前函数定义名称
+
+        # formal 按 input 声明和逗号内顺序累积。
+        list_formals: list[FunctionFormalFact] = []  # 有序函数形参事实
+
+        # 每个 input 声明可同时声明一个或多个 formal。
+        for match_formal in re.finditer(
+            r"\binput\b\s*(?P<width>(?:signed\s*)?(?:\[[^\]]+\]\s*)?)(?P<names>[A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)",  # input 宽度与名称组
+            str_source,  # 已闭合函数块文本
+        ):
+
+            # 同一 input 声明中的名称继续按照原始逗号顺序展开。
+            for str_formal_name in match_formal.group("names").split(","):
+
+                # 每个 formal 使用当前累计长度获得稳定位置。
+                list_formals.append(
+                    FunctionFormalFact(
+                        name=str_formal_name.strip(),  # 当前 input formal 名称
+                        position=len(list_formals),  # formal 声明顺序位置
+                        direction="input",  # Verilog function 只接受输入形参
+                        width_text=match_formal.group("width").strip(),  # signed 与 range 文本
+                        span=SourceSpan(1, 1, 1, 1),  # 等待 report 层补齐位置
+                    )
+                )
+
+        # 返回赋值表达式保持函数体出现顺序。
+        list_body_expressions: list[dict[str, object]] = []  # function 返回赋值事实
+
+        # 只捕获以函数名为 lhs 的返回赋值，不把局部变量误作返回值。
+        for match_assignment in re.finditer(
+            rf"\b{re.escape(str_name)}\s*=\s*(?P<expression>[^;]+);",  # 隐式返回目标赋值
+            str_source,  # 完整函数块文本
+        ):
+
+            # formatter 已隔离当前返回右值，可直接进入唯一 ExpressionParser。
+            str_expression = match_assignment.group("expression").strip()  # 当前函数返回右值
+
+            # 返回事实同时保留原文、typed tree 和局部错误合同。
+            dict_body_fact: dict[str, object] = {  # 当前函数返回赋值事实
+                "target": str_name,  # Verilog function 隐式返回目标
+                "expression_text": str_expression,  # 保留已隔离右值供报告审计
+                "parse_error": "",  # 成功路径保持空局部原因
+            }
+
+            # 调用位置前缀区分同一函数体内的多条返回赋值。
+            str_occurrence_prefix = f"function:{str_name}:body@{match_assignment.start('expression')}"  # 当前函数体表达式的 source-local 身份前缀
+
+            # 解析失败只污染当前 body fact，不中断函数定义目录。
+            try:
+
+                # 独立 parser 实例把当前 body 保持在自身 occurrence 编号空间。
+                function_body_parser = ExpressionParser(str_expression, str_occurrence_prefix)  # 当前函数返回右值的唯一 parser 实例
+
+                # 完整消费右值词元后再公开 typed tree。
+                dict_parsed_expression = function_body_parser.parse()  # 当前函数体解析后的 typed expression
+
+                # body fact 保存已验证树，供后续冻结索引直接消费。
+                dict_body_fact["expression"] = dict_parsed_expression  # 当前函数返回赋值的结构化数据依赖根
+
+            # 专用解析异常转换为当前 body fact 的局部原因。
+            except ExpressionParseError as error:
+
+                # 空 tree 阻止 tracing 把失败正文当作零操作。
+                dict_body_fact["expression"] = None  # 当前失败 body 不提供 typed tree
+
+                # 原始 parser 原因保留给目标级 inconclusive finding。
+                dict_body_fact["parse_error"] = str(error)  # 当前 body 的精确解析原因
+
+            # typed body fact 保持函数体源码出现顺序。
+            list_body_expressions.append(dict_body_fact)
+
+        # 函数体内调用自身形成局部递归停止原因。
+        str_reason = (  # 当前函数定义局部不完整原因
+            "recursive_function"  # 递归边禁止无限展开
+            if re.search(  # 从声明头之后查找自身调用
+                rf"\b{re.escape(str_name)}\s*\(",  # 当前函数名调用形态
+                "\n".join(lines[1:]),  # 函数体文本不含定义头
+            )
+            else ""  # 非递归函数保持空原因
+        )
+
+        # 返回 immutable definition 供 report 和特化层复用。
+        return FunctionDefinitionFact(
+            name=str_name,  # 函数定义标识符
+            formals=tuple(list_formals),  # 按声明顺序冻结的 input formal
+
+            # 返回目标和函数体事实保持 Verilog 隐式返回语义。
+            return_target=str_name,  # Verilog function 隐式返回信号
+            body_expressions=tuple(list_body_expressions),  # 返回赋值表达式事实
+
+            # 定义位置和完整性控制后续递归展开边界。
+            span=SourceSpan(1, 1, 1, 1),  # report 层补齐前的兼容位置
+            parse_complete=not bool(str_reason),  # 非递归定义可进入展开
+            unsupported_reason=str_reason,  # 递归定义的局部停止原因
         )
 
     # task 块按 endtask 闭合，保持原始顺序交给渲染层。

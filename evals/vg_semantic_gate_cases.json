@@ -113,6 +113,127 @@
     "positive": "canonical_clean",
     "inconclusive": "formatter_parse_error"
   },
+  "file_naming_cases": [
+    {
+      "case_id": "vg148_version_suffix_reject",
+      "gate_id": "VG148",
+      "filename": "module_v1.v",
+      "source": "module module_v1;\nendmodule\n",
+      "expected": {"status": "failed", "applicable": true}
+    },
+    {
+      "case_id": "vg148_numeric_suffix_reject",
+      "gate_id": "VG148",
+      "filename": "module_123.v",
+      "source": "module module_123;\nendmodule\n",
+      "expected": {"status": "failed", "applicable": true}
+    },
+    {
+      "case_id": "vg148_width_suffix_allow",
+      "gate_id": "VG148",
+      "filename": "counter_32bit.v",
+      "source": "module counter_32bit;\nendmodule\n",
+      "expected": {"status": "passed", "applicable": true}
+    },
+    {
+      "case_id": "vg148_protocol_digit_allow",
+      "gate_id": "VG148",
+      "filename": "axi4_lite.v",
+      "source": "module axi4_lite;\nendmodule\n",
+      "expected": {"status": "passed", "applicable": true}
+    },
+    {
+      "case_id": "vg149_suffix_tb_reject",
+      "gate_id": "VG149",
+      "filename": "counter_tb.v",
+      "source": "module counter_tb;\nendmodule\n",
+      "expected": {"status": "failed", "applicable": true, "confirmation_required": false}
+    },
+    {
+      "case_id": "vg149_counter_ambiguous",
+      "gate_id": "VG149",
+      "filename": "counter.v",
+      "source": "module counter();\ninitial begin\n    #1;\n    $finish;\nend\nendmodule\n",
+      "expected": {"status": "inconclusive", "applicable": true, "confirmation_required": true}
+    },
+    {
+      "case_id": "vg149_counter_confirmed_testbench_reject",
+      "gate_id": "VG149",
+      "filename": "counter.v",
+      "source": "module counter();\ninitial begin\n    #1;\n    $finish;\nend\nendmodule\n",
+      "spec": {"file_role_confirmations": {"counter.v": "testbench"}},
+      "expected": {"status": "failed", "applicable": true, "confirmation_required": false, "confirmed_role": "testbench"}
+    }
+  ],
+  "semantic_cases": [
+    {
+      "case_id": "hierarchy_1_plus_2_pass",
+      "sources": {
+        "hierarchy_within_budget.v": "module hierarchy_pass_child\n(\n    input wire a,\n    input wire b,\n    input wire c,\n    output wire y\n);\nwire pair;\nassign pair = a & b;\nassign y = pair | c;\nendmodule\nmodule hierarchy_1_plus_2\n(\n    input wire a,\n    input wire b,\n    input wire c,\n    input wire d,\n    output wire y\n);\nwire child_y;\nhierarchy_pass_child u_child (.a(a), .b(b), .c(c), .y(child_y));\nassign y = child_y ^ d;\nendmodule\n"
+      },
+      "expected": {
+        "gate_id": "VG146",
+        "status": "passed",
+        "operation_count": 3,
+        "evidence_path": "hierarchy_1_plus_2",
+        "target": "y"
+      }
+    },
+    {
+      "case_id": "hierarchy_2_plus_2_fail",
+      "sources": {
+        "hierarchy_over_budget.v": "module hierarchy_fail_child\n(\n    input wire a,\n    input wire b,\n    input wire c,\n    output wire y\n);\nwire pair;\nassign pair = a & b;\nassign y = pair | c;\nendmodule\nmodule hierarchy_2_plus_2\n(\n    input wire a,\n    input wire b,\n    input wire c,\n    input wire d,\n    input wire e,\n    output wire y\n);\nwire child_y;\nwire parent_pair;\nhierarchy_fail_child u_child (.a(a), .b(b), .c(c), .y(child_y));\nassign parent_pair = child_y ^ d;\nassign y = parent_pair & e;\nendmodule\n"
+      },
+      "expected": {
+        "gate_id": "VG146",
+        "status": "failed",
+        "operation_count": 4,
+        "evidence_path": "hierarchy_2_plus_2",
+        "target": "y"
+      }
+    },
+    {
+      "case_id": "hierarchy_q_cut_pass",
+      "sources": {
+        "hierarchy_q_cut.v": "module hierarchy_q_child\n(\n    input wire clk,\n    input wire a,\n    input wire b,\n    input wire c,\n    output reg y\n);\nalways @(posedge clk) begin\n    y <= (a & b) | c;\nend\nendmodule\nmodule hierarchy_q_cut\n(\n    input wire clk,\n    input wire a,\n    input wire b,\n    input wire c,\n    input wire d,\n    output wire y\n);\nwire child_q;\nhierarchy_q_child u_child (.clk(clk), .a(a), .b(b), .c(c), .y(child_q));\nassign y = child_q ^ d;\nendmodule\n"
+      },
+      "expected": {
+        "gate_id": "VG146",
+        "status": "passed",
+        "operation_count": 1,
+        "evidence_path": "hierarchy_q_cut",
+        "target": "y"
+      }
+    },
+    {
+      "case_id": "hierarchy_child_loop_vg147",
+      "sources": {
+        "hierarchy_child_loop.v": "module hierarchy_loop_child\n(\n    input wire [3:0] data,\n    output reg parity\n);\ninteger i;\nalways @(*) begin\n    parity = 1'b0;\n    for (i = 0; i < 4; i = i + 1) begin\n        parity = parity ^ data[i];\n    end\nend\nendmodule\nmodule hierarchy_child_loop\n(\n    input wire [3:0] data,\n    output wire parity\n);\nwire child_parity;\nhierarchy_loop_child u_child (.data(data), .parity(child_parity));\nassign parity = child_parity;\nendmodule\n"
+      },
+      "expected": {
+        "gate_id": "VG147",
+        "status": "failed",
+        "operation_count": 4,
+        "evidence_path": "hierarchy_child_loop/u_child",
+        "target": "parity"
+      }
+    },
+    {
+      "case_id": "iic_hierarchy_source_closure",
+      "sources": {
+        "iic_leaf.v": "module iic_leaf\n(\n    input wire a,\n    input wire b,\n    input wire c,\n    output wire y,\n    inout wire alert_n\n);\nwire pair;\nassign pair = a & b;\nassign y = pair | c;\nassign alert_n = 1'bz;\nendmodule\n",
+        "iic_top.v": "module iic_top\n(\n    a,\n    b,\n    c,\n    d,\n    y,\n    alert_n\n);\ninput a;\ninput b;\ninput c;\ninput d;\noutput y;\ninout alert_n;\nwire y;\ntri1 alert_n;\nwire child_y;\niic_leaf u_leaf (.a(a), .b(b), .c(c), .y(child_y), .alert_n(alert_n));\nassign y = child_y ^ d;\nendmodule\n"
+      },
+      "expected": {
+        "gate_id": "VG146",
+        "status": "inconclusive",
+        "operation_count": 3,
+        "evidence_path": "iic_top",
+        "target": "y",
+        "forbidden_reason": "hierarchy expansion is unavailable"
+      }
+    }
+  ],
   "cases": {
     "VG072": {
       "positive": "open_drain_inout",
@@ -1041,6 +1162,18 @@
         "VG082",
         "VG119"
       ]
+    },
+    "VG148": {
+      "positive": "vg148_width_suffix_allow",
+      "negative": "vg148_version_suffix_reject",
+      "inconclusive": "vg149_counter_ambiguous",
+      "allowed_overlaps": []
+    },
+    "VG149": {
+      "positive": "vg148_protocol_digit_allow",
+      "negative": "vg149_suffix_tb_reject",
+      "inconclusive": "vg149_counter_ambiguous",
+      "allowed_overlaps": []
     }
   }
 }

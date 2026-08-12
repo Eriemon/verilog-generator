@@ -9,14 +9,351 @@ import re
 # Any 仅描述 formatter JSON 事实中尚未收窄的叶节点。
 from typing import Any
 
-# 不可变目标结果及纯 finding 适配器统一承载计数、定位和诊断格式。
-from .vg_comb_model import CombTargetCone, build_over_limit_finding, build_unknown_finding
+# 不可变目标结果统一承载计数、层次身份和诊断定位。
+from .vg_comb_model import (
+    CombTargetCone,
+    DefinitionRoot,
+    HierarchyGraph,
+    ScopedTarget,
+)
+
+# 纯选择、常量和路径覆盖算法由 selectors 模块统一拥有，旧私有名称保持兼容。
+from .vg_comb_selectors import (
+    base_target as _base_target,
+    constant_truth_value as _constant_truth_value,
+    facts_cover_all_paths as _facts_cover_all_paths,
+    is_constant_expression as _is_constant_expression,
+)
+
+# 引用遍历、控制选择编号与目标规范化继续通过旧私有名称调用。
+from .vg_comb_selectors import (
+    reference_targets as _reference_targets,
+    runtime_operands as _runtime_operands,
+    selector_id as _selector_id,
+    static_target as _static_target,
+)
+
+# hierarchy tracing 入口建立跨实例 cone 并保留完整 occurrence identity。
+from .vg_comb_tracing import trace_target_cone
+
+# source-only 实现索引和 definition roots 驱动每个独立层级图入口。
+from .vg_comb_targets import (
+    build_hierarchy_bindings,
+    build_module_implementation_index,
+    enumerate_definition_roots,
+)
 
 # 标准 VG 模型保证新门禁沿用既有通过、失败和不确定协议。
 from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passed
 
 # 共享事实入口防止组合锥分析重新扫描 Verilog 源文本。
 from .vg_semantic_facts import VgFacts
+
+# 两条组合预算规则使用显式三态归属表，禁止退回 contains_for 布尔推导。
+def _owned_by_gate(loop_presence: str, gate_id: str) -> bool:
+    """判断循环三态组合锥是否归当前预算门禁评估。
+
+    参数:
+        loop_presence: absent、present 或 unknown 循环证据。
+        gate_id: VG146 或 VG147 固定编号。
+
+    返回:
+        当前 gate 是否必须评估该组合锥。
+    """
+
+    # unknown 同时进入两条 gate，确保未知循环归属不会静默放行。
+    if loop_presence == "unknown":
+
+        # 两条组合预算规则共享同一未知目标下界。
+        return gate_id in {"VG146", "VG147"}
+
+    # 确定 absent/present 分别由普通与循环预算规则独占。
+    return (loop_presence == "absent" and gate_id == "VG146") or (
+        loop_presence == "present" and gate_id == "VG147"
+    )
+
+# definition root 文本保留来源、模块名和完整定义范围。
+def _definition_root_text(obj_cone: CombTargetCone) -> str:
+    """序列化 finding evidence 使用的定义根身份。
+
+    参数:
+        obj_cone: 当前待报告的目标组合锥。
+
+    返回:
+        跨进程稳定的定义根身份文本。
+    """
+
+    # 旧 module-local cone 没有新身份字段时使用既有路径和模块定位。
+    if obj_cone.definition_root is None:
+
+        # 兼容身份仍可稳定区分来源文件和模块名。
+        return f"{obj_cone.path}:{obj_cone.module}"
+
+    # 完整定义范围区分同文件中的重复 module 声明。
+    obj_span = obj_cone.definition_root.definition_span  # 当前 root 的一基定义范围
+
+    # evidence 使用可读且稳定的 source/module/span 组合。
+    return (
+        f"{obj_cone.definition_root.relative_path}:{obj_cone.definition_root.module_name}@"
+        f"{obj_span.line_start}:{obj_span.column_start}-"
+        f"{obj_span.line_end}:{obj_span.column_end}"
+    )
+
+# 报告身份严格包含 root、实例路径、特化、目标和 gate 编号。
+def _cone_report_identity(obj_cone: CombTargetCone, gate_id: str) -> tuple[object, ...]:
+    """构造组合预算 finding 的唯一去重身份。
+
+    参数:
+        obj_cone: 当前待评估的目标组合锥。
+        gate_id: 当前 VG146 或 VG147 编号。
+
+    返回:
+        可排序且只在完全相同报告身份间相等的元组。
+    """
+
+    # source path 已进入 definition root，实例路径保留全部 occurrence 段。
+    return (
+        _definition_root_text(obj_cone),
+        obj_cone.instance_path,
+        obj_cone.specialization_fingerprint,
+        obj_cone.target,
+        gate_id,
+    )
+
+# 排序键固定 source、root span、path、fingerprint、target 和 gate 顺序。
+def _cone_report_sort_key(obj_cone: CombTargetCone, gate_id: str) -> tuple[object, ...]:
+    """构造不受遍历顺序影响的组合预算报告排序键。
+
+    参数:
+        obj_cone: 当前待排序的目标组合锥。
+        gate_id: 当前 VG146 或 VG147 编号。
+
+    返回:
+        与设计规定字段顺序一致的稳定排序元组。
+    """
+
+    # 缺少新定义身份的旧 cone 使用一基默认 span 保持兼容排序。
+    obj_span = obj_cone.definition_root.definition_span if obj_cone.definition_root else None  # 可选定义范围
+
+    # gate ID 是同一完整身份在双门 unknown 归属下的最终排序项。
+    return (
+        obj_cone.path,
+        int(obj_span.line_start if obj_span else 1),
+        int(obj_span.column_start if obj_span else 1),
+
+        # occurrence path 与参数指纹共同隔离实例化硬件身份。
+        obj_cone.instance_path,
+        obj_cone.specialization_fingerprint,
+
+        # 静态目标和 gate ID 完成最终稳定排序。
+        obj_cone.target,
+        gate_id,
+    )
+
+# operation occurrence ID 反向恢复当前 cone 实际遍历过的实例路径。
+def _deepest_operation_path(obj_cone: CombTargetCone) -> str:
+    """返回当前组合锥中最深的可达 operation 实例路径。
+
+    参数:
+        obj_cone: 当前待报告的目标组合锥。
+
+    返回:
+        最深可达 operation 的完整实例路径；无 operation 时回落到目标路径。
+    """
+
+    # occurrence ID 的首段由 definition root 和完整实例路径组成。
+    str_prefix = f"{_definition_root_text(obj_cone)}/"  # operation ID 中实例路径之前的稳定前缀
+
+    # 每个真实 operation 都可能来自不同深度的 parent 或 child occurrence。
+    list_paths = [  # 当前 cone 可达 operation 的完整实例路径
+        str_operation_id.split("|", 1)[0][len(str_prefix):]  # 去除 definition root 与后续身份字段
+        for str_operation_id in obj_cone.operation_ids  # 遍历当前目标全部真实 operation occurrence
+        if str_operation_id.split("|", 1)[0].startswith(str_prefix)  # 只接受当前 root 的规范 ID
+    ]
+
+    # 没有可解析 operation ID 时使用当前 cone 自身 occurrence 路径。
+    if not list_paths:
+
+        # 兼容旧 cone 时模块名继续提供可读路径。
+        return "/".join(obj_cone.instance_path) or obj_cone.module
+
+    # 深度优先，深度相同时使用字典序保证多 child producer 输出稳定。
+    return max(list_paths, key=lambda str_path: (str_path.count("/"), str_path))
+
+# schema-v2 evidence 继续使用字符串，并以加法 key=value 字段承载层次身份。
+def _comb_finding_evidence(obj_cone: CombTargetCone, int_limit: int) -> str:
+    """构造 VG146/VG147 共享的稳定层次 evidence 字符串。
+
+    参数:
+        obj_cone: 当前待报告的目标组合锥。
+        int_limit: 目录配置允许的最大操作节点数。
+
+    返回:
+        保持字符串 schema 且包含全部加法身份字段的 evidence。
+    """
+
+    # 根模块路径缺失时回落到目标所属 module，保留旧 cone 可读性。
+    str_instance_path = "/".join(obj_cone.instance_path) or obj_cone.module  # 完整 occurrence 路径
+
+    # 最深 operation 路径展示跨层追踪实际到达的 child occurrence。
+    str_child_output = f"{_deepest_operation_path(obj_cone)}.{obj_cone.target}"  # 末级 child 输出定位
+
+    # 多个局部原因稳定排序后放在单一字段中，空值显式记录为 none。
+    str_reason = " | ".join(sorted(obj_cone.inconclusive_reasons)) or "none"  # 当前目标局部未知原因
+
+    # 字段顺序固定，便于 CLI JSON、Markdown 和测试作确定性比较。
+    return "; ".join(
+        (
+            f"definition_root={_definition_root_text(obj_cone)}",
+            f"instance_path={str_instance_path}",
+            f"specialization={obj_cone.specialization_fingerprint or 'default'}",
+            f"target={obj_cone.target}",
+            f"child_output={str_child_output}",
+            f"operation_count={obj_cone.operation_count}",
+            f"limit={int_limit}",
+            f"inconclusive_reason={str_reason}",
+            f"loop_presence={obj_cone.loop_presence}",
+        )
+    )
+
+# 单条 finding 统一携带完整身份，无论最终状态是 failed 还是 inconclusive。
+def _comb_finding(
+    obj_cone: CombTargetCone,
+    int_limit: int,
+    *,
+    over_limit: bool,
+) -> VgFinding:
+    """把目标组合锥转换为 schema-v2 兼容的层次 finding。
+
+    参数:
+        obj_cone: 当前待报告的目标组合锥。
+        int_limit: 当前组合操作预算上限。
+        over_limit: 是否已经确定超过操作预算。
+
+    返回:
+        path/line 合同不变且 evidence 包含加法字段的发现。
+    """
+
+    # 确定超限使用既有时序化建议。
+    if over_limit:
+
+        # 超限诊断明确提示延迟合同和人工架构审查边界。
+        str_message = (  # 当前确定超限 finding 的修复建议
+            "组合逻辑操作锥超过强预算；优先加入流水寄存器、注册标志或预译码，并将复杂 FSM 条件拆为多周期时序步骤。"
+            "这些修改可能改变可见延迟；若协议延迟不可变化，必须阻断并进行人工架构审查。"
+        )
+
+    # 未超限的未知目标继续明确禁止按低计数放行。
+    else:
+
+        # formatter 缺口只形成当前目标的局部不确定诊断。
+        str_message = "当前目标的组合操作锥包含 formatter 无法确定的结构，禁止按低计数放行。"  # 当前未知 finding 诊断
+
+    # finding 公开结构不变，仅替换为完整层次 evidence 字符串。
+    return VgFinding(
+        obj_cone.path,
+        obj_cone.line,
+        str_message,
+        _comb_finding_evidence(obj_cone, int_limit),
+    )
+
+# 缺失函数定义扫描只沿 formatter typed tree 的 operands 递归。
+def _missing_function_names(
+    value: object,
+    known_names: set[str],
+) -> set[str]:
+    """收集表达式中没有本地定义的函数调用名称。
+
+    参数:
+        value: formatter typed expression 节点或兼容空值。
+        known_names: 当前 module 内已解析函数名称集合。
+
+    返回:
+        当前表达式子树引用但没有本地定义的函数名称集合。
+    """
+
+    # 非字典值不具备 typed expression 合同。
+    if not isinstance(value, dict):
+
+        # 空集合让同层其他操作数继续独立检查。
+        return set()
+
+    # 当前节点的缺失 callee 与全部操作数子树分别收集。
+    set_missing: set[str] = set()  # 当前表达式子树缺少定义的函数名
+
+    # function_call marker 自身零成本，但必须具有可展开的本地定义。
+    if str(value.get("kind") or "") == "function_call":
+
+        # callee 字段是 formatter 函数调用事实的权威名称。
+        str_callee = str(value.get("callee") or "")  # 当前调用引用的本地函数名
+
+        # 空名称或索引中不存在的 callee 都不能确定其组合操作锥。
+        if not str_callee or str_callee not in known_names:
+
+            # 空名称使用固定占位，避免生成不可定位的空原因。
+            set_missing.add(str_callee or "<unknown>")
+
+    # 嵌套调用可能出现在普通运算、选择器或其他函数 actual 内。
+    for obj_operand in value.get("operands", []) or []:
+
+        # 子树缺失名称并入当前表达式的局部原因集合。
+        set_missing.update(_missing_function_names(obj_operand, known_names))
+
+    # 集合去除同一表达式内对同一缺失函数的重复调用。
+    return set_missing
+
+# module 预处理把缺失函数定义局部化为对应赋值事实的 parse_error。
+def _mark_missing_function_definitions(
+    list_facts: list[dict[str, Any]],
+    list_functions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """为引用未知本地函数的组合事实附加稳定解析原因。
+
+    参数:
+        list_facts: 当前 module 的组合表达式事实。
+        list_functions: 当前 module 的本地函数定义事实。
+
+    返回:
+        与输入容器断开顶层引用并保留原顺序的组合事实列表。
+    """
+
+    # 只有名称非空且解析完整的函数才能支持后续函数体展开。
+    set_known_names = {  # 当前 module 可解析的本地函数名
+        str(dict_function.get("name") or "")  # 保存函数定义公开名称
+        for dict_function in list_functions  # 遍历 formatter 本地函数目录
+        if str(dict_function.get("name") or "")  # 排除兼容空定义占位
+        and bool(dict_function.get("parse_complete", True))  # 不完整定义不能作为可信 callee
+    }
+
+    # 输出列表保持 formatter 事实顺序，避免改变目标诊断次序。
+    list_marked: list[dict[str, Any]] = []  # 附加缺失函数原因后的事实副本
+
+    # 每条赋值仅在自身表达式引用缺失函数时变为 inconclusive。
+    for dict_fact in list_facts:
+
+        # 浅副本足以隔离 parse_error 写入，typed tree 保持只读。
+        dict_marked = dict(dict_fact)  # 当前组合事实的独立顶层副本
+
+        # 既有 parser 错误优先保留，不被函数定义检查覆盖。
+        if not str(dict_marked.get("parse_error") or ""):
+
+            # typed tree 递归定位嵌套或根级 function_call marker。
+            set_missing = _missing_function_names(dict_marked.get("expression"), set_known_names)  # 当前事实缺失 callee
+
+            # 任一缺失定义都必须阻止零成本 marker 静默放行。
+            if set_missing:
+
+                # 稳定排序保证多个缺失 callee 的诊断可重复。
+                str_names = ", ".join(sorted(set_missing))  # 当前事实全部缺失函数名
+
+                # parse_error 由既有事实分析路径转换成局部 inconclusive finding。
+                dict_marked["parse_error"] = f"missing function definition: {str_names}"  # 当前事实的函数展开缺口
+
+        # 无论是否标记缺口，都保持当前事实原有出现位置。
+        list_marked.append(dict_marked)
+
+    # 调用方使用独立列表聚合目标，原 formatter 报告保持不变。
+    return list_marked
 
 # 公开评估入口按门禁编号筛选普通目标或 for 展开目标。
 def evaluate_comb_operation_gate(
@@ -38,9 +375,6 @@ def evaluate_comb_operation_gate(
         当前门禁的通过、失败或不确定结论。
     """
 
-    # VG147 只接管含 for 展开的目标，避免同一目标重复报错。
-    bool_for_gate = str_gate_id == "VG147"  # 当前是否评估循环专用门禁
-
     # 先构建完整目标集合，保证跨连续赋值的数据依赖可被追踪。
     list_cones = (  # 本次门禁读取的目标锥快照
         list(cones)  # 复用语义引擎已构建的不可变锥结果
@@ -48,12 +382,18 @@ def evaluate_comb_operation_gate(
         else list(build_comb_target_cones(facts))  # 独立调用时按同一事实即时构建
     )
 
-    # 按循环归属筛出当前门禁负责的静态端点。
-    list_owned_cones = [  # 当前 VG 编号需要评估的目标集合
-        obj_cone  # 满足当前门禁归属的目标结果
+    # 三态 owner 表先筛选当前 gate，再按完整报告身份消除重复 cone。
+    dict_owned_cones = {  # 当前 gate 报告身份到唯一目标锥的映射
+        _cone_report_identity(obj_cone, str_gate_id): obj_cone  # 完整身份相同的重复 cone 只保留一次
         for obj_cone in list_cones  # 遍历全部静态目标组合锥
-        if obj_cone.contains_for == bool_for_gate  # 匹配普通或循环目标
-    ]
+        if _owned_by_gate(obj_cone.loop_presence, str_gate_id)  # 应用 absent/present/unknown 归属表
+    }
+
+    # 排序固定加入 gate ID，禁止输入遍历顺序改变 finding 次序。
+    list_owned_cones = sorted(  # 当前 gate 去重并稳定排序后的目标集合
+        dict_owned_cones.values(),  # 每个完整报告身份唯一保留的 cone
+        key=lambda obj_cone: _cone_report_sort_key(obj_cone, str_gate_id),  # 设计规定的身份顺序
+    )
 
     # 没有归属目标时保持目录规则存在但不适用。
     if not list_owned_cones:
@@ -70,22 +410,37 @@ def evaluate_comb_operation_gate(
     # 每个静态目标单独核算，避免无关信号互相污染计数。
     for obj_cone in list_owned_cones:
 
-        # 不确定原因只归属当前目标，不降级其他目标结论。
-        if obj_cone.inconclusive_reasons:
-
-            # 把 formatter 局部缺口登记为可定位发现。
-            list_unknown.append(build_unknown_finding(obj_cone))
-
         # 超过配置上限时必须产生确定失败。
         if obj_cone.operation_count > int_max_operations:
 
-            # 失败证据包含真实操作数、预算和时序化建议。
-            list_over_limit.append(build_over_limit_finding(obj_cone, int_max_operations))
+            # 超限优先级高于 unknown，同一身份只产生一条确定失败 finding。
+            list_over_limit.append(
+                _comb_finding(
+                    obj_cone,
+                    int_max_operations,
+                    over_limit=True,
+                )
+            )
+
+            # 当前身份已由 failed finding 保留全部未知原因，无需重复登记。
+            continue
+
+        # 未超限但存在局部解析缺口时保留 inconclusive finding。
+        if obj_cone.inconclusive_reasons:
+
+            # unknown 下界未超限时禁止按已知计数通过。
+            list_unknown.append(
+                _comb_finding(
+                    obj_cone,
+                    int_max_operations,
+                    over_limit=False,
+                )
+            )
 
     # 确定超限优先于同一批目标中的局部不确定状态。
     if list_over_limit:
 
-        # 同时附带不确定发现，防止失败修复后遗漏剩余风险。
+        # failed 优先，同时保留其他未超限身份的局部未知证据。
         return failed(*(list_over_limit + list_unknown))
 
     # 没有超限但存在解析缺口时禁止按低计数放行。
@@ -101,6 +456,129 @@ def evaluate_comb_operation_gate(
     return passed(applicable=True)
 
 # 文件级遍历负责把共享事实转换成目标结果，不参与表达式解析。
+def _root_report_module(facts: VgFacts, definition_root: DefinitionRoot) -> dict[str, Any] | None:
+    """按完整定义身份查找原始 module 报告。
+
+    参数:
+        facts: formatter 为扫描闭包生成的共享事实。
+        definition_root: 待映射回原始报告的模块定义入口。
+
+    返回:
+        身份完全匹配的 module 报告；找不到时返回 None。
+    """
+
+    # 路径先把候选限制到定义所属源文件。
+    for source_facts in facts.sources:
+
+        # 其他文件中的同名 module 不是当前 definition root。
+        if source_facts.relative_path != definition_root.identity.relative_path:
+
+            # 跳过路径不匹配的来源。
+            continue
+
+        # 名称和起始行共同区分同文件中的重复定义。
+        for dict_module in source_facts.report.get("modules", []):
+
+            # 模块名用于第一层定义身份核对。
+            bool_same_name = str(dict_module.get("name") or "") == definition_root.identity.module_name  # 当前候选名称身份
+
+            # 起始行是实现身份中 definition span 的稳定锚点。
+            int_expected_line = definition_root.identity.definition_span.line_start  # 入口定义的一基起始行
+
+            # 候选报告必须与入口定义行完全一致。
+            bool_same_line = int(dict_module.get("line_start") or 1) == int_expected_line  # 当前候选位置身份
+
+            # 两项身份均一致时返回既有模块内算法需要的完整报告。
+            if bool_same_name and bool_same_line:
+
+                # 原始字典只读传给后续事实复制逻辑。
+                return dict_module
+
+    # 索引身份无法映射回报告时由调用方使用新追踪器失败关闭。
+    return None
+
+# 兼容路径只接管无需层次、函数或循环物化语义的入口。
+def _legacy_root_cones(
+    facts: VgFacts,
+    definition_root: DefinitionRoot,
+    hierarchy_graph: HierarchyGraph,
+) -> list[CombTargetCone] | None:
+    """为纯模块内入口保留既有过程顺序与分支覆盖语义。
+
+    参数:
+        facts: formatter 为扫描闭包生成的共享事实。
+        definition_root: 当前默认参数环境下的定义入口。
+        hierarchy_graph: 当前入口构建出的冻结层次图。
+
+    返回:
+        可安全复用旧算法时返回目标锥列表，否则返回 None。
+    """
+
+    # 多节点图需要跨实例追踪，不能退回模块内算法。
+    if len(hierarchy_graph.modules) != 1:
+
+        # None 明确表示当前 root 应继续走新追踪器。
+        return None
+
+    # 单节点中的实例或函数仍需要新的绑定与函数展开语义。
+    _, root_module = hierarchy_graph.modules[0]  # 当前 root 的默认参数特化模块
+
+    # 实例和函数都要求使用完整 occurrence tracing。
+    if root_module.instances or root_module.functions:
+
+        # 这些结构超出既有模块内算法的能力边界。
+        return None
+
+    # 原始 formatter 报告保留过程版本、分支覆盖和循环展开事实。
+    dict_module = _root_report_module(facts, definition_root)  # 当前 root 的原始模块事实
+
+    # 无法恢复原始定义时禁止猜测，应由新追踪器给出保守结果。
+    if dict_module is None:
+
+        # None 触发调用方的层级追踪路径。
+        return None
+
+    # 已知循环已把动态 lvalue 物化为静态位时，应使用新追踪器而非保留旧占位 cone。
+    list_report_expressions = list(dict_module.get("comb_expressions", []) or [])  # 原始模块组合表达式目录
+
+    # 只检查结构化事实中的动态 lvalue 缺口。
+    bool_had_dynamic_lvalue = any(  # 原始模块是否含动态目标
+        str(dict_fact.get("parse_error") or "") == "dynamic lvalue selection is not a static endpoint"  # 目标缺口文本
+        for dict_fact in list_report_expressions  # 遍历原始模块组合表达式
+        if isinstance(dict_fact, dict)  # 排除非结构化兼容值
+    )
+
+    # 特化结果需要证明动态目标已经形成静态 occurrence。
+    bool_has_static_clones = any(  # 特化模块是否形成静态循环 occurrence
+        not str(dict(frozen_fact.fields).get("parse_error") or "")  # 物化事实必须解析完整
+        and bool(dict(frozen_fact.fields).get("loop_iteration_tuple"))  # 物化事实携带静态迭代身份
+        for frozen_fact in root_module.comb_expressions  # 遍历特化模块组合事实
+    )
+
+    # 物化成功的循环由完整 occurrence tracing 负责，避免旧动态目标重复报告。
+    if bool_had_dynamic_lvalue and bool_has_static_clones:
+
+        # None 让当前 root 进入新追踪器。
+        return None
+
+    # 缺失函数调用继续沿既有局部 parse_error 路径失败关闭。
+    list_module_functions = list(dict_module.get("functions", []))  # 原始模块函数定义目录
+
+    # 兼容路径复制事实并标记缺失函数定义。
+    list_local_facts = _mark_missing_function_definitions(list_report_expressions, list_module_functions)  # 当前模块兼容事实
+
+    # 纯模块内入口不存在需要旧算法处理的跨实例输出边界。
+    return _module_target_cones(
+        definition_root.identity.relative_path,
+        definition_root.identity.module_name,
+        list_local_facts,
+        set(),
+        False,
+        bool(dict_module.get("generates")),
+        definition_root.identity.definition_span.line_start,
+    )
+
+# 公共 facade 按 definition root 构建全部 occurrence 的目标组合锥。
 def build_comb_target_cones(facts: VgFacts) -> tuple[CombTargetCone, ...]:
     """为全部文件和 module 建立目标级组合操作锥。
 
@@ -111,51 +589,90 @@ def build_comb_target_cones(facts: VgFacts) -> tuple[CombTargetCone, ...]:
         按文件和 module 聚合后的静态目标组合锥列表。
     """
 
-    # 子模块输出方向用于把层次缺口限制在真正受实例输出影响的端点。
-    dict_module_outputs: dict[str, set[str]] = {}  # module 名到输出端口集合
+    # source definitions 与 external interfaces 首先进入不可变实现索引。
+    module_index = build_module_implementation_index(facts)  # 当前扫描闭包的 source-only 实现索引
 
-    # 先建立全工程 module 输出端口索引，供后续实例连接解析复用。
-    for source_facts in facts.sources:
+    # specialization cache 在全部 definition roots 之间安全复用不可变模块图。
+    dict_cache = {}  # 当前 facade 调用私有的特化缓存
 
-        # 每个 module 的输出和双向端口共同构成层次驱动候选。
-        for dict_module in source_facts.report.get("modules", []):
+    # 汇总列表包含 standalone root 和每个已实例化 occurrence 的独立目标。
+    list_cones: list[CombTargetCone] = []  # 全部完整身份组合锥
 
-            # 当前 module 的输出方向固化为后续实例解析索引。
-            dict_module_outputs[str(dict_module.get("name") or "")] = {  # 当前 module 的输出端口集合
-                str(dict_port.get("name") or "")  # 当前输出或双向端口名称
-                for dict_port in dict_module.get("ports", [])  # 遍历当前 module 的全部端口
-                if str(dict_port.get("direction") or "") in {"output", "inout"}  # 只保留向外驱动端口
+    # 每个 source definition 都作为默认参数环境下的独立分析入口。
+    for definition_root in enumerate_definition_roots(module_index):
+
+        # root graph 递归展开唯一 source 实现并局部化未知边界。
+        hierarchy_graph_hierarchy_graph: HierarchyGraph = build_hierarchy_bindings(  # 当前入口的冻结层次绑定图
+            definition_root,  # 兼容算法所分析的定义入口
+            module_index,  # 扫描闭包实现索引
+            dict_cache,  # 本次 facade 调用的特化缓存
+        )
+
+        # 纯模块内入口复用已经验证的过程版本与分支覆盖语义。
+        list_legacy_cones = _legacy_root_cones(  # 当前 root 的可选兼容结果
+            facts,  # 扫描闭包共享 formatter 事实
+            definition_root,  # 当前默认参数定义入口
+            hierarchy_graph_hierarchy_graph,  # 当前入口冻结层次图
+        )
+
+        # 有兼容结果时禁止同一 root 再由新追踪器重复分析。
+        if list_legacy_cones is not None:
+
+            # 保持既有目标顺序并继续处理下一个 definition root。
+            list_cones.extend(list_legacy_cones)
+
+            # 当前 root 已完成模块内分析。
+            continue
+
+        # 每个 occurrence 内的本地和跨层 endpoint 分别接受预算检查。
+        for tuple_path, specialized_module in hierarchy_graph_hierarchy_graph.modules:
+
+            # endpoint driver 目录包含本地、实例输出、unknown 和 storage projections。
+            set_targets = {  # 当前 module occurrence 的全部可查询静态目标
+                scoped_endpoint.target  # 保存作用域端点的 module-local 目标名
+                for scoped_endpoint, _ in hierarchy_graph_hierarchy_graph.endpoint_drivers  # 遍历冻结 producer 目录
+                if scoped_endpoint.instance_path == tuple_path  # 只保留当前 occurrence 路径
+                and scoped_endpoint.specialization == specialized_module.key  # 核对参数特化身份
             }
 
-    # 汇总列表保持事实遍历顺序，令报告输出稳定可复现。
-    list_cones: list[CombTargetCone] = []  # 全部静态目标组合锥
+            # comb facts 即使没有 producer 摘要也必须进入目标枚举。
+            for frozen_fact in specialized_module.comb_expressions:
 
-    # 每个来源保留自己的相对路径，供失败定位使用。
-    for source_facts in facts.sources:
+                # FrozenFact 的字段元组可无损恢复顶层 target 文本。
+                dict_fact = dict(frozen_fact.fields)  # 当前本地组合事实顶层字段
 
-        # module 级分析避免不同作用域的同名信号发生串联。
-        for dict_module in source_facts.report.get("modules", []):
+                # 空目标不能形成作用域 endpoint。
+                if str(dict_fact.get("target") or ""):
 
-            # 已解析的子模块输出只污染其实际连接的本地网络。
-            tuple_hierarchy = _hierarchy_output_targets(  # 当前 module 的层次输出端点与缺口标记
-                list(dict_module.get("instances", [])),  # 当前 module 的实例事实
-                dict_module_outputs,  # 全工程 module 输出方向索引
-            )
+                    # 静态目标规范化后并入当前 occurrence 目录。
+                    set_targets.add(_static_target(str(dict_fact.get("target") or "")))
 
-            # 当前 module 的全部结果追加到文件级集合。
-            list_cones.extend(
-                _module_target_cones(
-                    source_facts.relative_path,
-                    str(dict_module.get("name") or ""),
-                    list(dict_module.get("comb_expressions", [])),
-                    tuple_hierarchy[0],
-                    tuple_hierarchy[1],
-                    bool(dict_module.get("generates")),
-                    int(dict_module.get("line_start") or 1),
-                )
-            )
+            # 稳定字典序避免 producer 插入实现细节改变报告顺序。
+            for str_target in sorted(set_targets):
 
-    # 调用方获得完整目标集合后再按 VG146/VG147 归属筛选。
+                # 完整 ScopedTarget 绑定 root、path、specialization 和静态端点。
+                scoped_target = ScopedTarget(definition_root.identity, tuple_path, specialized_module.key, str_target)  # 当前待追踪的完整作用域目标
+
+                # tracing 结果直接适配为 facade-compatible CombTargetCone。
+                list_cones.append(trace_target_cone(hierarchy_graph_hierarchy_graph, scoped_target))
+
+    # 最终排序显式覆盖 source、root span、path、fingerprint 和静态 target。
+    list_cones.sort(
+        key=lambda obj_cone: (
+            obj_cone.path,
+            obj_cone.definition_root.definition_span.line_start if obj_cone.definition_root else 1,
+
+            # 列号在同一 source line 中稳定区分重复定义入口。
+            obj_cone.definition_root.definition_span.column_start if obj_cone.definition_root else 1,
+            obj_cone.instance_path,
+            obj_cone.specialization_fingerprint,
+
+            # 静态目标名作为同一 occurrence 内的最终排序键。
+            obj_cone.target,
+        )
+    )
+
+    # 调用方获得跨层完整目标集合后再按 VG146/VG147 三态归属筛选。
     return tuple(list_cones)
 
 # 层次连接解析只处理 formatter 已隔离的命名实例文本。
@@ -1092,256 +1609,6 @@ def _identifier_references(dict_expression: dict[str, Any]) -> set[str]:
     # 返回去重后的数据依赖叶节点。
     return set_references
 
-# 引用端点提取保留可静态确定的位选和切片。
-def _reference_targets(dict_expression: dict[str, Any]) -> set[str]:
-    """提取表达式引用的精确静态端点，动态选择回退基础信号。
-
-    参数:
-        dict_expression: formatter 输出的类型化表达式节点。
-
-    返回:
-        当前表达式引用的静态端点或保守基础信号集合。
-    """
-
-    # 静态选择可重建为与左值一致的规范端点文本。
-    if dict_expression.get("kind") == "select":
-
-        # 选择节点由专用辅助函数处理静态索引和动态回退。
-        return _selected_reference_targets(dict_expression)
-
-    # 普通节点递归合并全部数据引用。
-    set_references: set[str] = set()  # 当前普通表达式累计的引用端点
-
-    # 标识符叶节点直接贡献自身名称。
-    if dict_expression.get("kind") == "identifier":
-
-        # 名称保持 formatter 输出，选择器仅由选择节点补充。
-        set_references.add(str(dict_expression.get("name") or ""))
-
-    # 复合表达式只遍历综合后可达的操作数。
-    for dict_operand in _runtime_operands(dict_expression):
-
-        # 只有类型化字典节点才能递归提取引用。
-        if isinstance(dict_operand, dict):
-
-            # 子树端点合并后由集合去除重复引用。
-            set_references.update(_reference_targets(dict_operand))
-
-    # 返回普通表达式完整的去重引用集合。
-    return set_references
-
-# 综合可达性辅助函数统一剪除常量三目的死分支。
-def _runtime_operands(dict_expression: dict[str, Any]) -> list[dict[str, Any]]:
-    """返回综合后仍可达的类型化操作数。
-
-    参数:
-        dict_expression: formatter 输出的类型化表达式节点。
-
-    返回:
-        已剪除常量三目死分支的操作数列表。
-    """
-
-    # 只保留满足类型化表达式合同的字典操作数。
-    list_operands = [  # 当前节点的全部类型化操作数
-        dict_operand  # 可继续递归遍历的操作数节点
-        for dict_operand in dict_expression.get("operands", [])  # formatter 原始操作数
-        if isinstance(dict_operand, dict)  # 排除非表达式叶值
-    ]
-
-    # 非三目节点或非标准三操作数形状保持原始可达集合。
-    if str(dict_expression.get("kind") or "") != "ternary" or len(list_operands) != 3:
-
-        # 普通节点的全部类型化操作数都可达。
-        return list_operands
-
-    # 常量条件允许在综合前确定唯一可达分支。
-    bool_condition = _constant_truth_value(list_operands[0])  # 三目条件的确定真值
-
-    # 运行时条件必须保留条件、真分支和假分支。
-    if bool_condition is None:
-
-        # 未知条件禁止静态剪除任一分支。
-        return list_operands
-
-    # 常真选择第一分支，常假选择第二分支。
-    return [list_operands[1] if bool_condition else list_operands[2]]
-
-# 常量真值辅助函数只解释 formatter 已确认的整数字面量。
-def _constant_truth_value(dict_expression: dict[str, Any]) -> bool | None:
-    """把简单 Verilog 整数字面量转换为可确定真值。
-
-    参数:
-        dict_expression: formatter 输出的类型化表达式节点。
-
-    返回:
-        可确定常量的布尔值；非整数字面量或含未知位时返回 None。
-    """
-
-    # 只有 formatter 明确标记的常量节点可进入字面量转换。
-    if str(dict_expression.get("kind") or "") != "constant":
-
-        # 其他节点依赖运行时值，不能静态折叠。
-        return None
-
-    # 去除数字分隔符并统一进制标志大小写。
-    str_value = str(dict_expression.get("value") or "").replace("_", "").lower()  # 规范化字面量文本
-
-    # x、z 与问号位都不具有确定布尔值。
-    if any(str_unknown in str_value for str_unknown in ("x", "z", "?")):
-
-        # 未知位禁止按零或非零常量剪枝。
-        return None
-
-    # 数值转换失败时保持局部未知，不抛出到组合锥主流程。
-    try:
-
-        # 定宽 Verilog 字面量从撇号后读取进制和数值载荷。
-        if "'" in str_value:
-
-            # 位宽位于撇号之前，不参与数值转换。
-            str_payload = str_value.split("'", 1)[1]  # 进制标志与数字载荷
-
-            # 首字符是 Verilog 进制标志。
-            str_base = str_payload[:1]  # 当前字面量进制标志
-
-            # 显式映射限制为受支持的二、八、十和十六进制。
-            int_base = {"b": 2, "o": 8, "d": 10, "h": 16}.get(str_base)  # Python 转换基数
-
-            # 未识别进制不能形成确定常量值。
-            if int_base is None:
-
-                # 保守返回未知，避免错误剪枝。
-                return None
-
-            # 数字载荷非零即为逻辑真。
-            return int(str_payload[1:], int_base) != 0
-
-        # 无撇号普通整数按十进制解释。
-        return int(str_value, 10) != 0
-
-    # 非法数字载荷保留为不可确定条件。
-    except ValueError:
-
-        # 解析缺口不应中断其他目标分析。
-        return None
-
-# 选择节点辅助函数负责恢复常量位选并隔离动态选择。
-def _selected_reference_targets(dict_expression: dict[str, Any]) -> set[str]:
-    """提取一个选择表达式引用的静态或保守基础端点。
-
-    参数:
-        dict_expression: kind 为 select 的 formatter 表达式节点。
-
-    返回:
-        可完整恢复时返回精确选择端点，否则返回基础信号集合。
-    """
-
-    # 第一个操作数是被选择对象，其余操作数描述索引或切片边界。
-    list_operands = list(dict_expression.get("operands", []))  # 选择节点的基础值与索引节点
-
-    # 缺少类型化基础值时没有可信引用可供上游追踪。
-    if not list_operands or not isinstance(list_operands[0], dict):
-
-        # 空集合让调用方保持当前表达式的局部依赖边界。
-        return set()
-
-    # 基础表达式可能自身包含可解析的静态选择端点。
-    set_base_targets = _reference_targets(list_operands[0])  # 被选择对象对应的基础端点集合
-
-    # 动态索引或多基础引用只能保守回退到整信号。
-    bool_static_single_base = (  # 当前选择是否具备唯一静态基础端点
-        not bool(dict_expression.get("dynamic"))  # formatter 已确认索引不是运行时表达式
-        and len(set_base_targets) == 1  # 选择器只能附着到一个明确基础端点
-    )
-
-    # 无法精确恢复时仍保留所有基础生产者依赖。
-    if not bool_static_single_base:
-
-        # 去除嵌套选择器，避免构造不存在的精确生产者名称。
-        return {_base_target(str_item) for str_item in set_base_targets}
-
-    # 常量索引文本按 formatter 操作数顺序组成位选或切片。
-    list_indices = [  # 当前选择器包含的常量索引文本
-        str(dict_item.get("value") or "")  # 单个索引或切片边界文本
-        for dict_item in list_operands[1:]  # 跳过第一个基础表达式操作数
-        if isinstance(dict_item, dict)  # 仅接受 formatter 类型化索引节点
-    ]
-
-    # 任一索引节点缺失都会使精确选择器无法重建。
-    if len(list_indices) != len(list_operands) - 1:
-
-        # 不完整索引退回基础生产者，防止伪造静态端点。
-        return {_base_target(str_item) for str_item in set_base_targets}
-
-    # formatter operator 区分单比特选择和带方向的切片。
-    str_separator = str(dict_expression.get("operator") or "bit")  # 选择器种类或切片分隔符
-
-    # 选择器文本保持原有位选与切片的格式语义。
-    str_selector = _static_selector_text(list_indices, str_separator)  # 已恢复的常量选择器正文
-
-    # 唯一基础端点从单元素集合中确定取出。
-    str_base_target = next(iter(set_base_targets))  # 选择器附着的基础端点文本
-
-    # 返回与静态左值端点格式一致的引用名称。
-    return {f"{str_base_target}[{str_selector}]"}
-
-# 位选和切片使用不同文本形状，单独封装可降低引用提取分支数。
-def _static_selector_text(list_indices: list[str], str_separator: str) -> str:
-    """把 formatter 常量索引恢复为位选或切片正文。
-
-    参数:
-        list_indices: 按源码顺序保存的常量索引文本。
-        str_separator: bit 标记或 formatter 保留的切片分隔符。
-
-    返回:
-        可直接放入方括号的静态选择器正文。
-    """
-
-    # 单比特选择只需要第一个常量索引。
-    if str_separator == "bit":
-
-        # 保持原有单索引端点文本。
-        return list_indices[0]
-
-    # 切片按 formatter 给出的分隔符连接两个边界。
-    return f"{list_indices[0]}{str_separator}{list_indices[1]}"
-
-# 常量折叠只接受完全不含标识符或动态选择的表达式树。
-def _is_constant_expression(dict_expression: dict[str, Any]) -> bool:
-    """判断表达式是否完全由常量叶节点构成。
-
-    参数:
-        dict_expression: formatter 输出的类型化表达式节点。
-
-    返回:
-        全部叶节点可在 elaboration 阶段确定时返回 True。
-    """
-
-    # 节点种类决定常量叶、运行时叶与复合表达式的分流。
-    str_kind = str(dict_expression.get("kind") or "")  # 当前待判定节点的 formatter 种类
-
-    # 常量叶节点自身满足折叠条件。
-    if str_kind == "constant":
-
-        # 字面量无需继续检查子树。
-        return True
-
-    # 标识符、未支持结构和动态选择依赖运行时信号。
-    if str_kind in {"identifier", "unsupported"} or bool(dict_expression.get("dynamic")):
-
-        # 任一运行时依赖都会阻止整棵子树常量折叠。
-        return False
-
-    # 复合节点只检查 formatter 已类型化的操作数子树。
-    list_operands = [  # 当前复合表达式的类型化操作数
-        dict_item  # 可递归判断常量性的操作数节点
-        for dict_item in dict_expression.get("operands", [])  # formatter 提供的全部操作数
-        if isinstance(dict_item, dict)  # 排除不具备表达式合同的叶值
-    ]
-
-    # 非空操作数全部为常量时，当前运算也可在 elaboration 阶段折叠。
-    return bool(list_operands) and all(_is_constant_expression(dict_item) for dict_item in list_operands)
-
 # 寄存器和由不完整组合赋值形成的锁存器均提供 Q 端切点。
 def _is_storage_driver(list_facts: list[dict[str, Any]]) -> bool:
     """判断一组驱动事实是否定义时序存储输出。
@@ -1371,163 +1638,3 @@ def _is_storage_driver(list_facts: list[dict[str, Any]]) -> bool:
 
     # 返回锁存器覆盖判定，供上游锥决定是否截断。
     return bool_latch_driver
-
-# 顶层覆盖判定把 formatter 事实转换成统一的递归路径合同。
-def _facts_cover_all_paths(list_facts: list[dict[str, Any]]) -> bool:
-    """判断同一目标的事实集合是否覆盖完整运行时控制树。
-
-    参数:
-        list_facts: 同一静态端点的全部 formatter 驱动事实。
-
-    返回:
-        存在无条件赋值或每层决策的两个分支均完整时返回 True。
-    """
-
-    # 每条赋值只保留 formatter 记录的互斥分支路径。
-    list_paths = [  # 当前目标全部赋值的运行时分支路径
-        list(dict_fact.get("branch_path", []))  # 单条事实的可变递归副本
-        for dict_fact in list_facts  # 收集同一端点各赋值的控制路径
-    ]
-
-    # 顶层与嵌套层使用同一个分支完备性证明算法。
-    return _paths_cover_all(list_paths)
-
-# 递归覆盖证明要求同一决策的 then 与 else 子树分别完整。
-def _paths_cover_all(list_paths: list[list[dict[str, Any]]]) -> bool:
-    """递归证明当前父分支下的全部运行时路径均有赋值。
-
-    参数:
-        list_paths: 当前父分支下各赋值尚未消费的决策路径。
-
-    返回:
-        存在无条件赋值或任一完整决策的两侧子树均覆盖时返回 True。
-    """
-
-    # 空尾路径表示当前父分支内存在无条件赋值。
-    if any(not list_path for list_path in list_paths):
-
-        # 无条件赋值覆盖当前父分支的所有后续运行时选择。
-        return True
-
-    # 同层决策编号用于分别尝试可证明完整的控制树。
-    set_ids = {  # 当前父分支下出现的决策编号
-        str(list_path[0].get("id") or "")  # 每条路径的首个未消费决策
-        for list_path in list_paths  # 遍历当前父分支的全部赋值路径
-    }
-
-    # 任一决策的两个分支都完整即可覆盖当前父分支。
-    return any(
-        _decision_paths_cover_all(list_paths, str_id)  # 分别证明该决策两侧子树
-        for str_id in set_ids  # 尝试当前层出现的全部决策编号
-    )
-
-# 单决策辅助函数隔离 then 与 else 路径，防止空尾跨分支误覆盖。
-def _decision_paths_cover_all(
-    list_paths: list[list[dict[str, Any]]],
-    str_id: str,
-) -> bool:
-    """证明一个决策编号的 then 与 else 子树分别完整。
-
-    参数:
-        list_paths: 当前父分支下各赋值尚未消费的决策路径。
-        str_id: 当前需要证明的 formatter 决策编号。
-
-    返回:
-        两个分支均存在且各自递归覆盖全部路径时返回 True。
-    """
-
-    # 两侧路径必须独立收集，禁止一侧空尾替另一侧证明完整。
-    dict_branch_paths: dict[str, list[list[dict[str, Any]]]] = {  # then 与 else 的剩余子路径
-        "then": [],  # 当前决策真分支的剩余路径
-        "else": [],  # 当前决策假分支的剩余路径
-    }
-
-    # 只消费编号匹配且 formatter 明确含 alternate 的完整决策。
-    for list_path in list_paths:
-
-        # 首节点描述当前赋值在该层选择的决策与分支。
-        dict_decision = list_path[0]  # 当前路径首个未消费决策
-
-        # 其他编号或缺少 alternate 的决策不能证明当前控制树完整。
-        if str(dict_decision.get("id") or "") != str_id or not bool(dict_decision.get("complete")):
-
-            # 保留路径给其他决策编号尝试，不纳入当前分支证明。
-            continue
-
-        # formatter 只接受 then 与 else 两种运行时分支极性。
-        str_branch = str(dict_decision.get("branch") or "")  # 当前路径选择的分支极性
-
-        # 未知极性不能参与完整性证明。
-        if str_branch in dict_branch_paths:
-
-            # 消费当前决策后把剩余子路径归入对应分支。
-            dict_branch_paths[str_branch].append(list_path[1:])
-
-    # 两侧必须各自存在赋值路径，并分别递归证明完整。
-    return all(
-        list_branch_paths and _paths_cover_all(list_branch_paths)  # 当前分支非空且完整
-        for list_branch_paths in dict_branch_paths.values()  # then 与 else 分开验证
-    )
-
-# 选择器编号区分 case default、显式 case 项和普通 if 条件。
-def _selector_id(
-    dict_control: dict[str, Any],
-    str_target: str,
-    int_index: int,
-) -> str:
-    """从条件根节点派生一次真实控制选择操作编号。
-
-    参数:
-        dict_control: formatter 输出的控制表达式节点。
-        str_target: 当前控制条件约束的基础目标。
-        int_index: 控制条件在当前事实控制栈中的序号。
-
-    返回:
-        稳定选择操作编号；case default 返回空字符串。
-    """
-
-    # case 项由 formatter 显式提供 selector_id，default 值为空。
-    if "selector_id" in dict_control:
-
-        # 保留空值语义，防止 default 分支虚增选择操作。
-        return str(dict_control.get("selector_id") or "")
-
-    # 普通控制条件优先派生自真实根操作节点编号。
-    str_root_id = str(dict_control.get("occurrence_id") or "")  # 控制根节点编号
-
-    # 有根操作编号时生成与语法位置稳定关联的选择编号。
-    if str_root_id:
-
-        # 后缀区分条件表达式自身操作与分支选择操作。
-        return f"{str_root_id}:selector"
-
-    # 纯标识符条件没有操作编号，使用目标和控制序号生成稳定编号。
-    return f"{str_target}:control{int_index}:selector"
-
-# 静态端点规范化保留位选和切片，只删除无语义空白。
-def _static_target(str_target: str) -> str:
-    """返回保留常量选择器的规范静态目标。
-
-    参数:
-        str_target: formatter 赋值事实中的原始目标文本。
-
-    返回:
-        删除空白但保留位选或切片的静态端点名称。
-    """
-
-    # 空白不参与端点身份，选择器文本则必须完整保留。
-    return "".join(str_target.split())
-
-# 基础信号只用于精确端点不存在时的保守依赖回退。
-def _base_target(str_target: str) -> str:
-    """把静态选择目标规范为当前基础信号。
-
-    参数:
-        str_target: formatter 赋值事实中的目标文本。
-
-    返回:
-        去除首个选择器并清理空白后的基础信号名称。
-    """
-
-    # 第一个左方括号之前的文本就是当前基础目标。
-    return str_target.split("[", 1)[0].strip()

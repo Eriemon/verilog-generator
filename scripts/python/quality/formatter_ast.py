@@ -6,10 +6,15 @@ from __future__ import annotations
 # dataclasses 工具用于把 formatter 内部模型安全转成字典。
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
+import re
 from typing import Any
 
 # formatter backend 在唯一解析所有者内部生成类型化组合锥事实。
-from .formatter_backend.expression_facts import attach_expression_facts
+from .formatter_backend.expression_facts import (
+    attach_expression_facts,
+    attach_instance_expression_facts,
+)
+from .formatter_backend.models import SourceSpan
 
 # formatter 配置工厂提供唯一受控的 parser/backend 入口。
 from .formatter_backend import FormatterBackend, VerilogFormatterError
@@ -217,6 +222,9 @@ def build_ast_report_for_text(
     # 表达式事实由 formatter 层一次构建，后续语义门禁不得重新解析源码文本。
     attach_expression_facts(list_modules)
 
+    # 实例 actual 在 module facts 完成后复用同一表达式 parser 做 additive 丰富。
+    attach_instance_expression_facts(list_modules)
+
     # parse error 与 formatter mismatch 分开计数，避免模板不一致被解析成功掩盖。
     int_parse_errors = sum(  # 当前文本的 formatter AST 解析错误数
         1  # 每条 error 诊断计为一个解析错误
@@ -363,7 +371,13 @@ def _parse_source_with_formatter(
             int_module_offset = source.find(str_module_text, int_search_offset)  # 当前 module 在源文本中的字符偏移
 
             # 解析后的 module 字典先保存在局部变量中，便于补充行号范围。
-            dict_module = _parse_module_with_formatter(formatter_engine, str_module_text, index=int_index)  # 当前 module 结构报告
+            dict_module = _parse_module_with_formatter(  # 当前模块的结构化 formatter 报告
+                formatter_engine,  # 提供模块和 body 解析入口的 formatter 后端
+                str_module_text,  # 当前 section 保留的模块原始文本
+                index=int_index,  # 当前模块在文件内的稳定序号
+                source=source,  # 建立实例绝对范围所需的完整源码
+                module_offset=int_module_offset,  # 当前模块在完整源码中的字符起点
+            )  # 当前 module 结构报告
 
             # 行号标注只基于 formatter 已切出的结构文本，不重新解析 Verilog 语义。
             _attach_module_line_spans(dict_module, source, str_module_text, int_module_offset)
@@ -415,13 +429,23 @@ def _formatter_violations(
         return [str(exc)]
 
 # module 转换继续消费包含 generate 实例的统一集合。
-def _parse_module_with_formatter(formatter_engine: Any, module_text: str, *, index: int) -> dict[str, Any]:
+def _parse_module_with_formatter(
+    formatter_engine: Any,
+    module_text: str,
+    *,
+    index: int,
+    source: str | None = None,
+    module_offset: int = -1,
+) -> dict[str, Any]:
     """解析单个 module section 并返回结构化字典。
 
     参数:
         formatter_engine: 随包 formatter 后端实例，需提供内部 parser 钩子。
         module_text: 单个 module section 的原始文本。
         index: module 在源文件中的稳定序号。
+        source: 可选的完整 Verilog 源码，用于建立权威范围。
+        module_offset: 当前 module 在完整源码中的零基字符偏移。
+
     返回:
         兼容 formatter AST quality gate 契约的 module 结构字典。
     """
@@ -474,6 +498,18 @@ def _parse_module_with_formatter(formatter_engine: Any, module_text: str, *, ind
         # 只对已经由 generate parser 确认的 statement 节点重用 body 实例解析。
         list_instances.extend(_instances_from_control_nodes(formatter_engine, obj_generate.nodes))
 
+    # report 主路径按 module 内出现位置为实例补齐权威 block/association span。
+    if source is not None and module_offset >= 0:
+
+        # 完整源码路径重建实例关联以附加权威一基范围。
+        list_instances = _reparse_instances_with_spans(  # 当前模块带源码范围的实例集合
+            formatter_engine,  # 提供带 span 实例解析入口的后端
+            list_instances,  # body 与 generate 已发现的实例对象
+            source,  # 计算实例绝对行列的完整源码
+            module_text,  # 定位实例相对偏移的当前模块文本
+            module_offset,  # 把实例模块内偏移换算成文件偏移的基准
+        )
+
     # 返回字段沿用 formatter AST quality gate 的既有契约。
     return {
         "index": index,
@@ -488,12 +524,161 @@ def _parse_module_with_formatter(formatter_engine: Any, module_text: str, *, ind
         "instances": [_instance_to_dict(item) for item in list_instances],
         "generates": [_block_to_dict(item) for item in dict_body_items.get("generates", [])],
         "initials": [_block_to_dict(item) for item in dict_body_items.get("initials", [])],
-        "functions": [_block_to_dict(item) for item in dict_body_items.get("functions", [])],
+        "functions": [_function_to_dict(item) for item in dict_body_items.get("functions", [])],
         "tasks": [_block_to_dict(item) for item in dict_body_items.get("tasks", [])],
         "raw_blocks": [_block_to_dict(item) for item in dict_body_items.get("raw_blocks", [])],
         "conditionals": [_block_to_dict(item) for item in dict_body_items.get("conditionals", [])],
         "counts": _body_item_counts(dict_body_items),
     }
+
+# 字符偏移统一转换为报告使用的一基闭区间。
+def _source_span_for_range(source: str, int_start: int, int_end: int) -> SourceSpan:
+    """把完整源码字符范围转换为一基闭区间。
+
+    参数:
+        source: 完整 Verilog 源码文本。
+        int_start: 目标片段的零基起始字符偏移。
+        int_end: 目标片段的零基排他结束偏移。
+
+    返回:
+        对应目标片段的一基闭区间 SourceSpan。
+    """
+
+    # 起点之前的文本用于换算行号和行内列号。
+    str_before = source[:int_start]  # 目标片段之前的完整源码前缀
+
+    # 换行数量加一得到一基起始行。
+    int_line_start = str_before.count("\n") + 1  # 目标片段起始源码行
+
+    # 最后一行前缀长度加一得到一基起始列。
+    int_column_start = len(str_before.rsplit("\n", 1)[-1]) + 1  # 目标片段起始源码列
+
+    # 片段文本决定跨越的行数和最后一行长度。
+    str_value = source[int_start:int_end]  # 排他范围内的目标源码片段
+
+    # 片段内换行数叠加到起始行得到结束行。
+    int_line_end = int_line_start + str_value.count("\n")  # 目标片段结束源码行
+
+    # 多行片段以末行长度为闭区间末列，单行片段从起始列累加。
+    int_column_end = (  # 目标片段的一基闭区间结束列
+        len(str_value.rsplit("\n", 1)[-1])  # 多行片段最后一行的字符数量
+        if "\n" in str_value  # 片段至少跨越一次换行
+        else int_column_start + max(len(str_value) - 1, 0)  # 单行片段的闭区间末列
+    )
+
+    # 空片段也保持一基最小列，完整性由调用方语境决定。
+    return SourceSpan(int_line_start, int_column_start, int_line_end, max(int_column_end, 1))
+
+# 实例按源码位置重解析，以便 association actual 获得权威范围。
+def _reparse_instances_with_spans(
+    formatter_engine: Any,
+    list_instances: list[Any],
+    source: str,
+    module_text: str,
+    int_module_offset: int,
+) -> list[Any]:
+    """按实例源内位置重建权威关联事实。
+
+    参数:
+        formatter_engine: 提供实例块解析入口的 formatter 后端。
+        list_instances: body parser 已发现的实例对象列表。
+        source: 完整 Verilog 源码文本。
+        module_text: 当前 module section 的原始文本。
+        int_module_offset: 当前 module 在完整源码中的零基偏移。
+
+    返回:
+        按源码位置排序且带完整范围的实例对象列表。
+    """
+
+    # 定位结果同时保存源码偏移与重解析实例，便于最终稳定排序。
+    list_located: list[tuple[int, Any]] = []  # 已定位的实例偏移与对象
+
+    # 已占用偏移阻止相同实例文本反复绑定到第一次出现处。
+    set_used_offsets: set[int] = set()  # 当前模块已分配给实例的起始偏移
+
+    # 每个 parser 实例对象独立定位并保留原有前导注释。
+    for obj_instance in list_instances:
+
+        # 原始实例块文本是精确定位的首选依据。
+        str_text = str(getattr(obj_instance, "text", ""))  # 当前实例的 formatter 原文
+
+        # 同文本实例从模块首部开始依次跳过已占用命中。
+        int_search = 0  # 当前实例文本的模块内搜索起点
+
+        # 首次精确查找保留全部空白字符差异。
+        int_relative = module_text.find(str_text, int_search)  # 当前实例相对模块的字符偏移
+
+        # 重复文本命中已用位置时继续寻找下一处。
+        while int_relative in set_used_offsets and int_relative >= 0:
+
+            # 搜索游标至少前移一个字符，避免空文本导致死循环。
+            int_search = int_relative + max(len(str_text), 1)  # 下一次精确查找起点
+
+            # 从新游标查找同一实例文本的后续出现。
+            int_relative = module_text.find(str_text, int_search)  # 尚未确认的后续精确命中
+
+        # formatter 可能规范化空白，精确文本失败时采用空白弹性匹配。
+        if int_relative < 0 and str_text.strip():
+
+            # 每个非空片段转义后用任意连续空白连接。
+            str_pattern = r"\s+".join(  # 忽略格式化空白差异的实例定位正则
+                re.escape(str_part)  # 当前实例词段的正则字面量
+                for str_part in str_text.split()  # 去除 formatter 空白差异后的词段序列
+            )
+
+            # 候选匹配仍需跳过已分配给其他实例的起点。
+            for match_candidate in re.finditer(str_pattern, module_text):
+
+                # 第一个未占用候选保持实例的源码顺序。
+                if match_candidate.start() not in set_used_offsets:
+
+                    # 当前弹性匹配起点成为实例权威相对偏移。
+                    int_relative = match_candidate.start()  # 未被占用的实例模块内偏移
+
+                    # 已找到唯一可用候选，无需继续扫描。
+                    break
+
+        # 无法定位时保留原实例，并把它稳定排在已知源码片段之后。
+        if int_relative < 0:
+
+            # 合成排序键不声称是权威源码范围。
+            list_located.append((len(module_text) + len(list_located), obj_instance))
+
+            # 当前实例已经以兼容对象保留，继续处理后续实例。
+            continue
+
+        # 成功偏移立即登记，防止重复实例复用该位置。
+        set_used_offsets.add(int_relative)
+
+        # module 全局偏移与实例相对偏移得到完整源码位置。
+        int_absolute = int_module_offset + int_relative  # 当前实例在完整源码中的字符偏移
+
+        # 实例块闭区间成为 association parser 的范围原点。
+        source_span_instance = _source_span_for_range(  # 当前实例块的权威一基源码范围
+            source,  # 完整源码文本
+            int_absolute,  # 当前实例绝对起点
+            int_absolute + len(str_text),  # 当前实例绝对排他终点
+        )
+
+        # 重解析只增加范围和 association 事实，不改变实例文本语义。
+        obj_reparsed = formatter_engine._parse_instance_block(  # 带权威范围的实例对象
+            str_text,  # 当前实例原始文本
+            span=source_span_instance,  # 当前实例块源码范围
+        )
+
+        # body parser 提取的前导注释在重解析后显式恢复。
+        obj_reparsed.leading_comments = list(  # 当前实例继承的前导注释集合
+            getattr(obj_instance, "leading_comments", [])  # 原实例对象的注释列表
+        )
+
+        # 排序列表保存真实相对偏移和重解析结果。
+        list_located.append((int_relative, obj_reparsed))
+
+    # 源码偏移排序恢复模块内实例的确定性报告顺序。
+    list_located.sort(key=lambda tuple_item: tuple_item[0])
+
+    # 丢弃内部排序键，只向调用方返回实例对象。
+    return [obj_instance for _, obj_instance in list_located]
 
 # _body_item_counts 汇总 formatter body parser 的列表型字段数量。
 def _body_item_counts(dict_body_items: dict[str, Any]) -> dict[str, int]:
@@ -743,14 +928,76 @@ def _instance_to_dict(item: Any) -> dict[str, Any]:
     # 实例化对象先标准化，保留模块名、实例名和原始文本字段。
     dict_item = _safe_dataclass_dict(item)  # 实例化报告字段映射
 
-    # 返回字段覆盖模块名、实例名、参数化状态和原始文本。
-    return {
-        "module_name": dict_item.get("module_name", ""),
-        "instance_name": dict_item.get("instance_name", ""),
-        "has_params": bool(dict_item.get("has_params", False)),
-        "leading_comments": dict_item.get("leading_comments", []),
-        "text": dict_item.get("text", ""),
+    # 旧五字段保持原值和顺序，新增字段只做加法。
+    dict_result = {  # 保持旧字段顺序的实例报告基础映射
+        "module_name": dict_item.get("module_name", ""),  # 被实例化的模块名称
+        "instance_name": dict_item.get("instance_name", ""),  # 当前实例声明名称
+        "has_params": bool(dict_item.get("has_params", False)),  # 是否存在参数覆盖列表
+        "leading_comments": dict_item.get("leading_comments", []),  # 实例前导注释块
+        "text": dict_item.get("text", ""),  # formatter 保留的实例原始文本
     }
+
+    # additive 事实已经由 dataclass asdict 递归转换成 JSON 兼容结构。
+    for str_key, value in dict_item.items():
+
+        # 旧字段不重复覆盖，新增 association 与 span 字段按声明次序追加。
+        if str_key not in dict_result:
+
+            # additive 字段保持 dataclass 序列化后的 JSON 兼容值。
+            dict_result[str_key] = value  # 当前实例新增的结构化事实字段
+
+    # 返回字段顺序稳定的实例报告。
+    return dict_result
+
+# 函数定义公共事实从 block 内部提升到模块函数条目。
+def _function_to_dict(item: Any) -> dict[str, Any]:
+    """序列化 function block 并提升定义字段。
+
+    参数:
+        item: formatter FunctionBlock 或等价兼容对象。
+
+    返回:
+        包含函数名、formal、返回目标和函数体事实的报告字典。
+    """
+
+    # 先复用普通 block 序列化以保留原有文本和行数指标。
+    dict_item = _block_to_dict(item)  # 当前函数块的基础报告字段
+
+    # definition 是 formatter parser 构建的结构化函数公共事实。
+    dict_definition = dict_item.pop("definition", None)  # 待提升的函数定义字段映射
+
+    # 完整定义逐项提升，便于消费者直接按函数条目读取。
+    if isinstance(dict_definition, dict):
+
+        # 字段顺序沿用 dataclass 声明顺序以保持 JSON 幂等。
+        for str_key, value in dict_definition.items():
+
+            # 提升字段不会覆盖 block 的既有结构字段。
+            dict_item[str_key] = value  # 当前函数定义的公开结构字段
+
+    # 兼容旧 block 时显式提供不完整定义，而非静默缺字段。
+    else:
+
+        # 缺失定义使用稳定默认值并携带局部不支持原因。
+        dict_item.update(
+            {
+                "name": "",  # 未能恢复的函数名称
+                "formals": [],  # 未能恢复的 formal 列表
+                "return_target": "",  # 未能恢复的函数返回目标
+                "body_expressions": [],  # 未能恢复的函数体表达式事实
+                "span": {
+                    "line_start": 1,  # 非权威占位起始行
+                    "column_start": 1,  # 非权威占位起始列
+                    "line_end": 1,  # 非权威占位结束行
+                    "column_end": 1,  # 非权威占位结束列
+                },
+                "parse_complete": False,  # 明确禁止把兼容默认值当成完整证据
+                "unsupported_reason": "missing_function_definition",  # 定义事实缺失原因
+            }
+        )
+
+    # 返回保持旧 block 字段并附加公共函数事实的条目。
+    return dict_item
 
 # _block_to_dict 转换 formatter block 模型并补充行数指标。
 def _block_to_dict(item: Any) -> dict[str, Any]:
@@ -904,8 +1151,11 @@ def _attach_assign_line_spans(
         本函数原地补充 assign 条目的 span 字段。
     """
 
-    # assign 语句按源码顺序查找，避免端口声明中的同名信号误命中。
-    int_cursor = 0  # assign 查找游标
+    # assign 语句按源码顺序和列游标查找，同行语句保持独立位置。
+    int_cursor = 0  # assign 查找行游标
+
+    # 列游标防止同一行的后续 assign 重复命中第一条语句。
+    int_column_cursor = 0  # 当前行下一条 assign 的字符游标
 
     # 每个 assign 使用 lhs 和 assign 关键字共同定位。
     for dict_item in dict_module.get("assigns", []) or []:
@@ -919,8 +1169,43 @@ def _attach_assign_line_spans(
             # 继续处理其他 assign。
             continue
 
-        # 查找同时包含 assign 和左值的源码行。
-        int_line_index = _find_line_index_matching(list_module_lines, ("assign", str_lhs), int_cursor)  # assign 左值所在的源码行索引
+        # 从当前行列游标开始寻找同时包含 assign 和 lhs 的片段。
+        int_line_index = -1  # assign 左值所在的 module 内行索引
+
+        # 命中列用于函数调用局部偏移换算成文件绝对列。
+        int_column_index = -1  # assign 关键字所在的零基列
+
+        # 按模块行序扫描，命中当前结构化左值后停止。
+        for int_candidate_line in range(int_cursor, len(list_module_lines)):
+
+            # 只有当前游标行需要跳过已经归属前一条 assign 的前缀。
+            int_search_column = (  # 当前候选行查找 assign 的零基起始列
+                int_column_cursor  # 游标行跳过已归属前一 assign 的前缀
+                if int_candidate_line == int_cursor  # 只有游标行可能已消费部分文本
+                else 0  # 后续候选行从行首开始查找
+            )
+
+            # 当前行从未消费部分查找 assign 关键字。
+            int_candidate_column = list_module_lines[int_candidate_line].find(  # 候选 assign 关键字列
+                "assign",  # 连续赋值语句的定位关键字
+                int_search_column,  # 当前行尚未消费的查找起点
+            )
+
+            # 同一片段还必须包含当前结构化 lhs。
+            if (
+                int_candidate_column >= 0
+                and str_lhs
+                in list_module_lines[int_candidate_line][int_candidate_column:]
+            ):
+
+                # 保存命中位置作为当前 assign 的权威行索引。
+                int_line_index = int_candidate_line  # 当前 assign 的模块内行索引
+
+                # 保存关键字列用于同行后续查找和绝对列报告。
+                int_column_index = int_candidate_column  # 当前 assign 关键字零基列
+
+                # 当前结构化 assign 已找到唯一源码位置。
+                break
 
         # 连续赋值命中后按单行 assign 记录 span。
         if int_line_index >= 0:
@@ -931,8 +1216,14 @@ def _attach_assign_line_spans(
             # 连续 assign 当前由 formatter 解析为单行语句。
             _set_line_span(dict_item, int_line_number, int_line_number)
 
-            # 推进游标避免重复命中。
-            int_cursor = int_line_index + 1  # assign 搜索游标
+            # column_start 让同行 function call span 能换算为文件绝对列。
+            dict_item["column_start"] = int_column_index + 1  # 当前 assign 关键字的一基源码列
+
+            # 下一条 assign 可以继续位于同一行，但必须从当前关键字之后搜索。
+            int_cursor = int_line_index  # assign 搜索行游标
+
+            # 列游标越过已命中的关键字，避免同行重复绑定。
+            int_column_cursor = int_column_index + len("assign")  # 同行后续搜索列
 
 # _attach_always_line_spans 为 always 块补充行号范围。
 def _attach_always_line_spans(

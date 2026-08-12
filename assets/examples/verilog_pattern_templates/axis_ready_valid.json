@@ -53,6 +53,6 @@
   "constraints": ["Use synthesizable Verilog-2001."],
   "outputs": [
     {"path": "rtl/axis_ready_valid_pipe.v", "kind": "source", "language": "verilog"},
-    {"path": "tb/axis_ready_valid_pipe_tb.v", "kind": "testbench", "language": "verilog"}
+    {"path": "tb/tb_axis_ready_valid_pipe.v", "kind": "testbench", "language": "verilog"}
   ]
 }
