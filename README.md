@@ -8,6 +8,8 @@
   <img src="assets/readme/hero.svg" alt="Verilog Generator RTL workbench" width="100%">
 </p>
 
+![Verilog Generator RTL workflow](assets/readme-workflow.png)
+
 <p align="center">
   <a href="LICENSE"><img alt="Apache-2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-2ad4ee"></a>
   <img alt="Version v0.4.0" src="https://img.shields.io/badge/version-v0.4.0-8ce85d">
@@ -93,9 +95,9 @@ end
 
 Restart Codex after installation so the skill is discovered.
 
-This README describes the latest public GitHub release, `v0.4.0`. A governed source checkout may be newer; use `VERSION` as the local package version authority and do not infer public release availability from it.
+This README describes the latest public GitHub release, `v0.4.0`. This governed checkout also contains the validated local package `v1.0.8`; use `VERSION` as the local package version authority and do not infer GitHub publication from it.
 
-For a pinned install, use tag `v0.4.0` or the automatically generated source archive on the [GitHub release page](https://github.com/Eriemon/verilog-generator/releases/tag/v0.4.0).
+For a pinned public install, use tag `v0.4.0` or the automatically generated source archive on the [GitHub release page](https://github.com/Eriemon/verilog-generator/releases/tag/v0.4.0). For a pinned local install, use the validated `dist/readable-verilog-generator-v1.0.8/` package produced by the governed release workflow.
 
 ## Authors
 

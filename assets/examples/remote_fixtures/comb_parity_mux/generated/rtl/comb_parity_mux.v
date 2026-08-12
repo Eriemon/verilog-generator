@@ -41,20 +41,20 @@
 
 module comb_parity_mux
 #(
-	parameter C_DATA_WIDTH = 32'd8	//数据总线位宽
+	parameter C_DATA_WIDTH = 32'd8              // 数据总线位宽
 )
 (
 	//-----------------用户接口-----------------//
-	input i_sel,                                //输入选择控制信号
-	input [7:0] i_a,                            //选择为零时的主路径输入数据
-	input [7:0] i_b,                            //选择为一时的旁路输入数据
-	output [7:0] o_y,                           //八位组合选择输出数据
-	output o_parity                             //输出数据奇偶校验标志
+	input i_sel,                                // 输入选择控制信号
+	input [C_DATA_WIDTH - 1:0]i_a,              // 选择为零时的主路径输入数据
+	input [C_DATA_WIDTH - 1:0]i_b,              // 选择为一时的旁路输入数据
+	output [C_DATA_WIDTH - 1:0]o_y,             // 组合选择输出数据
+	output o_parity                             // 输出数据奇偶校验标志
 );
 
 	//---------------输出信号连线---------------//
 	//用户接口
-	assign o_y = i_sel ? i_b : i_a;             //组合主输出桥接
-	assign o_parity = ^o_y;                     //奇偶校验输出桥接
+	assign o_y = i_sel ? i_b : i_a;             // 组合主输出桥接
+	assign o_parity = ^o_y;                     // 奇偶校验输出桥接
 
 endmodule

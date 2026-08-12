@@ -48,84 +48,122 @@ module ready_valid_slice
 	input i_clk,                                // 工作时钟
 	input i_rstn,                               // 低有效复位
 
-	//-----------------用户接口-----------------//
+	//-----------------入IN接口-----------------//
 
 	//IN接口
 	input i_in_valid,                           // 输入有效标志
 	output o_in_ready,                          // 输出就绪标志
-	input [7:0]i_in_data,                       // 8位输入数据总线
+	input [C_DATA_WIDTH - 1:0]i_in_data,        // 输入数据总线
+
+	//----------------出OUT接口-----------------//
 
 	//OUT接口
 	output o_out_valid,                         // 输出有效标志
 	input i_out_ready,                          // 输入就绪标志
-	output [7:0]o_out_data                      // 8位输出数据总线
+	output [C_DATA_WIDTH - 1:0]o_out_data       // 输出数据总线
 );
 
 	//---------------配置参数区域---------------//
 	//复位常量
 	localparam DATA_RESET_VALUE = {C_DATA_WIDTH{1'b0}}; // 数据复位默认值
 
-	//----------------寄存器信号----------------//
-	//上游数据缓存
-	reg [7:0]reg_data_hold = DATA_RESET_VALUE;  // 输入数据缓存寄存器
-
-	//-----------------标志信号-----------------//
-	//上游有效状态
-	reg flag_valid_hold = 1'b0;                 // 输入有效缓存标志
+	//-----------------其他信号-----------------//
+	//上下游握手状态
+	wire [1:0]input_transfer_code;              // 上游接收状态编码
+	wire [1:0]output_transfer_code;             // 下游消费状态编码
 
 	//-----------------输出信号-----------------//
-	//用户接口
-	reg out_valid_o = 1'b0;                     // 输出有效缓存寄存器
-	reg [7:0]out_data_o = DATA_RESET_VALUE;     // 输出数据缓存寄存器
+	//入IN接口
+	//输出缓存空闲状态
+	reg in_ready_o = 1'b1;                      // 输出缓存空闲标志
+
+	//出OUT接口
+	//输出缓存有效状态
+	reg out_valid_o = 1'b0;                     // 输出缓存有效标志
+	reg [C_DATA_WIDTH - 1:0]out_data_o = DATA_RESET_VALUE; // 输入数据缓存寄存器
+
+	//---------------其他信号连线---------------//
+	//IN接口
+	//IN
+	//内部控制信号
+	assign input_transfer_code = {o_in_ready, i_in_valid}; // 上游接收状态
+
+	//OUT接口
+	//OUT
+	assign output_transfer_code = {o_out_valid, i_out_ready}; // 下游消费状态
 
 	//---------------输出信号连线---------------//
+	//入IN接口
 	//用户接口
-	assign o_in_ready = 1'b0;                   // 未使用输出固定为低电平
+	assign o_in_ready = in_ready_o;             // 缓冲区为空时接收输入
+
+	//出OUT接口
 	assign o_out_valid = out_valid_o;           // 输出有效标志桥接
 	assign o_out_data = out_data_o;             // 输出数据总线桥接
 
 	//-------------输出信号处理区域-------------//
-	//用户接口
-	//输出有效标志寄存器更新逻辑
+	//入IN接口
+	//输入可接收状态跟踪缓存占用
 	always@(posedge i_clk or negedge i_rstn)begin
 		if(i_rstn == 1'b0)begin
-			out_valid_o <= 1'b0;                // 复位清除下游有效
-		end else if(flag_valid_hold == 1'b1)begin
-			out_valid_o <= 1'b1;                // 缓存存在时声明下游有效
+			in_ready_o <= 1'b1;                 // 复位声明输出缓存空闲
 		end else begin
-			out_valid_o <= 1'b0;                // 缓存为空时撤销下游有效
+			case(input_transfer_code)
+				2'b11:begin
+					in_ready_o <= 1'b0;         // 输入握手后声明缓存占用
+				end
+				default:begin
+					case(output_transfer_code)
+						2'b11:begin
+							in_ready_o <= 1'b1; // 下游消费后声明缓存空闲
+						end
+						default:begin
+							in_ready_o <= in_ready_o; // 保持输入接收状态
+						end
+					endcase
+				end
+			endcase
 		end
 	end
 
-	//输出数据寄存器更新逻辑
+	//出OUT接口
+	//下游输出状态跟踪缓存有效
 	always@(posedge i_clk or negedge i_rstn)begin
 		if(i_rstn == 1'b0)begin
-			out_data_o <= DATA_RESET_VALUE;     // 复位装载下游数据默认值
-		end else if(flag_valid_hold == 1'b1)begin
-			out_data_o <= reg_data_hold;        // 缓存数据送往下游接口
+			out_valid_o <= 1'b0;                // 复位清除输出有效
 		end else begin
-			out_data_o <= out_data_o;           // 下游未取走时保持数据
+			case(input_transfer_code)
+				2'b11:begin
+					out_valid_o <= 1'b1;        // 输入握手后声明输出有效
+				end
+				default:begin
+					case(output_transfer_code)
+						2'b11:begin
+							out_valid_o <= 1'b0; // 下游消费后清除输出有效
+						end
+						default:begin
+							out_valid_o <= out_valid_o; // 保持输出有效状态
+						end
+					endcase
+				end
+			endcase
 		end
 	end
 
-	//-------------主要任务处理区域-------------//
-	//输入数据缓存寄存器更新逻辑
+	//出OUT接口
+	//下游数据寄存器保存通过的输入载荷
 	always@(posedge i_clk or negedge i_rstn)begin
 		if(i_rstn == 1'b0)begin
-			reg_data_hold <= DATA_RESET_VALUE;  // 复位装载上游缓存默认值
-		end else if(i_in_valid == 1'b1)begin
-			reg_data_hold <= i_in_data;         // 接收上游有效数据
+			out_data_o <= DATA_RESET_VALUE;     // 复位装载上游缓存默认值
 		end else begin
-			reg_data_hold <= reg_data_hold;     // 等待新输入时保持缓存
-		end
-	end
-
-	//输入有效缓存标志更新逻辑
-	always@(posedge i_clk or negedge i_rstn)begin
-		if(i_rstn == 1'b0)begin
-			flag_valid_hold <= 1'b0;            // 复位清除上游有效缓存
-		end else begin
-			flag_valid_hold <= i_in_valid;      // 记录上游有效握手状态
+			case(input_transfer_code)
+				2'b11:begin
+					out_data_o <= i_in_data;    // 输入握手时锁存数据
+				end
+				default:begin
+					out_data_o <= out_data_o;   // 无输入握手时保持输出数据
+				end
+			endcase
 		end
 	end
 

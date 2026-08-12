@@ -713,6 +713,12 @@ def verify_hardcoded_paths(source_audit_context: SourceAuditContext) -> None:
     # set_allowed 保存允许保留绝对路径说明文本的固定路径白名单。
     set_allowed = {"config/defaults.json", "references/integration/configuration.md"}  # 允许出现绝对路径说明文本的文件白名单
 
+    # str_binary_suffixes 保存不参与文本路径扫描的二进制后缀词表。
+    str_binary_suffixes = ".bmp .gif .ico .jpeg .jpg .pdf .png .sqlite .sqlite3 .webp .zip"  # 二进制后缀词表
+
+    # set_binary_suffixes 阻止压缩二进制被当作源码文本扫描，尤其保护发布 PNG 资产。
+    set_binary_suffixes = set(str_binary_suffixes.split())  # 不参与文本路径扫描的二进制后缀
+
     # list_violations 累积所有命中硬编码绝对路径的相对文件路径。
     list_violations: list[str] = []  # 私有绝对路径违规文件列表
 
@@ -726,6 +732,12 @@ def verify_hardcoded_paths(source_audit_context: SourceAuditContext) -> None:
         if str_relative_path in set_allowed:
 
             # 白名单文档允许保留绝对路径说明文本，当前文件直接跳过。
+            continue
+
+        # 二进制资产不具备源码路径语义，避免压缩字节偶然命中正则并制造假阳性。
+        if path_file.suffix.lower() in set_binary_suffixes:
+
+            # 公开 PNG、数据库和压缩归档由各自的格式/发布门禁独立验证。
             continue
 
         # str_text 统一以忽略解码错误的方式读取，避免混合编码阻断绝对路径扫描。

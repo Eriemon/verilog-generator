@@ -10,6 +10,13 @@
     "interface_profile": {
       "protocol": "ready_valid"
     },
+    "parameter_constraints": [
+      {
+        "id": "data_width_positive",
+        "expression": "C_DATA_WIDTH >= 1",
+        "message": "C_DATA_WIDTH must be positive"
+      }
+    ],
     "confirmed_by_user": true,
     "confirmation_notes": "Remote confidence fixture for a one-entry ready/valid slice."
   },

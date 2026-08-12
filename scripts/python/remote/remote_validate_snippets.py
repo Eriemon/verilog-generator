@@ -1113,9 +1113,11 @@ def spec(name="remote_verilog_quality_gates"):
 
 
 catalog = load_verilog_quality_gates()
-assert catalog["total_rules"] == 128, catalog
-assert catalog["active_rules"] == 128, catalog
-assert catalog["reserved_rules"] == 0, catalog
+# catalog 是规则数量的唯一事实源；远程片段不重复维护固定总数。
+active_rule_count = int(catalog["active_rules"])
+assert int(catalog["total_rules"]) == active_rule_count, catalog
+assert active_rule_count > 0, catalog
+assert int(catalog["reserved_rules"]) == 0, catalog
 prompt = render_prompt(spec(), stage="rtl")
 for marker in (
     "Verilog quality gates",
@@ -1129,7 +1131,7 @@ for marker in (
 ):
     assert marker in prompt, marker
 summary = summarize_constraints_for_prompt(max_rules_per_group=3)
-assert "128 active gates" in summary, summary
+assert f"{active_rule_count} active gates" in summary, summary
 assert "reserved gates" not in summary, summary
 
 smoke_root = Path(os.environ["VERILOG_GENERATOR_SMOKE_RUN_DIR"])

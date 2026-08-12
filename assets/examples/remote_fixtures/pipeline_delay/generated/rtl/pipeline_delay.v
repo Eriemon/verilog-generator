@@ -50,9 +50,9 @@ module pipeline_delay
 
 	//-----------------用户接口-----------------//
 	input i_valid,                              // 输入有效标志
-	input [7:0]i_data,                          // 8位输入数据总线
+	input [C_DATA_WIDTH - 1:0]i_data,           // 输入数据总线
 	output o_valid,                             // 输出有效标志
-	output [7:0]o_data                          // 8位输出数据总线
+	output [C_DATA_WIDTH - 1:0]o_data           // 输出数据总线
 );
 
 	//---------------配置参数区域---------------//
@@ -61,7 +61,7 @@ module pipeline_delay
 
 	//----------------寄存器信号----------------//
 	//输入数据缓存
-	reg [7:0]reg_data_hold = DATA_RESET_VALUE;  // 输入数据缓存寄存器
+	reg [C_DATA_WIDTH - 1:0]reg_data_hold = DATA_RESET_VALUE; // 输入数据缓存寄存器
 
 	//-----------------标志信号-----------------//
 	//有效缓存状态
@@ -70,7 +70,7 @@ module pipeline_delay
 	//-----------------输出信号-----------------//
 	//用户接口
 	reg valid_o = 1'b0;                         // 输出有效缓存寄存器
-	reg [7:0]data_o = DATA_RESET_VALUE;         // 输出数据缓存寄存器
+	reg [C_DATA_WIDTH - 1:0]data_o = DATA_RESET_VALUE; // 输出数据缓存寄存器
 
 	//---------------输出信号连线---------------//
 	//用户接口

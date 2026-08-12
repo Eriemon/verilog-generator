@@ -1,0 +1,12 @@
+[project]
+name = "readable-verilog-generator"
+version = "1.0.8"
+description = "A governed Codex skill for readable Verilog-2001 RTL workflows."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [
+  {name = "Jiyuan Liu"},
+  {name = "He Li"},
+]
+keywords = ["Codex", "Verilog", "Verilog-2001", "RTL", "FPGA"]
