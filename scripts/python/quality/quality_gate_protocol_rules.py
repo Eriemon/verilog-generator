@@ -19,6 +19,9 @@ from scripts.python.validation.rulebook import load_verilog_rulebook
 # 协议排序规则只直接依赖诊断类型与协议顺序上下文。
 from .quality_gate_types import ProtocolOrderIssueContext, QualityIssue
 
+# 低有效复位名称统一按下划线语义段识别。
+from .reset_name_roles import is_low_active_reset_name
+
 # 协议 token 集合与通用小工具从 common 模块显式导入。
 from .quality_gate_common import (
     APB_PORT_TOKENS,
@@ -794,17 +797,8 @@ def _is_low_active_reset_name(str_reset: str) -> bool:
     :return: reset 名称表达低有效时返回 True。
     """
 
-    # set_allowed_resets 与旧 reset 风格规则保持一致。
-    set_allowed_resets = {  # 低有效 reset 命名白名单
-        "i_rstn",  # 通用输入复位约定
-        "i_axis_arstn",  # AXIS 流接口异步低有效复位
-        "i_axi_arstn",  # AXI memory-mapped 异步低有效复位
-        "i_apb_prstn",  # APB 低有效外设复位约定
-        "i_ahb_hrstn",  # AHB 低有效总线复位约定
-    }
-
-    # rstn/arstn 后缀和白名单都视为低有效。
-    return str_reset.endswith("rstn") or str_reset.endswith("arstn") or str_reset in set_allowed_resets
+    # 共享角色函数同时支持 rstn、_rstn、_rst_n 和后续用途分段。
+    return is_low_active_reset_name(str_reset)
 
 # 返回当前模块需要公开的兼容导出名称清单。
 def _export_names() -> list[str]:

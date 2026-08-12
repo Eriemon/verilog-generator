@@ -9,6 +9,9 @@ import re
 # cast 只用于让 current-project 质量门识别 dict.get 的可空模型类型
 from typing import cast
 
+# 低有效复位名称统一复用质量层的下划线语义段边界。
+from ..reset_name_roles import is_low_active_reset_name
+
 # formatter 错误类型和参数/端口模型支撑本模块的归一化与校验
 from .models import (
     VerilogFormatterError,
@@ -2179,8 +2182,16 @@ class AnalysisMixin:
             # bool_has_mixed_edges 标记敏感表同时出现 posedge 和 negedge。
             bool_has_mixed_edges = "posedge" in block.header and "negedge" in block.header  # 混合边沿敏感表标记
 
-            # bool_has_low_reset_edge 标记敏感表是否声明低有效 reset 边沿。
-            bool_has_low_reset_edge = bool(re.search(r"negedge\s+\w*rst_?n\b", block.header))  # 低有效 reset 边沿标记
+            # 提取敏感表中的全部 negedge 标识符，避免依赖 rstn 必须位于名称结尾。
+            tuple_negedge_names = tuple(  # 当前 always 敏感表中的下降沿信号
+                re.findall(r"\bnegedge\s+([A-Za-z_]\w*)", block.header, flags=re.IGNORECASE)  # 下降沿标识符序列
+            )
+
+            # 任一下降沿信号含完整低有效复位段即可证明复位边沿存在。
+            bool_has_low_reset_edge = any(  # 敏感表是否声明低有效复位边沿
+                is_low_active_reset_name(str_edge_name)  # 共享低有效复位角色判断
+                for str_edge_name in tuple_negedge_names  # 遍历当前敏感表下降沿名称
+            )
 
             # 混合边沿敏感表必须包含低有效 reset 或显式 guard。
             if bool_has_mixed_edges and not bool_has_low_reset_edge:

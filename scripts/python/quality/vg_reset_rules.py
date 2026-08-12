@@ -15,20 +15,33 @@ from .vg_semantic_facts import VgFacts, iter_trusted_modules
 # models 统一逐门禁状态和定位证据。
 from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passed
 
-# 复位、清零和置位名称只用于识别控制信号角色，不推断普通数据信号。
-RESET_NAME_PATTERN = re.compile(  # 常见复位类控制信号名称
-    r"(?:^|_)(?:rst|reset|clear|clr|preset|set)(?:_|$)|^(?:rst|reset|clear|clr|preset|set)",  # 受控名称边界
-    flags=re.IGNORECASE,  # Verilog 标识符角色匹配不依赖大小写风格
-)
+# 共享名称角色避免 FSM、formatter 与兼容质量门各自维护机械后缀判断。
+from .reset_name_roles import RESET_ONLY_NAME_PATTERN, is_reset_name
 
-# set/preset 与 reset/clear 分开识别，用于禁止同块双向异步控制。
-SET_NAME_PATTERN = re.compile(r"(?:^|_)(?:set|preset)(?:_|$)|^(?:set|preset)", flags=re.IGNORECASE)  # 置位类信号名称
-
-# reset-only 模式排除置位名称，防止角色集合重叠。
-RESET_ONLY_NAME_PATTERN = re.compile(  # 复位或清零类信号名称
-    r"(?:^|_)(?:rst|reset|clear|clr)(?:_|$)|^(?:rst|reset|clear|clr)",  # 排除 set/preset 名称
+# set/preset 独立使用相同语义段边界，防止 setup 或 setter 被误识别。
+SET_NAME_PATTERN = re.compile(  # 置位类控制信号名称
+    r"(?:^|_)(?:set|preset)(?:_?n)?(?=_|$)",  # 完整下划线语义段
     flags=re.IGNORECASE,  # 支持常见大写信号风格
 )
+
+# 广义控制模式复用 reset-only 与 set/preset 的受控语义段。
+RESET_NAME_PATTERN = re.compile(  # 复位、清零或置位类控制名称
+    rf"(?:{RESET_ONLY_NAME_PATTERN.pattern}|{SET_NAME_PATTERN.pattern})",  # 两类控制角色并集
+    flags=re.IGNORECASE,  # 与两个基础模式保持相同大小写语义
+)
+
+# is_reset_control_name 判断广义复位、清零或置位控制角色。
+def is_reset_control_name(str_name: str) -> bool:
+    """判断标识符是否包含完整的复位、清零或置位语义段。
+
+    参数:
+        str_name: 待判断的 Verilog 标识符。
+    返回:
+        名称属于受控复位类控制角色时返回 True。
+    """
+
+    # 广义模式只组合两个已限制边界的角色集合。
+    return RESET_NAME_PATTERN.search(str_name) is not None
 
 # evaluate_reset_gate 把固定编号路由到复位规则实现。
 def evaluate_reset_gate(str_gate_id: str, facts: VgFacts) -> VgEvaluation:
@@ -478,11 +491,17 @@ def _no_sync_async_mix(facts: VgFacts) -> VgEvaluation:
         复位模式混用时失败，否则按实际复位结构通过。
     """
 
-    # usages 保存每条复位线出现过的模式与首个定位事实。
-    dict_usages: dict[str, list[tuple[str, str, int]]] = {}  # 信号到模式、路径和行号列表
+    # findings 为单个 module 内发生模式混用的复位线保存确定证据。
+    list_findings: list[VgFinding] = []  # module-local 同步与异步混用证据
+
+    # applicable 记录是否识别到至少一条复位使用事实。
+    bool_applicable = False  # 是否存在可检查的复位使用
 
     # 每个时序过程块的首层复位条件决定同步或异步使用方式。
     for source_facts, dict_module, _, _ in iter_trusted_modules(facts):
+
+        # 相同端口名在不同 module 中不是同一线路，使用事实必须局部汇总。
+        dict_module_usages: dict[str, list[tuple[str, str, int]]] = {}  # 当前 module 的复位使用事实
 
         # 组合过程块不属于触发器复位模式检查范围。
         for dict_always in _sequential_always(dict_module):
@@ -508,31 +527,31 @@ def _no_sync_async_mix(facts: VgFacts) -> VgEvaluation:
             # always 起始行作为复位使用点的稳定定位。
             int_line = int(dict_always.get("line_start") or 1)  # 当前复位使用点的一基行号
 
-            # 保留全部模式事实以便发现跨块混用。
-            dict_usages.setdefault(str_signal, []).append((str_style, source_facts.relative_path, int_line))
+            # 保留当前 module 的模式事实以发现模块内部跨块混用。
+            dict_module_usages.setdefault(str_signal, []).append((str_style, source_facts.relative_path, int_line))
 
-    # findings 为每条发生模式混用的复位线生成一条确定证据。
-    list_findings: list[VgFinding] = []  # 同步与异步混用证据
+            # 已识别首层复位控制时标记规则适用。
+            bool_applicable = True  # 至少一个 module 提供复位使用事实
 
-    # 信号名排序保证多文件报告顺序稳定。
-    for str_signal in sorted(dict_usages):
+        # 当前 module 内按信号名排序，保证多文件报告顺序稳定。
+        for str_signal in sorted(dict_module_usages):
 
-        # 同时出现两个模式才违反规则。
-        set_styles = {str_style for str_style, _, _ in dict_usages[str_signal]}  # 当前复位线的模式集合
+            # 同时出现两个模式才违反规则。
+            set_styles = {str_style for str_style, _, _ in dict_module_usages[str_signal]}  # 当前复位线的模式集合
 
-        # 单一模式符合复位线路一致性要求。
-        if set_styles != {"async", "sync"}:
+            # 单一模式符合复位线路一致性要求。
+            if set_styles != {"async", "sync"}:
 
-            # 当前信号没有跨模式使用，无需生成 finding。
-            continue
+                # 当前信号没有跨模式使用，无需生成 finding。
+                continue
 
-        # 第一处使用点足以定位需要统一的复位线路。
-        _, str_path, int_line = dict_usages[str_signal][0]  # 当前混用复位线的首个证据位置
+            # 第一处使用点足以定位需要统一的复位线路。
+            _, str_path, int_line = dict_module_usages[str_signal][0]  # 当前混用复位线的首个证据位置
 
-        # 每条混用复位线只生成一个稳定证据。
-        list_findings.append(
-            VgFinding(str_path, int_line, "同一复位线路同时用于同步和异步复位。", str_signal)
-        )
+            # 每条混用复位线只生成一个稳定证据。
+            list_findings.append(
+                VgFinding(str_path, int_line, "同一复位线路同时用于同步和异步复位。", str_signal)
+            )
 
     # 任一混用线路都使固定门禁失败。
     if list_findings:
@@ -541,7 +560,7 @@ def _no_sync_async_mix(facts: VgFacts) -> VgEvaluation:
         return failed(*list_findings)
 
     # 至少发现一条复位使用事实时规则具有适用性。
-    return passed(applicable=bool(dict_usages))
+    return passed(applicable=bool_applicable)
 
 # _one_reset_per_always 限制单个时序块只使用一个复位类异步控制。
 def _one_reset_per_always(facts: VgFacts) -> VgEvaluation:

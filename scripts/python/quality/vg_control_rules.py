@@ -15,8 +15,23 @@ from .vg_semantic_facts import VgFacts, iter_trusted_modules
 # models 统一逐门禁状态和定位证据。
 from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passed
 
+# reset rules 提供统一的复位、清零和置位名称角色判断。
+from .vg_reset_rules import is_reset_control_name
+
 # 共享位宽事实确保实例连接与表达式规则采用同一受限求值语义。
 from .vg_value_facts import constant_integer, expression_width, module_parameter_values, module_widths
+
+# 确定数位的定宽字面量在标识符提取前作为原子常量处理。
+DETERMINISTIC_BASED_LITERAL_PATTERN = re.compile(  # Verilog-2001 确定定宽常量
+    r"(?<![A-Za-z0-9_$])"
+    r"(?:"
+    r"\d+'[sS]?[bB][01_]+"
+    r"|\d+'[sS]?[oO][0-7_]+"
+    r"|\d+'[sS]?[dD][0-9_]+"
+    r"|\d+'[sS]?[hH][0-9a-fA-F_]+"
+    r")"
+    r"(?![A-Za-z0-9_$])",  # 禁止只匹配畸形字面量的合法前缀
+)
 
 # evaluate_control_gate 把固定编号路由到控制结构规则实现。
 def evaluate_control_gate(str_gate_id: str, facts: VgFacts) -> VgEvaluation:
@@ -188,10 +203,28 @@ def _synth_no_reset_override(facts: VgFacts) -> VgEvaluation:
     )  # 明确改变复位属性的综合指令模式
 
     # 每个 formatter 确认的 module 独立定位证据。
-    for source_facts, _, str_module_text, int_base_line in iter_trusted_modules(facts):
+    for source_facts, dict_module, str_module_text, int_base_line in iter_trusted_modules(facts):
 
-        # 常见复位、清零或置位标识符表明当前 module 具有复位语义。
-        if re.search(r"\b(?:rst|reset|clear|preset)\w*\b", str_module_text, flags=re.IGNORECASE):
+        # 端口和内部声明提供不受注释文本影响的控制名称事实。
+        tuple_declared_names = tuple(  # 当前 module 的端口与内部声明名称
+            str(dict_item.get("name") or "")  # 当前结构化声明名称
+            for str_collection in ("ports", "decls")  # 端口与内部声明集合
+            for dict_item in dict_module.get(str_collection, []) or []  # 当前声明记录
+            if str(dict_item.get("name") or "")  # 忽略缺少常量标识符的记录
+        )
+
+        # always 的 reset 字段补充 formatter 已确认的控制身份。
+        tuple_always_resets = tuple(  # 当前 module 时序块的复位字段
+            str(dict_always.get("reset") or "")  # formatter 确认的复位名称
+            for dict_always in dict_module.get("always", []) or []  # 当前过程块记录
+            if str(dict_always.get("reset") or "")  # 排除没有复位的过程块
+        )
+
+        # 任一结构化名称命中共享角色模式即使规则进入适用状态。
+        if any(
+            is_reset_control_name(str_name)
+            for str_name in tuple_declared_names + tuple_always_resets
+        ):
 
             # 标记含复位信号的 module 已进入规则审查范围。
             bool_applicable = True  # 当前 module 含有可审查的复位语义
@@ -408,11 +441,11 @@ def _repeat_constant_count(facts: VgFacts) -> VgEvaluation:
     # applicable 区分没有 repeat 与全部 repeat 均使用常量。
     bool_applicable = False  # 是否发现 repeat 控制结构
 
-    # 常量名称来自 formatter 识别的 parameter 与 localparam。
-    set_constants = _constant_names(facts)  # repeat 表达式允许引用的常量名称
-
     # 每个可信 module 独立定位 repeat 头部。
-    for source_facts, _, str_module_text, int_base_line in iter_trusted_modules(facts):
+    for source_facts, dict_module, str_module_text, int_base_line in iter_trusted_modules(facts):
+
+        # repeat 只能引用当前 module 声明的综合期常量。
+        set_constants = _constant_names(dict_module)  # 当前 module 的常量名称
 
         # 捕获 repeat 括号内的次数表达式。
         for obj_match in re.finditer(r"\brepeat\s*\(\s*([^)]*?)\s*\)", str_module_text, flags=re.IGNORECASE):
@@ -876,11 +909,11 @@ def _for_constant_bounds(facts: VgFacts) -> VgEvaluation:
     # applicable 区分没有目标 for 和已完成检查。
     bool_applicable = False  # 是否发现受支持形状的 for 语句
 
-    # parameter/localparam 名称是循环常量表达式允许引用的符号。
-    set_constants = _constant_names(facts)  # 当前目标中已声明的常量名称
-
     # 只在可信 module 文本内匹配标准三段式 for。
-    for source_facts, _, str_module_text, int_base_line in iter_trusted_modules(facts):
+    for source_facts, dict_module, str_module_text, int_base_line in iter_trusted_modules(facts):
+
+        # 三段式循环只能引用当前 module 声明的 parameter 或 localparam。
+        set_constants = _constant_names(dict_module)  # 当前 module 的循环常量集合
 
         # 捕获循环变量、初值、边界和值更新表达式。
         for obj_match in re.finditer(
@@ -1233,33 +1266,30 @@ def _trusted_pattern_gate(facts: VgFacts, str_pattern: str, str_message: str) ->
     # 没有目标构造时文本规则按不适用通过。
     return passed(applicable=False)
 
-# _constant_names 汇总 for 边界允许引用的常量符号。
-def _constant_names(facts: VgFacts) -> set[str]:
-    """收集 formatter AST 已识别的 parameter 与 localparam 名称。
+# _constant_names 汇总单个 module 内允许引用的常量符号。
+def _constant_names(dict_module: dict[str, object]) -> set[str]:
+    """收集当前 module 的 parameter 与 localparam 名称。
 
     参数:
-        facts: formatter AST 构建的可信扫描事实。
+        dict_module: formatter AST 中的单个 module 报告。
     返回:
-        当前目标中可用于循环常量表达式的名称集合。
+        当前 module 中可用于循环常量表达式的名称集合。
     """
 
-    # names 跨 module 汇总仅用于文本循环的常量身份判断。
-    set_names: set[str] = set()  # parameter 与 localparam 名称集合
+    # names 只保存当前 module 的综合期常量身份。
+    set_names: set[str] = set()  # 当前 module 的 parameter 与 localparam 名称
 
-    # 每个 module 的两类常量声明使用相同 name 字段。
-    for _, dict_module, _, _ in iter_trusted_modules(facts):
+    # params 和 localparams 都可作为当前 module 的综合期常量。
+    for str_collection in ("params", "localparams"):
 
-        # params 和 localparams 都可作为综合期常量。
-        for str_collection in ("params", "localparams"):
+        # 空名称被排除，避免放宽任意表达式。
+        set_names.update(
+            str(dict_item.get("name") or "")  # 当前常量声明名称
+            for dict_item in dict_module.get(str_collection, []) or []  # 遍历当前常量声明集合
+            if str(dict_item.get("name") or "")  # 排除 formatter 空名称
+        )
 
-            # 空名称被排除，避免放宽任意表达式。
-            set_names.update(
-                str(dict_item.get("name") or "")  # 当前常量声明名称
-                for dict_item in dict_module.get(str_collection, [])  # 遍历当前常量声明集合
-                if str(dict_item.get("name") or "")  # 排除 formatter 空名称
-            )
-
-    # 返回全部可信 module 中的已声明常量名。
+    # 返回当前 module 的已声明常量名。
     return set_names
 
 # _constant_expression 限定 for 初值和边界的符号来源。
@@ -1273,8 +1303,13 @@ def _constant_expression(str_expression: str, set_constants: set[str]) -> bool:
         True 表示没有变量标识符或全部标识符均为常量。
     """
 
-    # 标识符集合忽略数字和运算符，只核对符号身份。
-    set_identifiers = set(re.findall(r"\b[A-Za-z_]\w*\b", str_expression))  # 表达式中出现的标识符
+    # 确定定宽常量先替换为空白，避免 d0、hFF 等数位被当作标识符。
+    str_without_literals = DETERMINISTIC_BASED_LITERAL_PATTERN.sub(" ", str_expression)  # 待提取符号的表达式
+
+    # 标识符集合忽略数字、合法定宽常量和运算符，只核对符号身份。
+    set_identifiers = set(  # 表达式中剩余的真实标识符
+        re.findall(r"\b[A-Za-z_]\w*\b", str_without_literals)  # 去除常量后的符号集合
+    )
 
     # 纯数字表达式或常量子集满足综合期边界要求。
     return not set_identifiers or set_identifiers <= set_constants

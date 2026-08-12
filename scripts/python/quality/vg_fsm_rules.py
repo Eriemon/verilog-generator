@@ -18,6 +18,9 @@ from .vg_semantic_facts import VgFacts, VgSourceFacts, iter_trusted_modules
 # models 统一逐门禁状态和定位证据。
 from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passed
 
+# reset rules 提供与其余复位门禁一致的名称角色判断。
+from .vg_reset_rules import is_reset_name
+
 # evaluate_fsm_gate 把固定编号路由到 FSM 规则实现。
 def evaluate_fsm_gate(str_gate_id: str, facts: VgFacts) -> VgEvaluation:
     """执行 FSM 规则组中的指定 VG 门禁。
@@ -474,16 +477,28 @@ def _reset_initial_state(str_module_text: str) -> str | None:
         已证明的 ST_* 初态；无法证明时返回空值。
     """
 
-    # 模式要求复位条件后直接出现 state_current 非阻塞赋值。
-    obj_match = re.search(  # 当前 module 的复位初态匹配结果
-        r"\bif\s*\([^)]*\b(?:rst|reset)\w*\b[^)]*\)"
-        r"\s*(?:begin\b\s*)?\s*state_current\s*<=\s*(ST_[A-Za-z0-9_]+)\s*;",  # 复位状态赋值模式
-        str_module_text,  # 待匹配复位入口的 module 文本
-        flags=re.IGNORECASE,  # 复位标识符大小写不敏感
+    # 候选模式只要求 if 分支直接赋予 state_current 一个 ST_* 常量。
+    str_pattern = (  # 复位初态候选分支模式
+        r"\bif\s*\((?P<condition>[^)]*)\)"
+        r"\s*(?:begin\b\s*)?\s*state_current\s*<=\s*(?P<state>ST_[A-Za-z0-9_]+)\s*;"
     )
 
-    # 缺少完整匹配时保持未知，不推断动态右值。
-    return obj_match.group(1) if obj_match else None
+    # 每个候选条件都通过共享复位角色函数核验标识符边界。
+    for obj_match in re.finditer(str_pattern, str_module_text, flags=re.IGNORECASE):
+
+        # 条件标识符集合排除操作符和数值字面量。
+        tuple_identifiers = tuple(  # 当前 if 条件中的 Verilog 标识符
+            re.findall(r"[A-Za-z_]\w*", obj_match.group("condition"))  # 条件内候选控制名称
+        )
+
+        # 只有明确包含 reset-only 角色的条件才能证明初态。
+        if any(is_reset_name(str_identifier) for str_identifier in tuple_identifiers):
+
+            # 返回与可信复位条件直接关联的常量状态。
+            return obj_match.group("state")
+
+    # 缺少可信复位候选时保持未知，不推断动态右值。
+    return None
 
 # _state_case_body 限定状态转移分支的可信词法范围。
 def _state_case_body(str_module_text: str) -> str | None:

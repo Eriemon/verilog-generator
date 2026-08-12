@@ -20,6 +20,9 @@ from .formatter_backend.banners import display_width
 from .formatter_ast import build_ast_report_for_path, iter_verilog_sources, read_verilog_source
 from scripts.python.validation.rulebook import load_verilog_rulebook
 
+# common 兼容路径复用统一低有效复位名称语义。
+from .reset_name_roles import is_low_active_reset_name
+
 # ensure_runtime_visible_target_path 在 CLI 写报告前校验目标路径对当前运行宿主可见。
 def ensure_runtime_visible_target_path(path_target: Path) -> Path:
     """
@@ -1331,24 +1334,11 @@ def _bad_reset_style(str_header: str, str_reset: str) -> bool:
     :return: 复位边沿或命名不符合低有效约定时返回 True。
     """
 
-    # set_allowed_resets 保留旧质量门允许的常见低有效复位名。
-    set_allowed_resets = {  # reset 规则保留的低有效复位名白名单
-        "i_rstn",  # 通用低有效复位端口名
-        "i_axis_arstn",  # AXIS 低有效复位端口名
-        "i_axi_arstn",  # AXI memory/control 异步复位名
-        "i_apb_prstn",  # APB peripheral reset 低有效名
-        "i_ahb_hrstn",  # AHB HRESETn 风格低有效名
-    }
-
     # bool_has_negedge 表示敏感列表中包含低有效边沿。
     bool_has_negedge = "negedge" in str_header  # 是否包含 negedge 触发
 
-    # bool_named_low_active 表示复位名符合低有效后缀或白名单。
-    bool_named_low_active = (
-        str_reset.endswith("rstn")  # rstn 后缀表示低有效复位
-        or str_reset.endswith("arstn")  # arstn 后缀表示异步低有效复位
-        or str_reset in set_allowed_resets  # 历史白名单复位名
-    )  # 复位名是否符合低有效命名约束
+    # 低有效身份由统一语义段规则证明，不再维护结尾白名单。
+    bool_named_low_active = is_low_active_reset_name(str_reset)  # 复位名是否符合低有效命名约束
 
     # 缺少 negedge 或复位名不低有效都视作异常。
     return not bool_has_negedge or not bool_named_low_active

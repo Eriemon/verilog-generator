@@ -141,6 +141,12 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 | VG142 | BLOCKER | wire_declaration_inline_assignment | active |
 | VG143 | BLOCKER | simulation_system_task_in_rtl | active |
 
+## Recognition Scope Contracts
+
+- Reset roles are recognized as complete underscore-delimited semantic segments. Names such as `rstn`, `rst_n`, `i_rstn`, `foo_rstn_sync`, `i_tb_rstn`, `i_axi_arstn`, `i_axis_arstn`, `i_ahb_hrstn`, and `i_apb_prstn` are supported; ordinary substrings such as `burst_count`, `forest`, `setup`, and `clearance` are not reset controls.
+- VG073 and VG132 build clock identity independently for each module. Different clock port names across module boundaries do not by themselves prove multiple clock domains or clock-as-data use.
+- VG081 and VG123 resolve `parameter` and `localparam` names only in the module that declares them. VG123 accepts deterministic Verilog-2001 sized binary, octal, decimal, and hexadecimal literals, while X, Z, question-mark, malformed, and undeclared-symbol expressions remain unsupported.
+
 ## Formerly Reserved Rules
 
 ### VG080 - Loop arithmetic ownership

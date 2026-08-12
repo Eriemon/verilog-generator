@@ -245,6 +245,29 @@ def download_remote_runtime_config(
     # 解析并返回下载到本地的配置副本。
     return func_load_remote_runtime_config(path_local_copy)
 
+# resolve_helper_skill_root 按 skill 标记定位 helper 所属根目录。
+def resolve_helper_skill_root(path_helper: Path) -> Path:
+    """定位 erie-remote-ssh helper 所属的 skill 根目录。
+
+    :param path_helper: erie-remote-ssh helper Python 入口路径。
+    :return: 包含 SKILL.md 的 helper skill 根；旧布局无标记时返回兼容根。
+    """
+
+    # helper 入口的嵌套层级会随依赖版本变化，SKILL.md 才是稳定边界。
+    path_helper_resolved = path_helper.resolve()  # 向上查找稳定 skill 标记的绝对 helper 路径
+
+    # 从 helper 所在目录逐级向上寻找最近的 skill 根标记。
+    for path_candidate in path_helper_resolved.parents:
+
+        # 最近的 SKILL.md 所在目录定义 helper 依赖的真实 skill 根。
+        if (path_candidate / "SKILL.md").is_file():
+
+            # 返回标记命中的根，避免依赖 helper 入口的嵌套深度。
+            return path_candidate
+
+    # 兼容没有 skill marker 的旧测试夹具和历史单层 helper 布局。
+    return path_helper_resolved.parents[1]
+
 # stage_package 复制 skill 主体和 tests/smoke harness 到临时上传包。
 def stage_package(path_helper: Path, str_run_id: str) -> Path:
     """创建远端验证使用的本地 staging 包。
@@ -254,12 +277,12 @@ def stage_package(path_helper: Path, str_run_id: str) -> Path:
     :return: staging 包根目录路径。
     """
 
-    # reports/tmp 位于 erie-remote-ssh 项目根下。
-    path_remote_project = path_helper.resolve().parents[1]  # erie-remote-ssh 项目根目录
+    # helper skill 根决定受上传策略允许的本地 staging 边界。
+    path_remote_skill_root = resolve_helper_skill_root(path_helper)  # staging 所属的 helper skill 根目录
 
     # 每次 run 使用独立 staging 目录。
     path_package_root = (  # 当前 run 上传前使用的本地 staging 根
-        path_remote_project / "reports" / "tmp" / f"readable-verilog-generator-{str_run_id}"  # run 专属临时上传包目录
+        path_remote_skill_root / "reports" / "tmp" / f"readable-verilog-generator-{str_run_id}"  # run 专属临时上传包目录
     )
 
     # 复用 run id 时先删除旧 staging 目录。

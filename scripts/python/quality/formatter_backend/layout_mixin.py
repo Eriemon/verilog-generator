@@ -12,6 +12,12 @@ from typing import Iterable
 # banner 工具用于识别和生成既有分组注释样式。
 from .banners import display_width, extract_banner_title, is_banner_line, make_banner
 
+# 时钟名称同样按完整下划线语义段识别。
+from ..clock_name_roles import is_clock_name
+
+# 上层共享角色函数统一 formatter 与质量门的复位名称边界和极性。
+from ..reset_name_roles import is_low_active_reset_name, is_reset_name
+
 # formatter 错误与端口布局模型，供端口整理主链直接复用。
 from .models import (
     VerilogFormatterError,
@@ -2753,65 +2759,14 @@ class LayoutMixin:
         # 先把连字符统一折成下划线，方便后面的时钟复位词元匹配用一套规则处理。
         normalized = lowered_name.replace("-", "_")  # 连字符统一为下划线后的命名文本
 
-        # 这组词元覆盖了常见的 clk/reset 命名，完全命中时可以直接判断为时钟或复位。
-        set_exact_tokens = {
-            "clk",  # 常见时钟与复位端口的精确词元
-            "clock",  # 常见时钟名称的完整词元
-            "aclk",  # AXI 风格时钟名称词元
-            "rst",  # 下面这些词元覆盖同步/异步、高有效/低有效以及 AXIS 风格复位别名
-            "rstn",  # 低有效复位的连写词元
-            "rst_n",  # 低有效复位的下划线写法
-            "reset",  # 高有效复位的完整单词写法
-            "resetn",  # reset 全词低有效的连写别名
-            "reset_n",  # reset 全词低有效的下划线别名
-            "areset",  # 不带极性后缀的异步复位全词名称
-            "aresetn",  # 低有效异步复位的全词连写名称
-            "areset_n",  # 低有效异步复位的全词下划线名称
-            "arst",  # 不带极性后缀的异步复位简写
-            "arstn",  # 低有效异步复位的简写连写名称
-            "arst_n",  # 低有效异步复位的简写下划线名称
-            "axis_aclk",  # AXIS 风格时钟全词名称
-            "axis_rst",  # AXIS 风格高有效复位简写
-            "axis_rstn",  # AXIS 风格低有效复位简写
-            "axis_reset",  # AXIS 风格高有效复位全词名称
-            "axis_resetn",  # AXIS 风格低有效复位全词连写
-            "axis_aresetn",  # AXIS 风格低有效异步复位全词名称
-            "axis_arstn",  # AXIS 风格低有效异步复位简写
-        }
+        # 时钟和复位名称都走共享语义段规则，允许段后继续携带用途后缀。
+        if is_clock_name(normalized) or is_reset_name(normalized):
 
-        # 端口名恰好等于常见时钟复位词元时，不需要再走后缀匹配分支。
-        if normalized in set_exact_tokens:
-
-            # 名称整体就等于常见词元时，可以直接判定为时钟或复位信号。
+            # 完整时钟或复位段已证明当前名称属于时钟复位布局组。
             return True
 
-        # 如果不是精确命中，就再检查名称是否以这些时钟复位词元结尾。
-        return any(normalized.endswith(f"_{token}") for token in set_exact_tokens)
-
-    # 判断信号名是否命中给定的词元集合。
-    def _matches_signal_name_token(self, lowered_name: str, tokens: set[str]) -> bool:
-        """
-        判断信号名是否命中给定的词元集合。
-        
-        参数:
-            self: 当前 LayoutMixin 实例。
-            lowered_name: 小写后的端口名。
-            tokens: 需要匹配的词元集合。
-        返回:
-            bool: True 表示信号名命中了目标词元集合。
-        """
-
-        # 这里同样先统一端口名里的分隔符，确保词元集合匹配不受 '-' 和 '_' 写法差异影响。
-        normalized = lowered_name.replace("-", "_")  # 连字符统一为下划线后的信号名
-
-        # 端口名完全命中目标词元集合时，可以直接给出肯定结论。
-        if normalized in tokens:
-
-            # 精确命中目标词元集合时，当前名称已经满足这条命名规则。
-            return True
-
-        # 精确不命中时，再退一步检查名称是否以目标词元结尾。
-        return any(normalized.endswith(f"_{token}") for token in tokens)
+        # 普通单词内部相似子串不具有时钟或复位角色。
+        return False
 
     # 推断复位信号名称表达的有效极性。
     def _infer_reset_name_polarity(self, lowered_name: str) -> str | None:
@@ -2825,42 +2780,16 @@ class LayoutMixin:
             str | None: 推断出的复位极性，无法确定时返回空值。
         """
 
-        # 这组词元专门覆盖低电平有效复位的常见别名。
-        set_low_active_tokens = {
-            "rstn",  # 覆盖低电平有效复位的常见连写、下划线和 AXIS/AXI 变体
-            "rst_n",  # rst 缩写的低有效下划线形式
-            "resetn",  # reset 全词后直接接低有效尾字母的写法
-            "reset_n",  # reset 全词保留下划线尾缀的低有效写法
-            "aresetn",  # async reset 全词直连低有效尾字母
-            "areset_n",  # async reset 全词保留下划线尾缀
-            "arstn",  # a/rst 简写拼成的低有效连写
-            "arst_n",  # a/rst 简写保留下划线尾缀
-            "axis_rstn",  # AXIS 端口常见的 rstn 低有效缩写
-            "axis_resetn",  # AXIS 端口常见的 resetn 全词写法
-            "axis_aresetn",  # AXIS 命名里带 aresetn 的异步复位字段
-            "axis_arstn",  # AXIS 命名里带 arstn 的异步复位简写
-        }
+        # 先按共享语义段规则判断是否携带低有效极性后缀。
+        if is_low_active_reset_name(lowered_name):
 
-        # 这组词元表示高电平有效复位的常见命名形式。
-        set_high_active_tokens = {
-            "rst",  # 覆盖高电平有效复位的常见普通写法与 AXIS/AXI 变体
-            "reset",  # 直接写成 reset 的高有效名称
-            "areset",  # 很多 IP 把异步高有效复位直接写成 areset
-            "arst",  # 部分旧命名把异步高有效复位缩写成 arst
-            "axis_rst",  # 带 axis 前缀且只保留 rst 缩写时，也按高有效默认复位处理
-            "axis_reset",  # 带 axis 前缀并写成完整 reset 时，同样归到高有效默认集合
-        }
-
-        # 先看名称是否符合低电平有效复位的常见命名，命中后就不必再看高电平分支。
-        if self._matches_signal_name_token(lowered_name, set_low_active_tokens):
-
-            # 命中低有效复位命名时，返回 low 供上游生成低有效默认复位语义。
+            # 完整低有效复位段命中时返回 low。
             return "low"
 
-        # 低电平命名不成立时，再检查它是否属于高电平有效复位的命名集合。
-        if self._matches_signal_name_token(lowered_name, set_high_active_tokens):
+        # 其余完整复位段没有 n 极性后缀，按高有效名称处理。
+        if is_reset_name(lowered_name):
 
-            # 命中高有效复位命名时，返回 high 供上游生成同步或异步高有效默认复位语义。
+            # 没有低有效后缀的完整复位段按默认高电平含义返回 high。
             return "high"
 
         # 复位极性推断流程在这里确认当前端口不符合这条规则，所以返回空值把处理机会留给后续匹配链。

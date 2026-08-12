@@ -12,6 +12,9 @@ from typing import Callable
 # facts 提供 formatter AST 确认的 module 结构。
 from .vg_semantic_facts import VgFacts, iter_trusted_modules
 
+# 实例端口时钟角色按完整下划线语义段识别。
+from .clock_name_roles import is_clock_name
+
 # models 统一逐门禁结论与证据格式。
 from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passed
 
@@ -49,17 +52,23 @@ def _single_clock_domain(facts: VgFacts) -> VgEvaluation:
         多时钟域失败、未知时钟不确定或单域适用通过结论。
     """
 
-    # clocks 汇总所有 module 中实际驱动时序过程块的时钟名。
-    set_clocks: set[str] = set()  # 当前设计的时钟域名称集合
-
-    # clock_locations 保留每个时钟首次出现的稳定定位。
-    dict_clock_locations: dict[str, tuple[str, int]] = {}  # 时钟名到文件和行号的映射
+    # findings 保存单个 module 内部出现的多时钟域证据。
+    list_findings: list[VgFinding] = []  # module-local 多时钟域定位
 
     # unknown 标记存在时序块但 formatter 未能抽取时钟。
     bool_unknown = False  # 是否存在无法识别时钟的时序块
 
-    # 每个 module 的时序 always 都参与全设计时钟域统计。
+    # applicable 记录是否实际发现至少一个时序过程块。
+    bool_applicable = False  # 是否存在可审查的时序时钟语义
+
+    # 每个 module 独立构造时钟集合，避免不同接口名称相互污染。
     for source_facts, dict_module, _, _ in iter_trusted_modules(facts):
+
+        # 当前 module 的时钟名称不传播到其他 module。
+        set_module_clocks: set[str] = set()  # 当前 module 的确定时钟域集合
+
+        # 当前 module 的首次出现位置用于局部多域诊断。
+        dict_clock_locations: dict[str, int] = {}  # 当前时钟到一基行号的映射
 
         # 组合块不属于时钟域统计范围。
         for dict_always in dict_module.get("always", []):
@@ -69,6 +78,9 @@ def _single_clock_domain(facts: VgFacts) -> VgEvaluation:
 
                 # 跳过组合块，继续检查其他过程块。
                 continue
+
+            # 发现时序块即证明规则对当前设计适用。
+            bool_applicable = True  # 至少一个时序块进入时钟域检查
 
             # formatter 的 clock 字段是时钟域身份权威。
             str_clock = str(dict_always.get("clock") or "")  # 当前时序块的时钟信号名
@@ -82,28 +94,31 @@ def _single_clock_domain(facts: VgFacts) -> VgEvaluation:
                 # 当前块不能安全加入时钟域集合。
                 continue
 
-            # 将确定时钟加入全设计域集合。
-            set_clocks.add(str_clock)
+            # 将确定时钟加入当前 module 的域集合。
+            set_module_clocks.add(str_clock)
 
             # 首次出现位置用于多域诊断，重复时钟无需覆盖。
             dict_clock_locations.setdefault(
                 str_clock,
-                (source_facts.relative_path, int(dict_always.get("line_start") or 1)),
+                int(dict_always.get("line_start") or 1),
             )
 
-    # 两个及以上确定时钟域直接形成违规。
-    if len(set_clocks) > 1:
+        # 两个及以上时钟只在当前 module 内形成违规。
+        if len(set_module_clocks) > 1:
 
-        # 每个时钟域都保留一条定位，便于确认跨域边界。
-        list_findings = [  # 多时钟域定位证据
-            VgFinding(  # 当前独立时钟域的诊断对象
-                dict_clock_locations[str_clock][0],  # 当前时钟首次出现的文件
-                dict_clock_locations[str_clock][1],  # 当前时钟首次出现的一基行号
-                "建议设计仅使用一个时钟域。",  # VG073 用户诊断
-                str_clock,  # 当前独立时钟域名称
+            # 每个局部时钟域都保留一条定位，便于确认模块内部边界。
+            list_findings.extend(  # 当前 module 的多时钟域定位证据
+                VgFinding(  # 当前独立时钟域的诊断对象
+                    source_facts.relative_path,  # 当前时钟所在源码文件
+                    dict_clock_locations[str_clock],  # 当前时钟首次出现的一基行号
+                    "建议单个模块仅使用一个时钟域。",  # VG073 用户诊断
+                    str_clock,  # 当前独立时钟域名称
+                )
+                for str_clock in sorted(set_module_clocks)  # 稳定排序当前 module 时钟域
             )
-            for str_clock in sorted(set_clocks)  # 稳定排序全部确定时钟域
-        ]
+
+    # 任一 module 内部存在多时钟域时返回全部局部证据。
+    if list_findings:
 
         # 返回全部独立时钟域的定位证据。
         return failed(*list_findings)
@@ -114,8 +129,8 @@ def _single_clock_domain(facts: VgFacts) -> VgEvaluation:
         # 未知时钟可能引入第二个域，必须保持不确定状态。
         return inconclusive("存在无法由 formatter AST 确定的时序时钟域。")
 
-    # 单一确定时钟域适用通过；没有时序块则不适用。
-    return passed(applicable=bool(set_clocks))
+    # 每个 module 均为单域时通过；没有时序块则不适用。
+    return passed(applicable=bool_applicable)
 
 # _combinational_clock_source 保持 VG089 的既有组合来源语义。
 def _combinational_clock_source(facts: VgFacts) -> VgEvaluation:
@@ -278,17 +293,23 @@ def _single_clock_edge(facts: VgFacts) -> VgEvaluation:
         双边沿使用的失败结论，或单边沿设计的适用通过结论。
     """
 
-    # edges 按时钟名汇总 formatter 可信敏感列表中的边沿类型。
-    dict_edges: dict[str, set[str]] = {}  # 时钟名到 posedge/negedge 集合
-
-    # locations 保留每个时钟边沿首次出现的位置。
-    dict_locations: dict[str, tuple[str, int]] = {}  # 边沿冲突时钟到首次使用位置的映射
+    # findings 汇总单个 module 内部确认的双边沿冲突。
+    list_findings: list[VgFinding] = []  # module-local 双边沿时钟证据
 
     # unknown 标记无法从时序块文本确认边沿的情况。
     bool_unknown = False  # 是否存在边沿信息不完整的时序块
 
+    # applicable 记录是否提取到至少一条确定时钟边沿。
+    bool_applicable = False  # 是否存在可检查的时钟边沿事实
+
     # 逐 module 读取时序 always 的 clock 和 text 字段。
     for source_facts, dict_module, _, _ in iter_trusted_modules(facts):
+
+        # 同名端口在不同 module 中不是同一物理时钟，边沿集合必须局部建立。
+        dict_module_edges: dict[str, set[str]] = {}  # 当前 module 的时钟边沿集合
+
+        # 当前 module 内首次位置用于局部冲突定位。
+        dict_module_locations: dict[str, tuple[str, int]] = {}  # 当前 module 的时钟位置映射
 
         # 每个时序块独立提取与 clock 字段对应的边沿关键字。
         for dict_always in dict_module.get("always", []):
@@ -335,26 +356,29 @@ def _single_clock_edge(facts: VgFacts) -> VgEvaluation:
                 # 当前块不能形成确定边沿事实。
                 continue
 
-            # 把当前边沿加入对应时钟的集合。
-            dict_edges.setdefault(str_clock, set()).add(obj_edge_match.group(1).lower())
+            # 把当前边沿加入当前 module 对应时钟的集合。
+            dict_module_edges.setdefault(str_clock, set()).add(obj_edge_match.group(1).lower())
+
+            # 已提取到确定时钟边沿时标记规则适用。
+            bool_applicable = True  # 至少一个 module 提供确定边沿
 
             # 首次位置用于双边沿冲突报告。
-            dict_locations.setdefault(
+            dict_module_locations.setdefault(
                 str_clock,
                 (source_facts.relative_path, int(dict_always.get("line_start") or 1)),
             )
 
-    # 双边沿时钟逐一形成 finding。
-    list_findings = [  # 同一时钟混用两个边沿的证据
-        VgFinding(  # 当前双边沿时钟的诊断对象
-            dict_locations[str_clock][0],  # 时钟首次出现文件
-            dict_locations[str_clock][1],  # 时钟首次出现行号
-            "避免同时使用同一时钟的上升沿和下降沿。",  # 双边沿混用诊断文本
-            str_clock,  # 混用双边沿的时钟名称
+        # 当前 module 的双边沿时钟逐一形成 finding。
+        list_findings.extend(  # 当前 module 内同一时钟混用两个边沿的证据
+            VgFinding(  # 当前双边沿时钟的诊断对象
+                dict_module_locations[str_clock][0],  # 时钟首次出现文件
+                dict_module_locations[str_clock][1],  # 时钟首次出现行号
+                "避免同时使用同一时钟的上升沿和下降沿。",  # 双边沿混用诊断文本
+                str_clock,  # 混用双边沿的时钟名称
+            )
+            for str_clock, set_edges in sorted(dict_module_edges.items())  # 稳定遍历当前 module 边沿集合
+            if {"posedge", "negedge"} <= set_edges  # 当前 module 的同一时钟同时出现两个边沿
         )
-        for str_clock, set_edges in sorted(dict_edges.items())  # 稳定遍历全部时钟边沿集合
-        if {"posedge", "negedge"} <= set_edges  # 同一时钟同时出现两个边沿
-    ]
 
     # 任一双边沿时钟都使规则失败。
     if list_findings:
@@ -369,7 +393,7 @@ def _single_clock_edge(facts: VgFacts) -> VgEvaluation:
         return inconclusive("存在无法由 formatter AST 确定的时钟边沿。")
 
     # 至少一个已知边沿时适用通过，否则规则不适用。
-    return passed(applicable=bool(dict_edges))
+    return passed(applicable=bool_applicable)
 
 # _clock_only_clock_pin 禁止已识别时钟进入普通数据连接。
 def _clock_only_clock_pin(facts: VgFacts) -> VgEvaluation:
@@ -384,29 +408,27 @@ def _clock_only_clock_pin(facts: VgFacts) -> VgEvaluation:
     # findings 保存时钟进入普通数据路径的确定证据。
     list_findings: list[VgFinding] = []  # 时钟非时钟用途证据
 
-    # clocks 从时序 always 的 formatter clock 字段建立。
-    set_clocks: set[str] = set()  # 当前设计已识别的时钟名称
+    # applicable 区分无时钟输入与各 module 已完成局部检查。
+    bool_applicable = False  # 是否识别出至少一个 module-local 时钟
 
-    # 第一遍收集所有 module 中实际用作时钟的信号名。
-    for _, dict_module, _, _ in iter_trusted_modules(facts):
-
-        # 组合 always 不提供时钟身份。
-        for dict_always in dict_module.get("always", []):
-
-            # 只收集非组合过程块的确定时钟字段。
-            if not bool(dict_always.get("is_combinational")) and dict_always.get("clock"):
-
-                # formatter 时钟字段加入全设计时钟身份集合。
-                set_clocks.add(str(dict_always["clock"]))
-
-    # 没有可识别时钟时无法执行非时钟用途检查。
-    if not set_clocks:
-
-        # 时序输入缺失意味着规则不适用。
-        return passed(applicable=False)
-
-    # 第二遍检查连续赋值和命名实例连接中的时钟用途。
+    # 每个 module 独立建立时钟身份并检查本模块数据路径。
     for source_facts, dict_module, str_module_text, int_base_line in iter_trusted_modules(facts):
+
+        # 当前 module 的时钟集合只来自本模块时序 always。
+        set_module_clocks = {  # 当前 module 已识别的时钟名称
+            str(dict_always["clock"])  # formatter 确认的时钟标识符
+            for dict_always in dict_module.get("always", []) or []  # 遍历当前 module 过程块
+            if not bool(dict_always.get("is_combinational")) and dict_always.get("clock")  # 只保留确定时钟字段
+        }
+
+        # 没有时钟的 module 不参与时钟数据化判断。
+        if not set_module_clocks:
+
+            # 继续检查下一个独立 module。
+            continue
+
+        # 当前 module 至少存在一个可审查时钟。
+        bool_applicable = True  # 已进入 module-local 时钟用途检查
 
         # 连续赋值的任一侧出现时钟都属于普通数据路径使用。
         for dict_assign in dict_module.get("assigns", []):
@@ -416,8 +438,8 @@ def _clock_only_clock_pin(facts: VgFacts) -> VgEvaluation:
                 f"assign {dict_assign.get('lhs') or ''} = {dict_assign.get('rhs') or ''};"  # 左右表达式保持 AST 原值
             )
 
-            # 每个已识别时钟分别检查 assign 文本。
-            for str_clock in sorted(set_clocks):
+            # 每个当前 module 时钟分别检查 assign 文本。
+            for str_clock in sorted(set_module_clocks):
 
                 # 没有时钟标识符时当前 assign 与规则无关。
                 if re.search(rf"\b{re.escape(str_clock)}\b", str_assign_text) is None:
@@ -439,13 +461,13 @@ def _clock_only_clock_pin(facts: VgFacts) -> VgEvaluation:
                 )
 
         # 命名实例端口可通过端口名区分 clock 与普通数据连接。
-        for str_clock in sorted(set_clocks):
+        for str_clock in sorted(set_module_clocks):
 
             # 捕获连接当前时钟信号的命名端口。
             for obj_match in re.finditer(rf"\.(\w+)\s*\(\s*{re.escape(str_clock)}\s*\)", str_module_text):
 
-                # clk/clock 命名端口视为合法时钟管脚。
-                if re.search(r"(?:clk|clock)", obj_match.group(1), flags=re.IGNORECASE):
+                # 只有完整时钟语义段命名的端口才视为合法时钟管脚。
+                if is_clock_name(obj_match.group(1)):
 
                     # 当前连接明确指向时钟形式端口。
                     continue
@@ -470,4 +492,4 @@ def _clock_only_clock_pin(facts: VgFacts) -> VgEvaluation:
         return failed(*list_findings)
 
     # 已识别时钟仅出现在合法时钟用途时适用通过。
-    return passed(applicable=True)
+    return passed(applicable=bool_applicable)
