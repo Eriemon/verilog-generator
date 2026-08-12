@@ -18,6 +18,8 @@ Mark at least one of these classes in the execution plan:
 
 Every triggered task must name the applicable public delivery matrix gates: `compile`, `ast`, `readability`, `comment`, `naming`, `profile`, `testbench`, and `toolchain`. Internal tools such as formatter AST, quality gate, comment gate, static lint, interface gate, and optional external validation are evidence sources for that matrix; they are not the public delivery contract.
 
+Run public CLI examples from the skill root. Every path argument must be visible to the current Python runtime that is executing the command. Do not expect automatic path translation between Windows drive-letter paths and POSIX-mounted paths.
+
 When implementation work touches Python, first use `readable-python-generator`: classify the task, state the functional intent contract, follow current-project Chinese style, and pass strict readable-python gates before claiming VerilogGenerator readiness. When implementation work touches bat/cmd, shell/bash, PowerShell, or Tcl, first use `readable-script-generator`: identify the language, classify the task, state the script intent contract, and pass strict readable-script gates. Mixed changes must satisfy both paths.
 
 ## Execution matrix
@@ -39,6 +41,8 @@ Run exactly: `format baseline -> comment draft -> verify comment-only -> deliver
 ### `analyze`
 
 Read-only analysis must not write source files. It may output AST summaries, style deltas, review-priority notes, and suggested commands, but suggestions are not executed work.
+
+The public read-only review entrypoint is `python -m scripts.python.workflow.cli review --target <input.v> --report-json review.json`.
 
 Existing-asset analysis and reports may locate issues and explain risk, but they must not output drop-in replacement code unless the user has explicitly requested modify/repair and supplied the real target asset.
 

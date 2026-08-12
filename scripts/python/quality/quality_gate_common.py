@@ -20,6 +20,37 @@ from .formatter_backend.banners import display_width
 from .formatter_ast import build_ast_report_for_path, iter_verilog_sources, read_verilog_source
 from scripts.python.validation.rulebook import load_verilog_rulebook
 
+# ensure_runtime_visible_target_path 在 CLI 写报告前校验目标路径对当前运行宿主可见。
+def ensure_runtime_visible_target_path(path_target: Path) -> Path:
+    """
+    确认 CLI 目标路径对当前 Python 运行宿主可见。
+
+    :param path_target: 用户传入的目标文件或目录路径。
+    :return: 规范化后的可见目标路径。
+    :raises FileNotFoundError: 当目标不存在或当前运行宿主不可见时抛出。
+    """
+
+    # expanduser 先展开用户目录语法，避免后续存在性检查漏判。
+    path_candidate = path_target.expanduser()  # 当前 CLI 目标的展开后路径
+
+    # 目标真实存在时返回规范化后的路径对象，供后续 gate 复用。
+    if path_candidate.exists():
+
+        # resolve 统一 root 字段和后续错误消息里的路径形态。
+        return path_candidate.resolve()
+
+    # 绝对路径缺失时，额外提示不要依赖跨宿主路径映射。
+    if path_candidate.is_absolute():
+
+        # 缺失的绝对路径常见于把另一台宿主的盘符路径直接传给当前解释器。
+        raise FileNotFoundError(
+            "> ERR: [Python] Target path is not visible to the current Python runtime: "
+            f"{path_target}. Please use a path visible to the current Python runtime."
+        )
+
+    # 相对路径缺失时直接说明目标不存在，避免误导成跨宿主问题。
+    raise FileNotFoundError(f"> ERR: [Python] Target path does not exist: {path_target}.")
+
 # _lines 去掉多行常量中的空白行，降低常量表维护噪音。
 def _lines(text: str) -> tuple[str, ...]:
     """

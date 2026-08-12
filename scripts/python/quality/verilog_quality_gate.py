@@ -102,13 +102,32 @@ def main() -> int:
 
     # runtime 质量门在路径准备后再导入。
     from scripts.python.quality.quality_gate import run_verilog_quality_gate, write_quality_gate_report
+    from scripts.python.quality.quality_gate_common import ensure_runtime_visible_target_path
 
     # 解析命令行参数，保持 argparse 默认错误和退出语义。
     args = create_parser().parse_args()  # 命令行参数命名空间
 
+    # 写报告前先确认目标路径对当前运行宿主可见。
+    try:
+
+        # path_target 复用给后续质量门，避免重复路径归一化。
+        path_target = ensure_runtime_visible_target_path(args.path)  # 通过入口预检的目标路径
+
+    # 目标路径缺失时直接失败，不生成任何报告文件。
+    except FileNotFoundError:
+
+        # 终端使用固定错误前缀，保留“当前运行时可见路径”这条用户提示。
+        sys.stderr.write(
+            "> ERR: [Python] Target path precheck failed; "
+            "use a path visible to the current Python runtime.\n"
+        )
+
+        # 路径前置条件不满足时返回失败。
+        return 1
+
     # 核心质量门返回 Markdown、JSON 和退出状态所需报告对象。
     report = run_verilog_quality_gate(  # Verilog 质量门报告
-        args.path,  # 待检查 RTL 路径
+        path_target,  # 待检查 RTL 路径
         strict=not args.non_strict,  # 是否启用严格检查
         comment_language=args.comment_language,  # 期望注释语言
         formatter_profile=args.formatter_profile,  # formatter-AST 配置档位
@@ -116,14 +135,20 @@ def main() -> int:
         vitis_wrapper=args.vitis_wrapper,  # 是否按 Vitis wrapper ABI 放宽端口
     )
 
-    # Markdown 报告默认落盘，避免终端直接输出整份结构化报告。
-    path_markdown = args.markdown or Path("verilog_quality_gate.md")  # Markdown 报告写出路径
+    # 只在显式请求时写出 JSON 和 Markdown 报告文件。
+    write_quality_gate_report(report, json_path=args.json, markdown_path=args.markdown)
 
-    # 可选写出 JSON 和 Markdown 报告文件。
-    write_quality_gate_report(report, json_path=args.json, markdown_path=path_markdown)
+    # 未显式请求报告时只输出短摘要，不在 cwd 落默认文件。
+    if args.json is None and args.markdown is None:
 
-    # 终端只报告摘要和报告位置，符合 current-project 输出边界。
-    print("> INFO: [Python] Verilog quality gate finished; reports were written to disk.")  # 质量门运行摘要
+        # 纯检查模式保持无副作用，避免误污染当前工作目录。
+        print("> INFO: [Python] Verilog quality gate finished; no report files were written.")  # 无副作用摘要
+
+    # 显式请求报告时继续给出简短落盘摘要。
+    else:
+
+        # 显式报告路径模式只回显短摘要，不把完整报告刷到终端。
+        print("> INFO: [Python] Verilog quality gate finished; requested reports were written.")  # 显式写报告摘要
 
     # warn-only 模式用于只收集报告、不阻断流水线。
     if args.warn_only:

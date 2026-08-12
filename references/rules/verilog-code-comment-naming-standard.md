@@ -745,13 +745,13 @@ assign o_done = done_o;                     // 输出完成标志
 
 当任务是“添加注释/优化注释/AI 添加注释”时，必须执行：
 
-- 当前状态：这是交付流程门禁和人工操作约束，不是单个 `VGxxx`；机器检查点是两次 `verify_comment_only.py` 与最终交付门禁的组合。
+- 当前状态：这是交付流程门禁和人工操作约束，不是单个 `VGxxx`；机器检查点是两次 `python -m scripts.python.quality.verify_verilog_comment_only ...` 与最终交付门禁的组合。
 
 1. 先格式化得到 immutable `baseline.v`。
 2. 只在 `baseline.v` 的副本上添加/修改 `//` 注释，得到 `annotated.v`。
-3. 用 `verify_comment_only.py baseline.v annotated.v --require-comment-delta` 检查：只能有注释变化，且必须有有效 RTL 注释增量。
+3. 用 `python -m scripts.python.quality.verify_verilog_comment_only baseline.v annotated.v --require-comment-delta` 检查：只能有注释变化，且必须有有效 RTL 注释增量。
 4. 再对 `annotated.v` 运行 formatter，得到 `final.v`。
-5. 再次用 `verify_comment_only.py baseline.v final.v --require-comment-delta` 检查。
+5. 再次用 `python -m scripts.python.quality.verify_verilog_comment_only baseline.v final.v --require-comment-delta` 检查。
 6. 只有两次检查通过后才能交付 final。
 
 禁止事项：
@@ -1005,34 +1005,34 @@ endmodule
 
 ## 19. 推荐命令
 
+统一运行合同：
+
+- 命令从 skill root 运行。
+- 参数路径必须对当前 Python 运行宿主可见。
+- 不做 Windows 盘符到 POSIX 路径的自动转换。
+
 Review：
 
 ```bash
 python -m scripts.python.workflow.cli review --target <input.v> --report-json review.json
 ```
 
-保守检查：
+聚焦 VG 诊断：
 
 ```bash
-python scripts/format_verilog.py <input.v> --profile formatter-preserve -o <output.v> --report-json report.json
+python -m scripts.python.quality.verilog_quality_gate <input.v> --json quality_gate.json --markdown quality_gate.md
 ```
 
-强制 normalize（确认可控后使用）：
+最终交付门禁：
 
 ```bash
-python scripts/format_verilog.py <input.v> --profile formatter-normalize -o <output.v> --report-json report.json
-```
-
-只检查不写：
-
-```bash
-python scripts/format_verilog.py <input.v> --profile formatter-lint --check
+python -m scripts.python.validation.verilog_generated_deliverable_gate <input.v> --json deliverable_gate.json --markdown deliverable_gate.md
 ```
 
 注释验证：
 
 ```bash
-python scripts/verify_comment_only.py baseline.v annotated.v --require-comment-delta
-python scripts/verify_comment_only.py baseline.v final.v --require-comment-delta
+python -m scripts.python.quality.verify_verilog_comment_only baseline.v annotated.v --require-comment-delta
+python -m scripts.python.quality.verify_verilog_comment_only baseline.v final.v --require-comment-delta
 ```
 

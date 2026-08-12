@@ -117,13 +117,32 @@ def main() -> int:
         run_verilog_deliverable_gate,
         write_verilog_deliverable_gate_report,
     )
+    from scripts.python.quality.quality_gate_common import ensure_runtime_visible_target_path
 
     # 解析命令行参数。
     args = create_parser().parse_args()  # 命令行参数命名空间
 
+    # 写报告前先确认目标路径对当前运行宿主可见。
+    try:
+
+        # path_target 复用给交付门禁，避免重复路径归一化。
+        path_target = ensure_runtime_visible_target_path(args.path)  # 通过入口预检的目标路径
+
+    # 目标路径不满足前置条件时直接失败，不写任何报告。
+    except FileNotFoundError:
+
+        # 终端使用固定错误前缀，保留“当前运行时可见路径”这条用户提示。
+        sys.stderr.write(
+            "> ERR: [Python] Target path precheck failed; "
+            "use a path visible to the current Python runtime.\n"
+        )
+
+        # 缺目标时直接返回失败。
+        return 1
+
     # 执行最终交付门禁。
     dict_report = run_verilog_deliverable_gate(  # 保存完整诊断、摘要计数和退出码依据
-        args.path,  # 用户指定的 RTL 文件或目录
+        path_target,  # 用户指定的 RTL 文件或目录
         strict=not args.non_strict,  # strict 模式默认开启
         comment_language=args.comment_language,  # 注释语言策略
         formatter_profile=args.formatter_profile,  # formatter 抽象语法树配置名称

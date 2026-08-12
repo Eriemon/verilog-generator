@@ -247,6 +247,81 @@ def _evaluate_case(case: dict[str, Any], temp_root: Path) -> dict[str, Any]:
     # 默认 case 覆盖 prompt、requirements、codegen plan 与静态 validation。
     return _evaluate_default_generation_case(case, str_case_id, temp_root)
 
+# _load_workflow_input_payload 优先读取 workflow 返回的内存态输入载荷。
+def _load_workflow_input_payload(
+    *,
+    dict_workflow: dict[str, Any],
+    str_case_id: str,
+    str_input_name: str,
+    str_payload_key: str,
+    str_path_key: str,
+) -> dict[str, Any]:
+    """优先读取 workflow 返回的内存载荷，缺失时回退到旧路径合同。
+
+    参数:
+        dict_workflow: 当前 case 拿到的 workflow 返回字典。
+        str_case_id: 当前 eval case 的稳定标识。
+        str_input_name: 当前读取的 workflow 输入名称。
+        str_payload_key: 内存态 payload 在 workflow 结果中的键名。
+        str_path_key: 旧路径合同在 workflow 结果中的键名。
+
+    返回:
+        返回 requirements 或 codegen plan 的字典载荷。
+
+    异常:
+        TypeError: 当 workflow 返回的 payload 不是字典时抛出。
+        FileNotFoundError: 当 payload 与回退路径都不可用时抛出。
+    """
+
+    # run_dir 进入错误文本，便于直接回到对应 workflow 运行目录排查。
+    str_run_dir = str(dict_workflow.get("run_dir") or "<unknown run_dir>")  # 当前 workflow 的运行目录摘要
+
+    # payload 优先合同允许 skill_effectiveness 在适配器中间文件被清理后仍可继续。
+    obj_payload = dict_workflow.get(str_payload_key)  # workflow 返回的内存态输入载荷
+
+    # 只要 payload 存在，就直接把它当作当前输入的权威来源。
+    if obj_payload is not None:
+
+        # payload 合同要求返回字典，避免上游误传列表或字符串后静默继续。
+        if not isinstance(obj_payload, dict):
+
+            # 报错时带上 case_id 与 run_dir，便于快速定位破坏合同的 workflow 结果。
+            raise TypeError(
+                f"> ERR: [Python] Eval case '{str_case_id}' returned non-dict "
+                f"{str_input_name} payload '{str_payload_key}' in run_dir '{str_run_dir}'."
+            )
+
+        # 当前 payload 已经满足合同，后续无需再回读 _adapter_inputs 中间文件。
+        return obj_payload
+
+    # payload 缺失时继续兼容旧版路径合同，供历史运行结果平滑复用。
+    obj_input_path = dict_workflow.get(str_path_key)  # 旧合同返回的输入文件路径
+
+    # 回退路径至少要是非空字符串，否则调用者根本无法定位旧版中间文件。
+    if not isinstance(obj_input_path, str) or not obj_input_path:
+
+        # 报错中明确点名 payload/path 双缺失，避免只剩笼统的 KeyError。
+        raise FileNotFoundError(
+            f"> ERR: [Python] Eval case '{str_case_id}' is missing {str_input_name} "
+            f"payload '{str_payload_key}' and fallback path '{str_path_key}' in run_dir "
+            f"'{str_run_dir}'."
+        )
+
+    # 旧路径合同仍然只接受本地可读文件，便于后续统一复用 _read_json。
+    path_input = Path(obj_input_path)  # 旧合同声明的输入文件路径
+
+    # 当 _adapter_inputs 已被清理时，给出带 case/run 上下文的明确错误而不是裸 FileNotFoundError。
+    if not path_input.exists():
+
+        # 错误文本同时保留缺失文件路径，方便直接核对 cleanup 是否超出预期。
+        raise FileNotFoundError(
+            f"> ERR: [Python] Eval case '{str_case_id}' could not recover {str_input_name} "
+            f"from '{path_input}' in run_dir '{str_run_dir}'."
+        )
+
+    # 旧合同命中时继续沿用统一 JSON 读取 helper。
+    return _read_json(path_input)
+
 # 默认生成链路 case 验证 use-case/improved-template 注入效果。
 def _evaluate_default_generation_case(
     case: dict[str, Any],
@@ -311,11 +386,23 @@ def _evaluate_default_generation_case(
         readiness="static",  # 保持静态准备度校验模式
     )
 
-    # 读取 requirements 阶段产物，确认模板选择结果。
-    dict_requirements = _read_json(Path(dict_workflow["requirements_path"]))  # requirements 阶段的模板选择记录
+    # requirements 优先读取 workflow 内存载荷，避免临时 adapter 输入被清理后误崩。
+    dict_requirements = _load_workflow_input_payload(  # requirements 阶段的模板选择记录
+        dict_workflow=dict_workflow,  # 把当前 workflow 返回值交给 helper 决定走 payload 还是旧路径分支
+        str_case_id=str_case_id,  # 继续携带 case 标识，缺失输入时才能把错误文本回指到当前用例
+        str_input_name="requirements",  # 明确当前恢复的是 requirements 输入，便于后续报错区分输入类型
+        str_payload_key="requirements_payload",  # 优先查找 facade 回传的 requirements 内存载荷键名
+        str_path_key="requirements_path",  # payload 缺失时再回退到历史 workflow 的 requirements 路径字段
+    )
 
-    # 读取 codegen plan 产物，保留 checkpoint 与准备度信息。
-    dict_codegen_plan = _read_json(Path(dict_workflow["codegen_plan_path"]))  # codegen plan 阶段的规划产物
+    # codegen plan 同样优先读取内存载荷，保留对旧路径合同的兼容回退。
+    dict_codegen_plan = _load_workflow_input_payload(  # codegen plan 阶段的规划产物
+        dict_workflow=dict_workflow,  # 复用同一份 workflow 结果，让 helper 继续统一处理计划输入恢复逻辑
+        str_case_id=str_case_id,  # 沿用当前 case 标识，保证计划输入缺失时仍能快速定位到这条回归
+        str_input_name="codegen plan",  # 点明当前恢复的是 codegen plan，避免和 requirements 报错混淆
+        str_payload_key="codegen_plan_payload",  # 先查 facade 直接带回的 codegen plan 内存载荷键名
+        str_path_key="codegen_plan_path",  # 只在 payload 缺席时才读取历史 workflow 的 codegen plan 路径字段
+    )
 
     # 提取当前默认生成 case 声明的命中条件。
     dict_expectations = _case_expectations(case)  # 默认生成链路的期望集合

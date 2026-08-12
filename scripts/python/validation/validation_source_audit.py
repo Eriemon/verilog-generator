@@ -71,6 +71,93 @@ class SourceAuditContext:
     # pattern_skill_name 用于校验 SKILL.md frontmatter 里的 skill 名称格式。
     pattern_skill_name: re.Pattern[str]  # skill 名称合法性正则
 
+# 已删除的根层 public wrapper 命令不能继续出现在活跃 public surface。
+TUPLE_OBSOLETE_PUBLIC_COMMANDS = (  # 活跃 public surface 禁止出现的旧 wrapper 命令
+    "format_" + "verilog.py",  # 已删除的根层格式化 wrapper 名称
+    "verify_comment_" + "only.py",  # 已删除的根层注释校验 wrapper 名称
+    "scripts/" + "validate_verilog_skill.py",  # 已删除的根层本地验证 wrapper 命令
+    "scripts/" + "remote_validate_verilog_skill.py",  # 已删除的根层远程验证 wrapper 命令
+    "scripts/" + "preflight_verilog_toolchain.py",  # 已删除的根层工具链预检 wrapper 命令
+)  # 旧 public 命令文本集合
+
+# obsolete public command 扫描只覆盖用户可见文本后缀，避免二进制资源误报。
+TUPLE_PUBLIC_TEXT_SUFFIXES = (".md", ".json", ".py", ".tpl", ".v", ".vinc", ".tcl", ".xdc")  # public 文本扫描后缀集合
+
+# _is_obsolete_public_command_target 只把活跃 public surface 纳入旧命令扫描。
+def _is_obsolete_public_command_target(str_relative_path: str) -> bool:
+    """
+    判断给定 skill 相对路径是否属于旧 public 命令扫描范围。
+
+    :param str_relative_path: 当前 skill 相对路径文本。
+    :return: True 表示当前文件属于活跃 public surface。
+    """
+
+    # SKILL.md、references、assets 与 scripts/python 共同组成当前 public surface。
+    return (
+        str_relative_path == "SKILL.md"
+        or str_relative_path.startswith("references/")
+        or str_relative_path.startswith("assets/")
+        or str_relative_path.startswith("scripts/python/")
+    )
+
+# verify_obsolete_public_commands 独立审计已删除的根层 public wrapper 命令。
+def verify_obsolete_public_commands(source_audit_context: SourceAuditContext) -> None:
+    """
+    扫描活跃 public surface，禁止旧 wrapper 命令残留。
+
+    :param source_audit_context: public command 扫描依赖的路径上下文。
+    :return: 不返回业务值；通过时表示活跃 public surface 没有旧命令残留。
+    :raises AssertionError: 当活跃 public 文本仍包含旧 wrapper 命令时抛出。
+    """
+
+    # list_violations 累积所有旧命令残留位置。
+    list_violations: list[str] = []  # 旧 public 命令残留位置列表
+
+    # 逐个检查当前 skill 文件是否属于活跃 public surface。
+    for path_file in source_audit_context.func_iter_skill_files():
+
+        # str_relative_path 用于边界判断和错误摘要输出。
+        str_relative_path = path_file.relative_to(source_audit_context.path_skill_root).as_posix()  # skill 相对路径
+
+        # 非 public surface 文件不参与旧命令扫描。
+        if not _is_obsolete_public_command_target(str_relative_path):
+
+            # 只在活跃 public surface 内禁止旧命令残留。
+            continue
+
+        # 非文本后缀不参与当前旧命令字符串扫描。
+        if path_file.suffix.lower() not in TUPLE_PUBLIC_TEXT_SUFFIXES:
+
+            # 二进制或其他非文本资源不属于当前命令文本审计对象。
+            continue
+
+        # str_text 统一忽略解码噪声，避免混合编码阻断文本扫描。
+        str_text = path_file.read_text(encoding="utf-8", errors="ignore")  # 当前 public 文件全文
+
+        # 逐条检查已删除的根层 public wrapper 命令是否仍然残留。
+        for str_command in TUPLE_OBSOLETE_PUBLIC_COMMANDS:
+
+            # 当前旧命令未命中时继续扫描下一条。
+            if str_command not in str_text:
+
+                # 当前 public 文件没有命中这一条旧命令。
+                continue
+
+            # 记录当前 public 文件中命中的旧命令。
+            list_violations.append(f"{str_relative_path}::{str_command}")
+
+    # 一旦活跃 public surface 仍有旧命令残留，就阻断发布卫生审计。
+    if list_violations:
+
+        # str_violation_summary 使用稳定排序，方便人工逐项清理。
+        str_violation_summary = ", ".join(sorted(set(list_violations)))  # 旧 public 命令残留摘要
+
+        # 用独立规则名明确指出这是 public command 合同漂移，而不是 legacy term 扫描。
+        raise AssertionError(
+            "> ERR: [Python] Obsolete public command references found in active public text: "
+            + str_violation_summary
+        )
+
 # verify_markdown_ascii 确认 Markdown 默认保持 ASCII-only，只有白名单例外。
 def verify_markdown_ascii(
     settings: dict[str, Any] | None,
@@ -109,8 +196,8 @@ def verify_markdown_ascii(
             # 非 Markdown 文件不参与当前 ASCII-only 审计。
             continue
 
-        # str_relative_path 用于白名单命中和错误摘要输出。
-        str_relative_path = path_file.relative_to(source_audit_context.path_skill_root).as_posix()  # skill 相对 Markdown 路径
+        # str_relative_path 保存当前 Markdown 的 skill 内定位，供白名单判断与报错复用。
+        str_relative_path = path_file.relative_to(source_audit_context.path_skill_root).as_posix()  # 当前 Markdown 的 skill 相对路径
 
         # 白名单路径允许保留非 ASCII 文本，直接跳过后续逐行检查。
         if str_relative_path in set_allowlist:
@@ -480,6 +567,9 @@ def verify_legacy_terms(
     # set_allowlist 保存允许保留 legacy 领域词的文件路径白名单。
     set_allowlist = set(settings.get("validation", {}).get("legacy_term_allowlist", []))  # legacy 词白名单路径集合
 
+    # 旧 public wrapper 命令走独立审计规则，不能借 legacy allowlist 豁免。
+    verify_obsolete_public_commands(source_audit_context)
+
     # list_violations 累积命中禁止 legacy 领域词的路径与行号。
     list_violations: list[str] = []  # legacy 词违规列表
 
@@ -495,8 +585,8 @@ def verify_legacy_terms(
             # legacy 白名单文件允许保留术语说明，当前文件直接跳过。
             continue
 
-        # str_text 统一以忽略解码错误的方式读取，避免混合编码噪声中断 legacy 扫描。
-        str_text = path_file.read_text(encoding="utf-8", errors="ignore")  # 当前文件全文
+        # str_text 把当前文件按宽松 UTF-8 读成全文，供 legacy 逐行扫描持续复用。
+        str_text = path_file.read_text(encoding="utf-8", errors="ignore")  # 当前文件用于 legacy 逐行扫描的全文文本
 
         # 逐行定位 legacy 词命中位置，并结合路径专属解释规则过滤合法文本。
         for int_line_number, str_line in enumerate(str_text.splitlines(), start=1):

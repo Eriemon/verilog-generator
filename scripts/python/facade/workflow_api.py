@@ -717,6 +717,8 @@ def _new_workflow_result_payload(
     path_run_dir: Path,
     path_requirements: Path,
     path_codegen_plan: Path,
+    dict_requirements_payload: dict[str, Any],
+    dict_codegen_plan_payload: dict[str, Any],
 ) -> dict[str, Any]:
     """组装新运行 facade 的稳定结果字典。
 
@@ -725,6 +727,8 @@ def _new_workflow_result_payload(
         path_run_dir: 当前 workflow 运行根目录。
         path_requirements: requirements.json 的落盘路径。
         path_codegen_plan: codegen_plan.json 的落盘路径。
+        dict_requirements_payload: requirements.json 对应的内存载荷。
+        dict_codegen_plan_payload: codegen_plan.json 对应的内存载荷。
 
     返回:
         返回新运行 facade 的稳定结果字典。
@@ -744,6 +748,8 @@ def _new_workflow_result_payload(
         "result_path": str(path_run_dir / "workflow_result.json"),
         "requirements_path": str(path_requirements),
         "codegen_plan_path": str(path_codegen_plan),
+        "requirements_payload": dict_requirements_payload,
+        "codegen_plan_payload": dict_codegen_plan_payload,
         "workflow_result": dict_workflow_result,
     }
 
@@ -855,6 +861,8 @@ def _start_new_workflow_run(
         path_run_dir,
         path_requirements,
         path_codegen_plan,
+        dict_requirements_payload,
+        dict_codegen_plan,
     )
 
 # run_verilog_workflow 提供 staged workflow 的公共 facade 入口。

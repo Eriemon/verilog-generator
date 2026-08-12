@@ -75,14 +75,16 @@ The skill vendors the formatter backend under `scripts/python/quality/formatter_
 After generating or modifying RTL, run the integrated final gate:
 
 ```bash
-python scripts/python/validation/verilog_generated_deliverable_gate.py <rtl-file-or-dir> --json deliverable_gate.json --markdown deliverable_gate.md
+python -m scripts.python.validation.verilog_generated_deliverable_gate <rtl-file-or-dir> --json deliverable_gate.json --markdown deliverable_gate.md
 ```
 
 The deliverable gate aggregates formatter AST, the VG quality gate, static lint, comment checks, and rulebook consistency. Strict mode is the default and requires `errors == 0` and `strict_warnings == 0`. The lower-level VG quality gate remains available for focused debugging:
 
 ```bash
-python scripts/python/quality/verilog_quality_gate.py <rtl-file-or-dir> --json quality_gate.json --markdown quality_gate.md
+python -m scripts.python.quality.verilog_quality_gate <rtl-file-or-dir> --json quality_gate.json --markdown quality_gate.md
 ```
+
+Run these commands from the skill root. Every path argument must be visible to the current Python runtime that is executing the command. Do not expect automatic path translation between Windows drive-letter paths and POSIX-mounted paths.
 
 The normal validation command also invokes this gate automatically through `validate_generated(...)` and reports it as `formatter_ast_quality_gate`:
 
@@ -104,9 +106,9 @@ For tasks that add, rewrite, translate, or optimize Verilog comments, follow thi
 
 1. Normalize the original RTL to an immutable `baseline.v` using formatter-AST-backed normalization.
 2. Add or rewrite only `//` comments on a copy of that baseline.
-3. Run `python scripts/python/quality/verify_verilog_comment_only.py baseline.v annotated.v --require-comment-delta`.
+3. Run `python -m scripts.python.quality.verify_verilog_comment_only baseline.v annotated.v --require-comment-delta`.
 4. Run the final deliverable gate on the annotated file.
-5. Re-format the annotated file if required, then run the comment-only verifier again from the immutable baseline.
+5. Re-format the annotated file if required, then run `python -m scripts.python.quality.verify_verilog_comment_only baseline.v final.v --require-comment-delta` from the immutable baseline.
 6. Deliver only when both comment-only checks and the final deliverable gate pass.
 
 Never treat pre-header comments as the only valid annotation delta. Never allow comment generation to change RTL tokens, module names, port lists, lvalues, reset behavior, always targets, or instance connections. Do not reuse one generic Chinese sentence across multiple parameters, ports, signals, assigns, process assignments, or instance mappings; standard region banners are navigation only and do not exempt entity-level comments from the `VG066` reuse gate.
