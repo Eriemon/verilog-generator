@@ -159,13 +159,15 @@ For confidence-sensitive gates, the active server is always the one stored in `.
 
 Remote validation directories are retained by default and printed as `remote_parent` and `remote_skill`. The server-side project path is relative to the configured remote workdir and looks like `.readable-verilog-generator-validation/run-YYYYMMDDTHHMMSS/readable-verilog-generator`. Retained runs keep `_smoke_runs` and `workflow-state.json` so generated RTL, testbenches, validation reports, and workflow traces remain inspectable. Pass `--cleanup-remote` only when the run directory should be deleted after validation. The legacy `--keep-remote` flag is accepted but no longer changes behavior because keeping is the default.
 
-Each remote gate validates the canonical workflow and the fixed RTL fixtures in `assets/examples/remote_fixtures`: `comb_parity_mux`, `pipeline_delay`, and `ready_valid_slice`. Fixture reports are retained under `_smoke_runs/remote_fixtures/<fixture>/validation.json`, with a combined `_smoke_runs/remote_fixtures/summary.json` that records the selected simulator backend, executed tools, and generated RTL/testbench paths.
+Each remote gate validates authoritative pytest, the canonical workflow, and the fixed RTL fixtures in `assets/examples/remote_fixtures`: `comb_parity_mux`, `pipeline_delay`, and `ready_valid_slice`. The pytest console output is retained in `_smoke_runs/remote_pytest.log`; `_smoke_runs/remote_pytest_summary.json` records the exact passed, skipped, xfailed, xpassed, deselected, and duration values. Fixture reports are retained under `_smoke_runs/remote_fixtures/<fixture>/validation.json`, with a combined `_smoke_runs/remote_fixtures/summary.json` that records the selected simulator backend, executed tools, and generated RTL/testbench paths.
 
 List retained runs without staging a new run:
 
 ```powershell
 python -m scripts.python.remote.remote_validate_verilog_skill --settings .\config\defaults.json --server <selected-server> --report-runs
 ```
+
+`--report-runs` downloads the retained pytest summary together with the canonical execution and fixture reports. A confidence-sensitive `eval-skill --require-remote` result is green only when the latest run has an available, passing pytest summary with a positive passed count, a passing xsim execution report, and passing fixture reports. Older retained runs without `remote_pytest_summary.json` remain inspectable but are incomplete remote evidence.
 
 The gate must use the highest simulator backend actually available on the selected server: Vivado xsim, then VCS+Verdi, then iverilog/vvp. If higher-priority simulators are later provided, the same gate must require the highest available backend instead of preserving an older fallback expectation. If `yosys` is not detected, implement readiness must block with `toolchain_issue`; if `yosys` is later provided, implement readiness must pass instead of preserving an older blocked expectation.
 

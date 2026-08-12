@@ -490,6 +490,18 @@
     },
     {
       "command_ids": [
+        "validation.skill"
+      ],
+      "decision": "mapped",
+      "kind": "option",
+      "rationale": "",
+      "sources": [
+        "references/integration/configuration.md"
+      ],
+      "value": "--require-remote"
+    },
+    {
+      "command_ids": [
         "remote.validate"
       ],
       "decision": "mapped",

@@ -28,6 +28,9 @@ REMOTE_EXECUTE_ROOT = PurePosixPath("_smoke_runs") / "remote_execute" / "attempt
 # remote_fixtures 保存三类小用例聚合报告。
 REMOTE_FIXTURE_ROOT = PurePosixPath("_smoke_runs") / "remote_fixtures"  # fixture 证据相对根
 
+# remote_pytest_summary.json 保存权威远程 pytest 的精确计数和耗时。
+REMOTE_PYTEST_SUMMARY_JSON = PurePosixPath("_smoke_runs") / "remote_pytest_summary.json"  # pytest 结构化证据路径
+
 # validation.json 提供主流程 ok、metrics 和产物映射。
 REMOTE_EXECUTE_VALIDATION_JSON = REMOTE_EXECUTE_ROOT / "validation.json"  # 主流程 JSON 证据路径
 
@@ -144,6 +147,7 @@ def remote_validation_command(
     # 返回完整远端 bash 脚本，关键字符串由 smoke 测试断言。
     return f"""
 set -eu
+set -o pipefail
 cd {sh_quote(str_remote_skill)}
 export HOME="$PWD/reports/.validation-home"
 export PYTHONPATH="skills/readable-verilog-generator${{PYTHONPATH:+:$PYTHONPATH}}"
@@ -175,7 +179,10 @@ fi
 {str_py} -m compileall -q \
   skills/readable-verilog-generator/scripts \
   tests
-{str_py} -m pytest -q -p no:cacheprovider
+{str_py} -m pytest -q -p no:cacheprovider 2>&1 | tee reports/remote_pytest.log
+mkdir -p _smoke_runs
+mv reports/remote_pytest.log _smoke_runs/remote_pytest.log
+{str_py} -m scripts.python.remote.remote_pytest_summary
 {str_py} -m tests.smoke.run_smoke --settings skills/readable-verilog-generator/config/defaults.json
 {str_rtl_md_snippet}
 if [ -n "$configured_simulator_backend" ]; then

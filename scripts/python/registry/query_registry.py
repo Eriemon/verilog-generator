@@ -6,6 +6,7 @@ from __future__ import annotations
 # 标准库依赖负责参数解析、JSON 解码、SQLite 查询和进程退出。
 import argparse
 import json
+import re
 import sqlite3
 import sys
 
@@ -21,6 +22,9 @@ from .registry_common import ensure_database_current, resolve_skill_root
 
 # 问询长度上限避免无界文本进入 LIKE 和 FTS 查询。
 INT_MAX_QUESTION_LENGTH = 1000  # 用户问询允许的最大字符数
+
+# FTS 片段上限避免长问句生成无界 OR 表达式。
+INT_MAX_FTS_TERMS = 64  # 单次自然语言补充召回允许的最多检索片段
 
 # 请求异常与注册源异常使用不同退出码。
 class RequestError(ValueError):
@@ -128,6 +132,187 @@ def escape_like_text(str_value: str) -> str:
     # 先转义逃逸符本身，再转义两个 SQL 通配符。
     return str_value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
+# 检索片段限制器在保持顺序的同时覆盖长问句首尾。
+def limit_unique_terms(list_candidate_terms: list[str]) -> list[str]:
+    """去重并限制自然语言检索片段。
+
+    参数：list_candidate_terms 为按问句顺序提取的候选片段。
+    返回：覆盖原始问句范围且不超过固定上限的唯一片段。
+    """
+
+    # 稳定去重防止重复概念放大同一记录的匹配权重。
+    list_unique_terms = list(dict.fromkeys(list_candidate_terms))  # 按首次出现顺序去重的片段
+
+    # 短问句无需抽样即可完整保留。
+    if len(list_unique_terms) <= INT_MAX_FTS_TERMS:
+
+        # 未触及上限时直接保留全部唯一片段。
+        return list_unique_terms
+
+    # 抽样比例把首尾候选都映射到固定数量的槽位。
+    float_sample_scale = (len(list_unique_terms) - 1) / (INT_MAX_FTS_TERMS - 1)  # 全范围抽样步长
+
+    # 四舍五入后的索引覆盖候选序列首尾和中间区域。
+    return [  # 有界且覆盖全问句的检索片段
+        list_unique_terms[round(int_index * float_sample_scale)]  # 当前抽样槽位对应的候选
+        for int_index in range(INT_MAX_FTS_TERMS)  # 固定数量的抽样槽位
+    ]
+
+# 双字概念提取器为 trigram 无连续命中时提供确定性补充评分。
+def build_substring_terms(str_normalized_question: str) -> list[str]:
+    """提取英文词和中文双字概念。
+
+    参数：str_normalized_question 为已完成大小写归一化的问询。
+    返回：可用于字面量包含评分的有界检索片段。
+    """
+
+    # 英文词保留整体，中文连续文本按双字窗口覆盖常见技术概念。
+    list_text_chunks = re.findall(  # 问询中的英文词和中文连续片段
+        r"[0-9a-z_-]{3,}|[\u3400-\u9fff]{2,}",  # 英文整词或至少两个中文字符
+        str_normalized_question,  # 完成大小写归一化的原始问询
+    )
+
+    # 候选列表按原始出现次序积累英文词和中文窗口。
+    list_candidate_terms: list[str] = []  # 按问句顺序生成的包含匹配候选
+
+    # 每个片段转换为适合字面量包含判断的最小概念。
+    for str_chunk in list_text_chunks:
+
+        # ASCII 标识整体参与包含评分，避免拆散工具名称。
+        if str_chunk.isascii():
+
+            # 当前英文词加入稳定候选序列。
+            list_candidate_terms.append(str_chunk)
+
+            # 英文分支已经完成当前片段处理。
+            continue
+
+        # 双字窗口保留“远程”“验证”等 trigram 无法独立索引的概念。
+        list_candidate_terms.extend(
+            str_chunk[int_start:int_start + 2]
+            for int_start in range(len(str_chunk) - 1)
+        )
+
+    # 共享限制器保证补充评分同样有固定资源上限。
+    return limit_unique_terms(list_candidate_terms)
+
+# 关系表补充排序器只在 FTS 无结果时处理已读出的本地注册记录。
+def rank_rows_by_substring_terms(
+    list_rows: list[tuple[str, str, str]],
+    str_normalized_question: str,
+    int_limit: int,
+) -> list[tuple[str]]:
+    """按自然问句中的双字概念重合度排序注册记录。
+
+    参数：list_rows 为 payload、search_text、标识三元组；str_normalized_question 为问询；
+    int_limit 为返回上限。
+    返回：与 SQLite fetchall 载荷形状一致的 payload 单元素元组。
+    """
+
+    # 空片段不能形成可靠的补充召回。
+    list_terms = build_substring_terms(str_normalized_question)  # 有界包含匹配片段
+
+    # 无有效词项时保持无补充结果的确定性行为。
+    if not list_terms:
+
+        # 空列表与 SQLite 无命中结果保持同一合同。
+        return []
+
+    # 分数列表保留命中数量、稳定标识与原始 JSON 载荷。
+    list_scored_rows: list[tuple[int, str, str]] = []  # 全部候选记录的补充召回分数
+
+    # 每条本地记录按唯一概念的包含数量计分。
+    for str_payload, str_search_text, str_identifier in list_rows:
+
+        # 大小写归一化后的注册文本只用于只读包含判断。
+        str_normalized_search_text = str_search_text.casefold()  # 当前记录的规范化检索文本
+
+        # 命中计数从零开始逐一累积唯一概念。
+        int_match_count = 0  # 当前记录覆盖的唯一概念数量
+
+        # 每个概念最多贡献一次分数，避免词频改变排名。
+        for str_term in list_terms:
+
+            # 当前检索文本包含该概念时递增覆盖数量。
+            if str_term in str_normalized_search_text:
+
+                # 单个唯一概念只增加一个匹配点。
+                int_match_count += 1  # 累加当前唯一概念命中
+
+        # 分数与稳定标识共同形成确定性排序输入。
+        list_scored_rows.append((int_match_count, str_identifier, str_payload))
+
+    # 匹配列表只接收至少覆盖一个问句概念的候选。
+    list_matched_rows: list[tuple[int, str, str]] = []  # 通过最低匹配条件的候选
+
+    # 零命中记录不得通过补充阶段进入公开结果。
+    for tuple_scored_row in list_scored_rows:
+
+        # 正分记录才具有可解释的字面概念关联。
+        if tuple_scored_row[0] > 0:
+
+            # 保留完整分数元组供后续稳定排序。
+            list_matched_rows.append(tuple_scored_row)
+
+    # 同分记录按规范标识排序，保证跨运行结果稳定。
+    list_matched_rows.sort(key=lambda tuple_row: (-tuple_row[0], tuple_row[1]))
+
+    # 恢复既有载荷元组合同，避免改变公开解码路径。
+    return [(str_payload,) for _, _, str_payload in list_matched_rows[:int_limit]]
+
+# 自然语言 FTS 查询器把中英文问句拆成有界的可召回片段。
+def build_fts_match_query(str_normalized_question: str) -> str:
+    """构造适用于 trigram 索引的自然语言 MATCH 表达式。
+
+    参数：str_normalized_question 为去除首尾空白并完成大小写归一化的问询。
+    返回：由英文词或中文三字片段组成的有界 OR 查询。
+    """
+
+    # 正则只保留 trigram 能稳定索引的英文词和连续中文文本。
+    list_text_chunks = re.findall(  # FTS 阶段的英文词和中文长片段
+        r"[0-9a-z_-]{3,}|[\u3400-\u9fff]{3,}",  # 与当前 trigram 分词器兼容的字符范围
+        str_normalized_question,  # 已完成大小写归一化的问询文本
+    )
+
+    # 原始片段列表保留问句中的出现顺序供稳定排序。
+    list_candidate_terms: list[str] = []  # 尚未去重的 FTS 检索片段
+
+    # 每个连续片段按语言特征转换为可独立命中的检索单元。
+    for str_chunk in list_text_chunks:
+
+        # ASCII 标识和英文词保留整体，避免拆分后失去工具名语义。
+        if str_chunk.isascii():
+
+            # 英文词直接进入 OR 查询候选。
+            list_candidate_terms.append(str_chunk)
+
+            # 当前英文词已经完成处理。
+            continue
+
+        # 中文连续文本使用滑动三字片段容忍自然问句中的连接成分。
+        for int_start in range(len(str_chunk) - 2):
+
+            # 三字窗口与 FTS5 trigram 的最小稳定命中单位一致。
+            str_term = str_chunk[int_start:int_start + 3]  # 当前中文三字检索片段
+
+            # 保留当前窗口供后续去重和有界抽样。
+            list_candidate_terms.append(str_term)
+
+    # 共享限制器稳定去重并对超长问句做全范围抽样。
+    list_unique_terms = limit_unique_terms(list_candidate_terms)  # 有界唯一 FTS 片段
+
+    # 没有可分词内容时保留旧有完整短语行为供标点类边界诊断。
+    if not list_unique_terms:
+
+        # 双引号转义防止用户文本改变 FTS 短语边界。
+        return '"' + str_normalized_question.replace('"', '""') + '"'
+
+    # 每个片段独立转义并以 OR 连接，让 bm25 按实际重合度排序。
+    return " OR ".join(  # 最终参数化 MATCH 查询文本
+        '"' + str_term.replace('"', '""') + '"'  # 单个字面检索片段
+        for str_term in list_unique_terms  # 已去重并限制数量的片段
+    )
+
 # 命令召回器先做确定性子串匹配，再使用 FTS5 补充召回。
 def retrieve_commands(
     connection_database: sqlite3.Connection,
@@ -178,10 +363,8 @@ def retrieve_commands(
     # 无子串结果且文本足够长时启用 trigram FTS 补充召回。
     if not list_rows and len(str_normalized_question) >= 3:
 
-        # 双引号短语查询保持用户文本整体语义。
-        str_fts_query = (  # 转义双引号后的 FTS 完整短语
-            '"' + str_normalized_question.replace('"', '""') + '"'  # MATCH 参数文本
-        )
+        # 片段化查询允许自然问句包含未登记的连接词。
+        str_fts_query = build_fts_match_query(str_normalized_question)  # 有界 FTS MATCH 参数
 
         # 短语参数直接绑定 MATCH 占位符，保留 trigram 查询边界。
         list_fts_parameters: list[object] = [str_fts_query]  # 承载短语与过滤条件的参数
@@ -209,6 +392,43 @@ def retrieve_commands(
             " ORDER BY bm25(command_fts), commands.command_id LIMIT ?",  # 稳定 FTS 排序
             list_fts_parameters,  # FTS 短语、分类和数量参数
         ).fetchall()
+
+    # trigram 无连续命中时，按双字概念重合度补充组合语义召回。
+    if not list_rows:
+
+        # 缺省补充查询不添加分类过滤或分类参数。
+        str_fallback_category_clause = ""  # 补充阶段的可选分类片段
+
+        # 空元组表示补充查询当前没有分类绑定参数。
+        tuple_fallback_parameters: tuple[str | None, ...] = ()  # 补充阶段分类参数
+
+        # 显式分类继续通过固定片段和绑定参数进入 SQL。
+        if str_category:
+
+            # 固定 WHERE 片段不拼接用户分类文本。
+            str_fallback_category_clause = " WHERE category = ?"  # 启用的分类过滤片段
+
+            # 单元素参数元组保持数据库绑定顺序。
+            tuple_fallback_parameters = (str_category,)  # 启用的分类绑定参数
+
+        # 查询文本由固定命令表合同和可选固定分类片段组成。
+        str_fallback_query = (  # 补充阶段的命令候选 SQL
+            "SELECT payload_json, search_text, command_id FROM commands"
+            f"{str_fallback_category_clause}"
+        )
+
+        # 本地候选保留检索文本和稳定标识供共享排序器使用。
+        list_fallback_rows = connection_database.execute(  # 本地命令记录候选
+            str_fallback_query,  # 固定命令候选 SQL
+            tuple_fallback_parameters,  # 可选分类绑定参数
+        ).fetchall()
+
+        # 双字概念评分只在前两阶段均为空时接管结果。
+        list_rows = rank_rows_by_substring_terms(  # 命令补充召回行
+            list_fallback_rows,  # 分类过滤后的命令候选
+            str_normalized_question,  # 命令补充评分使用的规范化问询
+            int_limit,  # 命令补充召回的 Top-K 上限
+        )
 
     # 数据库载荷由构建器使用规范 JSON 写入。
     return [json.loads(str_payload) for (str_payload,) in list_rows]
@@ -263,8 +483,8 @@ def retrieve_typed_records(
     # 无子串结果且问询至少三字符时使用 trigram FTS。
     if not list_rows and len(str_normalized_question) >= 3:
 
-        # 双引号短语查询保持自然语言整体边界。
-        str_fts_query = '"' + str_normalized_question.replace('"', '""') + '"'  # FTS 完整短语
+        # 与命令召回共享自然语言片段化和长度边界。
+        str_fts_query = build_fts_match_query(str_normalized_question)  # typed 记录的自然语言 FTS 参数
 
         # 表名均来自固定映射，用户文本只通过参数绑定。
         list_rows = connection_database.execute(  # 类型记录 FTS 召回行
@@ -275,6 +495,27 @@ def retrieve_typed_records(
             f"ORDER BY bm25({str_fts_table_name}), {str_table_name}.{str_identifier_column} LIMIT ?",
             (str_fts_query, int_limit),  # FTS 短语与 Top-K 上限。
         ).fetchall()
+
+    # typed 记录的最后阶段处理跨字段分布的双字中文概念。
+    if not list_rows:
+
+        # SQL 标识全部来自受信任 kind 映射，不包含用户输入。
+        str_fallback_query = (  # typed 补充阶段的候选 SQL
+            f"SELECT payload_json, search_text, {str_identifier_column} "
+            f"FROM {str_table_name}"
+        )
+
+        # 固定表合同下的本地候选携带检索文本和规范标识。
+        list_fallback_rows = connection_database.execute(  # 本地类型记录候选
+            str_fallback_query  # 当前 typed 表的固定候选 SQL
+        ).fetchall()
+
+        # 共享评分器保持各 typed 命名空间的排序语义一致。
+        list_rows = rank_rows_by_substring_terms(  # typed 补充召回行
+            list_fallback_rows,  # 当前 typed 命名空间的全部本地候选
+            str_normalized_question,  # typed 补充评分使用的规范化问询
+            int_limit,  # typed 补充召回的 Top-K 上限
+        )
 
     # 构建器写入的规范 JSON 恢复为公开记录。
     return [json.loads(str_payload) for (str_payload,) in list_rows]

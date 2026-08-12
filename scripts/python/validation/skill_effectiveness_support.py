@@ -9,7 +9,7 @@ import json
 import os
 import shutil
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import TracebackType
 from typing import Any
 
@@ -296,6 +296,9 @@ def _evaluate_remote_runs(
     # 最新运行按 report-runs 的排序约定取第一个。
     dict_latest = list_runs[0]  # report-runs 排序后的最新远程运行
 
+    # pytest 子字段携带权威远程回归的结构化计数和通过状态。
+    dict_remote_pytest = _optional_nested_dict(dict_latest, "pytest")  # 最新运行的 pytest 摘要
+
     # remote_execute 子字段携带模拟器可用性与后端选择。
     dict_remote_execute = _optional_nested_dict(dict_latest, "remote_execute")  # 最新运行的远程执行摘要
 
@@ -332,8 +335,21 @@ def _evaluate_remote_runs(
     # 当前 release gate 只接受 xsim 作为强验证后端。
     bool_backend_xsim = dict_remote_execute.get("selected_simulator_backend") == "xsim"  # 远程后端是否为 xsim
 
-    # 四个远程证据维度同时满足才允许 remote.ok 为真。
-    bool_remote_ok = bool_remote_available and bool_remote_execute_ok and bool_backend_xsim and bool_fixtures_ok  # retained run 总体验证状态
+    # pytest 必须有结构化摘要且明确通过，瞬时 stdout 或远程命令退出码不能替代 retained 证据。
+    bool_pytest_available = bool(dict_remote_pytest.get("available"))  # pytest 摘要是否存在
+
+    # 文件存在仍不足以放行，ok 字段必须证明远程 pytest 自身通过。
+    bool_pytest_ok = bool(dict_remote_pytest.get("ok"))  # pytest 摘要是否明确通过
+
+    # 五个远程证据维度同时满足才允许 remote.ok 为真。
+    bool_remote_ok = (  # retained run 总体验证状态
+        bool_pytest_available  # retained run 提供 pytest 机器可读摘要
+        and bool_pytest_ok  # pytest 摘要明确报告通过
+        and bool_remote_available  # 主执行验证 JSON 可下载
+        and bool_remote_execute_ok  # 主执行验证结果为绿
+        and bool_backend_xsim  # 实际后端满足 xsim 强验证要求
+        and bool_fixtures_ok  # 三类最小 RTL fixture 全部通过
+    )
 
     # remote 摘要逐字段组装，避免把报告 schema 伪装成实验参数表。
     dict_remote_summary: dict[str, Any] = {}  # remote 字段最终报告容器
@@ -355,6 +371,17 @@ def _evaluate_remote_runs(
 
     # fixture_count 让报告使用者确认本次远程证据覆盖了 fixture。
     dict_remote_summary["fixture_count"] = len(list_fixtures)  # retained run 中的 fixture 数量
+
+    # pytest 计数字段让效果评估直接保留权威回归规模与跳过数量。
+    dict_remote_summary["pytest_passed"] = int(dict_remote_pytest.get("passed", 0))  # pytest 通过用例数
+
+    # 跳过数量单独呈现，避免使用者把未执行项误计为成功覆盖。
+    dict_remote_summary["pytest_skipped"] = int(dict_remote_pytest.get("skipped", 0))  # pytest 跳过用例数
+
+    # 运行耗时用于识别异常短跑，并和 retained 原始摘要交叉核验。
+    dict_remote_summary["pytest_duration_seconds"] = float(  # pytest 运行耗时
+        dict_remote_pytest.get("duration_seconds", 0.0)  # 远程 pytest 记录的秒数
+    )
 
     # 返回 remote 字段的稳定摘要。
     return dict_remote_summary
@@ -957,7 +984,11 @@ def _rtl_md_fixture_spec() -> dict[str, Any]:
             ]
         },
         "outputs": [
-            {"path": "rtl/good_constraints.v", "kind": "source", "language": "verilog"}
+            {
+                "path": str(PurePosixPath("rtl") / "good_constraints.v"),
+                "kind": "source",
+                "language": "verilog",
+            }
         ],
     }
 

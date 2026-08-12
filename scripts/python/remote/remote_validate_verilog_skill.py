@@ -111,7 +111,7 @@ _export_module_members(
     module_type_snippets_support,
     "WORKFLOW_CLI_MODULE REMOTE_FIXTURES REMOTE_EXECUTE_ROOT REMOTE_FIXTURE_ROOT "
     "REMOTE_EXECUTE_VALIDATION_JSON REMOTE_EXECUTE_RTL_PATH REMOTE_EXECUTE_TESTBENCH_PATH "
-    "REMOTE_FIXTURE_SUMMARY_JSON SIMULATOR_BACKENDS",
+    "REMOTE_FIXTURE_SUMMARY_JSON REMOTE_PYTEST_SUMMARY_JSON SIMULATOR_BACKENDS",
 )
 
 # facade 导出 selection dataclass，保留 isinstance 和旧 helper 注入入口。
@@ -141,7 +141,8 @@ _export_module_members(
     "ensure_local_prerequisites ensure_remote_prerequisites ensure_remote_read_prerequisites "
     "stage_package cleanup_package remove_tree_with_retries request_and_run helper_base run_helper "
     "emit_prefixed_lines emit_json_payload parse_request_path cleanup_requests cleanup_local_residuals "
-    "summarize_validation_report summarize_fixture_report parse_json_output parse_download_path",
+    "summarize_validation_report summarize_fixture_report summarize_pytest_report "
+    "parse_json_output parse_download_path",
 )
 
 # build_parser 负责组装 CLI 合同，避免 main 承担参数细节。
@@ -755,12 +756,14 @@ def summarize_remote_run(
             "download_json_optional": download_json_optional,
             "summarize_validation_report": summarize_validation_report,
             "summarize_fixture_report": summarize_fixture_report,
+            "summarize_pytest_report": summarize_pytest_report,
         },
         dict_remote_paths={
             "execute_validation_json": str(REMOTE_EXECUTE_VALIDATION_JSON),
             "execute_rtl_path": str(REMOTE_EXECUTE_RTL_PATH),
             "execute_testbench_path": str(REMOTE_EXECUTE_TESTBENCH_PATH),
             "fixture_summary_json": str(REMOTE_FIXTURE_SUMMARY_JSON),
+            "pytest_summary_json": str(REMOTE_PYTEST_SUMMARY_JSON),
         },
     )
 

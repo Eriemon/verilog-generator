@@ -788,6 +788,45 @@ def report_remote_runs_with_context_impl(
     return {"remote_root": str_remote_root, "runs": list_runs, "status": "ok"}
 
 # summarize_remote_run_impl 下载单个 retained run 的关键报告。
+def _download_retained_summary(
+    remote_context: Any, str_remote_skill: str, str_run_name: str,
+    *,
+    dict_dependencies: dict[str, Any], dict_remote_paths: dict[str, str],
+    str_remote_path_key: str, str_local_filename: str,
+) -> dict[str, Any]:
+    """下载 retained run 中的一份结构化汇总证据。
+
+    :param remote_context: erie-remote-ssh helper 调用上下文。
+    :param str_remote_skill: 当前 retained run 的远端 skill 根目录。
+    :param str_run_name: 当前 run-* 目录名。
+    :param dict_dependencies: retained-run 摘要依赖的回调集合。
+    :param dict_remote_paths: retained-run 摘要依赖的远端路径集合。
+    :param str_remote_path_key: dict_remote_paths 中的证据路径键。
+    :param str_local_filename: 下载到本地报告目录时使用的文件名。
+    :return: 下载并解析后的 JSON 字典；缺失时沿用 optional 下载器语义。
+    """
+
+    # 统一展开远端证据位置，避免不同摘要类型产生路径规则漂移。
+    str_remote_report = dict_dependencies["remote_join"](  # 当前 retained run 中待下载的结构化证据位置
+        str_remote_skill,  # 当前 retained run 的远端 skill 根目录
+        dict_remote_paths[str_remote_path_key],  # 当前证据类型在 skill 内的相对路径
+    )
+
+    # 统一把 retained 证据归档到按 run 隔离的本地报告目录。
+    str_local_report = dict_dependencies["remote_join"](  # 按 run 隔离的本地结构化证据归档位置
+        "readable-verilog-generator-report",  # retained JSON 的统一本地报告根目录
+        str_run_name,  # 当前 retained run 对应的本地归档分区
+        str_local_filename,  # 当前证据类型在本地归档时使用的稳定文件名
+    )
+
+    # 通过 optional 下载器保留缺失证据的失败关闭语义。
+    return dict_dependencies["download_json_optional"](
+        remote_context,  # 当前 run 的远程 helper 调用上下文
+        str_remote_report,
+        str_local_report,
+    )
+
+# 汇总单个 retained run 的执行、pytest 和 fixture 证据。
 def summarize_remote_run_impl(
     remote_context: Any,
     str_remote_root: str,
@@ -842,24 +881,33 @@ def summarize_remote_run_impl(
         ),
     )
 
-    # fixture 汇总 JSON 独立记录最小案例回归结果，和 remote_execute 证据分开下载。
-    dict_fixture_summary = dict_dependencies["download_json_optional"](  # remote_fixtures 汇总 JSON 证据
-        remote_context,  # 仍沿用当前 run 的 helper 调用上下文
-        dict_dependencies["remote_join"](  # 组装 fixture 汇总的远端来源路径
-            str_remote_skill,  # fixture summary 相对路径依附的上传 skill 基目录
-            dict_remote_paths["fixture_summary_json"],  # fixture 汇总 JSON 的相对路径片段
-        ),
-        dict_dependencies["remote_join"](  # 组装 fixture 汇总的本地落盘相对路径
-            "readable-verilog-generator-report",  # fixture 复盘文件统一写回本地报告根目录
-            str_run_name,  # 按 retained run 名称切出 fixture 下载子目录
-            "remote_fixture_summary.json",  # 本地 fixture 汇总证据的归档文件名
-        ),
+    # fixture 汇总与 execution 证据分开下载，保留最小案例回归的独立事实边界。
+    dict_fixture_summary = _download_retained_summary(  # remote_fixtures 汇总 JSON 证据
+        remote_context,  # 下载 fixture 回归汇总时使用的远程 helper 上下文
+        str_remote_skill,  # fixture 证据所在的 retained skill 根目录
+        str_run_name,  # fixture 下载结果对应的 retained run 名称
+        dict_dependencies=dict_dependencies,  # fixture 下载复用的路径与 JSON 回调
+        dict_remote_paths=dict_remote_paths,  # fixture 汇总在远端 skill 内的路径配置
+        str_remote_path_key="fixture_summary_json",  # fixture 汇总路径对应的配置键
+        str_local_filename="remote_fixture_summary.json",  # fixture 本地归档文件名
+    )
+
+    # pytest 摘要独立下载，保证 retained run 能复核权威回归的精确计数和耗时。
+    dict_pytest_summary = _download_retained_summary(  # 远程 pytest 结构化 JSON 证据
+        remote_context,  # 下载 pytest 摘要时使用的远程 helper 上下文
+        str_remote_skill,  # 作为权威回归摘要定位起点的远端 skill 目录
+        str_run_name,  # 把权威回归计数隔离到本次 run 的本地证据分区
+        dict_dependencies=dict_dependencies,  # 注入 pytest 证据下载与路径组合能力
+        dict_remote_paths=dict_remote_paths,  # pytest 摘要在远端 skill 内的路径配置
+        str_remote_path_key="pytest_summary_json",  # pytest 摘要路径对应的配置键
+        str_local_filename="remote_pytest_summary.json",  # 供 require-remote 消费的本地 JSON 名称
     )
 
     # 返回单个 retained run 的统一摘要结构，供 report-runs 聚合输出。
     return {
         "run": str_run_name,
         "remote_skill": str_remote_skill,
+        "pytest": dict_dependencies["summarize_pytest_report"](dict_pytest_summary),
         "remote_execute": dict_dependencies["summarize_validation_report"](
             dict_execute_report,
             rtl_path=str_execute_rtl_path,
@@ -992,6 +1040,47 @@ def summarize_validation_report(
 
     # 返回压缩摘要。
     return dict_summary
+
+# summarize_pytest_report 把 retained pytest JSON 收敛为稳定的 report-runs 契约。
+def summarize_pytest_report(dict_report: dict[str, Any] | None) -> dict[str, Any]:
+    """汇总权威远程 pytest 的精确计数和耗时。
+
+    :param dict_report: 下载得到的 pytest JSON；旧 retained run 缺失时为 None。
+    :return: 包含 available、ok、计数和耗时的稳定摘要。
+    """
+
+    # 旧 retained run 没有 pytest JSON 时显式标记不可用，禁止误当完整证据。
+    if not isinstance(dict_report, dict):
+
+        # 缺失结构化计数时保留原因，要求调用方重新执行远程 gate。
+        return {
+            "available": False,
+            "ok": False,
+            "reason": "remote pytest summary is unavailable",
+        }
+
+    # 计数统一转为整数，避免下载 JSON 中的宽松类型进入发布证据。
+    int_passed = int(dict_report.get("passed", 0))  # pytest 通过用例数
+
+    # 跳过数独立保留，防止发布摘要把未执行项并入通过数。
+    int_skipped = int(dict_report.get("skipped", 0))  # pytest 跳过用例数
+
+    # 只有明确 passed 且至少执行一个用例时，结构化 pytest 证据才算通过。
+    bool_ok = dict_report.get("status") == "passed" and int_passed > 0  # pytest 摘要是否满足通过契约
+
+    # 保留精确计数、耗时和原始摘要行，便于机器门禁与人工复核使用同一事实源。
+    return {
+        "available": True,
+        "ok": bool_ok,
+        "status": str(dict_report.get("status", "")),
+        "passed": int_passed,
+        "skipped": int_skipped,
+        "xfailed": int(dict_report.get("xfailed", 0)),
+        "xpassed": int(dict_report.get("xpassed", 0)),
+        "deselected": int(dict_report.get("deselected", 0)),
+        "duration_seconds": float(dict_report.get("duration_seconds", 0.0)),
+        "summary_line": str(dict_report.get("summary_line", "")),
+    }
 
 # summarize_fixture_report 压缩 remote fixture summary。
 def summarize_fixture_report(dict_summary: dict[str, Any] | None) -> list[dict[str, Any]]:
