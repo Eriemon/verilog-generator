@@ -85,7 +85,7 @@ def skill_root() -> Path:
     返回当前 installable skill 的根目录。
 
     :param: 无外部参数。
-    :return: `skills/erie-verilog-generator` 或安装副本根路径。
+    :return: `skills/readable-verilog-generator` 或安装副本根路径。
     """
 
     # 依据 workflow 配置模块位置回到 skill 主体根目录。
@@ -1308,3 +1308,4 @@ def _absolute_or_user_path(value: str) -> bool:
 
     # Windows 盘符路径需要识别为绝对路径。
     return re.match(r"^[A-Za-z]:", value) is not None
+

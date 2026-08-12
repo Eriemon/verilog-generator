@@ -1,6 +1,6 @@
 # ASIC Verilog Quality Reference
 
-Use this reference when generating, reviewing, or repairing Erie Verilog-2001 RTL for ASIC-oriented quality. This guidance is advisory unless validation reports an error; it does not expand the skill beyond Verilog-2001 `.v` artifacts.
+Use this reference when generating, reviewing, or repairing readable Verilog-2001 RTL for ASIC-oriented quality. This guidance is advisory unless validation reports an error; it does not expand the skill beyond Verilog-2001 `.v` artifacts.
 
 ## Review Priorities
 

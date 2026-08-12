@@ -254,3 +254,4 @@ def _expand_part(part: str, context: GenerationContext) -> str:
 
         # 返回未展开的原始参数。
         return part
+

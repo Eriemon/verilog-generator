@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""运行 Erie Verilog 可读性质量门。"""
+"""运行 readable Verilog 可读性质量门。"""
 
 # future annotations 避免 argparse 类型提示在运行期求值。
 from __future__ import annotations

@@ -1,10 +1,10 @@
 ---
-name: erie-verilog-generator
+name: readable-verilog-generator
 description: >-
-  Use when Codex needs Chinese-language Verilog or RTL design, existing-RTL analysis, verify-repair planning, controlled improvement planning, semantic comparison, debugging, troubleshooting, independent static lint, self-checking testbench scaffolds, or ASIC-quality review for a Verilog-target design, including synthesizable Verilog-2001 RTL, local or remote Vivado/xsim validation, artifact extraction, and workflow trace diagnosis.
+  Use when creating, writing, reviewing, annotating, repairing, refactoring, or validating readable Verilog RTL, including synthesizable Verilog-2001 .v files, existing-RTL analysis, semantic comment annotation, testbench scaffold planning, ASIC-quality review, local or remote Vivado/xsim validation, evidence-backed repair, and workflow trace diagnosis.
 ---
 
-# Erie Verilog Generator
+# Readable Verilog Generator
 
 Use this skill for Verilog-2001 RTL generation and existing-RTL analysis/improvement/verify-repair backed by the bundled Python workflow rooted at `scripts/python/`. Keep generated design RTL artifacts as Verilog `.v` files and use the stable facade in `scripts/python/facade/verilog_api.py`.
 
@@ -33,9 +33,9 @@ For existing RTL assets, the same canonical Python layout now exposes:
   When RTL repair is applicable, the same flow also emits `rtl_patch_plan.json`, `rtl_patch_diff.txt`, `rtl_intervention.json`, `post_apply_validation.json`, and `post_apply_equivalence.json`.
 
 
-## Readable Erie Verilog generation overlay
+## Readable Verilog generation overlay
 
-This skill now follows the same governance pattern as `readable-python-generator`, but for Verilog RTL: generated RTL must be readable, comment-rich, naming-consistent, formatter-checkable, and safe to review before it is considered usable.
+This skill follows the same create/write/review/annotate/validate mental model as `readable-python-generator`, but adapts the workflow to Verilog RTL semantics: clocks, resets, interface protocols, testbench evidence, synthesizability, and local or remote toolchain proof.
 
 The governing rule is:
 
@@ -108,6 +108,16 @@ For tasks that add, rewrite, translate, or optimize Verilog comments, follow thi
 6. Deliver only when both comment-only checks and the final deliverable gate pass.
 
 Never treat pre-header comments as the only valid annotation delta. Never allow comment generation to change RTL tokens, module names, port lists, lvalues, reset behavior, always targets, or instance connections. Do not reuse one generic Chinese sentence across multiple parameters, ports, signals, assigns, process assignments, or instance mappings; standard region banners are navigation only and do not exempt entity-level comments from the `VG066` reuse gate.
+
+### Readable workflow routing
+
+Use the dispatcher as a Verilog-specific readable router:
+
+- `create/write`: collect the Verilog intent contract, then run `plan -> semantic model -> RTL -> gate`.
+- `review/analyze`: keep the flow read-only and report findings first, with compile, AST, readability, comment, naming, profile, testbench, and toolchain evidence.
+- `annotate`: use the comment-only route, preserve RTL tokens, and rerun the comment-only verifier from the immutable baseline.
+- `repair/refactor`: bind the request to existing RTL, reproduce or validate the issue first, then apply the smallest RTL-safe change.
+- `validate`: run delivery gates, local toolchain checks, or remote Vivado/xsim evidence only; do not implicitly edit code.
 
 
 ## Dependency Preflight
@@ -208,7 +218,7 @@ python <erie-remote-ssh>\scripts\remote_ssh.py discover --settings <remote-setti
 python <erie-remote-ssh>\scripts\remote_ssh.py choices --settings <remote-settings> --config <server-list>
 ```
 
-Ask the user to select a remote server unless they already named one in the current request. A configured default server is only a recommendation; it is not user confirmation. After selection, use `erie-remote-ssh` for `check`, `scan-software`, `workspace-check`, request creation, and `run-request --execute`. If remote discovery sees multiple Vivado `settings64.sh` candidates, stop and ask the user which version to use; persist that confirmed choice into the remote workdir `.settings/verilog.remote.json` before development or validation continues. Remote validation directories are retained by default under `.erie-verilog-generator-validation/run-YYYYMMDDTHHMMSS/erie-verilog-generator`, including `_smoke_runs` outputs; use `--cleanup-remote` only when the user wants the validation directory deleted. The remote gate must execute the canonical workflow plus the fixed RTL fixtures in `assets/examples/remote_fixtures` and retain each fixture `validation.json`. Use `--report-runs` for a read-only summary of retained remote runs. Do not add direct `ssh` or `scp` commands to this skill.
+Ask the user to select a remote server unless they already named one in the current request. A configured default server is only a recommendation; it is not user confirmation. After selection, use `erie-remote-ssh` for `check`, `scan-software`, `workspace-check`, request creation, and `run-request --execute`. If remote discovery sees multiple Vivado `settings64.sh` candidates, stop and ask the user which version to use; persist that confirmed choice into the remote workdir `.settings/verilog.remote.json` before development or validation continues. Remote validation directories are retained by default under `.readable-verilog-generator-validation/run-YYYYMMDDTHHMMSS/readable-verilog-generator`, including `_smoke_runs` outputs; use `--cleanup-remote` only when the user wants the validation directory deleted. The remote gate must execute the canonical workflow plus the fixed RTL fixtures in `assets/examples/remote_fixtures` and retain each fixture `validation.json`. Use `--report-runs` for a read-only summary of retained remote runs. Do not add direct `ssh` or `scp` commands to this skill.
 
 For Vivado/Vitis project creation, Tcl execution, synthesis/implementation strategy, timing analysis, constraints, debug, simulation, or Vitis HLS work, follow FPGA developer routing first. Use `vivado-developer` or `vitis-developer` for AMD-Xilinx and use `pds-developer` for PangoMicro. Do not install or route to FPGA-Agent-Skills Vivado/Vitis child skills unless the user explicitly requests that manual fallback.
 
@@ -313,3 +323,4 @@ python -m scripts.python.workflow.cli validate --spec .\reports\verilog\spec.jso
 - Do not add direct SSH/SCP logic; use `erie-remote-ssh` and configured JSON for remote validation.
 - Treat VCS+Verdi support as scripted backend invocation only; full Verdi GUI/session automation is out of scope unless it is explicitly added and validated.
 - Keep workflow outputs in caller-selected run directories such as `reports/`; do not store generated run artifacts inside the skill.
+

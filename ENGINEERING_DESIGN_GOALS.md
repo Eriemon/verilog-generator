@@ -37,7 +37,7 @@ Independent static lint and testbench scaffold helpers are part of the overall s
 ## Acceptance Criteria
 
 - `SKILL.md` and `agents/openai.yaml` describe new RTL generation plus existing-RTL analysis/improvement/verify-repair boundaries without widening the design RTL domain beyond Verilog.
-- `SKILL.md`, `agents/openai.yaml`, and `references/integration/host-integration.md` describe `regular`, `deep_review`, and `agentic_repair` behavior clearly enough that a host can route requests without reading workflow internals.
+- `SKILL.md`, `agents/openai.yaml`, and `references/integration/host-integration.md` describe `regular`, `deep_review`, and `agentic_repair` behavior clearly enough that a host can route requests without reading runtime internals.
 - `scripts/python/facade/verilog_api.py` is the public Python facade; deeper implementation helpers stay under focused runtime modules.
 - `scripts.python.facade.verilog_api` exposes `run_verilog_batch(...)` for generation-only batch execution and keeps each case in an isolated run directory.
 - The CLI no longer requires a target argument and always resolves to Verilog RTL.

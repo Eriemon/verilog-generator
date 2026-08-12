@@ -13,7 +13,7 @@
     "verilog_formatter_config": "${skill_dir}/assets/verilog_formatter_config"
   },
   "skill_dependencies": {
-    "state_path": ".erie-verilog-generator-state/dependency-state.json",
+    "state_path": ".readable-verilog-generator-state/dependency-state.json",
     "install_policy": "ask_each_missing",
     "adaptation_policy": "required",
     "required": [
@@ -207,7 +207,7 @@
     ]
   },
   "fpga_developer_routing": {
-    "state_path": ".erie-verilog-generator-state/dependency-state.json",
+    "state_path": ".readable-verilog-generator-state/dependency-state.json",
     "selection_policy": "ask_on_first_fpga_workflow",
     "persist_selection": true,
     "fpga_agent_required_when_developer_present": false,
@@ -291,7 +291,6 @@
       }
     },
     "markdown_non_ascii_allowlist": [
-      "README-CN.md",
       "references/rules/verilog-code-comment-naming-standard.md",
       "references/corpus/verilog-style-observations.md"
     ],
@@ -334,7 +333,8 @@
       "remote_runtime_config": ".settings/verilog.remote.json"
     },
     "python": "python3",
-    "remote_root": ".erie-verilog-generator-validation",
+    "remote_root": ".readable-verilog-generator-validation",
     "timeout_s": 120
   }
 }
+

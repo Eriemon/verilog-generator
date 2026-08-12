@@ -16,7 +16,7 @@ Use `config/defaults.json` for install-safe defaults, then layer project-local `
 
 Settings support these placeholders:
 
-- `${skill_dir}`: the `skills/erie-verilog-generator` skill directory.
+- `${skill_dir}`: the `skills/readable-verilog-generator` skill directory.
 - `${project_root}`: the repository root that contains `skills/`.
 - `${settings_dir}`: the directory that contains the settings JSON being loaded.
 - `${home}`: the current user's home directory.
@@ -57,7 +57,7 @@ python -m scripts.python.toolchain.manage_skill_dependencies install --settings 
 python -m scripts.python.toolchain.manage_skill_dependencies adapt --settings .\config\defaults.json
 ```
 
-`install` requires `--yes` and must be used only after the user confirms installation. `skip` is valid only for recommended dependencies. `adapt` writes project-local dependency state to `<workspace-root>/.erie-verilog-generator-state/dependency-state.json`; for `erie-remote-ssh`, this records the installed `scripts/remote_ssh.py` and the supported defaults file path under either `config/defaults.json` or `assets/defaults.json` so remote validation can use the local installation without storing machine-specific helper paths in this skill. If the command is not launched from a workspace root containing `.git` or `AGENTS.md`, pass `--state-path` explicitly.
+`install` requires `--yes` and must be used only after the user confirms installation. `skip` is valid only for recommended dependencies. `adapt` writes project-local dependency state to `<workspace-root>/.readable-verilog-generator-state/dependency-state.json`; for `erie-remote-ssh`, this records the installed `scripts/remote_ssh.py` and the supported defaults file path under either `config/defaults.json` or `assets/defaults.json` so remote validation can use the local installation without storing machine-specific helper paths in this skill. Legacy `.erie-verilog-generator-state` files remain read-only migration sources. If the command is not launched from a workspace root containing `.git` or `AGENTS.md`, pass `--state-path` explicitly.
 
 `fpga_developer_routing` records vendor-level developer skill preferences. AMD-Xilinx work recognizes `vivado-developer` and `vitis-developer`; PangoMicro work recognizes `pds-developer`. When any developer skill is installed, FPGA-Agent-Skills is not required and its Vivado/Vitis skills are not installed by this skill. If no developer skill is installed, FPGA-Agent-Skills remains a manual fallback only: `install --dependency-id fpga-agent-skills --yes` still skips it, and installation requires the additional `--allow-fpga-agent-fallback` flag. If both vendor families are available, ask the user which vendor to use for the current FPGA workflow and persist only that vendor choice in the project-local state file.
 
@@ -155,7 +155,7 @@ The dedicated local selection file records only the selected `server_id`. The re
 
 For confidence-sensitive gates, the active server is always the one stored in `.settings/remote-selection.local.json` or explicitly passed through `--remote-server`. The toolchain source of truth is the remote workdir `.settings/verilog.remote.json`; local legacy toolchain caches must not satisfy the active gate.
 
-Remote validation directories are retained by default and printed as `remote_parent` and `remote_skill`. The server-side project path is relative to the configured remote workdir and looks like `.erie-verilog-generator-validation/run-YYYYMMDDTHHMMSS/erie-verilog-generator`. Retained runs keep `_smoke_runs` and `workflow-state.json` so generated RTL, testbenches, validation reports, and workflow traces remain inspectable. Pass `--cleanup-remote` only when the run directory should be deleted after validation. The legacy `--keep-remote` flag is accepted but no longer changes behavior because keeping is the default.
+Remote validation directories are retained by default and printed as `remote_parent` and `remote_skill`. The server-side project path is relative to the configured remote workdir and looks like `.readable-verilog-generator-validation/run-YYYYMMDDTHHMMSS/readable-verilog-generator`. Retained runs keep `_smoke_runs` and `workflow-state.json` so generated RTL, testbenches, validation reports, and workflow traces remain inspectable. Pass `--cleanup-remote` only when the run directory should be deleted after validation. The legacy `--keep-remote` flag is accepted but no longer changes behavior because keeping is the default.
 
 Each remote gate validates the canonical workflow and the fixed RTL fixtures in `assets/examples/remote_fixtures`: `comb_parity_mux`, `pipeline_delay`, and `ready_valid_slice`. Fixture reports are retained under `_smoke_runs/remote_fixtures/<fixture>/validation.json`, with a combined `_smoke_runs/remote_fixtures/summary.json` that records the selected simulator backend, executed tools, and generated RTL/testbench paths.
 

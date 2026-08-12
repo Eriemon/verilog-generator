@@ -2,7 +2,7 @@
 
 ## Entry decision
 
-Treat a request as an Erie Verilog Generator task when it asks for Verilog, RTL, `.v`, `.sv`, FPGA, ASIC, modules, finite-state machines, AXI, AXIS, APB, SPI, I2C, UART, or a hardware interface/register behavior description.
+Treat a request as an Readable Verilog Generator task when it asks for Verilog, RTL, `.v`, `.sv`, FPGA, ASIC, modules, finite-state machines, AXI, AXIS, APB, SPI, I2C, UART, or a hardware interface/register behavior description.
 
 ## Task classes
 

@@ -115,3 +115,5 @@ block the standalone readiness gate instead of claiming external validation succ
 ## Boundary
 
 Keep host-specific behavior in `scripts/python/facade/`. Do not add new Python workflow implementations outside `scripts/python/`. Avoid patching unrelated `scripts/python/<function>/` modules unless intentionally changing the shared internal Verilog workflow backend.
+
+

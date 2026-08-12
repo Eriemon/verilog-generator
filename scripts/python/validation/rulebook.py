@@ -1,4 +1,4 @@
-"""读取 Erie Verilog 风格规则源。"""
+"""读取 readable Verilog 风格规则源。"""
 
 # 延迟求值避免 dataclass 字段类型在导入期绑定过早。
 from __future__ import annotations

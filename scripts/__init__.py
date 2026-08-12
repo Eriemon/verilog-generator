@@ -1,1 +1,1 @@
-"""erie-verilog-generator 的脚本包根。"""
+"""readable-verilog-generator 的脚本包根。"""

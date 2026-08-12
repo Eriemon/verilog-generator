@@ -1,4 +1,4 @@
-"""运行 Erie Verilog generator skill 的本地信心门禁。"""
+"""运行 readable Verilog generator skill 的本地信心门禁。"""
 
 # 标准库负责参数解析、报告读写、子进程执行和清理校验产物。
 import argparse
@@ -250,7 +250,7 @@ def create_parser() -> argparse.ArgumentParser:
     """
 
     # 描述文本保持英文，延续既有 --help 用户可见输出。
-    str_description = "Validate the Erie Verilog generator skill locally."  # argparse 描述文本
+    str_description = "Validate the readable Verilog generator skill locally."  # argparse 描述文本
 
     # parser 只声明参数，不读取文件或运行验证。
     parser = argparse.ArgumentParser(description=str_description)  # 本地验证命令解析器
@@ -376,8 +376,8 @@ def main(argv: list[str] | None = None) -> int:
     # 清理后确认 skill 目录和 smoke 根没有残留禁止项。
     verify_no_residuals(validation_context_current.dict_settings, validation_context_current.path_smoke_dir)
 
-    # 保留旧脚本最终成功提示。
-    print("> INFO: [Python] Erie Verilog generator local confidence gate passed.")
+    # 输出当前 skill 品牌下的最终成功提示。
+    print("> INFO: [Python] Readable Verilog generator local confidence gate passed.")
 
     # 退出码 0 表示本地信心门禁全部通过。
     return 0
@@ -1508,7 +1508,7 @@ def run_work_folder_gate(*, require_external: bool = True) -> dict[str, str]:
         "work-folder-gate",  # 文档治理 gate 子命令
         ".",  # 当前仓库根作为治理项目
         "--skill-dir",  # skill 主体目录参数名
-        "skills/erie-verilog-generator",  # 当前 skill 主体相对路径
+        "skills/readable-verilog-generator",  # 当前 skill 主体相对路径
         "--mode",  # 治理模式参数名
         "development",  # 开发期允许 dirty worktree advisory
     ]  # work-folder-gate 子进程命令
@@ -2970,7 +2970,7 @@ def verify_no_ref_dependencies() -> None:
         from scripts.python.version import __version__
 
         # candidate_release 只在当前版本发布目录已存在时参与扫描。
-        path_candidate_release = PROJECT_ROOT / "dist" / f"erie-verilog-generator-v{__version__}"  # 当前版本候选发布目录
+        path_candidate_release = PROJECT_ROOT / "dist" / f"readable-verilog-generator-v{__version__}"  # 当前版本候选发布目录
 
         # repo 级活动文件只在源码仓库场景成立。
         list_active_paths.extend(
@@ -3462,7 +3462,7 @@ def iter_skill_files() -> list[Path]:
     """
 
     # 忽略目录集合对应运行时缓存和本地报告，避免把 transient 文件纳入发布检查。
-    set_ignored_parts = {".git", "__pycache__", "_smoke_runs", "dist", "reports"}  # skill 文件枚举时跳过的路径片段
+    set_ignored_parts = {"__pycache__", "_smoke_runs", "reports"}  # skill 文件枚举时跳过的路径片段
 
     # release receipt 属于打包元数据，不应参与源码 hygiene 扫描。
     set_ignored_names = {"RELEASE_RECEIPT.json"}  # skill 文件枚举时跳过的生成元数据文件名

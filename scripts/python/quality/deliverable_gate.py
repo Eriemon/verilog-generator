@@ -1,4 +1,4 @@
-"""聚合 Erie Verilog 最终交付门禁。"""
+"""聚合 readable Verilog 最终交付门禁。"""
 
 # 延迟解析类型注解，避免运行时为报告类型引入额外依赖。
 from __future__ import annotations
@@ -698,7 +698,7 @@ def write_verilog_deliverable_gate_report(
 def _run_static_lint(path_root: Path) -> list[StaticLintIssue]:
     """
     对交付入口运行内置 static lint。
-
+    
     :param path_root: 交付门禁入口文件或目录。
     :return: static lint 诊断列表。
     """
@@ -737,7 +737,7 @@ def _run_static_lint(path_root: Path) -> list[StaticLintIssue]:
 def _static_lint_issue_to_dict(issue: StaticLintIssue) -> dict[str, Any]:
     """
     把 StaticLintIssue 转换为交付门禁 issues 条目。
-
+    
     :param issue: static lint 诊断对象。
     :return: JSON 友好的诊断字典。
     """
@@ -758,7 +758,7 @@ def _static_lint_issue_to_dict(issue: StaticLintIssue) -> dict[str, Any]:
 def _comment_placement_issue_to_dict(issue: dict[str, Any]) -> dict[str, Any]:
     """
     把 comment placement issue 转换为交付门禁 issues 条目。
-
+    
     :param issue: comment placement 诊断字典。
     :return: JSON 友好的诊断字典。
     """
@@ -785,7 +785,7 @@ def _comment_placement_issue_to_dict(issue: dict[str, Any]) -> dict[str, Any]:
 def _deliverable_report_to_markdown(report: dict[str, Any]) -> str:
     """
     把交付门禁报告转换为 Markdown 文本。
-
+    
     :param report: 交付门禁报告字典。
     :return: Markdown 格式报告文本。
     """

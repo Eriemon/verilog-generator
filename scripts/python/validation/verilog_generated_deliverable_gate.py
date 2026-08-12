@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""运行 Erie Verilog 最终交付门禁。"""
+"""运行 readable Verilog 最终交付门禁。"""
 
 # 延迟类型注解解析，保持 CLI 启动时的导入成本稳定。
 from __future__ import annotations
@@ -23,7 +23,7 @@ def create_parser() -> argparse.ArgumentParser:
     """
 
     # str_description 说明脚本用途。
-    str_description = "Run final Erie Verilog deliverable gate for generated or modified RTL."  # argparse 描述文本
+    str_description = "Run final readable Verilog deliverable gate for generated or modified RTL."  # argparse 描述文本
 
     # parser 保存全部 CLI 参数定义。
     parser = argparse.ArgumentParser(description=str_description)  # 交付门禁命令解析器

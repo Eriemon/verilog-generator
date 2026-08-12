@@ -1,7 +1,7 @@
 {
   "version": 2,
   "name": "rtl_md_constraints",
-  "description": "Stable distilled metadata for layered Erie Verilog RTL generation and review constraints.",
+  "description": "Stable distilled metadata for layered readable Verilog RTL generation and review constraints.",
   "total_rules": 68,
   "required_rules": 47,
   "advisory_rules": 21,

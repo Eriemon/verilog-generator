@@ -1,6 +1,6 @@
 # RTL-MD Constraint Catalog
 
-This file is the stable RTL-MD constraint reference for erie-verilog-generator.
+This file is the stable RTL-MD constraint reference for readable-verilog-generator.
 It lists every absorbed rule by semantic ID and execution layer. The durable
 skill package does not depend on temporary development inputs.
 

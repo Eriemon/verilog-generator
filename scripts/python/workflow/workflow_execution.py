@@ -147,7 +147,7 @@ class RepairArtifacts:
 def _execute_workflow(**kwargs: Any) -> dict[str, Any]:
     """
     执行 workflow，并保留旧版关键字调用契约。
-
+    
     :param kwargs: 旧版关键字调用参数，字段会被收束为 WorkflowExecutionContext。
     :return: 写盘后的 workflow result 对象。
     """
@@ -189,7 +189,7 @@ def _execute_workflow(**kwargs: Any) -> dict[str, Any]:
 def _build_provider(context: WorkflowExecutionContext) -> ModelProvider:
     """
     构造 workflow 使用的模型 provider。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :return: 当前 workflow run 复用的模型 provider 实例。
     """
@@ -215,7 +215,7 @@ def _build_provider(context: WorkflowExecutionContext) -> ModelProvider:
 def _execution_stages(context: WorkflowExecutionContext) -> list[str]:
     """
     计算本次 workflow 的 stage 顺序。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :return: 本次 workflow 使用的 stage 名称列表。
     """
@@ -236,7 +236,7 @@ def _execution_stages(context: WorkflowExecutionContext) -> list[str]:
 def _has_attempt_budget(context: WorkflowExecutionContext, int_max_attempts: int) -> bool:
     """
     判断 workflow 是否仍可启动下一次 attempt。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param int_max_attempts: 本次 workflow 允许启动的最大 attempt 数。
     :return: 仍可启动下一轮 attempt 时返回 True。
@@ -252,7 +252,7 @@ def _has_attempt_budget(context: WorkflowExecutionContext, int_max_attempts: int
 def _start_attempt(context: WorkflowExecutionContext, provider: Any) -> AttemptContext:
     """
     创建 attempt 目录并登记 result 记录。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param provider: 当前 workflow 复用的模型 provider 实例。
     :return: 新建 attempt 的目录、编号和 result 记录上下文。
@@ -292,7 +292,7 @@ def _run_attempt(
 ) -> dict[str, Any] | None:
     """
     执行单次 attempt，返回终态结果或 None 表示可继续下一轮。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param provider: 当前 workflow 复用的模型 provider 实例。
@@ -372,7 +372,7 @@ def _run_attempt(
 def _load_prompt_memory(context: WorkflowExecutionContext, attempt: AttemptContext) -> dict[str, Any] | None:
     """
     按旧规则为第二轮及以后构建 prompt memory。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :return: 可注入 stage prompt 的 memory 字典；不需要时返回 None。
@@ -413,7 +413,7 @@ def _run_stage_sequence(
 ) -> dict[str, Any] | None:
     """
     顺序执行 workflow stages，并处理 codegen 人工介入。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param provider: 当前 workflow 复用的模型 provider 实例。
@@ -464,7 +464,7 @@ def _run_one_stage(
 ) -> dict[str, Any]:
     """
     执行单个 stage 并返回完整输出。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param provider: 当前 workflow 复用的模型 provider 实例。
@@ -518,7 +518,7 @@ def _record_stage_output(
 ) -> None:
     """
     把 stage 输出写入 attempt record 和 stage state。
-
+    
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param stage_state: 单个 attempt 内的 stage 输出和 codegen plan 状态。
     :param stage: 当前正在执行或记录的 stage 名称。
@@ -542,7 +542,7 @@ def _codegen_needs_human(
 ) -> bool:
     """
     处理 codegen_plan stage 的人工确认分支。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param provider: 当前 workflow 复用的模型 provider 实例。
@@ -593,7 +593,7 @@ def _write_codegen_intervention(
 ) -> None:
     """
     写出 codegen_plan 未就绪时的人类介入请求。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param provider: 当前 workflow 复用的模型 provider 实例。
@@ -660,7 +660,7 @@ def _record_final_stage(
 ) -> None:
     """
     把最终 stage 摘要提升到 attempt 顶层。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param stage: 当前正在执行或记录的 stage 名称。
@@ -697,7 +697,7 @@ def _fail_attempt(
 ) -> dict[str, Any]:
     """
     将 attempt 标记为失败并返回 workflow result。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param status: 需要写入 attempt 和 workflow result 的终态状态。
@@ -720,7 +720,7 @@ def _validate_attempt(
 ) -> ValidationArtifacts:
     """
     运行 final stage 的 validation 并写 trace/state。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param provider: 当前 workflow 复用的模型 provider 实例。
@@ -775,7 +775,7 @@ def _record_validation_state(
 ) -> None:
     """
     写入 validation state 摘要。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param final_output: final_output 参数，参与当前 workflow helper 的业务处理。
     :param validation_json_path: validation_json_path 参数，参与当前 workflow helper 的业务处理。
@@ -805,7 +805,7 @@ def _trace_validation(
 ) -> None:
     """
     写入 validation trace 事件。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param provider: 当前 workflow 复用的模型 provider 实例。
@@ -855,7 +855,7 @@ def _trace_validation(
 def _semantic_ready_metric(validation_report: Any) -> bool | None:
     """
     从 validation metrics 中提取 semantic_ready 字段。
-
+    
     :param validation_report: validate_generated 返回的 validation report。
     :return: semantic_execution.ready 指标；缺失时返回 None。
     """
@@ -887,7 +887,7 @@ def _run_stage_gates(
 ) -> GateArtifacts:
     """
     运行 interface、semantic 和 review gate。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param stage_state: 单个 attempt 内的 stage 输出和 codegen plan 状态。
@@ -962,7 +962,7 @@ def _run_stage_gates(
 def _append_gate_path(dict_contract_paths: dict[str, Any], key: str, gate: dict[str, Any] | None) -> None:
     """
     把 gate 路径安全写入 contract_paths。
-
+    
     :param dict_contract_paths: attempt record 中保存的 release-safe 合同路径表。
     :param key: contract_paths 中写入的 gate 名称。
     :param gate: 单个 gate 的输出对象；不适用时为 None。
@@ -982,7 +982,7 @@ def _append_gate_path(dict_contract_paths: dict[str, Any], key: str, gate: dict[
 def _effective_gate(validation_report: Any, combined_gate: dict[str, Any] | None) -> dict[str, Any] | None:
     """
     计算 repair prompt 实际可用的 gate 结果。
-
+    
     :param validation_report: validate_generated 返回的 validation report。
     :param combined_gate: interface、semantic 和 review gate 的组合结果。
     :return: repair prompt 可使用的 gate 结果；spec_issue 时返回 None。
@@ -1009,7 +1009,7 @@ def _write_stage_verification(
 ) -> None:
     """
     在存在 gate 结果时写出 stage_verification.json。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param dict_contract_paths: attempt record 中保存的 release-safe 合同路径表。
@@ -1044,7 +1044,7 @@ def _write_stage_verification(
 def _attempt_passed(validation_artifacts: ValidationArtifacts, gate_artifacts: GateArtifacts) -> bool:
     """
     判断 validation 和 stage gate 是否均通过。
-
+    
     :param validation_artifacts: validation 报告和 JSON 证据路径。
     :param gate_artifacts: stage gate 合同路径、组合结果和 repair 可用 gate。
     :return: validation 与 gate 都通过时返回 True。
@@ -1066,7 +1066,7 @@ def _attempt_passed(validation_artifacts: ValidationArtifacts, gate_artifacts: G
 def _deliverable_matrix_ready(validation_report: Any) -> bool:
     """
     判断 validation report 中的八类交付矩阵是否全部 ready。
-
+    
     :param validation_report: validate_generated 返回的 ValidationReport 对象。
     :return: 没有交付矩阵或全部 ready 时返回 True。
     """
@@ -1139,7 +1139,7 @@ def _mark_attempt_passed(
 ) -> dict[str, Any]:
     """
     将 workflow 标记为 passed 并返回 result。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param validation_artifacts: validation 报告和 JSON 证据路径。
@@ -1175,7 +1175,7 @@ def _write_repair_artifacts(
 ) -> RepairArtifacts:
     """
     写出 repair prompt、repair plan 和 diagnosis。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param validation_artifacts: validation 报告和 JSON 证据路径。
@@ -1265,7 +1265,7 @@ def _record_repair_state(
 ) -> None:
     """
     写入 repair state 事件。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param repair_prompt_path: repair prompt Markdown 证据路径。
     :param repair_plan_path: repair plan JSON 证据路径。
@@ -1294,7 +1294,7 @@ def _trace_repair(
 ) -> None:
     """
     写入 reflect trace 事件。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param repair_prompt_path: repair prompt Markdown 证据路径。
@@ -1329,7 +1329,7 @@ def _handle_repair_decision(
 ) -> dict[str, Any] | None:
     """
     根据 repair plan 决定终止或继续下一轮。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param validation_artifacts: validation 报告和 JSON 证据路径。
@@ -1374,7 +1374,7 @@ def _block_for_repair_human(
 ) -> dict[str, Any]:
     """
     写出 repair 阶段的人类介入请求并返回 result。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param validation_artifacts: validation 报告和 JSON 证据路径。
@@ -1422,7 +1422,7 @@ def _record_human_intervention_state(
 ) -> None:
     """
     写入 human_intervention state。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param intervention_path: 人工介入 JSON 证据路径。
@@ -1449,7 +1449,7 @@ def _trace_human_intervention(
 ) -> None:
     """
     写入 human_intervention trace。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param intervention_path: 人工介入 JSON 证据路径。
@@ -1477,7 +1477,7 @@ def _finish_attempt_with_status(
 ) -> dict[str, Any]:
     """
     写入 attempt/result 状态并返回 result。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param attempt: 当前 attempt 上下文，提供 attempt 目录、编号和 result 记录。
     :param status: 需要写入 attempt 和 workflow result 的终态状态。
@@ -1500,7 +1500,7 @@ def _finish_attempt_with_status(
 def _finish_with_status(context: WorkflowExecutionContext, status: str) -> dict[str, Any]:
     """
     写入 workflow 终态并返回 result。
-
+    
     :param context: workflow 执行上下文，提供路径、计划、配置和持久化对象。
     :param status: 需要写入 attempt 和 workflow result 的终态状态。
     :return: 顶层 workflow 状态写盘后的 result。

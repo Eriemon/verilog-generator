@@ -517,8 +517,8 @@ def run_remote_validation(
     # 远端父目录位于配置的 remote_root 下。
     str_remote_parent = remote_join(str_remote_root, str_run_id)  # 本次远端 run 目录
 
-    # 上传包内部保持 erie-verilog-generator 子目录名。
-    str_remote_skill = remote_join(str_remote_parent, "erie-verilog-generator")  # 远端 skill 包目录
+    # 上传包内部保持 readable-verilog-generator 子目录名。
+    str_remote_skill = remote_join(str_remote_parent, "readable-verilog-generator")  # 远端 skill 包目录
 
     # 打印远端保留位置，便于用户后续 SSH 查看证据。
     for str_line in remote_location_lines(str_remote_parent, str_remote_skill, cleanup_remote):
@@ -576,7 +576,7 @@ def run_remote_validation(
         )
 
     # 远端 gate 全流程通过。
-    print("> INFO: [Python] Erie Verilog generator remote confidence gate passed.")
+    print("> INFO: [Python] Readable Verilog generator remote confidence gate passed.")
 
     # 成功退出码保持旧 CLI 行为。
     return 0
@@ -612,7 +612,7 @@ def run_remote_validation_requests(
             "request-upload",
             [
                 "--local",
-                str(run_config.path_package_root / "erie-verilog-generator"),
+                str(run_config.path_package_root / "readable-verilog-generator"),
                 "--remote",
                 run_config.str_remote_skill,
                 "--reason",
@@ -1175,17 +1175,17 @@ def stage_package(path_helper: Path, str_run_id: str) -> Path:
 
     # 每次 run 使用独立 staging 目录。
     path_package_root = (  # 当前 run 上传前使用的本地 staging 根
-        path_remote_project / "reports" / "tmp" / f"erie-verilog-generator-{str_run_id}"  # run 专属临时上传包目录
+        path_remote_project / "reports" / "tmp" / f"readable-verilog-generator-{str_run_id}"  # run 专属临时上传包目录
     )
 
     # 复用 run id 时先删除旧 staging 目录。
     cleanup_package(path_package_root)
 
     # 上传目标目录保持与仓库根近似的结构。
-    path_target = path_package_root / "erie-verilog-generator"  # 上传包工作区根
+    path_target = path_package_root / "readable-verilog-generator"  # 上传包工作区根
 
-    # skill 源码复制到 skills/erie-verilog-generator 下。
-    path_staged_skill = path_target / "skills" / "erie-verilog-generator"  # staging 中的 skill 目录
+    # skill 源码复制到 skills/readable-verilog-generator 下。
+    path_staged_skill = path_target / "skills" / "readable-verilog-generator"  # staging 中的 skill 目录
 
     # smoke harness 位于 staging 工作区根的 tests/smoke。
     path_staged_smoke = path_target / "tests" / "smoke"  # 远端回归所需的 tests/smoke 副本
@@ -1243,8 +1243,8 @@ def cleanup_package(path_package_root: Path) -> None:
     # 删除前解析绝对路径，避免相对路径绕过 tmp 限制。
     path_resolved = path_package_root.resolve()  # 待删除 staging 目录绝对路径
 
-    # 只允许删除 reports/tmp/erie-verilog-generator-run-* 形态目录。
-    if path_resolved.parent.name != "tmp" or not path_resolved.name.startswith("erie-verilog-generator-run-"):
+    # 只允许删除 reports/tmp/readable-verilog-generator-run-* 形态目录。
+    if path_resolved.parent.name != "tmp" or not path_resolved.name.startswith("readable-verilog-generator-run-"):
 
         # 路径异常时拒绝递归删除。
         raise AssertionError(f"> ERR: [Python] Refusing to remove unexpected package path: {path_package_root}")
@@ -1678,8 +1678,8 @@ def summarize_remote_run(
     :return: 包含 remote_execute 和 fixtures 摘要的字典。
     """
 
-    # 每个 run 内的 skill 目录固定为 erie-verilog-generator。
-    str_remote_skill = remote_join(str_remote_root, str_run_name, "erie-verilog-generator")  # 当前 retained run 的上传 skill 根
+    # 每个 run 内的 skill 目录固定为 readable-verilog-generator。
+    str_remote_skill = remote_join(str_remote_root, str_run_name, "readable-verilog-generator")  # 当前 retained run 的上传 skill 根
 
     # 主流程门禁的原始 JSON 提供 ok、metrics 与 spec_outputs。
     str_execute_validation_json = remote_join(  # remote_execute 摘要读取的原始 validation 报告
@@ -1703,14 +1703,14 @@ def summarize_remote_run(
     dict_execute_report = download_json_optional(  # remote_execute 摘要的原始报告字典
         remote_context,  # 主门禁报告下载使用的 helper 上下文
         str_execute_validation_json,  # 主门禁 validation 源文件
-        remote_join("erie-verilog-generator-report", str_run_name, "remote_execute_validation.json"),  # 主门禁 JSON 缓存文件
+        remote_join("readable-verilog-generator-report", str_run_name, "remote_execute_validation.json"),  # 主门禁 JSON 缓存文件
     )
 
     # 三个 fixture 的汇总缺失时保留空列表。
     dict_fixture_summary = download_json_optional(  # 三项小用例回归的聚合结果
         remote_context,  # fixture 汇总下载使用的 helper 上下文
         remote_join(str_remote_skill, str(REMOTE_FIXTURE_SUMMARY_JSON)),  # 三项 fixture 汇总源文件
-        remote_join("erie-verilog-generator-report", str_run_name, "remote_fixture_summary.json"),  # fixture 汇总缓存文件
+        remote_join("readable-verilog-generator-report", str_run_name, "remote_fixture_summary.json"),  # fixture 汇总缓存文件
     )
 
     # 返回 retained run 的统一摘要。
@@ -1991,7 +1991,7 @@ def remote_validation_command(
     return f"""
 set -eu
 cd {sh_quote(str_remote_skill)}
-export PYTHONPATH="skills/erie-verilog-generator${{PYTHONPATH:+:$PYTHONPATH}}"
+export PYTHONPATH="skills/readable-verilog-generator${{PYTHONPATH:+:$PYTHONPATH}}"
 {str_py} --version
 {str_vivado_snippet}
 {str_simulator_priority_snippet}
@@ -2018,22 +2018,22 @@ else
   yosys_available=0
 fi
 {str_py} -m compileall -q \
-  skills/erie-verilog-generator/scripts \
+  skills/readable-verilog-generator/scripts \
   tests
-{str_py} -m tests.smoke.run_smoke --settings skills/erie-verilog-generator/config/defaults.json
+{str_py} -m tests.smoke.run_smoke --settings skills/readable-verilog-generator/config/defaults.json
 {str_rtl_md_snippet}
 if [ -n "$configured_simulator_backend" ]; then
   export VERILOG_GENERATOR_SIMULATOR_PRIORITY="$configured_simulator_backend"
   expected_sim_backend="$configured_simulator_backend"
 fi
 {str_py} -m {WORKFLOW_CLI_MODULE} run-workflow \
-  --spec skills/erie-verilog-generator/assets/examples/rtl_erie_verilog_spec.json \
+  --spec skills/readable-verilog-generator/assets/examples/rtl_erie_verilog_spec.json \
   --out-dir _smoke_runs/remote_execute \
   --model-provider mock \
   --readiness execute \
   --external-target local
 {str_py} -m {WORKFLOW_CLI_MODULE} validate \
-  --spec skills/erie-verilog-generator/assets/examples/rtl_erie_verilog_spec.json \
+  --spec skills/readable-verilog-generator/assets/examples/rtl_erie_verilog_spec.json \
   --path _smoke_runs/remote_execute/attempt-001/rtl/generated \
   --readiness execute \
   --external-target local
@@ -2064,8 +2064,8 @@ fixtures = os.environ["REMOTE_FIXTURES"].split()
 expected = os.environ["EXPECTED_SIM_BACKEND"]
 summary = {{"fixtures": []}}
 for name in fixtures:
-    spec = Path("skills/erie-verilog-generator/assets/examples/remote_fixtures") / name / "spec.json"
-    generated = Path("skills/erie-verilog-generator/assets/examples/remote_fixtures") / name / "generated"
+    spec = Path("skills/readable-verilog-generator/assets/examples/remote_fixtures") / name / "spec.json"
+    generated = Path("skills/readable-verilog-generator/assets/examples/remote_fixtures") / name / "generated"
     report_json = Path("_smoke_runs/remote_fixtures") / name / "validation.json"
     report_json.parent.mkdir(parents=True, exist_ok=True)
     command = [
@@ -2109,7 +2109,7 @@ Path("_smoke_runs/remote_fixtures/summary.json").write_text(
 PY
 if [ "$yosys_available" -eq 1 ]; then
   {str_py} -m {WORKFLOW_CLI_MODULE} run-workflow \
-    --spec skills/erie-verilog-generator/assets/examples/rtl_erie_verilog_spec.json \
+    --spec skills/readable-verilog-generator/assets/examples/rtl_erie_verilog_spec.json \
     --out-dir _smoke_runs/remote_implement \
     --model-provider mock \
     --readiness implement \
@@ -2123,7 +2123,7 @@ PY
 else
   set +e
   {str_py} -m {WORKFLOW_CLI_MODULE} run-workflow \
-    --spec skills/erie-verilog-generator/assets/examples/rtl_erie_verilog_spec.json \
+    --spec skills/readable-verilog-generator/assets/examples/rtl_erie_verilog_spec.json \
     --out-dir _smoke_runs/remote_implement \
     --model-provider mock \
     --readiness implement \
@@ -2268,7 +2268,7 @@ good_dir.mkdir(parents=True, exist_ok=True)
 assert lint_generated_rtl(spec("good_constraints"), good_dir) == []
 PY
 __PY__ -m scripts.python.workflow.cli eval-skill \
-  --evals skills/erie-verilog-generator/evals/evals.json \
+  --evals skills/readable-verilog-generator/evals/evals.json \
   --out _smoke_runs/remote_eval_skill.json \
   --no-state
 __PY__ - <<'PY'

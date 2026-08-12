@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Skill effectiveness regression cases for Erie Verilog Generator, including canonical RTL flow and ADC/DAC family-template selection.",
+  "description": "Skill effectiveness regression cases for Readable Verilog Generator, including canonical RTL flow and ADC/DAC family-template selection.",
   "cases": [
     {
       "id": "canonical_rtl",

@@ -1,5 +1,5 @@
 """
-管理 erie-verilog-generator 的可选 skill 依赖。
+管理 readable-verilog-generator 的可选 skill 依赖。
 
 stdout_protocol: mixed
 本 CLI 的 JSON 类子命令向标准输出写入 JSON object；prompt 子命令输出面向用户的安装提示文本。
@@ -307,7 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
     """
 
     # 主 parser 描述脚本总体用途。
-    parser = argparse.ArgumentParser(description="Manage erie-verilog-generator skill dependencies.")  # 主命令解析器
+    parser = argparse.ArgumentParser(description="Manage readable-verilog-generator skill dependencies.")  # 主命令解析器
 
     # 顶层 parser 也接受共享路径参数，兼容旧命令写法。
     _add_common_args(parser)
@@ -620,13 +620,13 @@ def prompt_for_missing(report: dict) -> str:
 
         # 成功提示保留 adapt 操作建议。
         return (
-            "All erie-verilog-generator skill dependencies are installed. "
+            "All readable-verilog-generator skill dependencies are installed. "
             "Run adapt after a fresh install to refresh project-local helper paths."
         )
 
     # lines 逐行拼接，保持原 prompt 文本合同。
     list_lines = [  # prompt 输出行集合
-        "erie-verilog-generator dependency check found missing skills.",  # prompt 首行摘要
+        "readable-verilog-generator dependency check found missing skills.",  # prompt 首行摘要
         "",  # 摘要和明细之间的空行
     ]
 

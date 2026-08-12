@@ -583,7 +583,7 @@ formatter 源码中的自动验证重点检查 state 参数/信号出现时是�
             state_current <= state_next;
         end
     end
-
+    
     //主状态机
     always@(*)begin
         state_next = state_current;
@@ -795,13 +795,13 @@ assign o_done = done_o;                     // 输出完成标志
 ////////////////////////////////////English///////////////////////////////////////
 // Company:            Erie
 // Engineer:        Erie
-//
+// 
 // Create Date:     YYYY/MM/DD HH:MM:SS
 // Design Name:     module_name
 // Module Name:     module_name
 // Description:     Description/module_name_Design.pdf
 // Simulations:        TestBench/Vivado/2021.1/module_name
-//
+// 
 // Referrences:        None
 //
 // Dependencies:    None
@@ -814,13 +814,13 @@ assign o_done = done_o;                     // 输出完成标志
 ///////////////////////////////////Chinese////////////////////////////////////////
 // 版权归属:        Erie
 // 开发人员:        Erie
-//
+// 
 // 创建日期:         YYYY年MM月DD日
 // 设计名称:         module_name
 // 模块名称:         module_name
 // 模块说明:        Description/module_name_Design.pdf
 // 仿真工程:         TestBench/Vivado/2021.1/module_name
-//
+//    
 // 参考资料:        None
 //
 // 依赖文件:        None
@@ -828,7 +828,7 @@ assign o_done = done_o;                     // 输出完成标志
 // 当前版本:        V1.0
 // 修订日期:        YYYY年MM月DD日
 // 修订历史:
-//    时间                版本        修订人                修订内容
+//    时间                版本        修订人                修订内容    
 // YYYY年MM月DD日        V1.0         Erie        创建文件
 
 //xxx模块
@@ -874,7 +874,7 @@ module module_name
 
     //-------------输出信号连线-------------//
     assign o_done = done_o;                 // 输出完成标志
-
+    
     //-----------输出信号处理区域-----------//
     always@(posedge i_clk or negedge i_rstn)begin
         if(i_rstn == 1'b0)begin
@@ -885,9 +885,9 @@ module module_name
     end
 
     //--------------状态机区域--------------//
-
+    
     //-----------状态任务处理区域-----------//
-
+    
     //-----------主要任务处理区域-----------//
     always@(posedge i_clk or negedge i_rstn)begin
         if(i_rstn == 1'b0)begin
@@ -896,7 +896,7 @@ module module_name
             flag_done <= i_start;
         end
     end
-
+    
     //------------模块实例化区域------------//
 
 endmodule
@@ -1004,3 +1004,4 @@ python scripts/format_verilog.py <input.v> --profile formatter-lint --check
 python scripts/verify_comment_only.py baseline.v annotated.v --require-comment-delta
 python scripts/verify_comment_only.py baseline.v final.v --require-comment-delta
 ```
+

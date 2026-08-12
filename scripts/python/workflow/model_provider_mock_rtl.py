@@ -261,13 +261,13 @@ def _mock_erie_rtl_source_text(spec: dict[str, Any]) -> str:
 ////////////////////////////////////English///////////////////////////////////////
 // Company:\t\t\tErie
 // Engineer:\t\tErie
-//
+// 
 // Create Date: \t2026/05/03 12:00:00
 // Design Name: \t{mock_port_layout_snapshot.top}
 // Module Name: \t{mock_port_layout_snapshot.top}
 // Description: \tDescription/{mock_port_layout_snapshot.top}_Design.pdf
 // Simulations:\t\tTestBench/Vivado/2021.1/{mock_port_layout_snapshot.top}
-//
+// 
 // Referrences:\t\tNone
 //
 // Dependencies:\tNone
@@ -280,7 +280,7 @@ def _mock_erie_rtl_source_text(spec: dict[str, Any]) -> str:
 ///////////////////////////////////Chinese////////////////////////////////////////
 // 版权归属:\t\tErie
 // 开发人员:\t\tErie
-//
+// 
 // 创建日期: \t\t2026年05月03日
 // 设计名称: \t\t{mock_port_layout_snapshot.top}
 // 模块名称: \t\t{mock_port_layout_snapshot.top}
