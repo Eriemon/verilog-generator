@@ -1,0 +1,15 @@
+{
+  "execution": {
+    "mode": "check",
+    "dry_run": true
+  },
+  "formatter": {
+    "preserve_comments": true,
+    "auto_fix_prefix": false
+  },
+  "checks": {
+    "enable": true,
+    "diff": true,
+    "prefix": true
+  }
+}

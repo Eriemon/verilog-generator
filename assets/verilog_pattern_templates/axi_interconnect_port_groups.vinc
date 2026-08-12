@@ -1,0 +1,10 @@
+// AXI interconnect grouping extracted from the local bus-matrix reference.
+// Group write address, write data, write response, read address, and read data
+// channels separately and parameterize widths through C_AXI_* constants.
+// Keep master and slave channel bundles visually symmetric.
+// Example channel groups:
+// - AW: id, addr, len, size, burst, lock, cache, prot, qos, valid, ready
+// - W : data, strb, last, valid, ready
+// - B : id, resp, valid, ready
+// - AR: id, addr, len, size, burst, lock, cache, prot, qos, valid, ready
+// - R : id, data, resp, last, valid, ready

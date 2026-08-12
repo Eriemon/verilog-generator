@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "template_id": "axi_stream_duplex",
+      "interface_family": "axi_stream",
+      "role": "duplex",
+      "read_write_mode": "read_write",
+      "path": "axi_stream_duplex.vinc",
+      "clock": "i_axis_aclk",
+      "reset": "i_axis_arstn",
+      "parameters": ["C_S_AXIS_DATA_WIDTH", "C_M_AXIS_DATA_WIDTH", "C_AXIS_LAST_ENABLE"],
+      "signal_examples": ["i_s_axis_wvalid", "o_s_axis_wready", "o_m_axis_rvalid", "i_m_axis_rready"]
+    },
+    {
+      "template_id": "axi4_lite_config",
+      "interface_family": "axi4_lite",
+      "role": "slave",
+      "read_write_mode": "read_write",
+      "path": "axi4_lite_config.vinc",
+      "clock": "i_axi_aclk",
+      "reset": "i_axi_arstn",
+      "parameters": ["C_AXI_ADDR_WIDTH", "C_AXI_DATA_WIDTH"],
+      "signal_examples": ["i_axi_awaddr", "o_axi_awready", "i_axi_wdata", "o_axi_rdata"]
+    },
+    {
+      "template_id": "axi4_full_master",
+      "interface_family": "axi4",
+      "role": "master",
+      "read_write_mode": "read_write",
+      "path": "axi4_full_master.vinc",
+      "clock": "i_axi_aclk",
+      "reset": "i_axi_arstn",
+      "parameters": ["C_M_AXI_ADDR_WIDTH", "C_M_AXI_BURST_WIDTH", "C_M_AXI_DATA_WIDTH"],
+      "signal_examples": ["o_m_axi_awaddr", "i_m_axi_awready", "o_m_axi_araddr", "i_m_axi_rdata"]
+    },
+    {
+      "template_id": "axi4_full_slave",
+      "interface_family": "axi4",
+      "role": "slave",
+      "read_write_mode": "read_write",
+      "path": "axi4_full_slave.vinc",
+      "clock": "i_axi_aclk",
+      "reset": "i_axi_arstn",
+      "parameters": ["C_S_AXI_ADDR_WIDTH", "C_S_AXI_BURST_WIDTH", "C_S_AXI_DATA_WIDTH"],
+      "signal_examples": ["i_s_axi_awaddr", "o_s_axi_awready", "i_s_axi_araddr", "o_s_axi_rdata"]
+    },
+    {
+      "template_id": "ahb_lite_config",
+      "interface_family": "ahb",
+      "role": "slave",
+      "read_write_mode": "read_write",
+      "path": "ahb_lite_config.vinc",
+      "clock": "i_ahb_hclk",
+      "reset": "i_ahb_hrstn",
+      "parameters": ["C_AHB_ADDR_WIDTH", "C_AHB_DATA_WIDTH"],
+      "signal_examples": ["i_ahb_htrans", "i_ahb_haddr", "o_ahb_hreadyout", "o_ahb_hrdata"]
+    },
+    {
+      "template_id": "apb_config",
+      "interface_family": "apb",
+      "role": "slave",
+      "read_write_mode": "read_write",
+      "path": "apb_config.vinc",
+      "clock": "i_apb_pclk",
+      "reset": "i_apb_prstn",
+      "parameters": ["C_APB_ADDR_WIDTH", "C_APB_DATA_WIDTH"],
+      "signal_examples": ["i_apb_psel", "i_apb_penable", "o_apb_pready", "o_apb_prdata"]
+    }
+  ]
+}

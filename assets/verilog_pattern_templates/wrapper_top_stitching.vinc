@@ -1,0 +1,24 @@
+// Wrapper/top stitching pattern
+// Keep public IO stable while exposing internal block boundaries through named wires.
+wire [C_DATA_WIDTH-1:0] block0_data;
+wire block0_valid;
+wire [C_DATA_WIDTH-1:0] block1_data;
+wire block1_valid;
+
+u_block_0 u_block_0_Inst (
+    .i_clk(i_clk),
+    .i_rstn(i_rstn),
+    .i_data(i_in_data),
+    .i_valid(i_in_valid),
+    .o_data(block0_data),
+    .o_valid(block0_valid)
+);
+
+u_block_1 u_block_1_Inst (
+    .i_clk(i_clk),
+    .i_rstn(i_rstn),
+    .i_data(block0_data),
+    .i_valid(block0_valid),
+    .o_data(block1_data),
+    .o_valid(block1_valid)
+);

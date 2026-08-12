@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "template_id": "axi4_lite_csr_shell",
+      "title": "AXI4-Lite CSR shell",
+      "path": "axi4_lite_csr_shell.vinc",
+      "selection_reason": "selected for AXI4-Lite control or CSR style designs"
+    },
+    {
+      "template_id": "axis_ready_valid_slice",
+      "title": "AXIS ready/valid slice",
+      "path": "axis_ready_valid_slice.vinc",
+      "selection_reason": "selected for ready/valid or AXI-Stream pipeline slices"
+    },
+    {
+      "template_id": "axi_interconnect_port_groups",
+      "title": "AXI interconnect port groups",
+      "path": "axi_interconnect_port_groups.vinc",
+      "selection_reason": "selected for AXI4 DMA, burst, or interconnect style fabrics"
+    },
+    {
+      "template_id": "conv_load_store_pipeline",
+      "title": "Convolution load/store pipeline",
+      "path": "conv_load_store_pipeline.vinc",
+      "selection_reason": "selected for convolution-style load/store and buffered datapaths"
+    },
+    {
+      "template_id": "fsm_state_transition",
+      "title": "FSM state transition core",
+      "path": "fsm_state_transition.vinc",
+      "selection_reason": "selected for explicit FSM state transition and phase sequencing logic"
+    },
+    {
+      "template_id": "counter_state_bridge",
+      "title": "Counter/state bridge",
+      "path": "counter_state_bridge.vinc",
+      "selection_reason": "selected for counters or timers that gate state transitions"
+    },
+    {
+      "template_id": "wrapper_top_stitching",
+      "title": "Wrapper top stitching",
+      "path": "wrapper_top_stitching.vinc",
+      "selection_reason": "selected for wrapper, partition, merge, or top-level stitching tasks"
+    },
+    {
+      "template_id": "phase_output_registering",
+      "title": "Phase output registering",
+      "path": "phase_output_registering.vinc",
+      "selection_reason": "selected for phase/state output register blocks that should stay reviewable"
+    },
+    {
+      "template_id": "equivalence_wrapper_probe",
+      "title": "Equivalence wrapper probe",
+      "path": "equivalence_wrapper_probe.vinc",
+      "selection_reason": "selected for compare/equivalence assist flows that need internal checkpoint probes"
+    }
+  ]
+}

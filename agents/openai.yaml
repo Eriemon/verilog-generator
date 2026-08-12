@@ -1,0 +1,6 @@
+interface:
+  display_name: "Erie Verilog Generator"
+  short_description: "Generate, review, repair, and validate Verilog RTL."
+  default_prompt: "Use $erie-verilog-generator to generate, review, repair, or validate Verilog-2001 RTL with local or remote evidence gates."
+policy:
+  allow_implicit_invocation: true

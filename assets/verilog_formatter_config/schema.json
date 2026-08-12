@@ -1,0 +1,276 @@
+{
+  "type": "object",
+  "required": [
+    "paths",
+    "execution",
+    "formatter",
+    "checks",
+    "backup",
+    "reporting",
+    "text_io",
+    "scoring",
+    "rewrite_policy",
+    "compat",
+    "header",
+    "naming",
+    "reset_clock",
+    "structure",
+    "always_rules",
+    "wire_assign_rules",
+    "state_machine",
+    "strict_mode"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "paths": {
+      "type": "object",
+      "required": ["workspace_root", "input", "output", "backup_dir", "report_dir"],
+      "additionalProperties": false,
+      "properties": {
+        "workspace_root": { "type": "string" },
+        "input": { "type": "string" },
+        "output": { "type": "string" },
+        "backup_dir": { "type": "string" },
+        "report_dir": { "type": "string" }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": ["mode", "target_kind", "recurse", "in_place", "dry_run", "fail_on_missing_input", "include_extensions", "workspace_scan_exclude_dir_names", "workspace_scan_exclude_subpaths"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "type": "string", "enum": ["format", "check", "lint"] },
+        "target_kind": { "type": "string", "enum": ["auto", "file", "directory"] },
+        "recurse": { "type": "boolean" },
+        "in_place": { "type": "boolean" },
+        "dry_run": { "type": "boolean" },
+        "fail_on_missing_input": { "type": "boolean" },
+        "include_extensions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "workspace_scan_exclude_dir_names": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "workspace_scan_exclude_subpaths": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "formatter": {
+      "type": "object",
+      "required": ["indent_style", "indent_size", "preserve_comments", "sort_ports", "sort_params", "space_around_operator", "space_after_comma", "auto_fix_prefix", "trailing_comment_style", "trailing_comment_column", "backend", "backend_command"],
+      "additionalProperties": false,
+      "properties": {
+        "indent_style": { "type": "string", "enum": ["space", "tab"] },
+        "indent_size": { "type": "integer" },
+        "preserve_comments": { "type": "boolean" },
+        "sort_ports": { "type": "boolean" },
+        "sort_params": { "type": "boolean" },
+        "space_around_operator": { "type": "boolean" },
+        "space_after_comma": { "type": "boolean" },
+        "auto_fix_prefix": { "type": "boolean" },
+        "trailing_comment_style": { "type": "string", "enum": ["column", "tab"] },
+        "trailing_comment_column": { "type": "integer" },
+        "backend": { "type": "string" },
+        "backend_command": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "required": ["enable", "diff", "naming", "prefix", "region_layout"],
+      "additionalProperties": false,
+      "properties": {
+        "enable": { "type": "boolean" },
+        "diff": { "type": "boolean" },
+        "naming": { "type": "boolean" },
+        "prefix": { "type": "boolean" },
+        "region_layout": { "type": "boolean" }
+      }
+    },
+    "backup": {
+      "type": "object",
+      "required": ["enabled", "suffix"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "suffix": { "type": "string" }
+      }
+    },
+    "reporting": {
+      "type": "object",
+      "required": ["emit_summary", "summary_format", "write_resolved_config"],
+      "additionalProperties": false,
+      "properties": {
+        "emit_summary": { "type": "boolean" },
+        "summary_format": { "type": "string", "enum": ["json", "text"] },
+        "write_resolved_config": { "type": "boolean" }
+      }
+    },
+    "text_io": {
+      "type": "object",
+      "required": ["encoding_policy", "eol_policy", "bom_policy", "final_newline_policy", "format_include_fragments"],
+      "additionalProperties": false,
+      "properties": {
+        "encoding_policy": { "type": "string", "enum": ["preserve", "utf-8"] },
+        "eol_policy": { "type": "string", "enum": ["preserve", "lf", "crlf"] },
+        "bom_policy": { "type": "string", "enum": ["preserve", "strip", "utf-8"] },
+        "final_newline_policy": { "type": "string", "enum": ["preserve", "ensure", "strip"] },
+        "format_include_fragments": { "type": "boolean" }
+      }
+    },
+    "scoring": {
+      "type": "object",
+      "required": ["thresholds"],
+      "additionalProperties": false,
+      "properties": {
+        "thresholds": {
+          "type": "object",
+          "required": ["already_standard_min", "micro_format_min", "preserve_format_min", "syntax_preserve_min", "rewrite_need_min", "rewrite_risk_auto_max"],
+          "additionalProperties": false,
+          "properties": {
+            "already_standard_min": { "type": "integer" },
+            "micro_format_min": { "type": "integer" },
+            "preserve_format_min": { "type": "integer" },
+            "syntax_preserve_min": { "type": "integer" },
+            "rewrite_need_min": { "type": "integer" },
+            "rewrite_risk_auto_max": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "rewrite_policy": {
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "type": "string", "enum": ["preserve", "auto", "normalize", "never"] }
+      }
+    },
+    "compat": {
+      "type": "object",
+      "required": ["legacy_yaml_import", "legacy_phase_pipeline", "shell_wrappers", "example_compat"],
+      "additionalProperties": false,
+      "properties": {
+        "legacy_yaml_import": { "type": "boolean" },
+        "legacy_phase_pipeline": { "type": "boolean" },
+        "shell_wrappers": { "type": "boolean" },
+        "example_compat": { "type": "boolean" }
+      }
+    },
+    "header": {
+      "type": "object",
+      "required": ["company_en", "company_cn", "engineer_en", "engineer_cn", "default_version", "allow_auto_version_bump", "history_mode"],
+      "additionalProperties": false,
+      "properties": {
+        "company_en": { "type": "string" },
+        "company_cn": { "type": "string" },
+        "engineer_en": { "type": "string" },
+        "engineer_cn": { "type": "string" },
+        "copyright_owner_en": { "type": "string" },
+        "copyright_owner_cn": { "type": "string" },
+        "developer_en": { "type": "string" },
+        "developer_cn": { "type": "string" },
+        "reviser_en": { "type": "string" },
+        "reviser_cn": { "type": "string" },
+        "default_version": { "type": "string" },
+        "fixed_now": { "type": "string" },
+        "allow_auto_version_bump": { "type": "boolean" },
+        "history_mode": { "type": "string", "enum": ["preserve", "append"] }
+      }
+    },
+    "naming": {
+      "type": "object",
+      "required": ["input_prefix", "output_prefix", "inout_prefix", "parameter_prefix", "state_prefix", "register_prefix", "counter_prefix", "state_signal_prefix", "encoder_prefix", "decoder_prefix", "flag_prefix", "internal_output_suffix", "dedupe_prefixes", "preserve_port_names", "preserve_port_patterns"],
+      "additionalProperties": false,
+      "properties": {
+        "input_prefix": { "type": "string" },
+        "output_prefix": { "type": "string" },
+        "inout_prefix": { "type": "string" },
+        "parameter_prefix": { "type": "string" },
+        "state_prefix": { "type": "string" },
+        "register_prefix": { "type": "string" },
+        "counter_prefix": { "type": "string" },
+        "state_signal_prefix": { "type": "string" },
+        "encoder_prefix": { "type": "string" },
+        "decoder_prefix": { "type": "string" },
+        "flag_prefix": { "type": "string" },
+        "internal_output_suffix": { "type": "string" },
+        "dedupe_prefixes": { "type": "boolean" },
+        "preserve_port_names": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "preserve_port_patterns": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "reset_clock": {
+      "type": "object",
+      "required": ["require_active_low_reset", "default_clock", "default_reset"],
+      "additionalProperties": false,
+      "properties": {
+        "require_active_low_reset": { "type": "boolean" },
+        "default_clock": { "type": "string" },
+        "default_reset": { "type": "string" }
+      }
+    },
+    "structure": {
+      "type": "object",
+      "required": ["enforce_region_order", "place_instances_last", "region_order"],
+      "additionalProperties": false,
+      "properties": {
+        "enforce_region_order": { "type": "boolean" },
+        "place_instances_last": { "type": "boolean" },
+        "region_order": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "always_rules": {
+      "type": "object",
+      "required": ["single_reg_per_always", "auto_split"],
+      "additionalProperties": false,
+      "properties": {
+        "single_reg_per_always": { "type": "boolean" },
+        "auto_split": { "type": "boolean" }
+      }
+    },
+    "wire_assign_rules": {
+      "type": "object",
+      "required": ["forbid_inline_wire_assign", "rewrite_inline_wire_assign"],
+      "additionalProperties": false,
+      "properties": {
+        "forbid_inline_wire_assign": { "type": "boolean" },
+        "rewrite_inline_wire_assign": { "type": "boolean" }
+      }
+    },
+    "state_machine": {
+      "type": "object",
+      "required": ["enforce_three_segment", "state_param_prefix"],
+      "additionalProperties": false,
+      "properties": {
+        "enforce_three_segment": { "type": "boolean" },
+        "state_param_prefix": { "type": "string" }
+      }
+    },
+    "strict_mode": {
+      "type": "object",
+      "required": ["enabled", "fail_on_unsupported_syntax", "fail_on_missing_clock_reset"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "fail_on_unsupported_syntax": { "type": "boolean" },
+        "fail_on_missing_clock_reset": { "type": "boolean" }
+      }
+    }
+  }
+}

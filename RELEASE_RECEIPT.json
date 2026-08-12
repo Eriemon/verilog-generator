@@ -1,0 +1,1081 @@
+{
+  "skill_name": "erie-verilog-generator",
+  "version": "v0.4.0",
+  "source_path": ".",
+  "generated_at": "2026-07-05T18:13:33",
+  "current_branch": "main",
+  "source_commit": "working-tree",
+  "local_branches": [
+    "codex/release-verilog-generator-v0.3.6",
+    "main"
+  ],
+  "worktree_clean": false,
+  "phase_results": {
+    "pre": true,
+    "post": true
+  },
+  "packaging_mode": "repository-dist",
+  "validation_level": "strong",
+  "provenance_mode": "repository-dist",
+  "sanitization": {
+    "required": true,
+    "mode": "static-exclude",
+    "scope": "public-repository-release"
+  },
+  "release_content_policy": {
+    "policy_version": "2026-07-05-v1",
+    "top_level_file_mode": "explicit-allowlist",
+    "allowed_top_level_files": [
+      "ENGINEERING_DESIGN_GOALS.md",
+      "LICENSE",
+      "README-CN.md",
+      "README.md",
+      "RELEASE_RECEIPT.json",
+      "SKILL.md",
+      "VERSION"
+    ],
+    "allowed_top_level_dirs": [
+      "agents",
+      "assets",
+      "config",
+      "evals",
+      "references",
+      "scripts"
+    ],
+    "forbidden_top_level_names": [
+      ".erie-verilog-generator-state",
+      ".settings",
+      "dist",
+      "downloads",
+      "integration",
+      "logs",
+      "reports",
+      "requests",
+      "runs",
+      "runtime",
+      "smoke",
+      "test",
+      "tests",
+      "tmp"
+    ],
+    "forbidden_nested_names": [
+      ".mypy_cache",
+      ".pytest_cache",
+      ".ruff_cache",
+      "__pycache__",
+      "_smoke_runs"
+    ],
+    "forbidden_prefixes": [
+      "smoke"
+    ],
+    "forbidden_suffixes": [
+      ".log",
+      ".pyc",
+      ".pyo"
+    ],
+    "forbidden_release_relative_paths": [
+      "scripts/build_release.py"
+    ],
+    "included_file_count": 245,
+    "included_top_level_entries": [
+      "ENGINEERING_DESIGN_GOALS.md",
+      "LICENSE",
+      "README-CN.md",
+      "README.md",
+      "SKILL.md",
+      "VERSION",
+      "agents",
+      "assets",
+      "config",
+      "evals",
+      "references",
+      "scripts"
+    ],
+    "unexpected_top_level_entries": [],
+    "forbidden_source_paths": [],
+    "forbidden_release_paths": []
+  },
+  "files": [
+    {
+      "path": "agents/openai.yaml",
+      "sha256": "df10d69b0c60239a52ccf0d96ed8ba2a533ac31726e9d7e1816b063f465c1714"
+    },
+    {
+      "path": "assets/examples/existing_rtl/fsm_without_default.v",
+      "sha256": "c8b1738c51766ff46cbec1cd35b7c800e074f05cc87eb5fef49f9f9ef0c56fe7"
+    },
+    {
+      "path": "assets/examples/existing_rtl/fsm_without_default_spec.md",
+      "sha256": "cb39f443c5563cb14769a83ef9b7c48e80890e1c9eabc16656759541f56aef7f"
+    },
+    {
+      "path": "assets/examples/existing_rtl/leaf_counter.v",
+      "sha256": "3243828756e0adc071e348d37274456b6d9a3265cb8a417986e669f3c20dcb30"
+    },
+    {
+      "path": "assets/examples/existing_rtl/missing_output_register.v",
+      "sha256": "9653209e64d55fd39fc324d6c3e0fd87dacfa55707b63f7d770b88a600695ced"
+    },
+    {
+      "path": "assets/examples/existing_rtl/missing_output_register_spec.md",
+      "sha256": "0978516905dc255fb09a7dd660f1bf0ba5a09d5d5a21b2b0bd87bc537cf7b634"
+    },
+    {
+      "path": "assets/examples/existing_rtl/ready_valid_slice.v",
+      "sha256": "750aad9b64ac459cd38c7a6f8d9f59afa114266175df5eff29da84356ffe97dd"
+    },
+    {
+      "path": "assets/examples/existing_rtl/ready_valid_slice_spec.md",
+      "sha256": "ae3b122e8e5c08cc3f297a070cf900e4c8962df9de0ef2eacf066a5b9c8efacf"
+    },
+    {
+      "path": "assets/examples/existing_rtl/ready_valid_slice_tb.v",
+      "sha256": "e45dae4a9d1fadcee662c6e98177cf16e47ef9b88826c66021eb3d0569449d4a"
+    },
+    {
+      "path": "assets/examples/existing_rtl/reset_gap_counter.v",
+      "sha256": "6eeb794cc94e109136fb61536f432c586477451ebcc4e4d8b5cddb0b40d850c4"
+    },
+    {
+      "path": "assets/examples/existing_rtl/reset_gap_counter_spec.md",
+      "sha256": "6d94683d9fc9be077ceafae11141f2b88be5778306c6b36918f359ce304e790d"
+    },
+    {
+      "path": "assets/examples/existing_rtl/top_counter.v",
+      "sha256": "207fbce232ac0104bf7e1872317140f28debaad2c077ec77b852dc85a4449c06"
+    },
+    {
+      "path": "assets/examples/existing_rtl/traffic_light.v",
+      "sha256": "852d839f90996df3c5da134294c5e9d7e2cdf0d343a36d29784eccc746c0e293"
+    },
+    {
+      "path": "assets/examples/existing_rtl/traffic_light_spec.md",
+      "sha256": "967e8ea1f393a6cc0412d3ddff5eb6273aa741035f4313a020aff114edc8b035"
+    },
+    {
+      "path": "assets/examples/remote_fixtures/comb_parity_mux/generated/rtl/comb_parity_mux.v",
+      "sha256": "55729e3a5fc72525c34cc9d963a1c5898ab1bc467bf2845badd9b02b26eea996"
+    },
+    {
+      "path": "assets/examples/remote_fixtures/comb_parity_mux/generated/tb/comb_parity_mux_tb.v",
+      "sha256": "f12eb58a2841709b5003f47b5ed8458907f84297b6d4c8d6779db262c12d8254"
+    },
+    {
+      "path": "assets/examples/remote_fixtures/comb_parity_mux/spec.json",
+      "sha256": "f2c4ad026e348104e15ff12b267dc51c12b90be90ed446bcf1173b7d5e1614f0"
+    },
+    {
+      "path": "assets/examples/remote_fixtures/pipeline_delay/generated/rtl/pipeline_delay.v",
+      "sha256": "601fc66eb44e4a5a4f70f66fea053dfb96ed0c71881bd4ba3f874c1adb8f7c87"
+    },
+    {
+      "path": "assets/examples/remote_fixtures/pipeline_delay/generated/tb/pipeline_delay_tb.v",
+      "sha256": "8ac857c1cd633ecf4fe2af217a519e1e2234dbec14ef4641a378065b0eb71004"
+    },
+    {
+      "path": "assets/examples/remote_fixtures/pipeline_delay/spec.json",
+      "sha256": "5068ef26fb5d7862924a010f84ceecb3284f7158c57c5590ca09581c7f312532"
+    },
+    {
+      "path": "assets/examples/remote_fixtures/ready_valid_slice/generated/rtl/ready_valid_slice.v",
+      "sha256": "3c4140d3f4dd5623f5905dc039cc8098dd568ad55b567a15be567ca63ea503e8"
+    },
+    {
+      "path": "assets/examples/remote_fixtures/ready_valid_slice/generated/tb/ready_valid_slice_tb.v",
+      "sha256": "0bf20238360d6ddb4d74269faa1a9f8bf31593b760adbc8df1fc06765f4b6ed4"
+    },
+    {
+      "path": "assets/examples/remote_fixtures/ready_valid_slice/spec.json",
+      "sha256": "b9ff9a40d4a7be80c84395ec5fdf8db8e0f1debecddebc4d50fa034e5bd185c4"
+    },
+    {
+      "path": "assets/examples/rtl_erie_verilog_spec.json",
+      "sha256": "4af03d09ac7aa3c107bf7dc65b69be963ba24d82d48a498ad1d2aa9ed7428114"
+    },
+    {
+      "path": "assets/examples/use_case_templates/jesd_adc.json",
+      "sha256": "096699b59e97bf31896a701817ff8326f5643d6c9d07f310fd1692b0e6a48906"
+    },
+    {
+      "path": "assets/examples/use_case_templates/jesd_dac.json",
+      "sha256": "ac0aa338914b5e5fff3c75056dafd9a28344495e3317ca795ce1e0d9e3434286"
+    },
+    {
+      "path": "assets/examples/use_case_templates/mxfe_mixed.json",
+      "sha256": "4b4a422120d8d1985654205315553780e0e4c1b5a31cb02098b1e3caf9e7f7d6"
+    },
+    {
+      "path": "assets/examples/use_case_templates/spi_adc.json",
+      "sha256": "b7a3aa514816ff9c989b4b64d0cdfd816e0a3cafafae0c0bf96f7961be9ad450"
+    },
+    {
+      "path": "assets/examples/use_case_templates/spi_dac.json",
+      "sha256": "e27ef7850dd1167650afc8b7fb16d01ec683358498b954b5652eeca3de3c5007"
+    },
+    {
+      "path": "assets/examples/verilog_pattern_templates/axi4_lite_csr.json",
+      "sha256": "b562ed6f0e1191986bb3f008d4848b0d833393d4e4e3c5b314f0a4077c8c68fa"
+    },
+    {
+      "path": "assets/examples/verilog_pattern_templates/axi_interconnect_dma.json",
+      "sha256": "92787980d6a04c17978d22977699b6ac88e05ef3296d86070f7c15254449d207"
+    },
+    {
+      "path": "assets/examples/verilog_pattern_templates/axis_ready_valid.json",
+      "sha256": "23aaf3163314d21bec5cd6f55bfa18622e26ce993fc52099b4bd2e36c87eb8e8"
+    },
+    {
+      "path": "assets/examples/verilog_pattern_templates/conv_load_store.json",
+      "sha256": "88418a47e6dd8e576f032cf8911bbdeaadba3b404604cd6c02e8dc0b478ca1b9"
+    },
+    {
+      "path": "assets/ideal_bad_style_metrics.json",
+      "sha256": "8410300dfff1514ca631fa831aedf032157989cde0ce64162176c924f7e3e7d0"
+    },
+    {
+      "path": "assets/interface_templates/ahb_lite_config.vinc",
+      "sha256": "f3d90e07019dbe0beca97d09e5674dd3a7484d0e341806ea48e359780203e252"
+    },
+    {
+      "path": "assets/interface_templates/apb_config.vinc",
+      "sha256": "feef5e15da4f8d0101b53f455635fe8914c6341386432e0e50aee89b59c973fd"
+    },
+    {
+      "path": "assets/interface_templates/axi4_full_master.vinc",
+      "sha256": "11ea27fe77f7caf9ace4f255dd84496e08584a29cc6c2e24f54f50ff72a20873"
+    },
+    {
+      "path": "assets/interface_templates/axi4_full_slave.vinc",
+      "sha256": "619da147cb2c4d1f087cf1ade3142ee8f74a9bc9a1c9f0e43a8556c9143dd609"
+    },
+    {
+      "path": "assets/interface_templates/axi4_lite_config.vinc",
+      "sha256": "691e131d88ec4def05e238897486c49a6522097b7e3c5c813a7d43e1ebe957d8"
+    },
+    {
+      "path": "assets/interface_templates/axi_stream_duplex.vinc",
+      "sha256": "73b7c0f4ff274bea569f0ecde5b76b1ba6fac6ba4e94902aa45e9f34346dee3f"
+    },
+    {
+      "path": "assets/interface_templates/catalog.json",
+      "sha256": "1c2ec720dec0a592d357e1f5646191021cb260609e2ba0faab4a8649d55d37c5"
+    },
+    {
+      "path": "assets/rtl_md_constraints.json",
+      "sha256": "e46f49a3d271de3c07ada2ab367aada6a9b93217fb22911b5743092ff6c544c8"
+    },
+    {
+      "path": "assets/style_templates/rtl_bus_grouping.tpl",
+      "sha256": "19f309cb75afa352aad5a5f2e20a9c39bfd7fff68d71f3f4cd3e08accbf8e6ba"
+    },
+    {
+      "path": "assets/style_templates/rtl_fsm.tpl",
+      "sha256": "4f83a07fee7820df286c4c3c6cdc816981442684203e2ec019e4b503051331f1"
+    },
+    {
+      "path": "assets/style_templates/rtl_header_bilingual.tpl",
+      "sha256": "27c9c851880cd6904720222b393a0cbcaf259b3eeac96bb05d73a4084793f1b1"
+    },
+    {
+      "path": "assets/style_templates/rtl_instantiation.tpl",
+      "sha256": "bf7a8cfd562c302a42356b36fe35a4f5eaf93d02ea0505dfadec1487b019e10d"
+    },
+    {
+      "path": "assets/style_templates/rtl_region_order.tpl",
+      "sha256": "4decd620b9c0b1e79c27703e2fc3fbe14fcece583b37dcae590c6017eee593cb"
+    },
+    {
+      "path": "assets/use_case_templates/catalog.json",
+      "sha256": "68662ba307726eb2293f2ca4e0f686f7d5e75e5430362f994edc0a6a00321958"
+    },
+    {
+      "path": "assets/use_case_templates/jesd_adc/constraints/system_constr.xdc",
+      "sha256": "d9da29d36e3579a6d879dd00332099e7af15c5aa0413bd5462acdf3ad6fba23e"
+    },
+    {
+      "path": "assets/use_case_templates/jesd_adc/manifest.json",
+      "sha256": "143a510dd248157f6399fabaa6062c8d4f81f9dcee925f5b4958835827346c49"
+    },
+    {
+      "path": "assets/use_case_templates/jesd_adc/README.md",
+      "sha256": "5d5dba466289aa7d7f66c63c43ce39a2bd0b137e91026dc3275f9b1d118110ba"
+    },
+    {
+      "path": "assets/use_case_templates/jesd_adc/tcl/common_bd.tcl",
+      "sha256": "1ebf86f9eddc1437b084a153fd66abd4c37460e5dc83e03e221a9ab8bf3351b9"
+    },
+    {
+      "path": "assets/use_case_templates/jesd_adc/tcl/system_bd.tcl",
+      "sha256": "0f256315a3c7e9b9217c87da6c6cf12bc75f4c3fa012f908243763678c50ca15"
+    },
+    {
+      "path": "assets/use_case_templates/jesd_adc/tcl/system_project.tcl",
+      "sha256": "5d042b1dc6c9a114db0721c913b3a86a15d9bf23e6dd06cc160830d8b72f28bb"
+    },
+    {
+      "path": "assets/use_case_templates/jesd_adc/verilog/system_top.v",
+      "sha256": "08914fac553a921b2f2ce05b01ef525e2e12621e52116a0882d7e3ef32923e26"
+    },
+    {
+      "path": "assets/use_case_templates/jesd_dac/constraints/system_constr.xdc",
+      "sha256": "3f9899f14d08a87a320fee6f5985187f4426c21729f38bcdc672e6e367561ec3"
+    },
+    {
+      "path": "assets/use_case_templates/jesd_dac/manifest.json",
+      "sha256": "d5df6e07164deab93383a6b59a9c39f2d04a294c640e2e735a623a712c6a3f79"
+    },
+    {
+      "path": "assets/use_case_templates/jesd_dac/README.md",
+      "sha256": "ee5a012c6f1bed70c2c15c050d72914bc69848a1aa544a778980e6c38efda2d6"
+    },
+    {
+      "path": "assets/use_case_templates/jesd_dac/tcl/common_bd.tcl",
+      "sha256": "cd95b7b2ad83d049f2d89662e99dcd13510f7314da8cd6961de735b547788b99"
+    },
+    {
+      "path": "assets/use_case_templates/jesd_dac/tcl/system_bd.tcl",
+      "sha256": "3dd9a1a027bc392862f1259caed51248950252a1727b92bef2a4cec5a09cb16c"
+    },
+    {
+      "path": "assets/use_case_templates/jesd_dac/tcl/system_project.tcl",
+      "sha256": "68f924a55482fbb73a565e630756ff525e4c85d3f22b888c9ea7b1707008e47f"
+    },
+    {
+      "path": "assets/use_case_templates/jesd_dac/verilog/system_top.v",
+      "sha256": "b74e49756fdb86adf9dad08563105f0783e47776e07996dd6f12b82e0963742a"
+    },
+    {
+      "path": "assets/use_case_templates/mxfe_mixed/constraints/system_constr.xdc",
+      "sha256": "afaae4480035249ff3425605ec99925e9b14421d46bd8257053f67955be1d2ae"
+    },
+    {
+      "path": "assets/use_case_templates/mxfe_mixed/manifest.json",
+      "sha256": "bb2a122f77a1c7f911bb7fdfb10c6adbfeffebce4601d51357168098a28fcd2b"
+    },
+    {
+      "path": "assets/use_case_templates/mxfe_mixed/README.md",
+      "sha256": "6425d239008b26aca42e7204c6fdd92f50e0500fc97df800a81ebfc260d26490"
+    },
+    {
+      "path": "assets/use_case_templates/mxfe_mixed/tcl/common_bd.tcl",
+      "sha256": "d0407f1963f598450491493d2647340c0e2ecb861598787951ce0b6ecb93a286"
+    },
+    {
+      "path": "assets/use_case_templates/mxfe_mixed/tcl/system_bd.tcl",
+      "sha256": "bae5e8137b1869f5bda4e1804a81d530be0a580c3662d6b8df104db563ec9cd7"
+    },
+    {
+      "path": "assets/use_case_templates/mxfe_mixed/tcl/system_project.tcl",
+      "sha256": "9148cbf8459e3d918e42568af895ce82ed776cfd0669fb87a1cd317ed1ca8470"
+    },
+    {
+      "path": "assets/use_case_templates/mxfe_mixed/verilog/system_top.v",
+      "sha256": "a65afe8d34ee50a4b334a093ad74ecaa85dd5c4dcbbdddb4fe37178550cbdad7"
+    },
+    {
+      "path": "assets/use_case_templates/spi_adc/constraints/system_constr.xdc",
+      "sha256": "3c5bac84d590727e7da2179ff01f8314bb383789657e19327bfead06638801c7"
+    },
+    {
+      "path": "assets/use_case_templates/spi_adc/manifest.json",
+      "sha256": "a68c6c1db75553280656dfa3287890952ebafbd12ff0dcf127b39cf690ee76e6"
+    },
+    {
+      "path": "assets/use_case_templates/spi_adc/README.md",
+      "sha256": "60255715c50f986a65ce81a8d560d16b635c1075502d68ee3b8e771350722548"
+    },
+    {
+      "path": "assets/use_case_templates/spi_adc/tcl/common_bd.tcl",
+      "sha256": "61928316260c2c76294dbcf4535ce72733f3fc12805a0415b18ffe3193ea4f17"
+    },
+    {
+      "path": "assets/use_case_templates/spi_adc/tcl/system_bd.tcl",
+      "sha256": "518207628e98768266e84547903555ad8966e5de5fb75bb8f07c235c42cbee08"
+    },
+    {
+      "path": "assets/use_case_templates/spi_adc/tcl/system_project.tcl",
+      "sha256": "6f46b3e84c0b98d2135cb58eed7ea339759b7072768071d761d9c9cf237c216e"
+    },
+    {
+      "path": "assets/use_case_templates/spi_adc/verilog/system_top.v",
+      "sha256": "027f8914e29d1fd74ceb191d139700d0d8351b8a3cdf74ecc7c1d73f57057d84"
+    },
+    {
+      "path": "assets/use_case_templates/spi_dac/constraints/system_constr.xdc",
+      "sha256": "07b33ba9ea89c9bfbf608890da953e7e4a01cadce0fbf2655bd065714176bf9a"
+    },
+    {
+      "path": "assets/use_case_templates/spi_dac/manifest.json",
+      "sha256": "c4226925234c2c73405df9dbc2d6230700eced50cbb47a889ded436a1375709a"
+    },
+    {
+      "path": "assets/use_case_templates/spi_dac/README.md",
+      "sha256": "e7b0d8b2b4412f76a005a350a6ecb912f4d20f47a114284786e8e4908c0f2560"
+    },
+    {
+      "path": "assets/use_case_templates/spi_dac/tcl/common_bd.tcl",
+      "sha256": "cc4afbfc443843b619c8f9f0408829366ea248d7b9269d5311f483b6c1a8684b"
+    },
+    {
+      "path": "assets/use_case_templates/spi_dac/tcl/system_bd.tcl",
+      "sha256": "79c4710fd03403ee2e36f4f2b6985a29f12f4996de8f7c507c73718c9505b02c"
+    },
+    {
+      "path": "assets/use_case_templates/spi_dac/tcl/system_project.tcl",
+      "sha256": "dd3f15490651b098f931f7e8cb0daae176343ed5e00b8d3413b2156bb172ef37"
+    },
+    {
+      "path": "assets/use_case_templates/spi_dac/verilog/system_top.v",
+      "sha256": "871d2b77d87a05d6ab98d0b6663bc78d6afb8bdac7593b18ee052830be619381"
+    },
+    {
+      "path": "assets/verilog_formatter_config/defaults.json",
+      "sha256": "615f7406ccdc2014e285e1fdd031f9929d032a32ab64c394d7b36cda5a05d144"
+    },
+    {
+      "path": "assets/verilog_formatter_config/profiles/conservative.json",
+      "sha256": "dff50e77ef96c18be9beef5a6e5a258d275636a0fc3acec2a537c562e1763db3"
+    },
+    {
+      "path": "assets/verilog_formatter_config/profiles/example_compat.json",
+      "sha256": "5ac51e02c00a77c23502d15eb26f8ae931f9730fa322ffdb60accb0721d61d62"
+    },
+    {
+      "path": "assets/verilog_formatter_config/profiles/formatter-auto.json",
+      "sha256": "58df0f0822ed905810e90bb8bb5ecbdaa47460835022bd9bfcdf66636b97e61a"
+    },
+    {
+      "path": "assets/verilog_formatter_config/profiles/formatter-lint.json",
+      "sha256": "60ac5eb272122623386648e59f1bc211e02f8e471bf1a3440048e8d5a7446b14"
+    },
+    {
+      "path": "assets/verilog_formatter_config/profiles/formatter-normalize.json",
+      "sha256": "6f5bf4de848ef963c3a014c6a444b22b9790163adcb715a5074037aefc14a0b1"
+    },
+    {
+      "path": "assets/verilog_formatter_config/profiles/formatter-preserve.json",
+      "sha256": "21d32ea65dbe267a911c3a3ae0013c1077410773d974eced049a80c3c2bbe36d"
+    },
+    {
+      "path": "assets/verilog_formatter_config/profiles/formatting.json",
+      "sha256": "248d18562612c0c194d16127c82f3342639d41405093ef0b1dc4de17b1c7d64e"
+    },
+    {
+      "path": "assets/verilog_formatter_config/profiles/lint.json",
+      "sha256": "8fd514e63e3c9d689a1b14952278419b4191f1830003f5e48bbbb7af86658968"
+    },
+    {
+      "path": "assets/verilog_formatter_config/profiles/migration.json",
+      "sha256": "ffd34c3e004c6b0c2c7699336cb51255fb1c82a41baa66d18a86aa8a21099738"
+    },
+    {
+      "path": "assets/verilog_formatter_config/profiles/stress_cases_compat.json",
+      "sha256": "5ac51e02c00a77c23502d15eb26f8ae931f9730fa322ffdb60accb0721d61d62"
+    },
+    {
+      "path": "assets/verilog_formatter_config/profiles/vitis-wrapper.json",
+      "sha256": "b43d9a7a1eefc0eeec9d40e5b82a1b644ea6331b2fe79272a9df104d64e2ef81"
+    },
+    {
+      "path": "assets/verilog_formatter_config/schema.json",
+      "sha256": "21f9b6a1fc4cd4beaa1f8c8be7aa72293913d867e6af5e24358329af14c6deb6"
+    },
+    {
+      "path": "assets/verilog_formatter_config/templates/task-batch.json",
+      "sha256": "4c9a3c68ace3d1a453e43eb3450de4362df9f3f3f99bf819012a6dbc8c5e8f21"
+    },
+    {
+      "path": "assets/verilog_formatter_config/templates/task-inplace.json",
+      "sha256": "ba9b13e9edae0dbf0b5471231955145e8a6ae77af2ff591f30cbf5d3c49135e1"
+    },
+    {
+      "path": "assets/verilog_formatter_config/templates/task-single-file.json",
+      "sha256": "face9cf717604ac517df6c67094f28b779ed9e5e35d34ff236e3b089c3c10f29"
+    },
+    {
+      "path": "assets/verilog_pattern_templates/axi4_lite_csr_shell.vinc",
+      "sha256": "82998a2140fc44e5601382b7bd0c7f688d0aca106c9c19803d548154c34b7c40"
+    },
+    {
+      "path": "assets/verilog_pattern_templates/axi_interconnect_port_groups.vinc",
+      "sha256": "6227ba2a6982041fc576c9644cdb54a3b6f22950f8bbd3dc7dcd5dfdc64dc688"
+    },
+    {
+      "path": "assets/verilog_pattern_templates/axis_ready_valid_slice.vinc",
+      "sha256": "1de1ef4cdeff10ad42365947d649f72e98b5023deda7782cdd50fc59169f7d40"
+    },
+    {
+      "path": "assets/verilog_pattern_templates/catalog.json",
+      "sha256": "cff3531e51bf34c8a588eeeda8d25c8adb146ca151bf4b6ca8cf278e9ed1cd38"
+    },
+    {
+      "path": "assets/verilog_pattern_templates/conv_load_store_pipeline.vinc",
+      "sha256": "cb22bb28bf9f741a89b37fa88808aebfc5c5a9ac1038439cf7cc676d7397c63e"
+    },
+    {
+      "path": "assets/verilog_pattern_templates/counter_state_bridge.vinc",
+      "sha256": "c69cad835a280d64141f83994b29997932024f1bd912f340877e658330220580"
+    },
+    {
+      "path": "assets/verilog_pattern_templates/equivalence_wrapper_probe.vinc",
+      "sha256": "80c06ac029ba3734b0fe65b988fdb89b944390468d3f0aa16da5f3a7c2263d3a"
+    },
+    {
+      "path": "assets/verilog_pattern_templates/fsm_state_transition.vinc",
+      "sha256": "29fa86bf575af605297202b14be891d476ff0c7d64211d2c22ddd3858731eb50"
+    },
+    {
+      "path": "assets/verilog_pattern_templates/phase_output_registering.vinc",
+      "sha256": "97508df397a6a5b6b36a342bfdb0de2d4f13913a56a09d3d54d2dd2f6676365c"
+    },
+    {
+      "path": "assets/verilog_pattern_templates/wrapper_top_stitching.vinc",
+      "sha256": "80686f19a795ba4e8ad485689328f12f97de92eab66815789348498a51f4c2a6"
+    },
+    {
+      "path": "assets/verilog_style_rules.json",
+      "sha256": "64c395d62038dfd7f88def5bf48e71682022886b78e9ce1884c7150dced67e57"
+    },
+    {
+      "path": "config/defaults.json",
+      "sha256": "7b78e1e1bfee50a4957789c532266832e72c2f173a3127635c43c23e9f8426a4"
+    },
+    {
+      "path": "ENGINEERING_DESIGN_GOALS.md",
+      "sha256": "1f43c0dad4124d85dd8bd4c81d5b904d9a0ceb57c457a4c49333389ba394b935"
+    },
+    {
+      "path": "evals/evals.json",
+      "sha256": "d9ebc5d3a3aade09199d0c734f4cfd0ef4048a7d304a29d8a76836390a0fdbee"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "e54bbf97f36ecf8dfe16488cd1ce9cf5dd0d7ffde39214a84615a1c54bf9451d"
+    },
+    {
+      "path": "README-CN.md",
+      "sha256": "fd2c1948bb58e10c7a18549c033b569e2a6e0dabf36cf0108fabfdcdf2d98fa7"
+    },
+    {
+      "path": "README.md",
+      "sha256": "aaa9ebb4b886de625568b66214505163edf31c0e245f18ec75d8ddcdcddf0761"
+    },
+    {
+      "path": "references/checklists/capability-distillation-checklist.md",
+      "sha256": "03f480a13bf7b8231075bc74e80121d7c6987ad4641411751ddebe0da8c2562b"
+    },
+    {
+      "path": "references/checklists/lint-checklist.md",
+      "sha256": "3af90799bb57c949e96d75e4a7b76d003cbcc584b9c2ce8e665656083ece8a7b"
+    },
+    {
+      "path": "references/checklists/verilog-readability-gate.md",
+      "sha256": "adaceaf6b97960b660f13270dcaf106830682581fd4e1a94afa0db79e1bd6b23"
+    },
+    {
+      "path": "references/corpus/verilog-style-observations.md",
+      "sha256": "9bf1979f355a21d77ad9502ce354cd67bb349b3113d4aaf541209970030c31bb"
+    },
+    {
+      "path": "references/integration/configuration.md",
+      "sha256": "6d7a828311cb78e320df27fc52858b8f14fe700475662a293cb68639f38c965a"
+    },
+    {
+      "path": "references/integration/host-integration.md",
+      "sha256": "b08b59fd85d51e3d9d7c1b9158a264d7d7c5ce8ce3dafc3fc9ac35427c72404f"
+    },
+    {
+      "path": "references/rules/asic-verilog-quality.md",
+      "sha256": "702a5ec18aefadee2a66acb70549987338e0be74083427f72b352517e1612df6"
+    },
+    {
+      "path": "references/rules/erie-style.md",
+      "sha256": "e3b05290bfaae7f957ddb48fb7788e8f5c114a97d4bf3c3c4ff6b67cba3edbfa"
+    },
+    {
+      "path": "references/rules/rtl-md-constraints.md",
+      "sha256": "50b6e26a4935f4076d6551afea89e86f04210b67cd0bb7b2b7c4eb0553f49b37"
+    },
+    {
+      "path": "references/rules/testbench-patterns.md",
+      "sha256": "dfe5a8aaaea664cc56a201ad865824e36f33948638e5db7f8edf85680861388e"
+    },
+    {
+      "path": "references/rules/verilog-code-comment-naming-standard.md",
+      "sha256": "be334835917f0fca01b9108a6cd07c3bbd953724e38f8b4b25f273ccdea37b4b"
+    },
+    {
+      "path": "references/rules/verilog-comment-placement.md",
+      "sha256": "a88c9b3ecae7047f17aa454249d9a5f9137be368e6d78a1433fd8562436dea1a"
+    },
+    {
+      "path": "references/rules/verilog-pattern-templates.md",
+      "sha256": "a0eaa8ee0e64d6615dc04f13911513b7dd7a62784e5b1146fdc192d7cab6b309"
+    },
+    {
+      "path": "references/skill/skill-standards.md",
+      "sha256": "9c928ba808ed0a93a86da8943e8715ce8be62965c6cfd94f8b817cfade7e4430"
+    },
+    {
+      "path": "references/workflows/verilog_dispatcher.md",
+      "sha256": "5d8c4e0309182bf3c28c8be929f1771a1c9b2ffbacb1be55c5fcae1804e20929"
+    },
+    {
+      "path": "references/workflows/workflow-contracts.md",
+      "sha256": "80e4be641084b249f9d338e29242d2c4aef37a278ff0aa519f7f773994cdd23b"
+    },
+    {
+      "path": "scripts/__init__.py",
+      "sha256": "6278ce1aeb242d772531d8da80778323b12e8a7210ed9abcad1f6929e662a551"
+    },
+    {
+      "path": "scripts/python/__init__.py",
+      "sha256": "19baedc970bf852d352ced0650f88a1ccd0089db77f8f2616bc314edca012be1"
+    },
+    {
+      "path": "scripts/python/corpus/analyze_verilog_style_corpus.py",
+      "sha256": "339e9bab966027443d8686f3d57b9199d7c8556f322fb36877c997547c25e278"
+    },
+    {
+      "path": "scripts/python/existing_rtl/existing_rtl.py",
+      "sha256": "fb153a28d4f34ca91647e677b816bf0ae75ac6c5e266bf5fec51c581ff6ed791"
+    },
+    {
+      "path": "scripts/python/existing_rtl/existing_rtl_improvement.py",
+      "sha256": "2740a2d3144aa2196fae8d8c03722169fc1547e0128a52f28509894b2afcb46f"
+    },
+    {
+      "path": "scripts/python/existing_rtl/intervention.py",
+      "sha256": "702b7e722fdbb53515ae4408320ec81567c59cce168b20cf071debaa2f1b2d42"
+    },
+    {
+      "path": "scripts/python/existing_rtl/optimizer.py",
+      "sha256": "e80929965cda7c7d4438371c1630e1aa0042c4d7f0435eaa0e2b693393f14491"
+    },
+    {
+      "path": "scripts/python/existing_rtl/reflection.py",
+      "sha256": "b2b743f3adb7d3d270ed0157818d0094e875e784582f3a22fede6a0a35f16e85"
+    },
+    {
+      "path": "scripts/python/existing_rtl/semantic_contract.py",
+      "sha256": "f0f5ab8601ef1cc42c7b8e0b8cce7212b294f7c25efbf4f49c62390075ec5f98"
+    },
+    {
+      "path": "scripts/python/existing_rtl/verifier.py",
+      "sha256": "a5953271ece43a3ffb42bd0b8bae556228f44f6177f0c923879a7d8d1335fc1c"
+    },
+    {
+      "path": "scripts/python/existing_rtl/verify_repair.py",
+      "sha256": "e2d37ad2c17dfd6f7aae9ec3f5fa462254016c5a0cdb998338794f89edc89180"
+    },
+    {
+      "path": "scripts/python/existing_rtl/verify_repair_core.py",
+      "sha256": "624e74056ea4640e6caaa1bb7d82e36f94bd6540b2259397908e8e83698659e5"
+    },
+    {
+      "path": "scripts/python/existing_rtl/verify_repair_patching.py",
+      "sha256": "cd5be5ee761e66e2f829cf5fc5f286dc90eb72011c530b337514cec78c047388"
+    },
+    {
+      "path": "scripts/python/existing_rtl/verify_repair_support.py",
+      "sha256": "41281ca47c52ee9c344398351cdf32556dcc82947cb02746f443687dec222792"
+    },
+    {
+      "path": "scripts/python/existing_rtl/verify_repair_testbench.py",
+      "sha256": "87d0aaa7def37b7fc65debee3259f0cbab60a319fcf13587e1ed4daa0ab1e7d9"
+    },
+    {
+      "path": "scripts/python/existing_rtl/verify_reporting.py",
+      "sha256": "1f13cfcc97c9a6fded6e62337b0fa788d7c58a8b0a8529c2ffe819f0503d4c8c"
+    },
+    {
+      "path": "scripts/python/facade/__init__.py",
+      "sha256": "2370ed5a4854f4b4d90c812a9fe4554fca2567a644cfbb479339be253dc54c8c"
+    },
+    {
+      "path": "scripts/python/facade/existing_rtl_api.py",
+      "sha256": "b3a37cf2263e950215e4a9590249d6af0fca41d6316f2a63d0bd50a27b2e97d4"
+    },
+    {
+      "path": "scripts/python/facade/quality_api.py",
+      "sha256": "9723452c8ad960f9097333fea112c4aee9a813e2b392909965a54489b542e303"
+    },
+    {
+      "path": "scripts/python/facade/representative_cases.py",
+      "sha256": "a0b5e6e0145983b8720596d2b9ef8d047bdbc7f4dc32d62a07e504c3754cf1b3"
+    },
+    {
+      "path": "scripts/python/facade/verilog_api.py",
+      "sha256": "cadfb11b6094abeffa3ab708dc1df688963079650e5b29f37966ea5d703945c3"
+    },
+    {
+      "path": "scripts/python/facade/workflow_api.py",
+      "sha256": "3d6dd2d4552ba121c41adbb709753623d6488bed808054462e5ef3d667bfd1d3"
+    },
+    {
+      "path": "scripts/python/generation/tb_generator.py",
+      "sha256": "e529400b984043a8e6b5f7a722b97639b1d721e81a0f0038ff5ad08b4d85075c"
+    },
+    {
+      "path": "scripts/python/quality/comment_placement.py",
+      "sha256": "638d259519b6c82081590690dc51f48ef3ec8a72b03ca63c23cc194303c3007d"
+    },
+    {
+      "path": "scripts/python/quality/deliverable_gate.py",
+      "sha256": "9a70a7afa36210685fa55055947fe63a1cfe0dc26818b1020071cec752c507f4"
+    },
+    {
+      "path": "scripts/python/quality/formatter_ast.py",
+      "sha256": "8c98f93139ec7a0ba40cdfaa2f47d8a0bbba4dba747890ff8d940b0ffd5828f3"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/__init__.py",
+      "sha256": "2ff29cd674d3145df86449874423084f5c05d01f57b98e271d9ba8184822bb2f"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/analysis_mixin.py",
+      "sha256": "6405b9a04de16e06bad17747e0ebf07c60ab4a0b02c91610e01a50f10c7e3e86"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/banners.py",
+      "sha256": "aebee09ed7cc13827fca19371138053f61c96e4cf6d728ffdc016ac84a87a4d5"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/base.py",
+      "sha256": "a4ad4420a06979414e8644c2309b8d484b70f6c3b47d2cb9000a5657ad6b3706"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/builtin_backend.py",
+      "sha256": "859a808946684e19dc8b3fad4f3e7b83e54ca51ce025057fbef1ababd6b3aa94"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/constants.py",
+      "sha256": "a8beba4cde6d504808c59e882d0d6b6188fc11a79a7b03fd0eb6783033275980"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/control_node_parse_mixin.py",
+      "sha256": "39435cb7836ac1c8251c509eeab36589afec78f1b5efb94b6cda807b5b806009"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/control_parse_mixin.py",
+      "sha256": "8503601abfbdd11f390bc718b09b3aefe5f452886628270d4df6707581c70ffd"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/engine.py",
+      "sha256": "3e3e5855deb4714971ec7a09462d5c74f9d01352598652b7e2dad447bd463b00"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/factory.py",
+      "sha256": "7a83491d2b52a2932f3123f4900eca1706b1cec1c1ef72d9588a756193c4b304"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/file_discovery.py",
+      "sha256": "61dedad45a4259e2d647bbbefea817a40377e7bc122267c357d7f8ecc6a7f62d"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/format_routing.py",
+      "sha256": "22b51eff9a90e9d9a4e038ff2051d9146f962d8f843f7ba11c8b5436f2b124f3"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/guards.py",
+      "sha256": "bada8283fe5de6c3a4037ba3e17e45400e7782251483977c4ce443733319e168"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/header_mixin.py",
+      "sha256": "3557bf433e1e584b7afeecf4224211344f05139d5051696fee8fe851c235ceb4"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/layout_mixin.py",
+      "sha256": "5bfceea195c67e11a7dc04f8451dd3f431dce729bd51bc1c1ebd184ecdac9567"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/lvalue_mixin.py",
+      "sha256": "40a9d88fb1f9b36ad0a71d2e8dd7f3b20a84f1b8229b8e4bad500e3018a65fea"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/models.py",
+      "sha256": "fc2490109579a5976f3f08626de48546e89df5634085415e06b3d4865b81dcc8"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/parse_mixin.py",
+      "sha256": "ab68f9d46b80a5b6881c7182ddd9f8c2149ddacd2a201a594f37f16ef25dddcb"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/rename_mixin.py",
+      "sha256": "04482efcdcdb077ff6a72502c810d3eec766373c14007968eb71ff06e7a4e33d"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/render_mixin.py",
+      "sha256": "9dd96d14b0d5c9fddb7201b35cf42ac87120447a242ee7bb78660bf50f221dbd"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/scoring.py",
+      "sha256": "be8451b5524a278f5115539fa2945b319119de08bc781e342b6c5ec42f5c2bad"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/statement_render_mixin.py",
+      "sha256": "f793013158e6fab44ab346123dfd4722070df9834293d866dfd6fc9853c716a6"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/syntax_utils.py",
+      "sha256": "b94d33ac5987ae45891fd2b7cb2785d9ff721d47c3c673141d29df35646d3d1c"
+    },
+    {
+      "path": "scripts/python/quality/formatter_backend/textio.py",
+      "sha256": "dd21978046b380ea65f526067489654c84b25c5745bd29fb72eb2ed3eace0dc1"
+    },
+    {
+      "path": "scripts/python/quality/formatter_config.py",
+      "sha256": "82f0059cceed9860d3ff32b1a1e458ccbaf1e5a75bfa96b7e8e659ee5ffeb3d3"
+    },
+    {
+      "path": "scripts/python/quality/quality_gate.py",
+      "sha256": "d98cbed8823572a49b8ed2415055a66fae968cfbe112e480ecb504dd7dccc075"
+    },
+    {
+      "path": "scripts/python/quality/static_lint.py",
+      "sha256": "269f6bdf56950cc7ae30a1a4a073332e1576a23b35310c349085616c8b6a6d2f"
+    },
+    {
+      "path": "scripts/python/quality/verify_verilog_comment_only.py",
+      "sha256": "a69fb33ef2b6cec132070a4df2dbc85d9ee833b740db80a0c3bb492d82d0980a"
+    },
+    {
+      "path": "scripts/python/quality/verilog_lint.py",
+      "sha256": "713025e03d1062e6ee564c66dac8bdcc3787d75943898807753d72fef5bc4221"
+    },
+    {
+      "path": "scripts/python/quality/verilog_quality_gate.py",
+      "sha256": "468f1dc27b228512ec88dedc6e66cdbe91b5170628f936d9563dd8ae115ecaaa"
+    },
+    {
+      "path": "scripts/python/remote/remote_selection.py",
+      "sha256": "cbd1f68f1c89365ec03592ce54ba643f3e8a264e581ead7be43c45dce6fb467a"
+    },
+    {
+      "path": "scripts/python/remote/remote_validate_verilog_skill.py",
+      "sha256": "9babefb8f6614e3115373138e3507d85e3ee4c5ba0ec48c689c9f4e52feb9fe5"
+    },
+    {
+      "path": "scripts/python/toolchain/manage_skill_dependencies.py",
+      "sha256": "084ece6d1c97a028fbdb74f60c1586433d4bed68de170d81a09c7a9c1cfa3ff3"
+    },
+    {
+      "path": "scripts/python/toolchain/preflight_verilog_toolchain.py",
+      "sha256": "96e83dd7ec7deafc6edb2e42354bc3df70084f3572d5c8cac2fd098f8d1afe99"
+    },
+    {
+      "path": "scripts/python/validation/audit.py",
+      "sha256": "662ed09d0bd79c15e09f12c3fd4a2e037953582d9589086e251dedc970bdf8e4"
+    },
+    {
+      "path": "scripts/python/validation/eval_suite.py",
+      "sha256": "8f5ee0a19ef275ad3543747467d44e1cf259e9ed2635e37b7e1fb425e1d4a085"
+    },
+    {
+      "path": "scripts/python/validation/evaluation.py",
+      "sha256": "ea8fc7a5ddc8139f29b6bc3a678b5dcacfa16856cc27557eac063aadbd16f665"
+    },
+    {
+      "path": "scripts/python/validation/evidence.py",
+      "sha256": "d256b6eb70b7731589ddee4560a20560ae0c585f0d6006263d68bf6d30c2bf0c"
+    },
+    {
+      "path": "scripts/python/validation/rulebook.py",
+      "sha256": "8528ae7f83bfaef17f4b1164ebdd3ba57431462140234b3ab98229b923d00aa8"
+    },
+    {
+      "path": "scripts/python/validation/skill_effectiveness.py",
+      "sha256": "40fc39e757690b141f3cb916cf39f96b4bf3efafefe34fa39c1b25a82df9026a"
+    },
+    {
+      "path": "scripts/python/validation/skill_effectiveness_support.py",
+      "sha256": "50c1e05d3a5097f354b9ed510bdcf3b31896ddbd12628646debe46ef9b421e61"
+    },
+    {
+      "path": "scripts/python/validation/validate_verilog_skill.py",
+      "sha256": "71b7e7c19a24541c4426af19d41151d6c1d779f46dbc0220442e5d97f2030c3a"
+    },
+    {
+      "path": "scripts/python/validation/validation.py",
+      "sha256": "d55bc04099058b5e7287bad7f03ed9dcd9e8b8faccebcd6968a3dfc0f5877a14"
+    },
+    {
+      "path": "scripts/python/validation/validation_impl.py",
+      "sha256": "ffd79ac78bc2ce83118caab31bfccf3dbd12b28f01621034e696ddc4946e5e9e"
+    },
+    {
+      "path": "scripts/python/validation/validation_models.py",
+      "sha256": "39f38c779cf1795bf63d4aa12f13bf3e334782440630490b1205a7d0584db089"
+    },
+    {
+      "path": "scripts/python/validation/validation_readiness.py",
+      "sha256": "b2589072f74f8e92b2fb1758f3192f555750613181baa610b6e09c2393257418"
+    },
+    {
+      "path": "scripts/python/validation/verilog_generated_deliverable_gate.py",
+      "sha256": "f860c7248dfd39a51e71fbd6c1b8305b465d9b03c256ae2ba25c09267cdd20c0"
+    },
+    {
+      "path": "scripts/python/version.py",
+      "sha256": "f39e63a3353c8e817f8e1de0841705298b5f25964f2151fdf3c3ed304800d05d"
+    },
+    {
+      "path": "scripts/python/workflow/__main__.py",
+      "sha256": "d7c35d7d01b706e9252bd0c761e10eedd82db174b126f74d701ca37b9af69220"
+    },
+    {
+      "path": "scripts/python/workflow/artifact_graph.py",
+      "sha256": "8d77861bd96e294f03eb6efc34c22a73de51792fdb461f6b89dfd002bcc87368"
+    },
+    {
+      "path": "scripts/python/workflow/cli.py",
+      "sha256": "cf43f0ad5f6d535a9d0933ed2570cbdbb8e8144afbefd8f4925f35b50a9030db"
+    },
+    {
+      "path": "scripts/python/workflow/cli_audit_commands.py",
+      "sha256": "bc378fca492fa7885f30cd56672da72ffab17bfbc8ad11c73ee26b56ae68f78d"
+    },
+    {
+      "path": "scripts/python/workflow/cli_existing_commands.py",
+      "sha256": "d0465a720cdada10aaba6fca1f7711af3fc6fc4ce5ed94947422f86a4a937da3"
+    },
+    {
+      "path": "scripts/python/workflow/cli_feedback_commands.py",
+      "sha256": "097fe9d1118259825c4f95762ec3bf67a7d021f7147a62fb47a8d4ded981e422"
+    },
+    {
+      "path": "scripts/python/workflow/cli_generation_commands.py",
+      "sha256": "e7453d1cd3a78457182634d2748b8cfb57c4e6c3054b5eefad3b4f66a2943e75"
+    },
+    {
+      "path": "scripts/python/workflow/cli_parser.py",
+      "sha256": "7cc4f77bb566b8a4cb84787f5021711d58b2acfddff147801891565250b85834"
+    },
+    {
+      "path": "scripts/python/workflow/cli_support.py",
+      "sha256": "a288b4fb2b44877b7b252a30a8380bc6114f6c73f7e9cf5d571cbde71e29050b"
+    },
+    {
+      "path": "scripts/python/workflow/cli_workflow_commands.py",
+      "sha256": "d883d1587634836ab009c97d816b10d69eb271b1886333c1da0a57c33fca7279"
+    },
+    {
+      "path": "scripts/python/workflow/config.py",
+      "sha256": "b465bc46080716f8c07409651ac729c6c8f92cb9ccc38ca951d71dd297b0ed0f"
+    },
+    {
+      "path": "scripts/python/workflow/extractor.py",
+      "sha256": "b0fe46227937263be1b5533a926a70d5a0df0370b6fc661220f4baf934f63eeb"
+    },
+    {
+      "path": "scripts/python/workflow/interface_contract.py",
+      "sha256": "6c40a0d43a99f8bd0189b37075921b71efb0a269b81d09d6b3cc041b6d948e96"
+    },
+    {
+      "path": "scripts/python/workflow/interface_templates.py",
+      "sha256": "20f1e89ea9dde85b5f31d09df4c215120c148c047d298df8b7c92bff386ef8cc"
+    },
+    {
+      "path": "scripts/python/workflow/model_provider.py",
+      "sha256": "22c29886378ad04a32070d302646f3a7752fa9d15f14e6e6939ff7708d14b903"
+    },
+    {
+      "path": "scripts/python/workflow/model_provider_command.py",
+      "sha256": "3a14c9550af75dda413f99e5d57c201e7cadde98135838ffb5d555afb395393e"
+    },
+    {
+      "path": "scripts/python/workflow/model_provider_mock.py",
+      "sha256": "e437a3fc67faebc5b1e9492b9b5ca52350f04adf6a0af0b4956d947201c5e397"
+    },
+    {
+      "path": "scripts/python/workflow/model_provider_mock_comments.py",
+      "sha256": "8fe2cd84d829871651265879669f9597d886621fa12effed474cdccc2646bdba"
+    },
+    {
+      "path": "scripts/python/workflow/model_provider_mock_content.py",
+      "sha256": "e4251f63b0bd036b39c60a903b659fa1b64fb911aaab319aace2fa58442c4e24"
+    },
+    {
+      "path": "scripts/python/workflow/model_provider_mock_rtl.py",
+      "sha256": "7744c91a83b09a2122c03458e8f6f0d77ac106f5a6721754cafa81d95190aa69"
+    },
+    {
+      "path": "scripts/python/workflow/model_provider_mock_testbench.py",
+      "sha256": "695376bb5b77353d102e5d3966f9e3433c1ab4564fcbb242f1fa7ff1c4618b88"
+    },
+    {
+      "path": "scripts/python/workflow/pattern_templates.py",
+      "sha256": "28671d0de63dba8c274af1725243885cd55ed1b3086fb62f01bd1640b2f607c1"
+    },
+    {
+      "path": "scripts/python/workflow/planning.py",
+      "sha256": "dfb3c30bb333cabe000772ffe3f70a1d2db71c469a861ec02c96d0877fee1a7c"
+    },
+    {
+      "path": "scripts/python/workflow/prompt.py",
+      "sha256": "bdd162329eb865d7c199eddccd33e7257142142432ba5ff515e408e97786b470"
+    },
+    {
+      "path": "scripts/python/workflow/requirements.py",
+      "sha256": "ea46a910c8179fc854ddc8e3012a1928d9ab9f06bd2ebf217f1ce717bb33a032"
+    },
+    {
+      "path": "scripts/python/workflow/rtl_md_constraints.py",
+      "sha256": "3de460c80ada64ae7a08a2f923c9c73da4f2c5ce0ea79943291e16ea671ddb72"
+    },
+    {
+      "path": "scripts/python/workflow/spec.py",
+      "sha256": "3926ac67436c3033ca70350885aa52a93389f74ae54d37403b2e5998d4d0a2d5"
+    },
+    {
+      "path": "scripts/python/workflow/trace.py",
+      "sha256": "45fba4cf7862506d513ce381035bb10fd3f75e471c782a302f6508b1020ecb2c"
+    },
+    {
+      "path": "scripts/python/workflow/use_case_templates.py",
+      "sha256": "ee961f0f6d9a442dc83ff293329196af98d3f40d9b287706f4efffdddce034aa"
+    },
+    {
+      "path": "scripts/python/workflow/vectors.py",
+      "sha256": "282e3541c0e73da3c879d858e89777113db109551d99d49a896336f87222c4c8"
+    },
+    {
+      "path": "scripts/python/workflow/workflow.py",
+      "sha256": "eb2be88542e7c4e344686f8c9bb4dec6420713e04c48f9512a1267d0fd5e7620"
+    },
+    {
+      "path": "scripts/python/workflow/workflow_execution.py",
+      "sha256": "03138fe1d89cb998a21fe5f7c6485618302966e1ce85e51978211b6e914f96da"
+    },
+    {
+      "path": "scripts/python/workflow/workflow_gates.py",
+      "sha256": "3de0c375ab48d2cec23bd387ffdd9e6437113ff3b8e42879544c987914e514fd"
+    },
+    {
+      "path": "scripts/python/workflow/workflow_router.py",
+      "sha256": "b215a39ae4b46957c6564f8bfddc409550cc0bcd791b2665001ce79f5c18b6dd"
+    },
+    {
+      "path": "scripts/python/workflow/workflow_stage.py",
+      "sha256": "33eecc612f9c2c800a712f0feb117dfcba24fb43d0aa8c9272c652dc32b7c3ea"
+    },
+    {
+      "path": "scripts/python/workflow/workflow_support.py",
+      "sha256": "fd93ac37f920917aa16367f1300fddd6926ef261648bf5fbd92eab1cc6f26a39"
+    },
+    {
+      "path": "scripts/python/workflow/workspace.py",
+      "sha256": "ad0b850bf5be789c0a6ab2e55e08ec3addaea55636569ad4f7a2795ff5f41fd4"
+    },
+    {
+      "path": "SKILL.md",
+      "sha256": "edb7c311dfea99915039bcce49058c0b6db65a52fec04c7f7d10df380a9c071a"
+    },
+    {
+      "path": "VERSION",
+      "sha256": "1e074676bd4d07d1160c863b324be0ea4fbac1a21d3d2478aab61f902cfbf731"
+    }
+  ],
+  "other_version_artifacts": []
+}

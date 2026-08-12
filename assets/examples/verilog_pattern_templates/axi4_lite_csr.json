@@ -1,0 +1,56 @@
+{
+  "name": "axi4_lite_csr_bank",
+  "target": "rtl",
+  "rtl_style_profile": "erie_strict",
+  "description": "AXI4-Lite CSR register bank with control and status registers.",
+  "pipeline_required": true,
+  "codegen_plan_required": true,
+  "streamability": "non_streamable",
+  "interface_family": "axi4_lite",
+  "interface_profile": {
+    "role": "slave",
+    "read_write_mode": "read_write",
+    "data_width": 32,
+    "addr_width": 16,
+    "clock_reset_domain": {
+      "clock": "i_axi_aclk",
+      "reset": "i_axi_arstn"
+    }
+  },
+  "design_requirements": {
+    "target": "rtl",
+    "pipeline_required": true,
+    "streamability": "non_streamable",
+    "interface_family": "axi4_lite",
+    "interface_profile": {
+      "role": "slave",
+      "read_write_mode": "read_write",
+      "data_width": 32,
+      "addr_width": 16,
+      "clock_reset_domain": {
+        "clock": "i_axi_aclk",
+        "reset": "i_axi_arstn"
+      }
+    },
+    "confirmed_by_user": true,
+    "confirmation_notes": "Use an AXI4-Lite slave CSR shell."
+  },
+  "interfaces": {
+    "ports": [
+      {"name": "i_axi_aclk", "direction": "input", "width": 1, "role": "clock"},
+      {"name": "i_axi_arstn", "direction": "input", "width": 1, "role": "reset"},
+      {"name": "i_cfg_enable", "direction": "input", "width": 1},
+      {"name": "o_cfg_status", "direction": "output", "width": 1}
+    ]
+  },
+  "behavior": [
+    "Expose a small CSR register bank with control and status register fields."
+  ],
+  "clock": {"name": "i_axi_aclk", "edge": "posedge", "frequency_mhz": 100},
+  "reset": {"name": "i_axi_arstn", "active": "low", "synchronous": false},
+  "constraints": ["Use synthesizable Verilog-2001."],
+  "outputs": [
+    {"path": "rtl/axi4_lite_csr_bank.v", "kind": "source", "language": "verilog"},
+    {"path": "tb/axi4_lite_csr_bank_tb.v", "kind": "testbench", "language": "verilog"}
+  ]
+}

@@ -1,0 +1,16 @@
+dist/
+_smoke_runs/
+reports/
+runs/
+tmp/
+downloads/
+logs/
+requests/
+.settings/
+.erie-verilog-generator-state/
+workflow-state.json
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.log

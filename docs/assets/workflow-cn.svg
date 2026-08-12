@@ -1,0 +1,61 @@
+<svg width="1280" height="340" viewBox="0 0 1280 340" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Verilog Generator 工作流</title>
+  <desc id="desc">从 RTL 确认到验证证据的五步工作流。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="340" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1020"/>
+      <stop offset="0.58" stop-color="#111827"/>
+      <stop offset="1" stop-color="#071019"/>
+    </linearGradient>
+    <linearGradient id="track" x1="128" y1="190" x2="1152" y2="190" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A3E635"/>
+      <stop offset="0.5" stop-color="#60A5FA"/>
+      <stop offset="1" stop-color="#FDBA74"/>
+    </linearGradient>
+    <filter id="shadow" x="-18%" y="-46%" width="136%" height="200%">
+      <feDropShadow dx="0" dy="18" stdDeviation="17" flood-color="#000" flood-opacity="0.34"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="340" rx="26" fill="url(#bg)"/>
+  <g opacity="0.15">
+    <path d="M104 104h70v38h70v-38h70v38h70v-38h70v38h70v-38h70v38h70v-38h70v38h70v-38h70v38h70" stroke="#E6EDF3" stroke-width="2"/>
+    <path d="M88 244H1192" stroke="#E6EDF3"/>
+  </g>
+  <g font-family="Inter, Segoe UI, Microsoft YaHei, Arial, sans-serif">
+    <text x="72" y="58" fill="#E6EDF3" font-size="17" font-weight="800" letter-spacing="3">WORKFLOW</text>
+    <text x="72" y="91" fill="#9FB0C3" font-size="18">从 RTL 意图到可仿真、可审查证据的工程化路径。</text>
+  </g>
+  <path d="M128 190H1152" stroke="url(#track)" stroke-width="5" stroke-linecap="round"/>
+  <g filter="url(#shadow)" font-family="Inter, Segoe UI, Microsoft YaHei, Arial, sans-serif">
+    <g transform="translate(80 136)">
+      <rect width="170" height="108" rx="18" fill="#101D31" stroke="#A3E635" stroke-width="1.7"/>
+      <circle cx="34" cy="34" r="18" fill="#A3E635"/><text x="28" y="41" fill="#0B1020" font-size="18" font-weight="900">1</text>
+      <text x="28" y="73" fill="#FFFFFF" font-size="21" font-weight="800">确认</text>
+      <text x="28" y="98" fill="#9FB0C3" font-size="14">RTL 行为</text>
+    </g>
+    <g transform="translate(306 136)">
+      <rect width="170" height="108" rx="18" fill="#101D31" stroke="#60A5FA" stroke-width="1.7"/>
+      <circle cx="34" cy="34" r="18" fill="#60A5FA"/><text x="28" y="41" fill="#0B1020" font-size="18" font-weight="900">2</text>
+      <text x="28" y="73" fill="#FFFFFF" font-size="21" font-weight="800">规格</text>
+      <text x="28" y="98" fill="#9FB0C3" font-size="14">端口 + 复位</text>
+    </g>
+    <g transform="translate(532 136)">
+      <rect width="170" height="108" rx="18" fill="#101D31" stroke="#60A5FA" stroke-width="1.7"/>
+      <circle cx="34" cy="34" r="18" fill="#60A5FA"/><text x="28" y="41" fill="#0B1020" font-size="18" font-weight="900">3</text>
+      <text x="28" y="73" fill="#FFFFFF" font-size="21" font-weight="800">生成</text>
+      <text x="28" y="98" fill="#9FB0C3" font-size="14">RTL + testbench</text>
+    </g>
+    <g transform="translate(758 136)">
+      <rect width="170" height="108" rx="18" fill="#101D31" stroke="#60A5FA" stroke-width="1.7"/>
+      <circle cx="34" cy="34" r="18" fill="#60A5FA"/><text x="28" y="41" fill="#0B1020" font-size="18" font-weight="900">4</text>
+      <text x="28" y="73" fill="#FFFFFF" font-size="21" font-weight="800">验证</text>
+      <text x="28" y="98" fill="#9FB0C3" font-size="14">静态或仿真</text>
+    </g>
+    <g transform="translate(984 136)">
+      <rect width="170" height="108" rx="18" fill="#101D31" stroke="#FDBA74" stroke-width="1.7"/>
+      <circle cx="34" cy="34" r="18" fill="#FDBA74"/><text x="28" y="41" fill="#0B1020" font-size="18" font-weight="900">5</text>
+      <text x="28" y="73" fill="#FFFFFF" font-size="21" font-weight="800">报告</text>
+      <text x="28" y="98" fill="#9FB0C3" font-size="14">trace + 证据</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,231 @@
+{
+  "meta": {
+    "generated_date": "2026-06-16",
+    "source_zip": "/mnt/data/verilog-formatter.zip",
+    "input_notes": [
+      "/mnt/data/粘贴的 markdown (1)。md",
+      "/mnt/data/粘贴的 markdown (2)。md"
+    ],
+    "scope": "Verilog/SystemVerilog formatter-derived project coding/comment/naming convention"
+  },
+  "files": {
+    "extensions": [
+      ".v",
+      ".sv",
+      ".vh",
+      ".svh"
+    ],
+    "indent": "tab",
+    "trailing_comment_column": 49,
+    "include_fragments_formatted_by_default": false,
+    "standard_preamble": "`timescale 1ns / 1ps`"
+  },
+  "profiles": {
+    "formatter-auto": "score first; preserve/micro-format/controlled normalize/fail-no-write",
+    "formatter-preserve": "preserve structure; no port/param sorting; no prefix autofix; no always split; no inline wire rewrite",
+    "formatter-normalize": "force structural renderer; may rename/reorder/split/add bridges/rebuild header",
+    "formatter-lint": "never rewrite; lint/check only",
+    "vitis-wrapper": "preserve AMD/Vitis ABI top-level ports"
+  },
+  "naming": {
+    "input_prefix": "i_",
+    "output_prefix": "o_",
+    "inout_prefix": "io_",
+    "parameter_prefix": "C_",
+    "state_param_prefix": "ST_",
+    "register_prefix": "reg_",
+    "counter_prefix": "cnt_",
+    "state_signal_prefix": "state_",
+    "encoder_prefix": "enc_",
+    "decoder_prefix": "dec_",
+    "flag_prefix": "flag_",
+    "internal_output_suffix": "_o",
+    "forbidden_duplicate_prefixes": [
+      "C_C_",
+      "ST_ST_",
+      "reg_reg_",
+      "cnt_cnt_",
+      "flag_flag_",
+      "enc_enc_",
+      "dec_dec_",
+      "state_state_"
+    ],
+    "default_clock": "i_clk",
+    "default_reset": "i_rstn",
+    "reset_polarity": "active_low",
+    "protocol_clock_reset_recommendations": {
+      "axi": {
+        "clock": "i_axi_aclk",
+        "reset": "i_axi_arstn"
+      },
+      "axis": {
+        "clock": "i_axis_aclk",
+        "reset": "i_axis_arstn"
+      },
+      "ahb": {
+        "clock": "i_ahb_hclk",
+        "reset": "i_ahb_hrstn"
+      },
+      "apb": {
+        "clock": "i_apb_pclk",
+        "reset": "i_apb_prstn"
+      }
+    }
+  },
+  "regions": [
+    "function_block",
+    "task_block",
+    "config_param",
+    "state_param",
+    "instance_signal",
+    "counter_signal",
+    "state_signal",
+    "register_signal",
+    "flag_signal",
+    "encoder_signal",
+    "decoder_signal",
+    "other_signal",
+    "output_internal",
+    "other_assign",
+    "output_assign",
+    "output_always",
+    "state_machine",
+    "state_task",
+    "main_task",
+    "generate_block",
+    "parameter_check",
+    "initial_block",
+    "instance_block"
+  ],
+  "comments": {
+    "line_comments_only": true,
+    "block_comments_allowed": false,
+    "language": "Chinese first; keep identifiers/protocol/timing terms as-is",
+    "placement_rules": {
+      "forbid_block_comments": "Any /* or */ marker is forbidden in deliverable Verilog.",
+      "same_line_entities": [
+        "parameter",
+        "localparam",
+        "input",
+        "output",
+        "inout",
+        "reg",
+        "wire",
+        "integer",
+        "real",
+        "assign",
+        "procedural_assignment",
+        "instance_parameter_mapping",
+        "instance_port_mapping"
+      ],
+      "same_line_alignment": "Trailing // comments align to the current region banner right-side // display column; when code is longer, // may move right but never left of that anchor.",
+      "block_leading_comments": [
+        "always",
+        "function",
+        "task",
+        "generate",
+        "initial"
+      ],
+      "leading_comment_spacing": "A block, definition-group, or instance-purpose comment is immediately above its target, aligns to the target start column, and has exactly one blank line above unless it directly follows a region banner.",
+      "definition_group_comments": "Parameter and signal definition groups require a pure group comment above the group; a region banner does not satisfy this requirement.",
+      "instance_comments": "Each module instance requires a pure function comment above it, and each .formal(actual) mapping requires a same-line semantic comment."
+    },
+    "fallback_comments": [
+      "parameter",
+      "port signal",
+      "signal",
+      "assign",
+      "output bridge",
+      "internal output signal"
+    ],
+    "semantic_reuse": {
+      "diagnostic_code": "VG066",
+      "strict_severity": "error",
+      "non_strict_severity": "warning",
+      "minimum_chinese_chars": 4,
+      "near_duplicate_similarity_threshold": 0.94,
+      "covered_entities": [
+        "parameter",
+        "localparam",
+        "port",
+        "signal",
+        "assign",
+        "procedural_assignment",
+        "instance_parameter_mapping",
+        "instance_port_mapping",
+        "block_leading_comment",
+        "instance_leading_comment"
+      ],
+      "exempt_navigation_comments": [
+        "standard_region_banner",
+        "file_header_field",
+        "definition_group_comment"
+      ],
+      "normalization": [
+        "strip decorative separators",
+        "remove zero-width characters",
+        "normalize unicode width",
+        "drop numbering noise",
+        "drop identifier-only noise"
+      ]
+    },
+    "annotation_pipeline": [
+      "format baseline",
+      "comment draft",
+      "verify comment-only",
+      "format final",
+      "verify comment-only"
+    ]
+  },
+  "statements": {
+    "port_kind_keywords_in_header": "forbidden in final style",
+    "inline_wire_assign": "forbidden; split into wire declaration plus assign",
+    "always_single_target": true,
+    "sequential_reset": "posedge clock or negedge active-low reset",
+    "fsm": "project requires three-segment FSM; formatter enforcement is partial",
+    "instances_last": true
+  },
+  "protocols": {
+    "axi_sections": [
+      "clock_reset",
+      "aw",
+      "w",
+      "b",
+      "ar",
+      "r",
+      "other"
+    ],
+    "axis_sections": [
+      "clock_reset",
+      "slave",
+      "master",
+      "control",
+      "data",
+      "other"
+    ],
+    "apb_sections": [
+      "clock_reset",
+      "request",
+      "response"
+    ],
+    "known_protocols": [
+      "axi",
+      "axis",
+      "apb",
+      "wishbone",
+      "uart",
+      "spi",
+      "i2c",
+      "gmii",
+      "rgmii"
+    ]
+  },
+  "known_differences": [
+    "header currently renders Referrences spelling",
+    "packed width and identifier may be rendered without a separating space",
+    "flag semantic terms end/req/ack require generator/manual naming; formatter may not infer all",
+    "protocol-specific clock/reset names require generator/user override",
+    "instance naming convention is project-level, not strongly formatter-enforced",
+    "C model/range width inference is outside formatter scope"
+  ]
+}

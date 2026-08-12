@@ -1,0 +1,89 @@
+{
+  "name": "erie_adapter",
+  "target": "rtl",
+  "rtl_dialect": "verilog",
+  "rtl_style_profile": "erie_strict",
+  "design_requirements": {
+    "target": "rtl",
+    "pipeline_required": true,
+    "streamability": "non_streamable",
+    "interface_family": "native",
+    "interface_profile": {},
+    "confirmed_by_user": true,
+    "confirmation_notes": "Use the native RTL port set with a pipelined Erie-style implementation."
+  },
+  "streamability": "non_streamable",
+  "interface_family": "native",
+  "interface_profile": {},
+  "pipeline_required": true,
+  "codegen_plan_required": true,
+  "description": "Strict Erie RTL adapter example.",
+  "interfaces": {
+    "ports": [
+      {
+        "name": "i_clk",
+        "direction": "input",
+        "width": 1,
+        "role": "clock"
+      },
+      {
+        "name": "i_rstn",
+        "direction": "input",
+        "width": 1,
+        "role": "reset"
+      },
+      {
+        "name": "i_in_valid",
+        "direction": "input",
+        "width": 1
+      },
+      {
+        "name": "i_in_data",
+        "direction": "input",
+        "width": 8
+      },
+      {
+        "name": "o_out_valid",
+        "direction": "output",
+        "width": 1
+      },
+      {
+        "name": "o_out_data",
+        "direction": "output",
+        "width": 8
+      }
+    ]
+  },
+  "behavior": [
+    "Forward the input data and valid signal by one cycle."
+  ],
+  "clock": {
+    "name": "i_clk",
+    "edge": "posedge",
+    "frequency_mhz": 100
+  },
+  "reset": {
+    "name": "i_rstn",
+    "active": "low",
+    "synchronous": false
+  },
+  "constraints": [
+    "Use synthesizable Verilog-2001."
+  ],
+  "outputs": [
+    {
+      "path": "rtl/erie_adapter.v",
+      "kind": "source",
+      "language": "verilog"
+    },
+    {
+      "path": "tb/erie_adapter_tb.v",
+      "kind": "testbench",
+      "language": "verilog"
+    }
+  ],
+  "notes": [],
+  "subfunctions": [],
+  "workflow": {},
+  "performance": {}
+}

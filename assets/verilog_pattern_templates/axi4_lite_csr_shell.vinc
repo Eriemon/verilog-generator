@@ -1,0 +1,12 @@
+// AXI4-Lite CSR shell extracted from the local reference style.
+// Use a narrow control-plane wrapper with explicit address decode
+// and one-cycle write response generation.
+localparam integer C_CSR_COUNT = 4;
+reg [C_AXI_DATA_WIDTH-1:0] reg_csr_bank [0:C_CSR_COUNT-1];
+wire flag_axil_write_fire;
+wire flag_axil_read_fire;
+
+assign flag_axil_write_fire = i_axi_awvalid & i_axi_wvalid & o_axi_awready & o_axi_wready;
+assign flag_axil_read_fire = i_axi_arvalid & o_axi_arready;
+
+// Decode writes into a compact CSR bank and keep read mux logic explicit.

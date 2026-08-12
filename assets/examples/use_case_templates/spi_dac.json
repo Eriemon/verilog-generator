@@ -1,0 +1,104 @@
+{
+  "name": "spi_dac_playback_bridge",
+  "target": "rtl",
+  "rtl_dialect": "verilog",
+  "rtl_style_profile": "erie_strict",
+  "design_requirements": {
+    "target": "rtl",
+    "pipeline_required": true,
+    "streamability": "streamable",
+    "interface_family": "native",
+    "interface_profile": {},
+    "confirmed_by_user": true,
+    "confirmation_notes": "Use the SPI DAC family template for a DMA-fed playback bridge."
+  },
+  "streamability": "streamable",
+  "interface_family": "native",
+  "interface_profile": {},
+  "pipeline_required": true,
+  "codegen_plan_required": true,
+  "description": "Bridge streamed sample input into an SPI DAC push path with explicit fault gating and LDAC sideband control.",
+  "interfaces": {
+    "ports": [
+      {
+        "name": "i_clk",
+        "direction": "input",
+        "width": 1,
+        "role": "clock"
+      },
+      {
+        "name": "i_rstn",
+        "direction": "input",
+        "width": 1,
+        "role": "reset"
+      },
+      {
+        "name": "i_fault_n",
+        "direction": "input",
+        "width": 1
+      },
+      {
+        "name": "i_sample_valid",
+        "direction": "input",
+        "width": 1
+      },
+      {
+        "name": "i_sample_data",
+        "direction": "input",
+        "width": 16
+      },
+      {
+        "name": "o_spi_sclk",
+        "direction": "output",
+        "width": 1
+      },
+      {
+        "name": "o_spi_sync_n",
+        "direction": "output",
+        "width": 1
+      },
+      {
+        "name": "o_push_ready",
+        "direction": "output",
+        "width": 1
+      }
+    ]
+  },
+  "behavior": [
+    "Accept one 16-bit sample whenever the DAC fault input is inactive.",
+    "Drive SPI sync and LDAC style outputs in response to accepted samples.",
+    "Expose a one-bit push-ready status derived from the DAC fault input."
+  ],
+  "clock": {
+    "name": "i_clk",
+    "edge": "posedge",
+    "frequency_mhz": 100
+  },
+  "reset": {
+    "name": "i_rstn",
+    "active": "low",
+    "synchronous": false
+  },
+  "constraints": [
+    "Use synthesizable Verilog-2001.",
+    "Preserve explicit DAC fault gating in the datapath."
+  ],
+  "outputs": [
+    {
+      "path": "rtl/spi_dac_playback_bridge.v",
+      "kind": "source",
+      "language": "verilog"
+    },
+    {
+      "path": "tb/spi_dac_playback_bridge_tb.v",
+      "kind": "testbench",
+      "language": "verilog"
+    }
+  ],
+  "notes": [],
+  "subfunctions": [],
+  "workflow": {
+    "use_case_template_id": "spi_dac"
+  },
+  "performance": {}
+}

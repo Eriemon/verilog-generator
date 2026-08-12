@@ -1,0 +1,11 @@
+// Counter-to-state bridge pattern
+// Keep phase timing visible by reloading the counter only at explicit state boundaries.
+always @(posedge i_clk or negedge i_rstn) begin
+    if (!i_rstn) begin
+        cnt_phase <= C_RESET_COUNT;
+    end else if (state_current != state_next) begin
+        cnt_phase <= cnt_reload_value;
+    end else if (cnt_phase != {C_COUNT_WIDTH{1'b0}}) begin
+        cnt_phase <= cnt_phase - 1'b1;
+    end
+end

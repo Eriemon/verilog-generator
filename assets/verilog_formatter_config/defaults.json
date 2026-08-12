@@ -1,0 +1,170 @@
+{
+  "paths": {
+    "workspace_root": ".",
+    "input": ".",
+    "output": "./out/formatted",
+    "backup_dir": "./out/backups",
+    "report_dir": "./reports/verilog-formatter"
+  },
+  "execution": {
+    "mode": "format",
+    "target_kind": "auto",
+    "recurse": true,
+    "in_place": false,
+    "dry_run": true,
+    "fail_on_missing_input": true,
+    "include_extensions": [
+      ".v",
+      ".sv",
+      ".vh",
+      ".svh"
+    ],
+    "workspace_scan_exclude_dir_names": [
+      ".git",
+      "__pycache__",
+      ".pytest_cache",
+      "dist",
+      "out",
+      "ref"
+    ],
+    "workspace_scan_exclude_subpaths": [
+      "tests/verilog-formatter/baselines"
+    ]
+  },
+  "formatter": {
+    "indent_style": "tab",
+    "indent_size": 1,
+    "preserve_comments": true,
+    "sort_ports": true,
+    "sort_params": true,
+    "space_around_operator": true,
+    "space_after_comma": true,
+    "auto_fix_prefix": true,
+    "trailing_comment_style": "column",
+    "trailing_comment_column": 49,
+    "backend": "builtin",
+    "backend_command": []
+  },
+  "checks": {
+    "enable": true,
+    "diff": false,
+    "naming": true,
+    "prefix": true,
+    "region_layout": true
+  },
+  "backup": {
+    "enabled": false,
+    "suffix": ".bak"
+  },
+  "reporting": {
+    "emit_summary": true,
+    "summary_format": "json",
+    "write_resolved_config": true
+  },
+  "text_io": {
+    "encoding_policy": "preserve",
+    "eol_policy": "preserve",
+    "bom_policy": "preserve",
+    "final_newline_policy": "preserve",
+    "format_include_fragments": false
+  },
+  "scoring": {
+    "thresholds": {
+      "already_standard_min": 95,
+      "micro_format_min": 85,
+      "preserve_format_min": 70,
+      "syntax_preserve_min": 75,
+      "rewrite_need_min": 30,
+      "rewrite_risk_auto_max": 35
+    }
+  },
+  "rewrite_policy": {
+    "mode": "auto"
+  },
+  "compat": {
+    "legacy_yaml_import": false,
+    "legacy_phase_pipeline": false,
+    "shell_wrappers": false,
+    "example_compat": false
+  },
+  "header": {
+    "company_en": "Erie",
+    "company_cn": "Erie",
+    "engineer_en": "Erie",
+    "engineer_cn": "Erie",
+    "copyright_owner_en": "Erie",
+    "copyright_owner_cn": "Erie",
+    "developer_en": "Erie",
+    "developer_cn": "Erie",
+    "reviser_en": "Erie",
+    "reviser_cn": "Erie",
+    "default_version": "V1.0",
+    "allow_auto_version_bump": false,
+    "history_mode": "preserve"
+  },
+  "naming": {
+    "input_prefix": "i_",
+    "output_prefix": "o_",
+    "inout_prefix": "io_",
+    "parameter_prefix": "C_",
+    "state_prefix": "ST_",
+    "register_prefix": "reg_",
+    "counter_prefix": "cnt_",
+    "state_signal_prefix": "state_",
+    "encoder_prefix": "enc_",
+    "decoder_prefix": "dec_",
+    "flag_prefix": "flag_",
+    "internal_output_suffix": "_o",
+    "dedupe_prefixes": true,
+    "preserve_port_names": [],
+    "preserve_port_patterns": []
+  },
+  "reset_clock": {
+    "require_active_low_reset": true,
+    "default_clock": "i_clk",
+    "default_reset": "i_rstn"
+  },
+  "structure": {
+    "enforce_region_order": true,
+    "place_instances_last": true,
+    "region_order": [
+      "config_param",
+      "state_param",
+      "instance_signal",
+      "counter_signal",
+      "state_signal",
+      "register_signal",
+      "flag_signal",
+      "encoder_signal",
+      "decoder_signal",
+      "other_signal",
+      "output_internal",
+      "other_assign",
+      "output_assign",
+      "output_always",
+      "state_machine",
+      "state_task",
+      "main_task",
+      "generate_block",
+      "parameter_check",
+      "instance_block"
+    ]
+  },
+  "always_rules": {
+    "single_reg_per_always": true,
+    "auto_split": true
+  },
+  "wire_assign_rules": {
+    "forbid_inline_wire_assign": true,
+    "rewrite_inline_wire_assign": true
+  },
+  "state_machine": {
+    "enforce_three_segment": true,
+    "state_param_prefix": "ST_"
+  },
+  "strict_mode": {
+    "enabled": true,
+    "fail_on_unsupported_syntax": true,
+    "fail_on_missing_clock_reset": true
+  }
+}

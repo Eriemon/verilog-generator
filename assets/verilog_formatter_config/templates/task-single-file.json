@@ -1,0 +1,11 @@
+{
+  "execution": {
+    "target_kind": "file",
+    "recurse": false,
+    "in_place": false
+  },
+  "paths": {
+    "output": "./out/single-file",
+    "report_dir": "./reports/verilog-formatter/single-file"
+  }
+}

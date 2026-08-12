@@ -1,0 +1,7 @@
+// Equivalence wrapper probe pattern
+// Expose internal checkpoints through non-invasive probe wires before semantic comparison.
+wire probe_state_active;
+wire [C_COUNT_WIDTH-1:0] probe_counter_value;
+
+assign probe_state_active = (state_current == ST_ACTIVE);
+assign probe_counter_value = cnt_phase;

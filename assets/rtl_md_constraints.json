@@ -1,0 +1,648 @@
+{
+  "version": 2,
+  "name": "rtl_md_constraints",
+  "description": "Stable distilled metadata for layered Erie Verilog RTL generation and review constraints.",
+  "total_rules": 68,
+  "required_rules": 47,
+  "advisory_rules": 21,
+  "shuffle_seed": 20260609,
+  "semantic_rule_names": true,
+  "policy": {
+    "must": "MUST rules are blocking error constraints. Automated gates enforce the high-confidence subset; remaining MUST rules stay mandatory prompt and review requirements.",
+    "recommended": "REC rules are default warning-level preferences. Generated artifacts should follow them or record a clear interface, process, or compatibility reason.",
+    "reference_examples": "Reference teaching examples are not release templates and are intentionally omitted from this asset."
+  },
+  "enforcement_counts": {
+    "automated_error": 17,
+    "automated_warning": 3,
+    "prompt_warning": 18,
+    "review_error": 30
+  },
+  "topic_counts": {
+    "与综合器相关的编码准则": 2,
+    "分支语句": 11,
+    "复位": 8,
+    "循环语句": 6,
+    "时钟": 6,
+    "状态机结构": 5,
+    "结构说明语句": 10,
+    "触发器": 3,
+    "赋值语句和块语句": 6,
+    "运算符": 8,
+    "锁存器": 3
+  },
+  "rules": [
+    {
+      "id": "MUST_OP_NO_XZ_ARITH",
+      "kind": "must",
+      "severity": "error",
+      "topic": "运算符",
+      "shuffle_order": 1,
+      "summary": "禁止在算术操作时使用包含“x”或者“z”的值。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "REC_CLK_SINGLE_DOMAIN",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "时钟",
+      "shuffle_order": 2,
+      "summary": "建议仅使用一个时钟域。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "REC_OP_NO_LOGIC_ON_VECTOR",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "运算符",
+      "shuffle_order": 3,
+      "summary": "避免在向量运算中使用逻辑运算符。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "MUST_RST_NO_SYNC_ASYNC_MIX",
+      "kind": "must",
+      "severity": "error",
+      "topic": "复位",
+      "shuffle_order": 4,
+      "summary": "禁止在同一条复位线路中同时使用异步复位和同步复位。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "REC_CASE_NO_OVERLAP",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "分支语句",
+      "shuffle_order": 5,
+      "summary": "case语句中的分支语句避免重叠。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "REC_RST_ONE_SIGNAL_PER_ALWAYS",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "复位",
+      "shuffle_order": 6,
+      "summary": "建议在同一个always 语句中只使用同一个复位信号。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "MUST_OP_NO_XZ_CONDITION",
+      "kind": "must",
+      "severity": "error",
+      "topic": "运算符",
+      "shuffle_order": 7,
+      "summary": "禁止在条件表达式中使用包含“x”或者“z”的值。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "MUST_COMB_BLOCKING_ASSIGN",
+      "kind": "must",
+      "severity": "error",
+      "topic": "赋值语句和块语句",
+      "shuffle_order": 8,
+      "summary": "组合电路必须使用阻塞赋值，禁止使用非阻塞赋值。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "MUST_LOOP_NO_NONINDEX_ARITH",
+      "kind": "must",
+      "severity": "error",
+      "topic": "循环语句",
+      "shuffle_order": 9,
+      "summary": "禁止在for语句中对循环变量之外的变量进行算术运算。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "REC_REPEAT_CONST_COUNT",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "循环语句",
+      "shuffle_order": 10,
+      "summary": "避免在repeat语句表达式中使用变量。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "MUST_RST_NO_GLITCHY_COMB",
+      "kind": "must",
+      "severity": "error",
+      "topic": "复位",
+      "shuffle_order": 11,
+      "summary": "禁止使用有竞争冒险情况的组合逻辑输出作为复位信号。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_LOOP_NO_RESET_LOGIC_MIX",
+      "kind": "must",
+      "severity": "error",
+      "topic": "循环语句",
+      "shuffle_order": 12,
+      "summary": "复位部分和逻辑部分禁止出现在同一个for循环中。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_CASE_ITEM_IN_RANGE_WIDTH",
+      "kind": "must",
+      "severity": "error",
+      "topic": "分支语句",
+      "shuffle_order": 13,
+      "summary": "case语句的所有分支表达式必须在控制表达式的范围之内，并且数据位宽一致。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_OP_REL_WIDTH_MATCH",
+      "kind": "must",
+      "severity": "error",
+      "topic": "运算符",
+      "shuffle_order": 14,
+      "summary": "关系操作符左边与右边的数据位宽必须一致。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "MUST_FSM_HAS_INITIAL_STATE",
+      "kind": "must",
+      "severity": "error",
+      "topic": "状态机结构",
+      "shuffle_order": 15,
+      "summary": "状态机必须设置初始状态。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_SYNTH_NO_RESET_OVERRIDE",
+      "kind": "must",
+      "severity": "error",
+      "topic": "与综合器相关的编码准则",
+      "shuffle_order": 16,
+      "summary": "禁止使用综合工具改变代码的复位属性。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "REC_BRANCH_COND_SCALAR",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "分支语句",
+      "shuffle_order": 17,
+      "summary": "if语句和条件运算符的条件表达式避免为向量，建议由单位宽信号组成。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "MUST_CLK_NO_COMB_CLOCK",
+      "kind": "must",
+      "severity": "error",
+      "topic": "时钟",
+      "shuffle_order": 18,
+      "summary": "禁止将组合逻辑的输出作为时钟信号。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "MUST_CASE_CONTROL_NOT_CONSTANT",
+      "kind": "must",
+      "severity": "error",
+      "topic": "分支语句",
+      "shuffle_order": 19,
+      "summary": "禁止在case语句的控制表达式中使用固定值。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "REC_ARRAY_INDEX_SIMPLE",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "结构说明语句",
+      "shuffle_order": 20,
+      "summary": "建议数组索引为简单的信号，避免使用表达式。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "MUST_LOOP_AT_LEAST_ONCE",
+      "kind": "must",
+      "severity": "error",
+      "topic": "循环语句",
+      "shuffle_order": 21,
+      "summary": "循环语句必须至少满足一次循环条件。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_RST_NO_ASYNC_TO_DATA_PIN",
+      "kind": "must",
+      "severity": "error",
+      "topic": "复位",
+      "shuffle_order": 22,
+      "summary": "禁止将异步的置位/复位信号连接到非置位/复位管脚。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_FSM_DEFAULT_RESET_REGS",
+      "kind": "must",
+      "severity": "error",
+      "topic": "状态机结构",
+      "shuffle_order": 23,
+      "summary": "状态机在default状态时，必须把状态机中所有寄存器重置为确定状态（复位状态或者空闲状态）。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_LATCH_NO_GATE_PRIMITIVE",
+      "kind": "must",
+      "severity": "error",
+      "topic": "锁存器",
+      "shuffle_order": 24,
+      "summary": "禁止使用基本逻辑门来描述锁存器。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "REC_CLK_AVOID_GATING",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "时钟",
+      "shuffle_order": 25,
+      "summary": "避免使用门控时钟。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "MUST_CONN_PORT_WIDTH_MATCH",
+      "kind": "must",
+      "severity": "error",
+      "topic": "赋值语句和块语句",
+      "shuffle_order": 26,
+      "summary": "模块端口的数据位宽与实例化信号的数据位宽必须一致。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_FSM_NO_DEAD_UNREACHABLE",
+      "kind": "must",
+      "severity": "error",
+      "topic": "状态机结构",
+      "shuffle_order": 27,
+      "summary": "状态机禁止出现死锁状态和不可达状态。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "REC_RST_DEDICATED_GENERATOR",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "复位",
+      "shuffle_order": 28,
+      "summary": "建议为复位产生电路创建独立的模块。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "REC_RST_NO_INTERNAL_ASYNC_SRC",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "复位",
+      "shuffle_order": 29,
+      "summary": "避免使用内部生成信号作为寄存器的异步复位信号。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "MUST_BRANCH_COND_NO_XZ",
+      "kind": "must",
+      "severity": "error",
+      "topic": "分支语句",
+      "shuffle_order": 30,
+      "summary": "if语句的条件表达式与case语句的控制表达式中禁止出现“x”或者“z”。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "REC_RST_NO_SET_RESET_PAIR",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "复位",
+      "shuffle_order": 31,
+      "summary": "避免同时使用异步置位和异步复位信号。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "MUST_ASSIGN_NO_DUP_CONDITION",
+      "kind": "must",
+      "severity": "error",
+      "topic": "赋值语句和块语句",
+      "shuffle_order": 32,
+      "summary": "禁止在同一条件下对同一个信号进行重复赋值。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_LATCH_NO_COMB_LOOP",
+      "kind": "must",
+      "severity": "error",
+      "topic": "锁存器",
+      "shuffle_order": 33,
+      "summary": "禁止出现含有锁存器的组合逻辑环路。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_CASE_ITEM_CONSTANT_ONLY",
+      "kind": "must",
+      "severity": "error",
+      "topic": "分支语句",
+      "shuffle_order": 34,
+      "summary": "case语句的分支语句必须使用常量，禁止使用变量或者逻辑运算。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_FUNC_NO_RECURSION",
+      "kind": "must",
+      "severity": "error",
+      "topic": "循环语句",
+      "shuffle_order": 35,
+      "summary": "禁止调用递归函数。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "MUST_CLK_NO_REGOUT_CLOCK",
+      "kind": "must",
+      "severity": "error",
+      "topic": "时钟",
+      "shuffle_order": 36,
+      "summary": "禁止将寄存器的输出直接连接到其它寄存器的时钟管脚。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "REC_CASE_DEFAULT_NOT_XZ",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "分支语句",
+      "shuffle_order": 37,
+      "summary": "case语句的default分支禁止赋值为“x”或者“z”。",
+      "enforcement": "automated_warning"
+    },
+    {
+      "id": "REC_COMB_IF_HAS_ELSE",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "分支语句",
+      "shuffle_order": 38,
+      "summary": "建议组合逻辑电路中if语句以else语句结尾。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "MUST_FF_INIT_ON_RESET",
+      "kind": "must",
+      "severity": "error",
+      "topic": "触发器",
+      "shuffle_order": 39,
+      "summary": "在复位或者初始化时，必须对触发器赋初值。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_CASE_HAS_DEFAULT",
+      "kind": "must",
+      "severity": "error",
+      "topic": "分支语句",
+      "shuffle_order": 40,
+      "summary": "在case语句中必须使用default分支。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "REC_FSM_LIMIT_STATE_COUNT",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "状态机结构",
+      "shuffle_order": 41,
+      "summary": "建议单个状态机的状态数不超过40个。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "MUST_FF_NO_MIXED_RESET_STYLE",
+      "kind": "must",
+      "severity": "error",
+      "topic": "触发器",
+      "shuffle_order": 42,
+      "summary": "禁止在同一个always 语句中混合使用有复位和无复位的触发器。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "REC_SYNTH_NO_FULL_CASE_ATTR",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "与综合器相关的编码准则",
+      "shuffle_order": 43,
+      "summary": "避免使用“full_case”属性。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "MUST_TASK_IO_WIDTH_MATCH",
+      "kind": "must",
+      "severity": "error",
+      "topic": "结构说明语句",
+      "shuffle_order": 44,
+      "summary": "在task语句中，输入信号的位宽与输出信号的位宽必须一致。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_FF_RESET_CONDITION_MATCH",
+      "kind": "must",
+      "severity": "error",
+      "topic": "触发器",
+      "shuffle_order": 45,
+      "summary": "复位信号的触发条件与进入条件必须一致。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_SENS_NO_OR_SEPARATOR",
+      "kind": "must",
+      "severity": "error",
+      "topic": "分支语句",
+      "shuffle_order": 46,
+      "summary": "禁止使用“|”和“||”连接敏感信号。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "REC_RST_NO_LOGIC_IN_ASYNC_PATH",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "复位",
+      "shuffle_order": 47,
+      "summary": "避免在异步复位线路中插入逻辑操作运算。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "REC_FSM_MIN_TRANSITION_FLIPS",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "状态机结构",
+      "shuffle_order": 48,
+      "summary": "建议尽量减少状态机在状态转换时的改变位数。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "REC_CLK_SINGLE_EDGE",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "时钟",
+      "shuffle_order": 49,
+      "summary": "避免同时使用时钟的上升沿和下降沿。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "MUST_FUNC_RETURN_WIDTH",
+      "kind": "must",
+      "severity": "error",
+      "topic": "结构说明语句",
+      "shuffle_order": 50,
+      "summary": "在function语句中，必须显式指定返回值的位宽。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_OP_NO_ARITH_OVERFLOW",
+      "kind": "must",
+      "severity": "error",
+      "topic": "运算符",
+      "shuffle_order": 51,
+      "summary": "禁止算术运算结果出现位宽溢出。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_LOOP_FOR_CONST_BOUNDS",
+      "kind": "must",
+      "severity": "error",
+      "topic": "循环语句",
+      "shuffle_order": 52,
+      "summary": "for语句的初始值和条件必须为常数，且禁止改变循环变量。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "MUST_INITIAL_FORBIDDEN",
+      "kind": "must",
+      "severity": "error",
+      "topic": "结构说明语句",
+      "shuffle_order": 53,
+      "summary": "禁止使用initial语句。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "MUST_LITERAL_WIDTH_MATCH",
+      "kind": "must",
+      "severity": "error",
+      "topic": "运算符",
+      "shuffle_order": 54,
+      "summary": "在数值<位宽><进制><数字>表示中，数值位宽必须与数值的实际位宽一致。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_SENS_LIST_COMPLETE_MINIMAL",
+      "kind": "must",
+      "severity": "error",
+      "topic": "结构说明语句",
+      "shuffle_order": 55,
+      "summary": "敏感信号列表中的敏感信号必须齐全，无遗漏，无冗余。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_SUBPROGRAM_NO_GLOBAL_WRITE",
+      "kind": "must",
+      "severity": "error",
+      "topic": "结构说明语句",
+      "shuffle_order": 56,
+      "summary": "在function和task语句中，禁止对全局信号进行赋值。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "REC_CASE_NO_CASEX_CASEZ",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "分支语句",
+      "shuffle_order": 57,
+      "summary": "避免使用casex与casez语句。",
+      "enforcement": "automated_warning"
+    },
+    {
+      "id": "MUST_SEQ_NONBLOCKING_ASSIGN",
+      "kind": "must",
+      "severity": "error",
+      "topic": "赋值语句和块语句",
+      "shuffle_order": 58,
+      "summary": "时序电路必须使用非阻塞赋值，禁止使用阻塞赋值。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "MUST_ARRAY_INDEX_IN_RANGE",
+      "kind": "must",
+      "severity": "error",
+      "topic": "结构说明语句",
+      "shuffle_order": 59,
+      "summary": "禁止数组索引越界。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_ASSIGN_NO_DELAY",
+      "kind": "must",
+      "severity": "error",
+      "topic": "赋值语句和块语句",
+      "shuffle_order": 60,
+      "summary": "禁止使用延时语句。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "MUST_CLK_ONLY_CLOCK_PIN",
+      "kind": "must",
+      "severity": "error",
+      "topic": "时钟",
+      "shuffle_order": 61,
+      "summary": "禁止将时钟信号连接在除寄存器时钟管脚之外的其它信号管脚。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_TASK_NO_TIMING_CONTROL",
+      "kind": "must",
+      "severity": "error",
+      "topic": "结构说明语句",
+      "shuffle_order": 62,
+      "summary": "禁止在task语句中使用时序控制语句。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "MUST_OP_NO_SIGN_MIX",
+      "kind": "must",
+      "severity": "error",
+      "topic": "运算符",
+      "shuffle_order": 63,
+      "summary": "禁止在算术表达式中同时出现无符号数和有符号数。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "REC_LATCH_SEPARATE_FROM_COMB",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "锁存器",
+      "shuffle_order": 64,
+      "summary": "建议将锁存器与其它组合逻辑电路分开描述。",
+      "enforcement": "prompt_warning"
+    },
+    {
+      "id": "MUST_COMB_NO_FEEDBACK",
+      "kind": "must",
+      "severity": "error",
+      "topic": "结构说明语句",
+      "shuffle_order": 65,
+      "summary": "禁止在组合逻辑电路中使用反馈。",
+      "enforcement": "review_error"
+    },
+    {
+      "id": "MUST_ASSIGN_WIDTH_MATCH",
+      "kind": "must",
+      "severity": "error",
+      "topic": "赋值语句和块语句",
+      "shuffle_order": 66,
+      "summary": "赋值语句左右两边的数据位宽必须一致。",
+      "enforcement": "automated_error"
+    },
+    {
+      "id": "REC_LITERAL_EXPLICIT_BASE_WIDTH",
+      "kind": "recommended",
+      "severity": "warning",
+      "topic": "运算符",
+      "shuffle_order": 67,
+      "summary": "建议为parameter 数据和常数指定进制('d,'b,'h,'o)和位宽。",
+      "enforcement": "automated_warning"
+    },
+    {
+      "id": "MUST_FUNC_NO_NONBLOCKING",
+      "kind": "must",
+      "severity": "error",
+      "topic": "结构说明语句",
+      "shuffle_order": 68,
+      "summary": "禁止在function语句中使用非阻塞赋值。",
+      "enforcement": "automated_error"
+    }
+  ]
+}

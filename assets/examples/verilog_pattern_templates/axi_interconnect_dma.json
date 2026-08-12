@@ -1,0 +1,64 @@
+{
+  "name": "axi_dma_interconnect_stub",
+  "target": "rtl",
+  "rtl_style_profile": "erie_strict",
+  "description": "AXI4 DMA burst transfer front end with interconnect style channel grouping.",
+  "pipeline_required": true,
+  "codegen_plan_required": true,
+  "streamability": "non_streamable",
+  "interface_family": "axi4",
+  "interface_profile": {
+    "axi4_variant": "axi4_full",
+    "role": "master",
+    "read_write_mode": "read_write",
+    "data_width": 64,
+    "addr_width": 32,
+    "id_width": 4,
+    "burst_support": true,
+    "max_burst_len": 16,
+    "clock_reset_domain": {
+      "clock": "i_axi_aclk",
+      "reset": "i_axi_arstn"
+    }
+  },
+  "design_requirements": {
+    "target": "rtl",
+    "pipeline_required": true,
+    "streamability": "non_streamable",
+    "interface_family": "axi4",
+    "interface_profile": {
+      "axi4_variant": "axi4_full",
+      "role": "master",
+      "read_write_mode": "read_write",
+      "data_width": 64,
+      "addr_width": 32,
+      "id_width": 4,
+      "burst_support": true,
+      "max_burst_len": 16,
+      "clock_reset_domain": {
+        "clock": "i_axi_aclk",
+        "reset": "i_axi_arstn"
+      }
+    },
+    "confirmed_by_user": true,
+    "confirmation_notes": "Keep AXI4 channel grouping explicit for DMA style bursts."
+  },
+  "interfaces": {
+    "ports": [
+      {"name": "i_axi_aclk", "direction": "input", "width": 1, "role": "clock"},
+      {"name": "i_axi_arstn", "direction": "input", "width": 1, "role": "reset"},
+      {"name": "i_dma_start", "direction": "input", "width": 1},
+      {"name": "o_dma_done", "direction": "output", "width": 1}
+    ]
+  },
+  "behavior": [
+    "Launch AXI burst transfer sequences for a DMA style memory mapped path."
+  ],
+  "clock": {"name": "i_axi_aclk", "edge": "posedge", "frequency_mhz": 100},
+  "reset": {"name": "i_axi_arstn", "active": "low", "synchronous": false},
+  "constraints": ["Use synthesizable Verilog-2001."],
+  "outputs": [
+    {"path": "rtl/axi_dma_interconnect_stub.v", "kind": "source", "language": "verilog"},
+    {"path": "tb/axi_dma_interconnect_stub_tb.v", "kind": "testbench", "language": "verilog"}
+  ]
+}

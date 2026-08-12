@@ -1,0 +1,11 @@
+{
+  "execution": {
+    "target_kind": "directory",
+    "recurse": true,
+    "in_place": false
+  },
+  "paths": {
+    "output": "./out/batch",
+    "report_dir": "./reports/verilog-formatter/batch"
+  }
+}

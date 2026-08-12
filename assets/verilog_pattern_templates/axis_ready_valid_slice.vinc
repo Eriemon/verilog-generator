@@ -1,0 +1,12 @@
+// AXIS ready/valid slice extracted from the local FIFO and handshake references.
+// Keep the single-stage skid register visible and separate upstream/downstream flow.
+reg flag_pipe_valid;
+reg [C_AXIS_DATA_WIDTH-1:0] reg_pipe_data;
+
+wire flag_pipe_accept;
+wire flag_pipe_bypass;
+
+assign flag_pipe_accept = i_s_axis_tvalid & o_s_axis_tready;
+assign flag_pipe_bypass = (~flag_pipe_valid) | i_m_axis_tready;
+
+// Preserve ready-before-valid behavior so backpressure remains reviewable.

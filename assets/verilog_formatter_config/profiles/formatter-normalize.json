@@ -1,0 +1,11 @@
+{
+  "rewrite_policy": {
+    "mode": "normalize"
+  },
+  "always_rules": {
+    "auto_split": true
+  },
+  "wire_assign_rules": {
+    "rewrite_inline_wire_assign": true
+  }
+}

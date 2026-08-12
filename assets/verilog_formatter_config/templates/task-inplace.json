@@ -1,0 +1,13 @@
+{
+  "execution": {
+    "target_kind": "file",
+    "recurse": false,
+    "in_place": true
+  },
+  "backup": {
+    "enabled": true
+  },
+  "paths": {
+    "report_dir": "./reports/verilog-formatter/inplace"
+  }
+}

@@ -1,0 +1,340 @@
+{
+  "version": 1,
+  "paths": {
+    "skill_root": "${skill_dir}",
+    "smoke_dir": "${project_root}/_smoke_runs",
+    "reports_dir": "${project_root}/reports",
+    "example_spec": "${skill_dir}/assets/examples/rtl_erie_verilog_spec.json",
+    "use_case_examples_dir": "${skill_dir}/assets/examples/use_case_templates",
+    "use_case_template_catalog": "${skill_dir}/assets/use_case_templates/catalog.json",
+    "quick_validate": "${home}/.codex/skills/.system/skill-creator/scripts/quick_validate.py",
+    "audit_skill": "${home}/.codex/skills/agents-md-generator/scripts/python/verify/audit_skill.py",
+    "verilog_style_rules": "${skill_dir}/assets/verilog_style_rules.json",
+    "verilog_formatter_config": "${skill_dir}/assets/verilog_formatter_config"
+  },
+  "skill_dependencies": {
+    "state_path": ".erie-verilog-generator-state/dependency-state.json",
+    "install_policy": "ask_each_missing",
+    "adaptation_policy": "required",
+    "required": [
+      {
+        "id": "erie-remote-ssh",
+        "url": "https://github.com/Eriemon/remote-ssh.git",
+        "purpose": "Remote SSH server selection and remote Verilog development/validation.",
+        "skills": [
+          "erie-remote-ssh"
+        ],
+        "install_specs": [
+          {
+            "skill": "erie-remote-ssh",
+            "source_path": ".",
+            "dest_name": "erie-remote-ssh"
+          }
+        ],
+        "adaptation": "remote_ssh_helper"
+      }
+    ],
+    "manual_fallback": [
+      {
+        "id": "fpga-agent-skills",
+        "url": "https://github.com/adeleempurpled290/FPGA-Agent-skills.git",
+        "purpose": "Vivado/Vitis FPGA development workflow support.",
+        "skills": [
+          "vivado-tcl",
+          "vivado-sim",
+          "vivado-synth",
+          "vivado-impl",
+          "vivado-analysis",
+          "vivado-constraints",
+          "vivado-debug",
+          "vitis-hls-synthesis"
+        ],
+        "install_specs": [
+          {
+            "skill": "vivado-tcl",
+            "source_path": "vivado-tcl"
+          },
+          {
+            "skill": "vivado-sim",
+            "source_path": "vivado-sim"
+          },
+          {
+            "skill": "vivado-synth",
+            "source_path": "vivado-synth"
+          },
+          {
+            "skill": "vivado-impl",
+            "source_path": "vivado-impl"
+          },
+          {
+            "skill": "vivado-analysis",
+            "source_path": "vivado-analysis"
+          },
+          {
+            "skill": "vivado-constraints",
+            "source_path": "vivado-constraints"
+          },
+          {
+            "skill": "vivado-debug",
+            "source_path": "vivado-debug"
+          },
+          {
+            "skill": "vitis-hls-synthesis",
+            "source_path": "vitis-hls-synthesis"
+          }
+        ],
+        "adaptation": "skill_routing"
+      }
+    ],
+    "recommended": [
+      {
+        "id": "superpowers",
+        "url": "https://github.com/obra/superpowers.git",
+        "purpose": "Task planning, multi-step execution, and verification workflows.",
+        "skills": [
+          "using-superpowers",
+          "writing-plans",
+          "executing-plans",
+          "test-driven-development"
+        ],
+        "install_specs": [
+          {
+            "skill": "using-superpowers",
+            "source_path": "skills/using-superpowers"
+          },
+          {
+            "skill": "writing-plans",
+            "source_path": "skills/writing-plans"
+          },
+          {
+            "skill": "executing-plans",
+            "source_path": "skills/executing-plans"
+          },
+          {
+            "skill": "test-driven-development",
+            "source_path": "skills/test-driven-development"
+          }
+        ],
+        "alternative": "superpowers_plugin_namespace",
+        "adaptation": "optional_workflow"
+      },
+      {
+        "id": "context-engineering",
+        "url": "https://github.com/muratcankoylan/Agent-Skills-for-Context-Engineering.git",
+        "purpose": "Engineering task debugging, context optimization, and agent workflow diagnosis.",
+        "skills": [
+          "context-engineering"
+        ],
+        "alternative_skill_sets": [
+          [
+            "advanced-evaluation",
+            "bdi-mental-states",
+            "context-compression",
+            "context-degradation",
+            "context-fundamentals",
+            "context-optimization",
+            "evaluation",
+            "filesystem-context",
+            "hosted-agents",
+            "latent-briefing",
+            "memory-systems",
+            "multi-agent-patterns",
+            "project-development",
+            "tool-design"
+          ]
+        ],
+        "install_specs": [
+          {
+            "skill": "advanced-evaluation",
+            "source_path": "skills/advanced-evaluation"
+          },
+          {
+            "skill": "bdi-mental-states",
+            "source_path": "skills/bdi-mental-states"
+          },
+          {
+            "skill": "context-compression",
+            "source_path": "skills/context-compression"
+          },
+          {
+            "skill": "context-degradation",
+            "source_path": "skills/context-degradation"
+          },
+          {
+            "skill": "context-fundamentals",
+            "source_path": "skills/context-fundamentals"
+          },
+          {
+            "skill": "context-optimization",
+            "source_path": "skills/context-optimization"
+          },
+          {
+            "skill": "evaluation",
+            "source_path": "skills/evaluation"
+          },
+          {
+            "skill": "filesystem-context",
+            "source_path": "skills/filesystem-context"
+          },
+          {
+            "skill": "hosted-agents",
+            "source_path": "skills/hosted-agents"
+          },
+          {
+            "skill": "latent-briefing",
+            "source_path": "skills/latent-briefing"
+          },
+          {
+            "skill": "memory-systems",
+            "source_path": "skills/memory-systems"
+          },
+          {
+            "skill": "multi-agent-patterns",
+            "source_path": "skills/multi-agent-patterns"
+          },
+          {
+            "skill": "project-development",
+            "source_path": "skills/project-development"
+          },
+          {
+            "skill": "tool-design",
+            "source_path": "skills/tool-design"
+          }
+        ],
+        "alternative": "aggregate_or_upstream_multi_skill",
+        "adaptation": "optional_debug"
+      }
+    ]
+  },
+  "fpga_developer_routing": {
+    "state_path": ".erie-verilog-generator-state/dependency-state.json",
+    "selection_policy": "ask_on_first_fpga_workflow",
+    "persist_selection": true,
+    "fpga_agent_required_when_developer_present": false,
+    "vendors": {
+      "amd_xilinx": {
+        "label": "AMD-Xilinx",
+        "skills": [
+          "vivado-developer",
+          "vitis-developer"
+        ]
+      },
+      "pangomicro": {
+        "label": "PangoMicro",
+        "skills": [
+          "pds-developer"
+        ]
+      }
+    }
+  },
+  "workflow": {
+    "mode": "generate",
+    "generation_mode": "regular",
+    "target": "rtl",
+    "readiness": "static",
+    "max_attempts": 3,
+    "comment_language": "zh",
+    "model_provider": "command",
+    "stop_on_human": true,
+    "run_external": true,
+    "stream": false,
+    "model_timeout_s": 120,
+    "rtl_style_profile": "erie_strict"
+  },
+  "policy": {
+    "local_static_allowed": true,
+    "allow_implicit_local_external_validation": false,
+    "prefer_remote_for_external_validation": true,
+    "block_when_remote_unconfigured": true
+  },
+  "validation": {
+    "local_readiness": "static",
+    "remote_readiness": "execute",
+    "blocked_implement_readiness": "implement",
+    "external_tools": [
+      "xvlog",
+      "xelab",
+      "xsim",
+      "vcs",
+      "verdi",
+      "iverilog",
+      "vvp",
+      "yosys"
+    ],
+    "simulators": {
+      "selection_policy": "fallback",
+      "priority": [
+        "xsim",
+        "vcs_verdi",
+        "iverilog"
+      ],
+      "backends": {
+        "xsim": {
+          "tools": [
+            "xvlog",
+            "xelab",
+            "xsim"
+          ]
+        },
+        "vcs_verdi": {
+          "tools": [
+            "vcs",
+            "verdi"
+          ]
+        },
+        "iverilog": {
+          "tools": [
+            "iverilog",
+            "vvp"
+          ]
+        }
+      }
+    },
+    "markdown_non_ascii_allowlist": [
+      "README-CN.md",
+      "references/rules/verilog-code-comment-naming-standard.md",
+      "references/corpus/verilog-style-observations.md"
+    ],
+    "legacy_term_allowlist": [
+      "ENGINEERING_DESIGN_GOALS.md",
+      "assets/ideal_bad_style_metrics.json",
+      "assets/verilog_style_rules.json",
+      "scripts/python/facade/verilog_api.py",
+      "references/checklists/verilog-readability-gate.md",
+      "references/rules/verilog-code-comment-naming-standard.md",
+      "scripts/python/facade/verilog_api.py",
+      "scripts/python/workflow/cli.py",
+      "scripts/python/quality/deliverable_gate.py",
+      "scripts/python/quality/formatter_backend/layout_mixin.py",
+      "scripts/python/quality/quality_gate.py",
+      "scripts/python/validation/verilog_generated_deliverable_gate.py",
+      "scripts/python/quality/verilog_quality_gate.py",
+      "scripts/python/validation/verilog_generated_deliverable_gate.py",
+      "scripts/python/quality/verilog_quality_gate.py"
+    ],
+    "forbidden_residuals": [
+      "__pycache__",
+      "_smoke_runs",
+      "workflow-state.json"
+    ],
+    "formatter_ast_quality_gate": {
+      "enabled": true,
+      "strict": true,
+      "formatter_profile": "formatter-normalize",
+      "comment_language": "zh",
+      "comment_only_pipeline_required": true
+    }
+  },
+  "remote": {
+    "integration": {
+      "remote_ssh_helper": "${home}/.codex/skills/erie-remote-ssh/scripts/remote_ssh.py",
+      "remote_ssh_settings": "${home}/.codex/skills/erie-remote-ssh/assets/defaults.json",
+      "selection_file": ".settings/remote-selection.local.json",
+      "server_list": ".settings/server_list.local.json",
+      "remote_runtime_config": ".settings/verilog.remote.json"
+    },
+    "python": "python3",
+    "remote_root": ".erie-verilog-generator-validation",
+    "timeout_s": 120
+  }
+}
