@@ -323,7 +323,7 @@ from pathlib import Path
 
 from scripts.python.workflow.prompt import render_prompt
 from scripts.python.workflow.rtl_md_constraints import load_rtl_md_constraints, summarize_constraints_for_prompt
-from scripts.python.quality.static_lint import lint_generated_rtl
+from scripts.python.quality.rtl_pg_engine import run_rtl_pg_gate
 
 
 def spec(name="remote_rtl_md_constraints"):
@@ -348,39 +348,49 @@ def spec(name="remote_rtl_md_constraints"):
 
 
 catalog = load_rtl_md_constraints()
-assert catalog["total_rules"] == 68, catalog
-assert catalog["required_rules"] == 47, catalog
-assert catalog["advisory_rules"] == 21, catalog
+assert catalog["total_rules"] == 72, catalog
+assert catalog["active_rules"] == 67, catalog
+assert catalog["reserved_rules"] == 5, catalog
 prompt = render_prompt(spec(), stage="rtl")
 for marker in (
-    "RTL Markdown constraints",
-    "MUST_CASE_HAS_DEFAULT",
-    "MUST_ASSIGN_WIDTH_MATCH",
-    "REC_LITERAL_EXPLICIT_BASE_WIDTH",
+    "RTL PG gates",
+    "PG1001",
+    "PG1040",
+    "PG1072",
 ):
     assert marker in prompt, marker
 summary = summarize_constraints_for_prompt(max_rules_per_group=3)
-assert "MUST rules are blocking error constraints" in summary, summary
-assert "REC rules are default warning-level preferences" in summary, summary
+assert "67 active gates" in summary, summary
+assert "5 reserved gates" in summary, summary
 
 bad_dir = Path("_smoke_runs/remote_rtl_md_constraints/bad")
 bad_dir.mkdir(parents=True, exist_ok=True)
 (bad_dir / "bad_constraints.v").write_text(
     "\n".join(
         [
-            "module bad_constraints(input wire clk, input wire rst_n, input wire [3:0] a, output reg y);",
+            "module bad_constraints (",
+            "    input wire clk,",
+            "    input wire rst_n,",
+            "    input wire [3:0] a,",
+            "    output reg y",
+            ");",
             "wire gated_clk = clk & rst_n;",
             "initial y = 1'b0;",
             "always @(a || rst_n) begin",
             "  if (a == 4'bx) begin",
             "    y <= 1'b1;",
             "  end",
-            "  case (a)",
+            "  case (4'b0000)",
             "    4'b0001: y = 1'b1;",
             "  endcase",
+            "  for (i = start; i < LIMIT; i = i + 1) begin",
+            "    y = y;",
+            "  end",
             "end",
-            "for (i = start; i < LIMIT; i = i + 1) begin",
-            "  y = y;",
+            "always @(*) begin",
+            "  if (a[0]) begin",
+            "    y = 1'b0;",
+            "  end",
             "end",
             "endmodule",
             "",
@@ -388,15 +398,22 @@ bad_dir.mkdir(parents=True, exist_ok=True)
     ),
     encoding="utf-8",
 )
-codes = {issue.code for issue in lint_generated_rtl(spec("bad_constraints"), bad_dir)}
+bad_report = run_rtl_pg_gate(bad_dir, spec=spec("bad_constraints"))
+codes = {
+    result["gate_id"]
+    for result in bad_report["pg_gate_results"]
+    if result["status"] == "failed"
+}
 for expected in (
-    "WIRE_INIT",
-    "SIM_ONLY",
-    "SENS_OR_SEPARATOR",
-    "XZ_LITERAL",
-    "CASE_DEFAULT",
-    "COMB_NONBLOCKING_ASSIGN",
-    "FOR_CONST_BOUNDS",
+    "PG1007",
+    "PG1030",
+    "PG1040",
+    "PG1046",
+    "PG1053",
+    "PG1008",
+    "PG1019",
+    "PG1071",
+    "PG1038",
 ):
     assert expected in codes, codes
 
@@ -405,7 +422,12 @@ good_dir.mkdir(parents=True, exist_ok=True)
 (good_dir / "good_constraints.v").write_text(
     "\n".join(
         [
-            "module good_constraints(input wire clk, input wire rst_n, input wire [3:0] a, output reg y);",
+            "module good_constraints (",
+            "    input wire clk,",
+            "    input wire rst_n,",
+            "    input wire [3:0] a,",
+            "    output reg y",
+            ");",
             "always @(posedge clk or negedge rst_n) begin",
             "  if (!rst_n) begin",
             "    y <= 1'b0;",
@@ -419,7 +441,8 @@ good_dir.mkdir(parents=True, exist_ok=True)
     ),
     encoding="utf-8",
 )
-assert lint_generated_rtl(spec("good_constraints"), good_dir) == []
+good_report = run_rtl_pg_gate(good_dir, spec=spec("good_constraints"))
+assert good_report["delivery_ready"] is True, good_report["delivery_issues_by_rule"]
 PY
 __PY__ -m scripts.python.workflow.cli eval-skill \
   --evals skills/readable-verilog-generator/evals/evals.json \
@@ -433,7 +456,7 @@ report = json.loads(Path("_smoke_runs/remote_eval_skill.json").read_text(encodin
 summary = report["summary"]
 assert summary["ok"] is True, summary
 assert summary["case_count"] >= 30, summary
-case = next((item for item in report["cases"] if item.get("id") == "rtl_md_constraints_gate"), None)
+case = next((item for item in report["cases"] if item.get("id") == "rtl_pg_gate_regression"), None)
 assert case and case.get("passed") is True, case
 PY
 """.strip()

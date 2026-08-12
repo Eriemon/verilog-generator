@@ -1,0 +1,529 @@
+{
+  "version": 1,
+  "catalog_version": 3,
+  "description": "Self-contained three-way fixture routing for every active RTL PG gate.",
+  "fixtures": {
+    "canonical_clean": "module dut (\n    input wire clk,\n    input wire [3:0] a,\n    output reg y\n);\nalways @(posedge clk) begin\n    y <= a[0];\nend\nendmodule\n",
+    "formatter_parse_error": "module dut (\n    input wire a\n",
+    "xz_arithmetic": "module dut (\n    input wire [3:0] a,\n    output wire [3:0] y\n);\nassign y = a + 4'bx;\nendmodule\n",
+    "xz_condition": "module dut (\n    input wire [3:0] a,\n    output wire y\n);\nassign y = (a == 4'bx) ? 1'b1 : 1'b0;\nendmodule\n",
+    "comb_nonblocking": "module dut (\n    input wire a,\n    output reg y\n);\nalways @(*) begin\n    y <= a;\nend\nendmodule\n",
+    "relational_width_mismatch": "module dut (\n    input wire [3:0] a,\n    input wire b,\n    output wire y\n);\nassign y = (a == b);\nendmodule\n",
+    "unknown_relational_width": "module dut (\n    input wire [3:0] a,\n    output wire y\n);\nassign y = (a == unknown_value);\nendmodule\n",
+    "combinational_output_clock": "module dut (\n    input wire clk,\n    input wire en,\n    output reg y\n);\nwire gated_clk;\nassign gated_clk = clk & en;\nalways @(posedge gated_clk) begin\n    y <= en;\nend\nendmodule\n",
+    "register_output_clock": "module dut (\n    input wire clk,\n    input wire en,\n    output reg y\n);\nreg divided_clk;\nalways @(posedge clk) begin\n    divided_clk <= ~divided_clk;\nend\nalways @(posedge divided_clk) begin\n    y <= en;\nend\nendmodule\n",
+    "unknown_clock_source": "module dut (\n    input wire clk,\n    input wire en,\n    output reg y\n);\nalways @(posedge (clk & en)) begin\n    y <= en;\nend\nendmodule\n",
+    "xz_branch_condition": "module dut (\n    input wire [3:0] a,\n    output reg y\n);\nalways @(*) begin\n    if (a == 4'bx) begin\n        y = 1'b1;\n    end else begin\n        y = 1'b0;\n    end\nend\nendmodule\n",
+    "nonrecursive_function": "module dut (\n    input wire a,\n    output wire y\n);\nfunction [0:0] clean_f;\n    input value;\n    clean_f = value;\nendfunction\nassign y = clean_f(a);\nendmodule\n",
+    "recursive_function": "module dut (\n    input wire a,\n    output wire y\n);\nfunction [0:0] recurse_f;\n    input value;\n    recurse_f = value ? recurse_f(value) : 1'b0;\nendfunction\nassign y = recurse_f(a);\nendmodule\n",
+    "case_default_clean": "module dut (\n    input wire [1:0] a,\n    output reg y\n);\nalways @(*) begin\n    case (a)\n        2'b00: y = 1'b0;\n        default: y = 1'b1;\n    endcase\nend\nendmodule\n",
+    "case_default_xz": "module dut (\n    input wire [1:0] a,\n    output reg y\n);\nalways @(*) begin\n    case (a)\n        2'b00: y = 1'b0;\n        default: y = 1'bx;\n    endcase\nend\nendmodule\n",
+    "case_without_default": "module dut (\n    input wire [1:0] a,\n    output reg y\n);\nalways @(*) begin\n    case (a)\n        2'b00: y = 1'b0;\n        2'b01: y = 1'b1;\n    endcase\nend\nendmodule\n",
+    "sensitivity_bar_separator": "module dut (\n    input wire a,\n    input wire b,\n    output reg y\n);\nalways @(a || b) begin\n    y = a;\nend\nendmodule\n",
+    "constant_for_loop": "module dut (\n    input wire [3:0] a,\n    output reg y\n);\ninteger i;\nalways @(*) begin\n    y = 1'b0;\n    for (i = 0; i < 4; i = i + 1) begin\n        y = y | a[i];\n    end\nend\nendmodule\n",
+    "variable_for_loop": "module dut (\n    input wire [3:0] a,\n    input wire limit,\n    output reg y\n);\ninteger i;\nalways @(*) begin\n    y = 1'b0;\n    for (i = a[0]; i < limit; i = i + 1'b1) begin\n        y = y | a[i];\n    end\nend\nendmodule\n",
+    "initial_block": "module dut (\n    output reg y\n);\ninitial y = 1'b0;\nendmodule\n",
+    "complete_sensitivity": "module dut (\n    input wire a,\n    input wire b,\n    output reg y\n);\nalways @(a or b) begin\n    y = a & b;\nend\nendmodule\n",
+    "incomplete_sensitivity": "module dut (\n    input wire a,\n    input wire b,\n    output reg y\n);\nalways @(a) begin\n    y = a & b;\nend\nendmodule\n",
+    "casez_usage": "module dut (\n    input wire [1:0] a,\n    output reg y\n);\nalways @(*) begin\n    casez (a)\n        2'b0?: y = 1'b0;\n        default: y = 1'b1;\n    endcase\nend\nendmodule\n",
+    "sequential_blocking": "module dut (\n    input wire clk,\n    input wire a,\n    output reg y\n);\nalways @(posedge clk) begin\n    y = a;\nend\nendmodule\n",
+    "assignment_delay": "module dut (\n    input wire a,\n    output wire y\n);\nassign #1 y = a;\nendmodule\n",
+    "task_without_timing": "module dut (\n    input wire a,\n    output reg y\n);\ntask clean_task;\n    input value;\n    y = value;\nendtask\nendmodule\n",
+    "task_with_timing": "module dut (\n    input wire a,\n    output reg y\n);\ntask timed_task;\n    input value;\n    #1 y = value;\nendtask\nendmodule\n",
+    "assignment_width_mismatch": "module dut (\n    input wire [3:0] a,\n    output wire y\n);\nassign y = a;\nendmodule\n",
+    "unknown_assignment_width": "module dut (\n    output wire y\n);\nassign y = unknown_value;\nendmodule\n",
+    "unsized_literal": "module dut (\n    output wire [3:0] y\n);\nassign y = 1;\nendmodule\n",
+    "function_nonblocking": "module dut (\n    input wire a,\n    output wire y\n);\nfunction [0:0] bad_f;\n    input value;\n    bad_f <= value;\nendfunction\nassign y = bad_f(a);\nendmodule\n",
+    "procedural_wire_assignment": "module dut (\n    input wire a,\n    output wire y\n);\nwire illegal_wire;\nalways @(*) begin\n    illegal_wire = a;\nend\nassign y = illegal_wire;\nendmodule\n",
+    "multiple_drivers": "module dut (\n    input wire a,\n    input wire b,\n    output wire y\n);\nassign y = a;\nassign y = b;\nendmodule\n",
+    "wire_inline_assignment": "module dut (\n    input wire a,\n    output wire y\n);\nwire initialized_wire = a;\nassign y = initialized_wire;\nendmodule\n",
+    "simulation_system_task": "module dut (\n    input wire a,\n    output reg y\n);\nalways @(*) begin\n    y = a;\n    $display(\"a=%b\", a);\nend\nendmodule\n",
+    "overlapping_case_items": "module dut (\n    input wire [1:0] sel,\n    output reg y\n);\nalways @(*) begin\n    case (sel)\n        2'b00: y = 1'b0;\n        2'b00: y = 1'b1;\n        default: y = 1'b0;\n    endcase\nend\nendmodule\n",
+    "case_item_width_mismatch": "module dut (\n    input wire [1:0] sel,\n    output reg y\n);\nalways @(*) begin\n    case (sel)\n        3'b000: y = 1'b0;\n        default: y = 1'b1;\n    endcase\nend\nendmodule\n",
+    "vector_if_condition": "module dut (\n    input wire [1:0] cond,\n    output reg y\n);\nalways @(*) begin\n    if (cond) begin\n        y = 1'b1;\n    end else begin\n        y = 1'b0;\n    end\nend\nendmodule\n",
+    "constant_case_control": "module dut (\n    output reg y\n);\nalways @(*) begin\n    case (2'b00)\n        2'b00: y = 1'b0;\n        default: y = 1'b1;\n    endcase\nend\nendmodule\n",
+    "duplicate_path_assignment": "module dut (\n    input wire a,\n    input wire b,\n    output reg y\n);\nalways @(*) begin\n    y = a;\n    y = b;\nend\nendmodule\n",
+    "runtime_case_item": "module dut (\n    input wire [1:0] sel,\n    input wire [1:0] runtime_label,\n    output reg y\n);\nalways @(*) begin\n    case (sel)\n        runtime_label: y = 1'b0;\n        default: y = 1'b1;\n    endcase\nend\nendmodule\n",
+    "combinational_if_without_else": "module dut (\n    input wire cond,\n    output reg y\n);\nalways @(*) begin\n    if (cond) begin\n        y = 1'b1;\n    end\nend\nendmodule\n",
+    "reset_clean": "module dut (\n    input wire clk,\n    input wire rst_n,\n    output reg y\n);\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) y <= 1'b0;\n    else y <= 1'b1;\nend\nendmodule\n",
+    "reset_override": "module dut (\n    input wire clk,\n    input wire rst_n,\n    output reg y\n);\n// synthesis reset_override disable\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) y <= 1'b0;\n    else y <= 1'b1;\nend\nendmodule\n",
+    "port_width_match": "module child (\n    input wire [3:0] i_data,\n    output wire o_data\n);\nassign o_data = i_data[0];\nendmodule\nmodule dut (\n    input wire [3:0] a,\n    output wire y\n);\nchild u_child(.i_data(a), .o_data(y));\nendmodule\n",
+    "port_width_mismatch": "module child (\n    input wire [3:0] i_data,\n    output wire o_data\n);\nassign o_data = i_data[0];\nendmodule\nmodule dut (\n    input wire a,\n    output wire y\n);\nchild u_child(.i_data(a), .o_data(y));\nendmodule\n",
+    "external_port_width": "module dut (\n    input wire a,\n    output wire y\n);\nexternal_child u_child(.i_data(a), .o_data(y));\nendmodule\n",
+    "full_case_directive": "module dut (\n    input wire [1:0] sel,\n    output reg y\n);\nalways @(*) begin\n    case (sel) // synthesis full_case\n        2'b00: y = 1'b0;\n        default: y = 1'b1;\n    endcase\nend\nendmodule\n",
+    "constant_repeat": "module dut (\n    output reg y\n);\nalways @(*) begin\n    repeat (4) y = ~y;\nend\nendmodule\n",
+    "variable_repeat": "module dut (\n    input wire [2:0] count,\n    output reg y\n);\nalways @(*) begin\n    repeat (count) y = ~y;\nend\nendmodule\n",
+    "zero_repeat": "module dut (\n    output reg y\n);\nalways @(*) begin\n    repeat (0) y = 1'b0;\nend\nendmodule\n",
+    "simple_array_index": "module dut (\n    input wire [1:0] index,\n    output wire y\n);\nwire [3:0] mem;\nassign y = mem[index];\nendmodule\n",
+    "complex_array_index": "module dut (\n    input wire [1:0] a,\n    input wire [1:0] b,\n    output wire y\n);\nwire [3:0] mem;\nassign y = mem[a + b];\nendmodule\n",
+    "procedural_latch": "module dut (\n    input wire en,\n    input wire d,\n    output reg q\n);\nalways @(*) begin\n    if (en) q = d;\nend\nendmodule\n",
+    "gate_primitive_latch": "module dut (\n    input wire set_n,\n    input wire reset_n,\n    output wire q,\n    output wire q_n\n);\nnand u_set (q, q_n, set_n);\nnand u_reset (q_n, q, reset_n);\nendmodule\n",
+    "mixed_latch_comb": "module dut (\n    input wire en,\n    input wire d,\n    input wire a,\n    input wire b,\n    output reg q,\n    output reg y\n);\nalways @(*) begin\n    if (en) q = d;\n    y = a & b;\nend\nendmodule\n",
+    "multiple_clock_domains": "module dut (\n    input wire clk_a,\n    input wire clk_b,\n    input wire d,\n    output reg q_a,\n    output reg q_b\n);\nalways @(posedge clk_a) q_a <= d;\nalways @(posedge clk_b) q_b <= d;\nendmodule\n",
+    "dual_edge_clock": "module dut (\n    input wire clk,\n    input wire d,\n    output reg q_a,\n    output reg q_b\n);\nalways @(posedge clk) q_a <= d;\nalways @(negedge clk) q_b <= d;\nendmodule\n",
+    "clock_as_data": "module dut (\n    input wire clk,\n    input wire d,\n    output reg q,\n    output wire observed_clk\n);\nalways @(posedge clk) q <= d;\nassign observed_clk = clk;\nendmodule\n",
+    "sync_async_reset_mix": "module dut (\n    input wire clk,\n    input wire rst_n,\n    input wire d,\n    output reg q_a,\n    output reg q_b\n);\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) q_a <= 1'b0;\n    else q_a <= d;\nend\nalways @(posedge clk) begin\n    if (!rst_n) q_b <= 1'b0;\n    else q_b <= d;\nend\nendmodule\n",
+    "multiple_reset_controls": "module dut (\n    input wire clk,\n    input wire rst_n,\n    input wire clear_n,\n    input wire d,\n    output reg q\n);\nalways @(posedge clk or negedge rst_n or negedge clear_n) begin\n    if (!rst_n) q <= 1'b0;\n    else if (!clear_n) q <= 1'b0;\n    else q <= d;\nend\nendmodule\n",
+    "reset_logic_in_loop": "module dut (\n    input wire clk,\n    input wire rst_n,\n    input wire [3:0] d,\n    output reg [3:0] q\n);\ninteger i;\nalways @(posedge clk or negedge rst_n) begin\n    for (i = 0; i < 4; i = i + 1) begin\n        if (!rst_n) q[i] <= 1'b0;\n        else q[i] <= d[i];\n    end\nend\nendmodule\n",
+    "async_set_reset_pair": "module dut (\n    input wire clk,\n    input wire set_n,\n    input wire rst_n,\n    input wire d,\n    output reg q\n);\nalways @(posedge clk or negedge set_n or negedge rst_n) begin\n    if (!rst_n) q <= 1'b0;\n    else if (!set_n) q <= 1'b1;\n    else q <= d;\nend\nendmodule\n",
+    "partial_reset_coverage": "module dut (\n    input wire clk,\n    input wire rst_n,\n    input wire d,\n    output reg q,\n    output reg r\n);\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) q <= 1'b0;\n    else begin\n        q <= d;\n        r <= d;\n    end\nend\nendmodule\n",
+    "reset_polarity_mismatch": "module dut (\n    input wire clk,\n    input wire rst_n,\n    input wire d,\n    output reg q\n);\nalways @(posedge clk or negedge rst_n) begin\n    if (rst_n) q <= 1'b0;\n    else q <= d;\nend\nendmodule\n",
+    "task_io_width_match": "module dut (\n    input wire [3:0] a\n);\ntask transfer;\n    input [3:0] value;\n    output [3:0] result;\n    result = value;\nendtask\nendmodule\n",
+    "task_io_width_mismatch": "module dut (\n    input wire [3:0] a\n);\ntask transfer;\n    input [3:0] value;\n    output [2:0] result;\n    result = value[2:0];\nendtask\nendmodule\n",
+    "scalar_function_return": "module dut (\n    input wire a,\n    output wire y\n);\nfunction scalar_f;\n    input value;\n    scalar_f = value;\nendfunction\nassign y = scalar_f(a);\nendmodule\n",
+    "task_local_write": "module dut (\n    input wire [3:0] a\n);\ntask transfer;\n    input [3:0] value;\n    output [3:0] result;\n    result = value;\nendtask\nendmodule\n",
+    "vector_logic_operands": "module dut (\n    input wire [3:0] a,\n    input wire [3:0] b,\n    output wire y\n);\nassign y = a && b;\nendmodule\n",
+    "scalar_logic_operands": "module dut (\n    input wire a,\n    input wire b,\n    output wire y\n);\nassign y = a && b;\nendmodule\n",
+    "arithmetic_overflow": "module dut (\n    input wire [3:0] a,\n    input wire [3:0] b,\n    output wire [3:0] y\n);\nassign y = a + b;\nendmodule\n",
+    "arithmetic_extended": "module dut (\n    input wire [3:0] a,\n    input wire [3:0] b,\n    output wire [4:0] y\n);\nassign y = a + b;\nendmodule\n",
+    "signed_unsigned_mix": "module dut (\n    input wire signed [3:0] a,\n    input wire [3:0] b,\n    output wire signed [4:0] y\n);\nassign y = a + b;\nendmodule\n",
+    "signed_arithmetic_clean": "module dut (\n    input wire signed [3:0] a,\n    input wire signed [3:0] b,\n    output wire signed [4:0] y\n);\nassign y = a + b;\nendmodule\n",
+    "fsm_clean": "module dut (\n    input wire clk,\n    input wire rst_n,\n    input wire start\n);\nlocalparam [1:0] ST_IDLE = 2'b00;\nlocalparam [1:0] ST_RUN = 2'b01;\nreg [1:0] state_current;\nreg [1:0] state_next;\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) state_current <= ST_IDLE;\n    else state_current <= state_next;\nend\nalways @(*) begin\n    state_next = state_current;\n    case (state_current)\n        ST_IDLE: if (start) state_next = ST_RUN;\n        ST_RUN: state_next = ST_IDLE;\n        default: state_next = ST_IDLE;\n    endcase\nend\nendmodule\n",
+    "fsm_missing_initial": "module dut (\n    input wire clk,\n    input wire rst_n\n);\nlocalparam ST_IDLE = 1'b0;\nreg state_current;\nreg state_next;\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) state_current <= state_next;\n    else state_current <= state_next;\nend\nalways @(*) begin\n    case (state_current)\n        ST_IDLE: state_next = ST_IDLE;\n        default: state_next = ST_IDLE;\n    endcase\nend\nendmodule\n",
+    "fsm_default_hold": "module dut (\n    input wire clk,\n    input wire rst_n\n);\nlocalparam ST_IDLE = 1'b0;\nreg state_current;\nreg state_next;\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) state_current <= ST_IDLE;\n    else state_current <= state_next;\nend\nalways @(*) begin\n    case (state_current)\n        ST_IDLE: state_next = ST_IDLE;\n        default: state_next = state_current;\n    endcase\nend\nendmodule\n",
+    "fsm_unreachable_state": "module dut (\n    input wire clk,\n    input wire rst_n\n);\nlocalparam [1:0] ST_IDLE = 2'b00;\nlocalparam [1:0] ST_RUN = 2'b01;\nlocalparam [1:0] ST_DEAD = 2'b10;\nreg [1:0] state_current;\nreg [1:0] state_next;\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) state_current <= ST_IDLE;\n    else state_current <= state_next;\nend\nalways @(*) begin\n    case (state_current)\n        ST_IDLE: state_next = ST_RUN;\n        ST_RUN: state_next = ST_IDLE;\n        ST_DEAD: state_next = ST_DEAD;\n        default: state_next = ST_IDLE;\n    endcase\nend\nendmodule\n",
+    "fsm_41_states": "module dut (\n    input wire clk\n);\nlocalparam ST_00=0, ST_01=1, ST_02=2, ST_03=3, ST_04=4, ST_05=5, ST_06=6, ST_07=7, ST_08=8, ST_09=9, ST_10=10, ST_11=11, ST_12=12, ST_13=13, ST_14=14, ST_15=15, ST_16=16, ST_17=17, ST_18=18, ST_19=19, ST_20=20, ST_21=21, ST_22=22, ST_23=23, ST_24=24, ST_25=25, ST_26=26, ST_27=27, ST_28=28, ST_29=29, ST_30=30, ST_31=31, ST_32=32, ST_33=33, ST_34=34, ST_35=35, ST_36=36, ST_37=37, ST_38=38, ST_39=39, ST_40=40;\nendmodule\n",
+    "reset_as_data": "module dut (\n    input wire clk,\n    input wire rst_n,\n    input wire d,\n    output reg q,\n    output wire reset_data\n);\nalways @(posedge clk or negedge rst_n) begin\n    if (!rst_n) q <= 1'b0;\n    else q <= d;\nend\nassign reset_data = rst_n;\nendmodule\n",
+    "internal_async_reset": "module dut (\n    input wire clk,\n    input wire enable,\n    input wire d,\n    output reg q\n);\nwire rst_internal_n;\nassign rst_internal_n = ~enable;\nalways @(posedge clk or negedge rst_internal_n) begin\n    if (!rst_internal_n) q <= 1'b0;\n    else q <= d;\nend\nendmodule\n",
+    "reset_logic_path": "module dut (\n    input wire clk,\n    input wire rst_n,\n    input wire enable_n,\n    input wire d,\n    output reg q\n);\nwire rst_logic_n;\nassign rst_logic_n = rst_n & enable_n;\nalways @(posedge clk or negedge rst_logic_n) begin\n    if (!rst_logic_n) q <= 1'b0;\n    else q <= d;\nend\nendmodule\n",
+    "latch_feedback": "module dut (\n    input wire enable,\n    output reg q\n);\nwire feedback;\nassign feedback = q;\nalways @(*) begin\n    if (enable) q = feedback;\nend\nendmodule\n",
+    "latch_no_feedback": "module dut (\n    input wire enable,\n    input wire d,\n    output reg q\n);\nalways @(*) begin\n    if (enable) q = d;\nend\nendmodule\n",
+    "array_index_out_of_range": "module dut (\n    output wire y\n);\nreg [7:0] memory [0:3];\nassign y = memory[4][0];\nendmodule\n",
+    "array_index_at_upper_bound": "module dut (\n    output wire y\n);\nreg [7:0] memory [0:3];\nassign y = memory[3][0];\nendmodule\n",
+    "comb_feedback": "module dut (\n    output wire y\n);\nwire feedback_a;\nwire feedback_b;\nassign feedback_a = feedback_b;\nassign feedback_b = feedback_a;\nassign y = feedback_a;\nendmodule\n",
+    "comb_chain": "module dut (\n    input wire d,\n    output wire y\n);\nwire stage;\nassign stage = d;\nassign y = stage;\nendmodule\n"
+  },
+  "shared_fixtures": {
+    "positive": "canonical_clean",
+    "inconclusive": "formatter_parse_error"
+  },
+  "cases": {
+    "PG1001": {
+      "positive": "canonical_clean",
+      "negative": "xz_arithmetic",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": ["PG1051"]
+    },
+    "PG1005": {
+      "positive": "case_default_clean",
+      "negative": "overlapping_case_items",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1007": {
+      "positive": "canonical_clean",
+      "negative": "xz_condition",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": [
+        "PG1030"
+      ]
+    },
+    "PG1008": {
+      "positive": "canonical_clean",
+      "negative": "comb_nonblocking",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1013": {
+      "positive": "case_default_clean",
+      "negative": "case_item_width_mismatch",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1014": {
+      "positive": "canonical_clean",
+      "negative": "relational_width_mismatch",
+      "inconclusive": "unknown_relational_width",
+      "allowed_overlaps": []
+    },
+    "PG1017": {
+      "positive": "xz_branch_condition",
+      "negative": "vector_if_condition",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1018": {
+      "positive": "canonical_clean",
+      "negative": "combinational_output_clock",
+      "inconclusive": "unknown_clock_source",
+      "allowed_overlaps": [
+        "PG1025",
+        "PG1061"
+      ]
+    },
+    "PG1019": {
+      "positive": "case_default_clean",
+      "negative": "constant_case_control",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1030": {
+      "positive": "canonical_clean",
+      "negative": "xz_branch_condition",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": [
+        "PG1007"
+      ]
+    },
+    "PG1032": {
+      "positive": "canonical_clean",
+      "negative": "duplicate_path_assignment",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1034": {
+      "positive": "case_default_clean",
+      "negative": "runtime_case_item",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1035": {
+      "positive": "nonrecursive_function",
+      "negative": "recursive_function",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1036": {
+      "positive": "canonical_clean",
+      "negative": "register_output_clock",
+      "inconclusive": "unknown_clock_source",
+      "allowed_overlaps": [
+        "PG1002"
+      ]
+    },
+    "PG1037": {
+      "positive": "case_default_clean",
+      "negative": "case_default_xz",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1038": {
+      "positive": "xz_branch_condition",
+      "negative": "combinational_if_without_else",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1040": {
+      "positive": "case_default_clean",
+      "negative": "case_without_default",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1044": {
+      "positive": "task_io_width_match",
+      "negative": "task_io_width_mismatch",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1046": {
+      "positive": "canonical_clean",
+      "negative": "sensitivity_bar_separator",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": [
+        "PG1055"
+      ]
+    },
+    "PG1050": {
+      "positive": "nonrecursive_function",
+      "negative": "scalar_function_return",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1052": {
+      "positive": "constant_for_loop",
+      "negative": "variable_for_loop",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": ["PG1065"]
+    },
+    "PG1053": {
+      "positive": "canonical_clean",
+      "negative": "initial_block",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1055": {
+      "positive": "complete_sensitivity",
+      "negative": "incomplete_sensitivity",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1056": {
+      "positive": "task_local_write",
+      "negative": "task_without_timing",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1057": {
+      "positive": "case_default_clean",
+      "negative": "casez_usage",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1058": {
+      "positive": "canonical_clean",
+      "negative": "sequential_blocking",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1060": {
+      "positive": "canonical_clean",
+      "negative": "assignment_delay",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1062": {
+      "positive": "task_without_timing",
+      "negative": "task_with_timing",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": [
+        "PG1060"
+      ]
+    },
+    "PG1066": {
+      "positive": "canonical_clean",
+      "negative": "assignment_width_mismatch",
+      "inconclusive": "unknown_assignment_width",
+      "allowed_overlaps": []
+    },
+    "PG1067": {
+      "positive": "canonical_clean",
+      "negative": "unsized_literal",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1068": {
+      "positive": "nonrecursive_function",
+      "negative": "function_nonblocking",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1069": {
+      "positive": "canonical_clean",
+      "negative": "procedural_wire_assignment",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": [
+        "PG1070"
+      ]
+    },
+    "PG1070": {
+      "positive": "canonical_clean",
+      "negative": "multiple_drivers",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1071": {
+      "positive": "canonical_clean",
+      "negative": "wire_inline_assignment",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1072": {
+      "positive": "canonical_clean",
+      "negative": "simulation_system_task",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1016": {
+      "positive": "reset_clean",
+      "negative": "reset_override",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1026": {
+      "positive": "port_width_match",
+      "negative": "port_width_mismatch",
+      "inconclusive": "external_port_width",
+      "allowed_overlaps": []
+    },
+    "PG1043": {
+      "positive": "case_default_clean",
+      "negative": "full_case_directive",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1010": {
+      "positive": "constant_repeat",
+      "negative": "variable_repeat",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": ["PG1065"]
+    },
+    "PG1020": {
+      "positive": "simple_array_index",
+      "negative": "complex_array_index",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1021": {
+      "positive": "constant_repeat",
+      "negative": "zero_repeat",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1024": {
+      "positive": "procedural_latch",
+      "negative": "gate_primitive_latch",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1064": {
+      "positive": "procedural_latch",
+      "negative": "mixed_latch_comb",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": [
+        "PG1038"
+      ]
+    },
+    "PG1002": {
+      "positive": "canonical_clean",
+      "negative": "multiple_clock_domains",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1025": {
+      "positive": "canonical_clean",
+      "negative": "combinational_output_clock",
+      "inconclusive": "unknown_clock_source",
+      "allowed_overlaps": [
+        "PG1018",
+        "PG1061"
+      ]
+    },
+    "PG1049": {
+      "positive": "canonical_clean",
+      "negative": "dual_edge_clock",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1061": {
+      "positive": "canonical_clean",
+      "negative": "clock_as_data",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1004": {
+      "positive": "reset_clean",
+      "negative": "sync_async_reset_mix",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1006": {
+      "positive": "reset_clean",
+      "negative": "multiple_reset_controls",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1012": {
+      "positive": "reset_clean",
+      "negative": "reset_logic_in_loop",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": [
+        "PG1058",
+        "PG1067"
+      ]
+    },
+    "PG1031": {
+      "positive": "reset_clean",
+      "negative": "async_set_reset_pair",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": [
+        "PG1006"
+      ]
+    },
+    "PG1042": {
+      "positive": "reset_clean",
+      "negative": "partial_reset_coverage",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": ["PG1039"]
+    },
+    "PG1045": {
+      "positive": "reset_clean",
+      "negative": "reset_polarity_mismatch",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1003": {
+      "positive": "scalar_logic_operands",
+      "negative": "vector_logic_operands",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1015": {
+      "positive": "fsm_clean",
+      "negative": "fsm_missing_initial",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1022": {
+      "positive": "reset_clean",
+      "negative": "reset_as_data",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1023": {
+      "positive": "fsm_clean",
+      "negative": "fsm_default_hold",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1027": {
+      "positive": "fsm_clean",
+      "negative": "fsm_unreachable_state",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1029": {
+      "positive": "reset_clean",
+      "negative": "internal_async_reset",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1033": {
+      "positive": "latch_no_feedback",
+      "negative": "latch_feedback",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": ["PG1038", "PG1065"]
+    },
+    "PG1039": {
+      "positive": "reset_clean",
+      "negative": "partial_reset_coverage",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": ["PG1042"]
+    },
+    "PG1041": {
+      "positive": "fsm_clean",
+      "negative": "fsm_41_states",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": ["PG1015", "PG1067"]
+    },
+    "PG1047": {
+      "positive": "reset_clean",
+      "negative": "reset_logic_path",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": ["PG1029"]
+    },
+    "PG1051": {
+      "positive": "arithmetic_extended",
+      "negative": "arithmetic_overflow",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1059": {
+      "positive": "array_index_at_upper_bound",
+      "negative": "array_index_out_of_range",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1063": {
+      "positive": "signed_arithmetic_clean",
+      "negative": "signed_unsigned_mix",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "PG1065": {
+      "positive": "comb_chain",
+      "negative": "comb_feedback",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    }
+  }
+}

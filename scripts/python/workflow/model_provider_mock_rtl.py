@@ -202,8 +202,8 @@ def _mock_rtl_parts(layout: MockPortLayout) -> MockSequentialRtlParts:
     # str_valid_register_width 表示 valid 内部寄存器声明位宽。
     str_valid_register_width = _width_text(dict_valid_width_port)  # valid 保持寄存器位宽前缀
 
-    # str_data_sample_expr 在缺少数据输入时退化为 DATA_RESET_VALUE。
-    str_data_sample_expr = _mock_port_name_or_default(layout.data_input, "DATA_RESET_VALUE")  # 数据缓存采样表达式
+    # str_data_sample_expr 显式处理输入与缓存寄存器之间的位宽差异。
+    str_data_sample_expr = _mock_data_sample_expr(layout)  # 数据缓存采样表达式
 
     # str_valid_sample_expr 在缺少 valid 输入时退化为常高，避免 mock 链路停摆。
     str_valid_sample_expr = _mock_port_name_or_default(layout.valid_input, "1'b1")  # valid 缓存采样表达式
@@ -262,6 +262,47 @@ def _mock_rtl_parts(layout: MockPortLayout) -> MockSequentialRtlParts:
         valid_sample_expr=str_valid_sample_expr,
     )
 
+# 生成数据缓存寄存器的位宽安全采样表达式。
+def _mock_data_sample_expr(layout: MockPortLayout) -> str:
+    """根据数据输入与缓存寄存器位宽生成显式 Verilog 表达式。
+
+    :param layout: 已整理好的 mock 端口语义布局。
+    :return: 与数据缓存寄存器位宽一致的采样表达式。
+    """
+
+    # 没有数据输入时沿用参数化复位值，避免生成空信号名。
+    if layout.data_input is None:
+
+        # 返回参数化复位值作为无输入场景的有效表达式。
+        return "DATA_RESET_VALUE"
+
+    # 缓存寄存器优先继承数据输出口位宽，与模板声明保持一致。
+    dict_target_port = layout.data_output or layout.data_input  # 数据缓存寄存器位宽来源
+
+    # 读取数据输入位宽以判断是否需要显式扩展或截断。
+    int_input_width = int(layout.data_input.get("width", 1) or 1)  # 数据输入位宽
+
+    # 读取缓存寄存器目标位宽以生成定宽表达式。
+    int_target_width = int(dict_target_port.get("width", 1) or 1)  # 数据缓存寄存器目标位宽
+
+    # 提取端口名称供最终 Verilog 表达式直接引用。
+    str_input_name = str(layout.data_input["name"])  # 数据输入端口名称
+
+    # 等宽路径直接采样端口，保留最简 RTL。
+    if int_input_width == int_target_width:
+
+        # 返回原端口名，避免为等宽路径增加冗余运算。
+        return str_input_name
+
+    # 窄输入使用定宽零值参与按位或，显式把表达式扩展到目标位宽。
+    if int_input_width < int_target_width:
+
+        # 返回目标位宽的显式零扩展表达式。
+        return f"{_zero_literal(int_target_width)} | {str_input_name}"
+
+    # 宽输入显式截取低位，避免依赖隐式截断语义。
+    return f"{str_input_name}[{int_target_width - 1}:0]"
+
 # 读取 mock 端口名称或返回兜底表达式。
 def _mock_port_name_or_default(port: MockPortSpec | None, default_expr: str) -> str:
     """
@@ -318,7 +359,7 @@ def _mock_erie_rtl_source_text(spec: dict[str, Any]) -> str:
 
 module {mock_port_layout_snapshot.top}
 #(
-\tparameter C_DATA_WIDTH = {mock_rtl_parts.data_width}\t//数据总线位宽
+\tparameter C_DATA_WIDTH = 32'd{mock_rtl_parts.data_width}\t//数据总线位宽
 )
 (
 {mock_rtl_parts.port_block}
@@ -861,7 +902,7 @@ def _mock_erie_comb_source_text(layout: MockPortLayout) -> str:
 
 module {layout.top}
 #(
-\tparameter C_DATA_WIDTH = {int_data_width}\t//数据总线位宽
+\tparameter C_DATA_WIDTH = 32'd{int_data_width}\t//数据总线位宽
 )
 (
 {str_port_block}

@@ -558,6 +558,74 @@ def _assign_to_dict(item: Any) -> dict[str, Any]:
         "delay": dict_item.get("delay", ""),
     }
 
+# _case_item_to_dict 固定 case 分支在 AST 报告中的递归字段。
+def _case_item_to_dict(item: Any) -> dict[str, Any]:
+    """把 formatter case item 转换成稳定的 JSON 字典。
+
+    参数:
+        item: formatter CaseItem、dict 或兼容对象。
+    返回:
+        包含标签、块标签和分支子节点的字典。
+    """
+
+    # dataclass 与字典统一转换后再显式选择公共字段。
+    dict_item = _safe_dataclass_dict(item)  # case item 的完整字段映射
+
+    # 子节点递归使用同一控制节点序列化合同。
+    list_children = [  # 当前 case 分支内部的控制节点
+        _control_node_to_dict(dict_child)  # 递归保留子节点的稳定字段
+        for dict_child in dict_item.get("children", []) or []  # 遍历 formatter 解析出的分支主体
+    ]
+
+    # 返回值不暴露 dataclass 内部实现细节。
+    return {
+        "label": dict_item.get("label", ""),
+        "block_label": dict_item.get("block_label", ""),
+        "children": list_children,
+    }
+
+# _control_node_to_dict 递归导出 formatter 控制流树。
+def _control_node_to_dict(item: Any) -> dict[str, Any]:
+    """把 formatter ControlNode 转换成稳定的递归字典。
+
+    参数:
+        item: formatter ControlNode、dict 或兼容对象。
+    返回:
+        包含节点身份、文本、主路径、备选路径和 case items 的字典。
+    """
+
+    # 先统一 dataclass 和字典输入，避免递归分支分别处理类型。
+    dict_item = _safe_dataclass_dict(item)  # 当前控制节点的完整字段映射
+
+    # 主路径节点保持 formatter 原始顺序。
+    list_children = [  # 当前控制节点的主路径子树
+        _control_node_to_dict(dict_child)  # 递归转换主路径子节点
+        for dict_child in dict_item.get("children", []) or []  # 遍历主路径节点
+    ]
+
+    # alternate 单独保留 if/else 的互斥路径身份。
+    list_alternate = [  # 当前控制节点的备选路径子树
+        _control_node_to_dict(dict_child)  # 递归转换备选路径子节点
+        for dict_child in dict_item.get("alternate", []) or []  # 遍历 formatter alternate 节点
+    ]
+
+    # PG1005 与 PG1034 通过标签文本和分支子树判断 case 路径违规。
+    list_items = [
+        _case_item_to_dict(dict_case_item)  # 保留当前标签文本及其递归分支节点
+        for dict_case_item in dict_item.get("items", []) or []  # 按 formatter 顺序读取全部 case 分支
+    ]
+
+    # 固定键集合让后续 PG 规则不依赖 dataclass 字段顺序。
+    return {
+        "kind": dict_item.get("kind", ""),
+        "header": dict_item.get("header", ""),
+        "text": dict_item.get("text", ""),
+        "label": dict_item.get("label", ""),
+        "children": list_children,
+        "alternate": list_alternate,
+        "items": list_items,
+    }
+
 # _always_to_dict 转换 formatter always block 模型并补充控制流指标。
 def _always_to_dict(item: Any) -> dict[str, Any]:
     """把 formatter always 块模型转换成 JSON 字典。
@@ -601,6 +669,10 @@ def _always_to_dict(item: Any) -> dict[str, Any]:
         "line_count": len(dict_item.get("lines", []) or []),
         "leading_comments": dict_item.get("leading_comments", []),
         "lines": dict_item.get("lines", []),
+        "nodes": [
+            _control_node_to_dict(dict_node)
+            for dict_node in dict_item.get("nodes", []) or []
+        ],
     }
 
 # _instance_to_dict 转换 formatter instance 模型并保留实例身份。

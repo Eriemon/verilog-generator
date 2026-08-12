@@ -28,9 +28,6 @@ from scripts.python.existing_rtl.semantic_contract import (
     parse_semantic_transcript,
 )
 
-# static_lint 提供 RTL 结构 lint。
-from scripts.python.quality.static_lint import lint_generated_rtl
-
 # vectors 读取 reference/vector 合同和 RTL hash 标记。
 from scripts.python.workflow.vectors import extract_vector_hashes, find_vector_contracts
 
@@ -94,9 +91,6 @@ def _append_core_generation_gate_results(
 
     # RTL gate 确认存在 Verilog 文件和顶层 module。
     _extend_issues(list_issues, _validate_rtl(normalized_spec, root))
-
-    # static lint gate 检查多驱动和 wire 过程赋值等硬错误。
-    _extend_issues(list_issues, _static_lint_issues(normalized_spec, root))
 
 # 返回注释位置 gate 的诊断和 metrics。
 def _validate_comment_placement_gate(root: Path, comment_language: str) -> tuple[list[ValidationIssue], dict[str, Any]]:
@@ -185,38 +179,6 @@ def _downgrade_comment_diagnostics(list_issues: list[ValidationIssue]) -> list[V
 
     # 返回降级后的诊断集合。
     return list_downgraded
-
-# 返回静态 lint 诊断。
-def _static_lint_issues(spec: dict[str, Any], root: Path) -> list[ValidationIssue]:
-    """
-    返回静态 lint 诊断。
-
-    :param spec: 已归一化的 Verilog 规格。
-    :param root: 生成 artifact 根目录。
-    :return: 转换为 ValidationIssue 的静态 lint 诊断列表。
-    """
-
-    # list_issues 保存转换后的 lint 问题。
-    list_issues: list[ValidationIssue] = []  # 静态 lint validation 诊断
-
-    # lint_generated_rtl 负责多驱动、wire 过程赋值等 RTL 结构问题。
-    for lint_issue in lint_generated_rtl(spec, root):
-
-        # lint issue 统一转换为 current_module_issue。
-        list_issues.append(
-            ValidationIssue(
-                "error",
-                lint_issue.message,
-                lint_issue.path,
-                "static",
-                "current_module_issue",
-                tool="erie_static_lint",
-                detail=lint_issue.code,
-            )
-        )
-
-    # 返回 lint 诊断。
-    return list_issues
 
 # 返回 formatter AST quality gate 的诊断和 metrics。
 def _validate_formatter_ast_quality_gate(
@@ -324,6 +286,9 @@ def _append_formatter_ast_quality_result(
 def _append_deliverable_gate_result(
     list_issues: list[ValidationIssue],
     dict_metrics: dict[str, Any],
+
+    # 以下参数定义本次 PG 门禁的设计输入和审查策略。
+    spec: dict[str, Any],
     root: Path,
     comment_language: str,
     *,
@@ -334,6 +299,7 @@ def _append_deliverable_gate_result(
     
     :param list_issues: validation 主报告正在累计的诊断列表。
     :param dict_metrics: validation 主报告正在累计的 metrics 字典。
+    :param spec: 已归一化的 Verilog 规格合同。
     :param root: 生成 artifact 根目录。
     :param comment_language: 注释语言策略。
     :param strict_generated_comments: 是否按新生成 RTL 严格阻断注释和 warning。
@@ -344,6 +310,7 @@ def _append_deliverable_gate_result(
     tuple_deliverable = _validate_verilog_generated_deliverable_gate(  # 最终交付门禁诊断和摘要
         root,  # 生成 artifact 根目录
         comment_language,  # 交付门禁采用的注释语言
+        spec=spec,  # PG 门禁复用 validation 的归一化规格
         strict_generated_comments=strict_generated_comments,  # 新生成 RTL 严格模式
     )
 
@@ -411,6 +378,7 @@ def _validate_verilog_generated_deliverable_gate(
     root: Path,
     comment_language: str,
     *,
+    spec: dict[str, Any],
     strict_generated_comments: bool,
 ) -> tuple[list[ValidationIssue], dict[str, Any]]:
     """
@@ -418,6 +386,7 @@ def _validate_verilog_generated_deliverable_gate(
     
     :param root: 生成 artifact 根目录。
     :param comment_language: 注释语言策略。
+    :param spec: 已归一化的 Verilog 规格合同。
     :param strict_generated_comments: 是否按新生成 RTL 严格阻断注释和 warning。
     :return: 交付门禁诊断列表和摘要 metrics。
     """
@@ -425,6 +394,7 @@ def _validate_verilog_generated_deliverable_gate(
     # dict_report 是最终交付门禁的完整报告。
     dict_report = run_verilog_deliverable_gate(  # 最终交付门禁完整报告
         root,  # 待审计的生成产物根路径
+        spec=spec,  # 固定 PG 门禁依赖的规格合同
         strict=True,  # validation 内部始终按交付级严格模式执行
         comment_language=comment_language,  # comment gate 与 VG 注释规则共享的语言策略
     )  # 交付门禁报告
@@ -438,6 +408,8 @@ def _validate_verilog_generated_deliverable_gate(
         "errors": dict_report.get("errors"),  # 聚合后阻断问题数量
         "strict_warnings": dict_report.get("strict_warnings"),  # strict 模式 warning 数量
         "checks": dict_report.get("checks"),  # 子门禁摘要证据
+        "pg_catalog_version": dict_report.get("pg_catalog_version"),  # 固定 PG 目录版本
+        "pg_gate_summary": dict_report.get("pg_gate_summary"),  # PG 结果状态汇总
     }  # 交付门禁摘要 metrics
 
     # list_issues 只补充 strict warning 阻断，error 已由既有子门禁进入 issue 流。

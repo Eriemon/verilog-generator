@@ -972,16 +972,26 @@ def _rtl_md_bad_fixture() -> str:
     # 字符串逐行组织，便于 lint 规则定位问题行。
     return "\n".join(
         [
-            "module bad_constraints(input wire clk, input wire rst_n, input wire [3:0] a, output reg y);",
+            "module bad_constraints (",
+            "    input wire clk,",
+            "    input wire rst_n,",
+            "    input wire [3:0] a,",
+            "    output reg y",
+            ");",
             "wire gated_clk = clk & rst_n;",
             "initial y = 1'b0;",
             "always @(a || rst_n) begin",
             "  if (a == 4'bx) begin",
             "    y <= 1'b1;",
             "  end",
-            "  case (a)",
+            "  case (4'b0000)",
             "    4'b0001: y = 1'b1;",
             "  endcase",
+            "end",
+            "always @(*) begin",
+            "  if (a[0]) begin",
+            "    y = 1'b0;",
+            "  end",
             "end",
             "endmodule",
             "",
@@ -999,7 +1009,12 @@ def _rtl_md_clean_fixture() -> str:
     # 该 fixture 只包含基本时序逻辑，预期 lint issue 为空。
     return "\n".join(
         [
-            "module good_constraints(input wire clk, input wire rst_n, input wire [3:0] a, output reg y);",
+            "module good_constraints (",
+            "    input wire clk,",
+            "    input wire rst_n,",
+            "    input wire [3:0] a,",
+            "    output reg y",
+            ");",
             "always @(posedge clk or negedge rst_n) begin",
             "  if (!rst_n) begin",
             "    y <= 1'b0;",

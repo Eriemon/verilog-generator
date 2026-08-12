@@ -13,14 +13,14 @@
       }
     },
     {
-      "id": "rtl_md_constraints_gate",
-      "kind": "rtl_md_constraint_regression",
+      "id": "rtl_pg_gate_regression",
+      "kind": "rtl_pg_gate_regression",
       "expectations": {
-        "blocked_codes": ["CASE_DEFAULT", "XZ_LITERAL", "WIRE_INIT"],
-        "clean_has_no_issues": true,
-        "catalog_total_rules": 68,
+        "failed_gate_ids": ["PG1007", "PG1008", "PG1019", "PG1030", "PG1038", "PG1040", "PG1046", "PG1053", "PG1071"],
+        "clean_all_active_passed": true,
+        "catalog_total_rules": 72,
         "prompt_mentions_all_rules": true,
-        "static_issues_include_rule_ids": true
+        "failed_results_use_pg_ids": true
       }
     },
     {

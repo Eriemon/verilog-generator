@@ -150,6 +150,7 @@ def validate_generated(request: ValidationRequest) -> ValidationReport:
     checks._append_deliverable_gate_result(
         list_issues,
         dict_metrics,
+        dict_normalized_spec,
         path_root,
         str_comment_language,
         strict_generated_comments=request.strict_generated_comments,

@@ -16,9 +16,9 @@ For new RTL generation, expose three user-facing workflow shells:
 
 These are workflow modes, not alternate correctness gates. Do not treat free-form model self-assessment text such as `[DESIGN IS CORRECT]` as authoritative validation evidence.
 
-The same skill also exposes two local helper scripts for independent static lint and testbench scaffold generation without widening the skill beyond Verilog-2001. Canonical Python implementations live under `scripts/python/<function>/`, and command-line entrypoints must invoke those modules directly.
+The same skill also exposes two local helper scripts for independent PG-gate review and testbench scaffold generation without widening the skill beyond Verilog-2001. Canonical Python implementations live under `scripts/python/<function>/`, and command-line entrypoints must invoke those modules directly.
 
-- `scripts/python/quality/verilog_lint.py` for independent static lint
+- `scripts/python/quality/verilog_lint.py` for the compatibility lint view of fixed PG results
 - `scripts/python/generation/tb_generator.py` for a self-checking Verilog testbench scaffold
 
 These helper tools are optional workflow steps. They are part of the skill execution flow when the request benefits from them, but they are not mandatory entry gates.
@@ -78,7 +78,7 @@ After generating or modifying RTL, run the integrated final gate:
 python -m scripts.python.validation.verilog_generated_deliverable_gate <rtl-file-or-dir> --json deliverable_gate.json --markdown deliverable_gate.md
 ```
 
-The deliverable gate aggregates formatter AST, the VG quality gate, static lint, comment checks, and rulebook consistency. Strict mode is the default and requires `errors == 0` and `strict_warnings == 0`. The lower-level VG quality gate remains available for focused debugging:
+The deliverable gate v2 aggregates formatter AST, the VG quality gate, all 72 fixed PG results, comment checks, and rulebook consistency. Strict mode is the default and requires `errors == 0` and `strict_warnings == 0`. The lower-level VG quality gate remains available for focused debugging:
 
 ```bash
 python -m scripts.python.quality.verilog_quality_gate <rtl-file-or-dir> --json quality_gate.json --markdown quality_gate.md
@@ -197,7 +197,7 @@ Strict quality control is mandatory. The required quality chain is:
 6. Treat semantic comment placement as a hard validation gate: generated Verilog must use entity-level comments for module headers, parameters, ports, declarations, assigns, always blocks, FSM branches, instances, and generate blocks. Same-line comments are required for stable single-line entities, while leading comments should explain block intent. Do not add mechanical comments to every syntactic line just to raise density. Missing, misplaced, shared-adjacent, generic, hollow Chinese, formatter fallback, repeated, near-duplicate, or template-reused comments under `comment_language=zh` are blocking errors.
 7. Avoid Verilog `function` and `task` blocks in generated Verilog, especially synthesizable RTL; prefer explicit always/assign logic and inline testbench checks for easier waveform debugging.
 8. Apply ASIC quality review rules for generated RTL: complete combinational assignments, case defaults, no raw gated clocks, documented CDC/reset assumptions, and timing-reviewable datapath/control structure. Load `references/rules/asic-verilog-quality.md` for detailed review guidance.
-9. Apply the distilled RTL Markdown constraints in `references/rules/rtl-md-constraints.md` and `assets/rtl_md_constraints.json`: all `MUST` rules are blocking generation/review constraints, high-confidence `MUST` rules are enforced by the static gate, and `REC` rules are default preferences whose deviations must be recorded in manifest checks.
+9. Apply the fixed RTL PG catalog in `references/rules/rtl-md-constraints.md` and `assets/rtl_md_constraints.json`: always report `PG1001` through `PG1072`; execute the 67 active gates, preserve the 5 reserved gates as guidance, fail closed for active `BLOCKER` non-pass states, and block active `WARNING` non-pass states only in strict mode.
 10. Validate with static checks by default; when external simulation is requested, select the highest available backend in this order: Vivado xsim, VCS+Verdi, then iverilog/vvp. Use `yosys` only for implement readiness.
 
 For `optimize_assist`, QoR output is advisory by default: it produces structural summaries and optional `yosys` evidence when available, but it does not automatically approve or rewrite RTL.
@@ -307,7 +307,7 @@ python -m scripts.python.workflow.cli validate --spec .\reports\verilog\spec.jso
 - Load `assets/use_case_templates/catalog.json` and the selected bundle under `assets/use_case_templates/<family>/` when adding or reviewing ADC/DAC board-level family guidance.
 - Load `references/workflows/workflow-contracts.md` when handling run directories, statuses, resume behavior, or traces.
 - Load `references/rules/asic-verilog-quality.md` when reviewing RTL for ASIC quality, static lint findings, reset/CDC assumptions, raw gated clocks, latch risk, or timing-reviewable structure.
-- Load `references/rules/rtl-md-constraints.md` when changing generated RTL syntax constraints, static lint rules, prompt guidance for MUST/REC rules, or the `assets/rtl_md_constraints.json` catalog.
+- Load `references/rules/rtl-md-constraints.md` when changing generated RTL syntax constraints, fixed PG evaluators, prompt guidance, result states, or the `assets/rtl_md_constraints.json` catalog.
 - Load `references/checklists/lint-checklist.md` when running independent static lint, preparing review findings, or deciding whether a warning should become a blocking issue.
 - Load `references/rules/testbench-patterns.md` when generating or repairing a Verilog-2001 self-checking testbench scaffold.
 - Use `assets/examples/rtl_erie_verilog_spec.json` as the canonical Verilog-only fixture.

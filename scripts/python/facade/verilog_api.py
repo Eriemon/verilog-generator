@@ -9,6 +9,9 @@ from typing import Any
 # runtime 路由器负责只分类请求、不触发生成执行。
 from scripts.python.workflow.workflow_router import route_verilog_entry
 
+# 固定 PG 门禁入口由质量模块直接提供，避免 facade 复制规则逻辑。
+from scripts.python.quality.rtl_pg_engine import run_rtl_pg_gate
+
 # existing-RTL 相关公开能力从子模块重导出。
 from .existing_rtl_api import (
     analyze_existing_verilog,
@@ -65,6 +68,7 @@ __all__ = [
     "validate_verilog_artifacts",  # 工件验证入口
     "check_verilog_deliverable",  # 交付门入口
     "check_verilog_quality",  # 质量门入口
+    "run_rtl_pg_gate",  # 固定 PG 门禁入口
     "analyze_existing_verilog",  # 既有 RTL 分析入口
     "improve_existing_verilog",  # 既有 RTL 精修入口
     "compare_verilog_semantics",  # RTL 语义比较入口

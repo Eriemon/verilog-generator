@@ -151,6 +151,12 @@ def run_internal_lint(str_filename: str, str_text: str, str_mode: str) -> list[A
     :return: runtime 内置 lint 返回的 issue 对象列表。
     """
 
+    # 固定 PG1001-PG1072 只约束设计 RTL，不对合法 testbench 构造执行。
+    if str_mode == MODE_TB:
+
+        # TB mode 保留给可选外部 lint，内部设计 RTL PG 不生成诊断。
+        return []
+
     # runtime 导入延迟到函数内，避免导入脚本时改 sys.path。
     _ensure_runtime_import_path()
 

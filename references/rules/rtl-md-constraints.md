@@ -1,131 +1,100 @@
-# RTL-MD Constraint Catalog
+# Fixed RTL PG Gate Catalog
 
-This file is the stable RTL-MD constraint reference for readable-verilog-generator.
-It lists every absorbed rule by semantic ID and execution layer. The durable
-skill package does not depend on temporary development inputs.
+This page is the ASCII-safe human reference for `assets/rtl_md_constraints.json`.
+The machine contract reads the explicit `gate_id` stored in the catalog. Gate IDs
+must never be inferred from list order.
 
-## Table of Contents / Topic Index
+- Fixed range: PG1001 through PG1072.
+- Total gates: 72.
+- Active gates: 67, including 48 BLOCKER and 19 WARNING gates.
+- Reserved gates: 22. They remain prompt guidance and never count as passed.
+- An active BLOCKER passes only with `passed`. The `failed`, `inconclusive`,
+  `error`, and `not_run` states fail closed.
+- An active WARNING uses the same blocking policy in strict delivery and is
+  diagnostic only in non-strict delivery.
+- Fixed result states: `passed`, `failed`, `inconclusive`, `error`, `not_run`,
+  and `reserved`.
 
-- [Package Metadata](#package-metadata)
-- [Enforcement Model](#enforcement-model)
-- [Coverage By Topic](#coverage-by-topic)
-- [Full Rule List](#full-rule-list)
-- [Rule Summaries](#rule-summaries)
-- [Implementation Notes](#implementation-notes)
+| Gate | Status | Level | Stable rule key |
+|---|---|---|---|
+| PG1001 | active | BLOCKER | op_no_xz_arith |
+| PG1002 | active | WARNING | clk_single_domain |
+| PG1003 | active | WARNING | op_no_logic_on_vector |
+| PG1004 | active | BLOCKER | rst_no_sync_async_mix |
+| PG1005 | active | WARNING | case_no_overlap |
+| PG1006 | active | WARNING | rst_one_signal_per_always |
+| PG1007 | active | BLOCKER | op_no_xz_condition |
+| PG1008 | active | BLOCKER | comb_blocking_assign |
+| PG1009 | reserved | BLOCKER | loop_no_nonindex_arith |
+| PG1010 | active | WARNING | repeat_const_count |
+| PG1011 | reserved | BLOCKER | rst_no_glitchy_comb |
+| PG1012 | active | BLOCKER | loop_no_reset_logic_mix |
+| PG1013 | active | BLOCKER | case_item_in_range_width |
+| PG1014 | active | BLOCKER | op_rel_width_match |
+| PG1015 | active | BLOCKER | fsm_has_initial_state |
+| PG1016 | active | BLOCKER | synth_no_reset_override |
+| PG1017 | active | WARNING | branch_cond_scalar |
+| PG1018 | active | BLOCKER | clk_no_comb_clock |
+| PG1019 | active | BLOCKER | case_control_not_constant |
+| PG1020 | active | WARNING | array_index_simple |
+| PG1021 | active | BLOCKER | loop_at_least_once |
+| PG1022 | active | BLOCKER | rst_no_async_to_data_pin |
+| PG1023 | active | BLOCKER | fsm_default_reset_regs |
+| PG1024 | active | BLOCKER | latch_no_gate_primitive |
+| PG1025 | active | WARNING | clk_avoid_gating |
+| PG1026 | active | BLOCKER | conn_port_width_match |
+| PG1027 | active | BLOCKER | fsm_no_dead_unreachable |
+| PG1028 | reserved | WARNING | rst_dedicated_generator |
+| PG1029 | active | WARNING | rst_no_internal_async_src |
+| PG1030 | active | BLOCKER | branch_cond_no_xz |
+| PG1031 | active | WARNING | rst_no_set_reset_pair |
+| PG1032 | active | BLOCKER | assign_no_dup_condition |
+| PG1033 | active | BLOCKER | latch_no_comb_loop |
+| PG1034 | active | BLOCKER | case_item_constant_only |
+| PG1035 | active | BLOCKER | func_no_recursion |
+| PG1036 | active | BLOCKER | clk_no_regout_clock |
+| PG1037 | active | WARNING | case_default_not_xz |
+| PG1038 | active | WARNING | comb_if_has_else |
+| PG1039 | active | BLOCKER | ff_init_on_reset |
+| PG1040 | active | BLOCKER | case_has_default |
+| PG1041 | active | WARNING | fsm_limit_state_count |
+| PG1042 | active | BLOCKER | ff_no_mixed_reset_style |
+| PG1043 | active | WARNING | synth_no_full_case_attr |
+| PG1044 | active | BLOCKER | task_io_width_match |
+| PG1045 | active | BLOCKER | ff_reset_condition_match |
+| PG1046 | active | BLOCKER | sens_no_or_separator |
+| PG1047 | active | WARNING | rst_no_logic_in_async_path |
+| PG1048 | reserved | WARNING | fsm_min_transition_flips |
+| PG1049 | active | WARNING | clk_single_edge |
+| PG1050 | active | BLOCKER | func_return_width |
+| PG1051 | active | BLOCKER | op_no_arith_overflow |
+| PG1052 | active | BLOCKER | loop_for_const_bounds |
+| PG1053 | active | BLOCKER | initial_forbidden |
+| PG1054 | reserved | BLOCKER | literal_width_match |
+| PG1055 | active | BLOCKER | sens_list_complete_minimal |
+| PG1056 | active | BLOCKER | subprogram_no_global_write |
+| PG1057 | active | WARNING | case_no_casex_casez |
+| PG1058 | active | BLOCKER | seq_nonblocking_assign |
+| PG1059 | active | BLOCKER | array_index_in_range |
+| PG1060 | active | BLOCKER | assign_no_delay |
+| PG1061 | active | BLOCKER | clk_only_clock_pin |
+| PG1062 | active | BLOCKER | task_no_timing_control |
+| PG1063 | active | BLOCKER | op_no_sign_mix |
+| PG1064 | active | WARNING | latch_separate_from_comb |
+| PG1065 | active | BLOCKER | comb_no_feedback |
+| PG1066 | active | BLOCKER | assign_width_match |
+| PG1067 | active | WARNING | literal_explicit_base_width |
+| PG1068 | active | BLOCKER | func_no_nonblocking |
+| PG1069 | active | BLOCKER | procedural_assign_to_wire |
+| PG1070 | active | BLOCKER | multiple_drivers |
+| PG1071 | active | BLOCKER | wire_declaration_inline_assignment |
+| PG1072 | active | BLOCKER | simulation_system_task_in_rtl |
 
-## Package Metadata
+## Execution Contract
 
-| Field | Value |
-| --- | --- |
-| total_rules | 68 |
-| required_rules | 47 |
-| advisory_rules | 21 |
-| shuffle_seed | 20260609 |
-| semantic_rule_names | true |
-
-## Enforcement Model
-
-| Layer | Meaning |
-| --- | --- |
-| automated_error | High-confidence static check; any hit blocks final RTL. |
-| automated_warning | High-confidence static warning; follow by default or record a deviation reason. |
-| review_error | Blocking MUST rule checked by prompt review, manifest evidence, simulation, synthesis, or human review. |
-| prompt_warning | REC rule carried through prompts; follow by default or record a deviation reason. |
-
-MUST rules are blocking error constraints. REC rules are warning-level defaults.
-Teaching counterexamples may be used only as review material and must not be copied
-into final RTL artifacts.
-
-## Coverage By Topic
-
-| Topic | Count | Rule IDs |
-| --- | ---: | --- |
-| case-items | 7 | REC_CASE_NO_OVERLAP, MUST_CASE_ITEM_IN_RANGE_WIDTH, MUST_CASE_CONTROL_NOT_CONSTANT, MUST_CASE_ITEM_CONSTANT_ONLY, REC_CASE_DEFAULT_NOT_XZ, MUST_CASE_HAS_DEFAULT, REC_CASE_NO_CASEX_CASEZ |
-| clock-reset | 12 | REC_CLK_SINGLE_DOMAIN, MUST_LOOP_NO_RESET_LOGIC_MIX, MUST_SYNTH_NO_RESET_OVERRIDE, MUST_FSM_DEFAULT_RESET_REGS, REC_CLK_AVOID_GATING, REC_RST_NO_SET_RESET_PAIR, MUST_CLK_NO_REGOUT_CLOCK, MUST_FF_INIT_ON_RESET, MUST_FF_NO_MIXED_RESET_STYLE, MUST_FF_RESET_CONDITION_MATCH, REC_CLK_SINGLE_EDGE, MUST_CLK_ONLY_CLOCK_PIN |
-| design-review | 7 | MUST_RST_NO_SYNC_ASYNC_MIX, MUST_RST_NO_ASYNC_TO_DATA_PIN, MUST_FSM_NO_DEAD_UNREACHABLE, REC_RST_NO_INTERNAL_ASYNC_SRC, REC_FSM_LIMIT_STATE_COUNT, REC_RST_NO_LOGIC_IN_ASYNC_PATH, REC_FSM_MIN_TRANSITION_FLIPS |
-| general-review | 5 | REC_RST_ONE_SIGNAL_PER_ALWAYS, REC_REPEAT_CONST_COUNT, REC_RST_DEDICATED_GENERATOR, REC_SYNTH_NO_FULL_CASE_ATTR, MUST_SUBPROGRAM_NO_GLOBAL_WRITE |
-| operators-expressions | 14 | MUST_OP_NO_XZ_ARITH, REC_OP_NO_LOGIC_ON_VECTOR, MUST_OP_NO_XZ_CONDITION, MUST_LOOP_NO_NONINDEX_ARITH, MUST_OP_REL_WIDTH_MATCH, REC_BRANCH_COND_SCALAR, MUST_LOOP_AT_LEAST_ONCE, MUST_BRANCH_COND_NO_XZ, MUST_ASSIGN_NO_DUP_CONDITION, MUST_OP_NO_ARITH_OVERFLOW, MUST_LOOP_FOR_CONST_BOUNDS, MUST_LITERAL_WIDTH_MATCH, MUST_OP_NO_SIGN_MIX, REC_LITERAL_EXPLICIT_BASE_WIDTH |
-| procedural-blocks | 9 | MUST_COMB_BLOCKING_ASSIGN, MUST_RST_NO_GLITCHY_COMB, MUST_CLK_NO_COMB_CLOCK, MUST_LATCH_NO_GATE_PRIMITIVE, MUST_LATCH_NO_COMB_LOOP, REC_COMB_IF_HAS_ELSE, MUST_SEQ_NONBLOCKING_ASSIGN, REC_LATCH_SEPARATE_FROM_COMB, MUST_COMB_NO_FEEDBACK |
-| sensitivity-lists | 2 | MUST_SENS_NO_OR_SEPARATOR, MUST_SENS_LIST_COMPLETE_MINIMAL |
-| synthesizable-subprograms | 7 | MUST_FSM_HAS_INITIAL_STATE, MUST_FUNC_NO_RECURSION, MUST_TASK_IO_WIDTH_MATCH, MUST_FUNC_RETURN_WIDTH, MUST_INITIAL_FORBIDDEN, MUST_TASK_NO_TIMING_CONTROL, MUST_FUNC_NO_NONBLOCKING |
-| widths-connectivity | 5 | REC_ARRAY_INDEX_SIMPLE, MUST_CONN_PORT_WIDTH_MATCH, MUST_ARRAY_INDEX_IN_RANGE, MUST_ASSIGN_NO_DELAY, MUST_ASSIGN_WIDTH_MATCH |
-
-## Full Rule List
-
-| Rule ID | Kind | Severity | Enforcement |
-| --- | --- | --- | --- |
-| MUST_OP_NO_XZ_ARITH | must | error | automated_error |
-| REC_CLK_SINGLE_DOMAIN | recommended | warning | prompt_warning |
-| REC_OP_NO_LOGIC_ON_VECTOR | recommended | warning | prompt_warning |
-| MUST_RST_NO_SYNC_ASYNC_MIX | must | error | review_error |
-| REC_CASE_NO_OVERLAP | recommended | warning | prompt_warning |
-| REC_RST_ONE_SIGNAL_PER_ALWAYS | recommended | warning | prompt_warning |
-| MUST_OP_NO_XZ_CONDITION | must | error | automated_error |
-| MUST_COMB_BLOCKING_ASSIGN | must | error | automated_error |
-| MUST_LOOP_NO_NONINDEX_ARITH | must | error | review_error |
-| REC_REPEAT_CONST_COUNT | recommended | warning | prompt_warning |
-| MUST_RST_NO_GLITCHY_COMB | must | error | review_error |
-| MUST_LOOP_NO_RESET_LOGIC_MIX | must | error | review_error |
-| MUST_CASE_ITEM_IN_RANGE_WIDTH | must | error | review_error |
-| MUST_OP_REL_WIDTH_MATCH | must | error | automated_error |
-| MUST_FSM_HAS_INITIAL_STATE | must | error | review_error |
-| MUST_SYNTH_NO_RESET_OVERRIDE | must | error | review_error |
-| REC_BRANCH_COND_SCALAR | recommended | warning | prompt_warning |
-| MUST_CLK_NO_COMB_CLOCK | must | error | automated_error |
-| MUST_CASE_CONTROL_NOT_CONSTANT | must | error | review_error |
-| REC_ARRAY_INDEX_SIMPLE | recommended | warning | prompt_warning |
-| MUST_LOOP_AT_LEAST_ONCE | must | error | review_error |
-| MUST_RST_NO_ASYNC_TO_DATA_PIN | must | error | review_error |
-| MUST_FSM_DEFAULT_RESET_REGS | must | error | review_error |
-| MUST_LATCH_NO_GATE_PRIMITIVE | must | error | review_error |
-| REC_CLK_AVOID_GATING | recommended | warning | prompt_warning |
-| MUST_CONN_PORT_WIDTH_MATCH | must | error | review_error |
-| MUST_FSM_NO_DEAD_UNREACHABLE | must | error | review_error |
-| REC_RST_DEDICATED_GENERATOR | recommended | warning | prompt_warning |
-| REC_RST_NO_INTERNAL_ASYNC_SRC | recommended | warning | prompt_warning |
-| MUST_BRANCH_COND_NO_XZ | must | error | automated_error |
-| REC_RST_NO_SET_RESET_PAIR | recommended | warning | prompt_warning |
-| MUST_ASSIGN_NO_DUP_CONDITION | must | error | review_error |
-| MUST_LATCH_NO_COMB_LOOP | must | error | review_error |
-| MUST_CASE_ITEM_CONSTANT_ONLY | must | error | review_error |
-| MUST_FUNC_NO_RECURSION | must | error | automated_error |
-| MUST_CLK_NO_REGOUT_CLOCK | must | error | automated_error |
-| REC_CASE_DEFAULT_NOT_XZ | recommended | warning | automated_warning |
-| REC_COMB_IF_HAS_ELSE | recommended | warning | prompt_warning |
-| MUST_FF_INIT_ON_RESET | must | error | review_error |
-| MUST_CASE_HAS_DEFAULT | must | error | automated_error |
-| REC_FSM_LIMIT_STATE_COUNT | recommended | warning | prompt_warning |
-| MUST_FF_NO_MIXED_RESET_STYLE | must | error | review_error |
-| REC_SYNTH_NO_FULL_CASE_ATTR | recommended | warning | prompt_warning |
-| MUST_TASK_IO_WIDTH_MATCH | must | error | review_error |
-| MUST_FF_RESET_CONDITION_MATCH | must | error | review_error |
-| MUST_SENS_NO_OR_SEPARATOR | must | error | automated_error |
-| REC_RST_NO_LOGIC_IN_ASYNC_PATH | recommended | warning | prompt_warning |
-| REC_FSM_MIN_TRANSITION_FLIPS | recommended | warning | prompt_warning |
-| REC_CLK_SINGLE_EDGE | recommended | warning | prompt_warning |
-| MUST_FUNC_RETURN_WIDTH | must | error | review_error |
-| MUST_OP_NO_ARITH_OVERFLOW | must | error | review_error |
-| MUST_LOOP_FOR_CONST_BOUNDS | must | error | automated_error |
-| MUST_INITIAL_FORBIDDEN | must | error | automated_error |
-| MUST_LITERAL_WIDTH_MATCH | must | error | review_error |
-| MUST_SENS_LIST_COMPLETE_MINIMAL | must | error | review_error |
-| MUST_SUBPROGRAM_NO_GLOBAL_WRITE | must | error | review_error |
-| REC_CASE_NO_CASEX_CASEZ | recommended | warning | automated_warning |
-| MUST_SEQ_NONBLOCKING_ASSIGN | must | error | automated_error |
-| MUST_ARRAY_INDEX_IN_RANGE | must | error | review_error |
-| MUST_ASSIGN_NO_DELAY | must | error | automated_error |
-| MUST_CLK_ONLY_CLOCK_PIN | must | error | review_error |
-| MUST_TASK_NO_TIMING_CONTROL | must | error | automated_error |
-| MUST_OP_NO_SIGN_MIX | must | error | review_error |
-| REC_LATCH_SEPARATE_FROM_COMB | recommended | warning | prompt_warning |
-| MUST_COMB_NO_FEEDBACK | must | error | review_error |
-| MUST_ASSIGN_WIDTH_MATCH | must | error | automated_error |
-| REC_LITERAL_EXPLICIT_BASE_WIDTH | recommended | warning | automated_warning |
-| MUST_FUNC_NO_NONBLOCKING | must | error | automated_error |
-
-## Prompt And Review Contract
-
-Generation, planning, and review prompts must carry the complete rule ID list.
-Manifest checks must state REC deviations in implementation_assessment or
-reviewability_assessment. Static lint issues must include the matching rule ID in
-their message so each finding can be traced to this catalog.
+The public entry point is
+`run_rtl_pg_gate(root, spec=None, strict=True, include_testbench=False)`.
+Deliverable report v2 keeps all 72 entries in `pg_gate_results` and aggregates
+active, reserved, and result-state counts in `pg_gate_summary`. Formatter AST is
+the only parsing authority. Lexical scans may run only inside formatter-confirmed
+module or subprogram boundaries.

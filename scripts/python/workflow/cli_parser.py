@@ -209,6 +209,7 @@ def _review_command_spec() -> CommandSpec:
         "review",
         (
             arg("--target", type=Path),
+            arg("--spec", type=Path),
             arg("--report-json", type=Path),
             arg("--report-md", type=Path),
             arg("--formatter-profile", default="formatter-normalize"),

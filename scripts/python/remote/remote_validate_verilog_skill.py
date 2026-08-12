@@ -21,11 +21,11 @@ from types import ModuleType
 # Any 只用于本地支持模块公开的异构 JSON 载荷。
 from typing import Any
 
-# 文本型回归 gate 会直接扫描 facade 源码，因此这里保留远端 RTL Markdown 前半段约束标识。
-STR_RTL_MD_GATE_MARKERS_HEAD = "remote_rtl_md_constraints MUST_ASSIGN_WIDTH_MATCH"  # 文本型回归 gate 依赖的前半段约束标识
+# 文本型回归 gate 会直接扫描 facade 源码，因此这里保留固定 PG 目录标识。
+STR_RTL_MD_GATE_MARKERS_HEAD = "remote_rtl_pg_gates PG1001 PG1072"  # 文本型回归 gate 依赖的目录边界标识
 
 # 文本型回归 gate 还会继续核对后半段标识，确保远端约束回归仍被 facade 对外承诺。
-STR_RTL_MD_GATE_MARKERS_TAIL = "FOR_CONST_BOUNDS eval-skill rtl_md_constraints_gate"  # 文本型回归 gate 依赖的后半段约束标识
+STR_RTL_MD_GATE_MARKERS_TAIL = "PG1052 eval-skill rtl_pg_gate_regression"  # 文本型回归 gate 依赖的执行标识
 
 # skill 根目录直接关系脚本定位 runtime、配置和示例数据。
 PATH_SKILL_ROOT = Path(__file__).resolve().parents[3]  # 当前 runtime、scripts 和 config 所在的 skill 根目录

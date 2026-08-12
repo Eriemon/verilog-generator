@@ -40,7 +40,7 @@ from scripts.python.workflow.rtl_md_constraints import (
     load_rtl_md_constraints,
     summarize_constraints_for_prompt,
 )
-from scripts.python.quality.static_lint import lint_generated_rtl
+from scripts.python.quality.rtl_pg_engine import run_rtl_pg_gate
 from scripts.python.workflow.workspace import write_json
 
 # case 基础工具负责最核心的检查计算与文件复制。
@@ -623,17 +623,18 @@ def _evaluate_rtl_md_constraint_case(
     # 生成 lint 所需的夹具规格描述。
     dict_spec = _rtl_md_fixture_spec()  # lint 所需的 RTL Markdown 夹具规格
 
-    # 对违规夹具运行 lint，收集命中的阻断问题。
-    list_blocked_issues = lint_generated_rtl(dict_spec, path_generated)  # 违规 fixture lint 结果
+    # 对违规夹具运行固定 PG 门禁，收集真实失败的门禁编号。
+    dict_blocked_report = run_rtl_pg_gate(path_generated, spec=dict_spec)  # 违规 fixture PG 报告
 
-    # 汇总违规夹具命中的规则码，供逐条断言使用。
-    set_blocked_codes = {  # 违规夹具实际命中的规则码集合
-        obj_issue.code  # 单条 lint issue 的规则码
-        for obj_issue in list_blocked_issues  # 遍历 bad fixture 的全部阻断问题
+    # failed 状态代表规则确认命中；error 与 inconclusive 不能伪装成规则命中。
+    set_blocked_codes = {  # 违规 fixture 中状态为 failed 的固定 PG 编号
+        str(dict_result["gate_id"])  # 当前真实失败结果对应的固定 PG 编号
+        for dict_result in dict_blocked_report["pg_gate_results"]  # 逐条读取违规夹具结果
+        if dict_result["status"] == "failed"  # 仅采纳规则确定命中的失败状态
     }
 
-    # 对 clean 夹具运行 lint，确认正常结构不会被误杀。
-    list_clean_issues = lint_generated_rtl(dict_spec, path_clean_root)  # 合规 fixture lint 结果
+    # 对 clean 夹具运行同一 PG 门禁，确认正常结构不会被误杀。
+    dict_clean_report = run_rtl_pg_gate(path_clean_root, spec=dict_spec)  # 合规 fixture PG 报告
 
     # 读取约束目录，核对规则总量和规则 id。
     dict_catalog = load_rtl_md_constraints()  # RTL Markdown 约束目录
@@ -643,7 +644,7 @@ def _evaluate_rtl_md_constraint_case(
 
     # 把 catalog 中登记的规则 id 拉平成集合，后面用于 prompt 覆盖检查。
     set_catalog_rule_ids = {  # 约束目录中声明的全部规则 id 集合
-        str(dict_rule["id"])  # 目录中单条规则的稳定 id
+        str(dict_rule["gate_id"])  # 目录中单条规则的固定 PG 编号
         for dict_rule in dict_catalog["rules"]  # 逐条读取 catalog 规则记录里的 id
     }
 
@@ -654,16 +655,16 @@ def _evaluate_rtl_md_constraint_case(
     dict_checks: dict[str, bool] = {}  # 约束 case 的检查集合
 
     # 每个期望阻断码都必须在 bad fixture lint 中出现。
-    for str_code in dict_expectations.get("blocked_codes", []):
+    for str_code in dict_expectations.get("failed_gate_ids", []):
 
         # key 中保留规则码，便于报告定位具体缺失规则。
         dict_checks[f"blocked_{str_code}"] = str(str_code) in set_blocked_codes  # 当前阻断码是否真实命中
 
     # 可选检查确认 clean fixture 没有 lint 问题。
-    if dict_expectations.get("clean_has_no_issues"):
+    if dict_expectations.get("clean_all_active_passed"):
 
         # 合规 fixture 不应产生任何静态问题。
-        dict_checks["clean_has_no_issues"] = not list_clean_issues  # clean fixture 是否零问题通过
+        dict_checks["clean_all_active_passed"] = dict_clean_report["delivery_ready"]  # clean fixture 是否通过全部激活门禁
 
     # 可选检查确认目录总数与 eval 期望一致。
     if dict_expectations.get("catalog_total_rules"):
@@ -684,13 +685,13 @@ def _evaluate_rtl_md_constraint_case(
             for str_rule_id in set_catalog_rule_ids  # 逐条遍历 catalog 中声明的规则 id
         )
 
-    # 可选检查确认 lint 消息携带 MUST/REC 规则名。
-    if dict_expectations.get("static_issues_include_rule_ids"):
+    # 可选检查确认报告中的失败项只使用固定 PG 编号。
+    if dict_expectations.get("failed_results_use_pg_ids"):
 
-        # 每条阻断消息都应可追溯到具体约束规则。
-        dict_checks["static_issues_include_rule_ids"] = all(  # 阻断消息是否都能追溯到规则码
-            re.search(r"(MUST|REC)_[A-Z0-9_]+", obj_issue.message)  # 消息中是否带可追溯的规则码
-            for obj_issue in list_blocked_issues  # 逐条检查 bad fixture 的 lint 消息
+        # 固定编号格式防止旧 lint code 回流到公开报告。
+        dict_checks["failed_results_use_pg_ids"] = all(  # 失败结果是否全部使用 PG10xx 编号
+            re.fullmatch(r"PG10\d{2}", str_code) is not None  # 当前失败编号是否符合固定 PG 格式
+            for str_code in set_blocked_codes  # 逐条核对真实失败编号
         )
 
     # 没有显式期望时提供基础 smoke 语义。
@@ -699,7 +700,7 @@ def _evaluate_rtl_md_constraint_case(
         # 默认至少要求违规 fixture 被拦截且 clean fixture 放行。
         dict_checks = {
             "blocked_any": bool(set_blocked_codes),  # bad fixture 是否至少命中一条阻断规则
-            "clean_has_no_issues": not list_clean_issues,  # clean fixture 是否保持零问题
+            "clean_all_active_passed": dict_clean_report["delivery_ready"],  # clean fixture 是否通过激活门禁
         }
 
     # 约束 case 的 with_skill 需要附加 lint 证据字段。
@@ -708,9 +709,10 @@ def _evaluate_rtl_md_constraint_case(
         str_case_id,
         dict_checks,
         with_skill_extra={
-            "blocked_codes": sorted(set_blocked_codes),
-            "clean_issue_count": len(list_clean_issues),
+            "failed_gate_ids": sorted(set_blocked_codes),
+            "clean_delivery_ready": dict_clean_report["delivery_ready"],
             "catalog_total_rules": dict_catalog.get("total_rules"),
+            "pg_gate_summary": dict_blocked_report.get("pg_gate_summary"),
         },
     )
 
@@ -1909,5 +1911,5 @@ CASE_EVALUATORS: dict[str, CaseEvaluator] = {  # 供 _evaluate_case 按 kind 查
     "verify_existing_rtl_repair_regression": _evaluate_verify_existing_rtl_repair_case,  # 核对 RTL repair 的应用边界
     "verify_existing_rtl_patch_library_regression": _evaluate_verify_existing_rtl_patch_library_case,  # 核对 patch-library 分类路径
     "routing_regression": _evaluate_routing_case,  # 核对只读 route 决策字段
-    "rtl_md_constraint_regression": _evaluate_rtl_md_constraint_case,  # 核对 RTL Markdown 约束注入
+    "rtl_pg_gate_regression": _evaluate_rtl_md_constraint_case,  # 核对固定 RTL PG 门禁注入与执行
 }  # kind 到具体 evaluator 的查找表

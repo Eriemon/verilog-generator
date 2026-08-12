@@ -3,10 +3,8 @@
 # 延迟解析类型注解，避免运行时为报告类型引入额外依赖。
 from __future__ import annotations
 
-# 标准库承担报告序列化、临时 lint 根和文件复制。
+# 标准库承担报告序列化和路径处理。
 import json
-import shutil
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +12,7 @@ from typing import Any
 from .comment_placement import validate_comment_placement
 from .quality_gate import run_verilog_quality_gate
 from scripts.python.validation.rulebook import load_verilog_rulebook
-from .static_lint import StaticLintIssue, lint_generated_rtl
+from .rtl_pg_engine import run_rtl_pg_gate
 
 # 文本形式便于保持公开矩阵顺序，同时避免手写多行常量被误改。
 DELIVERABLE_CHECK_NAMES_TEXT = "compile ast readability comment naming profile testbench toolchain"  # checks 字段对外承诺的固定键顺序
@@ -38,6 +36,7 @@ PROFILE_ISSUE_KEYWORDS = tuple(PROFILE_ISSUE_KEYWORDS_TEXT.split())  # profile �
 def run_verilog_deliverable_gate(
     root: Path,
     *,
+    spec: dict[str, Any] | None = None,
     strict: bool = True,
     comment_language: str = "zh",
     formatter_profile: str = "formatter-normalize",
@@ -48,6 +47,7 @@ def run_verilog_deliverable_gate(
 
     参数:
         root: 需要检查的 Verilog 文件或目录。
+        spec: 可选归一化设计规格，传递给 PG 门禁。
         strict: 是否启用交付级严格模式。
         comment_language: 注释语言策略。
         formatter_profile: formatter AST 使用的 profile。
@@ -63,6 +63,9 @@ def run_verilog_deliverable_gate(
     # 子门禁原始结果先集中收集，后续统计阶段不再重复扫描文件。
     dict_context = _collect_deliverable_context(  # 保存各子门禁原始报告，后续只基于它统计交付状态
         path_root,  # 已规范化的 RTL 交付入口
+        spec=spec,  # 归一化设计规格
+
+        # 以下参数定义严格度、注释规则和扫描边界。
         strict=strict,  # 当前交付严格模式
         comment_language=comment_language,  # 注释语言策略
         formatter_profile=formatter_profile,  # formatter 抽象语法树配置名称
@@ -89,13 +92,14 @@ def run_verilog_deliverable_gate(
 
 # _collect_deliverable_context 保留各子门禁的原始结果。
 def _collect_deliverable_context(
-    path_root: Path, *, strict: bool, comment_language: str,
+    path_root: Path, *, spec: dict[str, Any] | None, strict: bool, comment_language: str,
     formatter_profile: str, include_testbench: bool, vitis_wrapper: bool,
 ) -> dict[str, Any]:
     """
     收集最终交付门禁需要的子检查结果。
 
     :param path_root: 需要检查的 Verilog 文件或目录。
+    :param spec: 固定 PG 门禁消费的可选归一化设计规格。
     :param strict: 是否启用交付级严格模式。
     :param comment_language: 注释语言策略。
     :param formatter_profile: formatter AST 使用的 profile。
@@ -114,8 +118,13 @@ def _collect_deliverable_context(
         vitis_wrapper=vitis_wrapper,  # wrapper ABI 兼容开关
     )  # Verilog 质量门报告对象
 
-    # static lint 仍使用现有后端，单文件入口由 helper 隔离目录。
-    list_static_lint_issues = _run_static_lint(path_root)  # static lint 原始诊断
+    # PG 门禁一次性返回全部 72 条结果，供报告和 validation 复用。
+    dict_pg_report = run_rtl_pg_gate(  # 固定 RTL PG 门禁报告
+        path_root,  # 质量结构门消费的 RTL 目标
+        spec=spec,  # 可选规格合同
+        strict=strict,  # WARNING 是否阻断
+        include_testbench=include_testbench,  # PG 扫描是否覆盖 testbench
+    )
 
     # 注释位置 gate 输出诊断和覆盖率统计。
     tuple_comment_gate = validate_comment_placement(path_root, comment_language)  # 注释位置 gate 原始结果
@@ -123,8 +132,8 @@ def _collect_deliverable_context(
     # 将 quality gate 的对象诊断转成最终报告可序列化结构。
     list_quality_issues = [issue.to_dict() for issue in report_quality.issues]  # VG 诊断字典集合
 
-    # 将 lint 诊断挂上交付门禁自己的编号前缀。
-    list_lint_issues = [_static_lint_issue_to_dict(issue) for issue in list_static_lint_issues]  # 加前缀后的 lint 诊断
+    # PG 非通过结果转换为统一 issues 条目，但编号保持原始 PG code。
+    list_pg_issues = _pg_results_to_issues(dict_pg_report["pg_gate_results"])  # PG 规则诊断
 
     # comment gate 诊断补齐 code/rule/severity 字段。
     list_comment_gate_issues = [_comment_placement_issue_to_dict(issue) for issue in tuple_comment_gate[0]]  # 注释诊断字典集合
@@ -132,10 +141,10 @@ def _collect_deliverable_context(
     # 子门禁上下文把原始对象和序列化诊断放在一起，避免重复转换。
     dict_context = {
         "quality_report": report_quality,  # 保留 AST summary 和 VG 规则统计
-        "static_lint_issues": list_static_lint_issues,  # 保留 lint severity 供计数
+        "pg_report": dict_pg_report,  # 保留逐门禁结果和摘要
         "comment_metrics": tuple_comment_gate[1],  # 注释位置覆盖率和密度指标
         "quality_issues": list_quality_issues,  # 已序列化的 VG 规则诊断
-        "lint_issues": list_lint_issues,  # 已统一 code 前缀的 lint 诊断
+        "pg_issues": list_pg_issues,  # 已统一为交付 issue 的 PG 诊断
         "comment_issues": list_comment_gate_issues,  # 已补齐 severity 的注释诊断
     }  # 交付门禁上下文
 
@@ -155,8 +164,8 @@ def _count_deliverable_totals(dict_context: dict[str, Any], strict: bool) -> dic
     # VG 质量门报告对象提供 error/warning 聚合计数。
     report_quality = dict_context["quality_report"]  # 质量门聚合计数来源
 
-    # static lint 原始诊断保留 severity，方便分别统计 error/warning。
-    list_static_lint_issues = dict_context["static_lint_issues"]  # static lint 诊断集合
+    # PG 报告提供激活规则的逐条状态和级别。
+    list_pg_results = dict_context["pg_report"]["pg_gate_results"]  # 固定 PG 门禁结果
 
     # 注释 gate 诊断已补齐 severity 字段。
     list_comment_gate_issues = dict_context["comment_issues"]  # 注释位置诊断集合
@@ -164,8 +173,14 @@ def _count_deliverable_totals(dict_context: dict[str, Any], strict: bool) -> dic
     # VG error 来自 AST、命名、区域、reset、FSM 和注释语义规则。
     int_quality_errors = report_quality.errors  # VG 阻断项总量
 
-    # static lint error 表示可综合或 RTL 基础结构风险。
-    int_lint_errors = sum(1 for issue in list_static_lint_issues if issue.severity == "error")  # 静态 lint 阻断项
+    # 激活 BLOCKER 的所有非通过状态都按 fail-closed 计入错误。
+    int_pg_errors = sum(  # PG 阻断门禁非通过数量
+        1  # 当前激活 BLOCKER 的一次非通过计数
+        for dict_result in list_pg_results  # 逐条筛选激活 PG 结果
+        if dict_result["catalog_status"] == "active"  # 警告统计仅消费已启用规则
+        and dict_result["level"] == "BLOCKER"  # 只累计阻断等级
+        and dict_result["status"] != "passed"  # fail-closed 接纳所有非通过状态
+    )
 
     # 注释位置 error 表示实体级注释落点不满足交付要求。
     int_comment_errors = sum(1 for issue in list_comment_gate_issues if issue.get("severity") == "error")  # 注释落点阻断项
@@ -173,17 +188,23 @@ def _count_deliverable_totals(dict_context: dict[str, Any], strict: bool) -> dic
     # VG warning 在 strict 交付中等同待修复问题。
     int_quality_warnings = report_quality.warnings  # VG 可疑项总量
 
-    # lint warning 多为边界风险，strict 模式下也阻断交付。
-    int_lint_warnings = sum(1 for issue in list_static_lint_issues if issue.severity == "warning")  # 静态 lint 警告项
+    # 激活 WARNING 的非通过状态在 strict 模式计入待修复警告。
+    int_pg_warnings = sum(  # PG 警告门禁非通过数量
+        1  # strict 模式下当前 PG 警告的一次计数
+        for dict_result in list_pg_results  # 逐条筛选警告级 PG 结果
+        if dict_result["catalog_status"] == "active"  # 排除 reserved 目录条目
+        and dict_result["level"] == "WARNING"  # 只累计警告等级
+        and dict_result["status"] != "passed"  # strict 模式接纳所有非通过状态
+    )
 
     # 注释 warning 代表语义覆盖不足或位置不够可靠。
     int_comment_warnings = sum(1 for issue in list_comment_gate_issues if issue.get("severity") == "warning")  # 注释落点警告项
 
     # 最终 error 数量由 VG、lint 和 comment gate 三类阻断项组成。
-    int_errors = int_quality_errors + int_lint_errors + int_comment_errors  # 最终阻断问题总数
+    int_errors = int_quality_errors + int_pg_errors + int_comment_errors  # 最终阻断问题总数
 
     # strict warning 汇总所有必须在交付前清零的 warning。
-    int_strict_warnings = int_quality_warnings + int_lint_warnings + int_comment_warnings  # 严格模式待修复警告总数
+    int_strict_warnings = int_quality_warnings + int_pg_warnings + int_comment_warnings  # 严格模式待修复警告总数
 
     # 交付状态严格绑定到 error 和 strict warning 两类阻断因素。
     bool_delivery_ready = int_errors == 0 and (not strict or int_strict_warnings == 0)  # 最终可交付状态
@@ -191,10 +212,10 @@ def _count_deliverable_totals(dict_context: dict[str, Any], strict: bool) -> dic
     # 计数字典避免多个组装函数重复计算同一批数量。
     dict_totals = {
         "quality_errors": int_quality_errors,  # VG 深规则阻断计数
-        "lint_errors": int_lint_errors,  # 结构 lint 阻断计数
+        "pg_errors": int_pg_errors,  # PG 阻断门禁非通过计数
         "comment_errors": int_comment_errors,  # 注释落点阻断计数
         "quality_warnings": int_quality_warnings,  # VG 可疑诊断计数
-        "lint_warnings": int_lint_warnings,  # lint 非阻断风险计数
+        "pg_warnings": int_pg_warnings,  # PG 警告门禁非通过计数
         "comment_warnings": int_comment_warnings,  # 注释覆盖风险计数
         "errors": int_errors,  # 三类子门禁阻断合计
         "strict_warnings": int_strict_warnings if strict else 0,  # strict 报告展示的 warning 合计
@@ -231,7 +252,7 @@ def _build_deliverable_checks(
     # 合并诊断只用于分类统计，不改变原始 issues 顺序。
     list_all_issues = [
         *dict_context["quality_issues"],  # VG 深规则诊断
-        *dict_context["lint_issues"],  # 静态 lint 诊断
+        *dict_context["pg_issues"],  # 固定 PG 门禁诊断
         *dict_context["comment_issues"],  # 注释落点诊断
     ]  # 全部交付诊断
 
@@ -258,13 +279,13 @@ def _build_deliverable_checks(
 
     # compile 表示本地静态解析和基础 lint 阻断，不代表仿真器编译。
     dict_checks["compile"] = _check_summary(  # compile 门禁保留本地解析和基础 lint 证据
-        errors=int_parse_errors + dict_totals["lint_errors"],  # compile 门禁合并 parser 与基础 lint 阻断
-        warnings=dict_totals["lint_warnings"],  # compile 门禁 strict 下需要清零的 lint warning
+        errors=int_parse_errors + dict_totals["pg_errors"],  # compile 门禁合并 parser 与 PG 阻断
+        warnings=dict_totals["pg_warnings"],  # compile 门禁 strict 下需要清零的 PG warning
         strict=strict,  # compile 门禁沿用最终交付 strict 策略
         files=dict_ast_summary.get("files", 0),  # compile 摘要显示本地静态扫描覆盖范围
         modules=dict_ast_summary.get("modules", 0),  # compile 摘要显示可解析设计单元规模
         parse_errors=int_parse_errors,  # compile 门禁展示 formatter parser 错误数
-        source="formatter_ast+static_lint",  # compile 门禁证据来源组合
+        source="formatter_ast+rtl_pg_gate",  # compile 门禁证据来源组合
     )
 
     # ast 摘要定位 formatter AST 是否真正覆盖文件和 module。
@@ -615,7 +636,7 @@ def _build_deliverable_report(
     # 诊断顺序保持 VG、lint、comment gate，方便从根因到补充证据阅读。
     list_issues = [
         *dict_context["quality_issues"],  # VG 深规则诊断排在最前
-        *dict_context["lint_issues"],  # lint 结构风险作为补充证据
+        *dict_context["pg_issues"],  # PG 结构风险作为补充证据
         *dict_context["comment_issues"],  # 注释位置诊断放在最后
     ]  # 最终报告诊断集合
 
@@ -626,12 +647,12 @@ def _build_deliverable_report(
     dict_delivery_issues_by_rule = _count_delivery_issues_by_rule(  # 规则级修复队列摘要
         list_issues,  # 合并后的诊断列表
         dict_totals,  # 最终交付计数
-        strict=strict,  # strict warning 是否阻断
+        strict=strict,  # 是否把 warning 计入规则级修复队列
     )
 
     # 报告骨架先写入摘要字段，随后补充子门禁详情。
     dict_report: dict[str, Any] = {
-        "version": 1,  # 报告结构版本
+        "version": 2,  # 报告结构版本
         "root": str(path_root),  # 被检查的 Verilog 入口
         "strict": strict,  # 是否启用 strict 交付策略
         "delivery_ready": dict_totals["delivery_ready"],  # strict 交付布尔结论
@@ -647,8 +668,14 @@ def _build_deliverable_report(
     # quality_gate 详情保留完整 AST 与 VG 规则命中。
     dict_report["quality_gate"] = dict_context["quality_report"].to_dict()  # 完整 VG 报告
 
-    # static_lint 详情采用统一后的诊断字典。
-    dict_report["static_lint"] = dict_context["lint_issues"]  # 统一编号后的 lint 诊断
+    # PG 门禁摘要和逐规则结果作为 RTL 规则判断的权威来源。
+    dict_report["pg_catalog_version"] = dict_context["pg_report"]["pg_catalog_version"]  # PG 目录版本
+
+    # 状态摘要用于快速核对激活、预留与执行状态数量。
+    dict_report["pg_gate_summary"] = dict_context["pg_report"]["pg_gate_summary"]  # PG 状态摘要
+
+    # 逐规则结果保留全部 72 个固定编号及其证据。
+    dict_report["pg_gate_results"] = dict_context["pg_report"]["pg_gate_results"]  # 72 条逐门禁结果
 
     # comment_gate 详情保留位置诊断和覆盖指标。
     dict_report["comment_gate"] = {
@@ -694,65 +721,68 @@ def write_verilog_deliverable_gate_report(
         # 写出 Markdown 摘要和诊断表。
         markdown_path.write_text(_deliverable_report_to_markdown(report), encoding="utf-8")
 
-# _run_static_lint 对文件入口使用临时根，避免误扫同目录其他 RTL。
-def _run_static_lint(path_root: Path) -> list[StaticLintIssue]:
-    """
-    对交付入口运行内置 static lint。
-    
-    :param path_root: 交付门禁入口文件或目录。
-    :return: static lint 诊断列表。
-    """
+# PG 结果转换器只展开激活门禁的非通过状态。
+def _pg_results_to_issues(list_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把逐门禁结果转换为交付报告统一 issue。
 
-    # dict_spec 提供 static lint 需要的最小设计元数据。
-    dict_spec = {"name": path_root.stem or path_root.name, "interfaces": {"ports": []}}  # lint 最小规格
+    参数:
+        list_results: run_rtl_pg_gate 返回的 72 条逐门禁结果。
 
-    # 目录入口可直接扫描。
-    if path_root.is_dir():
-
-        # 返回目录 lint 结果。
-        return lint_generated_rtl(dict_spec, path_root)
-
-    # 非文件入口由质量门报告文件发现问题，lint 不重复报错。
-    if not path_root.is_file():
-
-        # 没有可扫描的实体。
-        return []
-
-    # 单文件入口复制到临时目录，防止 static lint 扫描兄弟文件。
-    with tempfile.TemporaryDirectory(prefix="erie-deliverable-lint-") as str_temp_dir:
-
-        # 临时根只包含当前文件，隔离同目录历史 RTL 对 lint 的干扰。
-        path_temp_root = Path(str_temp_dir)  # 临时 lint 根目录
-
-        # path_temp_file 保留原始文件名，便于 lint 报告识别。
-        path_temp_file = path_temp_root / path_root.name  # 临时 RTL 文件路径
-
-        # 复制目标文件到临时根。
-        shutil.copy2(path_root, path_temp_file)
-
-        # 返回临时根 lint 结果。
-        return lint_generated_rtl(dict_spec, path_temp_root)
-
-# _static_lint_issue_to_dict 统一 static lint 报告字段。
-def _static_lint_issue_to_dict(issue: StaticLintIssue) -> dict[str, Any]:
-    """
-    把 StaticLintIssue 转换为交付门禁 issues 条目。
-    
-    :param issue: static lint 诊断对象。
-    :return: JSON 友好的诊断字典。
+    返回:
+        激活门禁中所有非通过结果对应的 issue 字典列表。
     """
 
-    # dict_issue 先复用 lint 自身导出字段。
-    dict_issue = issue.to_dict()  # static lint 原始诊断字典
+    # 结果列表保留 catalog 顺序，便于报告稳定比较。
+    list_issues: list[dict[str, Any]] = []  # PG 非通过状态转换后的交付问题
 
-    # code 加前缀，避免和 VG 编号混淆。
-    dict_issue["code"] = f"STATIC_{dict_issue.get('code', 'LINT')}"  # 交付报告中的 lint 编号
+    # reserved 与 passed 不进入交付问题集合。
+    for dict_result in list_results:
 
-    # rule 字段便于和 quality gate issues 对齐。
-    dict_issue["rule"] = "static_lint"  # 交付报告规则来源
+        # 只展开会参与交付判断的激活非通过门禁。
+        if dict_result["catalog_status"] != "active" or dict_result["status"] == "passed":
 
-    # 返回带交付门禁前缀的 lint 诊断。
-    return dict_issue
+            # 当前结果无需报告为问题，继续处理下一条。
+            continue
+
+        # finding 为空时仍要保留 fail-closed 状态的通用问题。
+        list_findings = list(dict_result.get("findings") or [])  # 当前 PG 门禁的定位证据
+
+        # 没有具体定位时使用门禁级消息承载不确定或执行错误。
+        if not list_findings:
+
+            # 通用 finding 保留状态信息，避免无定位结果静默消失。
+            list_findings = [
+                {
+                    "path": None,  # 无定位结果时明确表示没有可靠文件路径
+                    "line": 1,  # 无精确定位时使用稳定的一基起始行
+                    "message": dict_result.get("message") or f"{dict_result['gate_id']} did not pass.",  # 门禁级失败说明
+                    "evidence": dict_result["status"],  # 保留触发 fail-closed 的原始状态
+                }
+            ]
+
+        # 每条定位证据都转换为独立 issue，便于修复计数和报告展示。
+        for dict_finding in list_findings:
+
+            # catalog 等级决定该 finding 在交付报告中的严重度。
+            str_severity = "error" if dict_result["level"] == "BLOCKER" else "warning"  # 交付问题严重级别
+
+            # PG 编号直接成为公开 code，不再添加其他前缀。
+            dict_issue = {
+                "code": dict_result["gate_id"],  # 固定 PG 编号是公开问题码
+                "rule": dict_result["gate_id"],  # 规则字段与公开问题码保持一致
+                "severity": str_severity,  # catalog 等级映射后的报告严重度
+                "message": dict_finding.get("message") or dict_result.get("message") or "PG gate did not pass.",  # 优先使用定位诊断
+                "path": dict_finding.get("path"),  # 违规 RTL 的相对路径
+                "line": int(dict_finding.get("line") or 1),  # 违规位置的一基行号
+                "source": "rtl_pg_gate",  # 诊断来源标识
+                "detail": dict_finding.get("evidence") or dict_result["status"],  # 原始证据或 fail-closed 状态
+            }  # 当前 finding 对应的统一交付问题
+
+            # 把当前 PG issue 追加到最终问题列表。
+            list_issues.append(dict_issue)
+
+    # 返回按 catalog 和 finding 顺序排列的 PG issues。
+    return list_issues
 
 # _comment_placement_issue_to_dict 补齐注释位置诊断的交付报告字段。
 def _comment_placement_issue_to_dict(issue: dict[str, Any]) -> dict[str, Any]:

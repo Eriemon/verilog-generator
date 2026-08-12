@@ -1,264 +1,245 @@
-"""读取并校验 RTL Markdown 约束目录。"""
+"""读取、校验并渲染固定 RTL PG 门禁目录。"""
 
-# 延迟注解解析，避免导入期处理复杂类型。
+# future annotations 延后解析目录载荷的类型标注。
 from __future__ import annotations
 
-# 标准库依赖负责 JSON 资产读取、缓存和路径定位。
+# json 读取随技能发布的固定门禁资产。
 import json
+
+# lru_cache 避免同一进程重复读取和校验 catalog。
 from functools import lru_cache
+
+# pathlib 以模块位置稳定解析资产路径。
 from pathlib import Path
+
+# typing 描述 JSON 目录中的动态字段。
 from typing import Any
 
-# 约束目录资产随 skill 打包，runtime 只读取这个稳定 JSON。
-ASSET_PATH = Path(__file__).resolve().parents[3] / "assets" / "rtl_md_constraints.json"  # RTL Markdown 约束目录路径
+# 资产路径相对技能根解析，安装后无需依赖当前工作目录。
+ASSET_PATH = Path(__file__).resolve().parents[3] / "assets" / "rtl_md_constraints.json"  # 固定 PG catalog 路径
 
-# 公开入口读取并缓存约束目录，供 prompt 和 static lint 共用。
+# 编号序列强制 PG1001 至 PG1072 连续且顺序稳定。
+EXPECTED_GATE_IDS = tuple(  # 72 个预期固定编号
+    f"PG{int_index:04d}"  # 当前四位 PG 编号
+    for int_index in range(1001, 1073)  # 固定闭区间 PG1001 至 PG1072
+)
+
+# 目录只允许阻断和警告两种治理等级。
+ALLOWED_LEVELS = frozenset({"BLOCKER", "WARNING"})  # 合法 catalog 等级
+
+# active 执行，reserved 仅保留指导语义。
+ALLOWED_STATUSES = frozenset({"active", "reserved"})  # 合法 catalog 状态
+
+# v3 全部高置信规则激活后的固定版本、总数、状态和等级计数。
+EXPECTED_CATALOG_COUNTS = (3, 72, 67, 5, 67, 5, 48, 19)  # 最终 catalog 不变量期望元组
+
+# load_rtl_md_constraints 是目录读取与结构校验的唯一入口。
 @lru_cache(maxsize=1)
 
-# load_rtl_md_constraints 是 runtime 读取约束资产的唯一入口。
+# 缓存后的函数仍以校验成功作为返回前提。
 def load_rtl_md_constraints() -> dict[str, Any]:
-    """读取稳定的 Verilog RTL Markdown 约束目录。
+    """读取并校验随 skill 打包的固定 RTL PG 门禁目录。
 
     参数:
         无。
-
     返回:
-        约束目录字典，包含 rules、计数摘要和包内一致性元数据。
-
+        已通过编号、状态和计数一致性校验的目录字典。
     异常:
-        ValueError: catalog 缺少规则、计数不一致或包含旧编号元数据。
+        ValueError: 目录缺项、编号漂移或计数不一致。
     """
 
-    # JSON 资产读取后立即做结构校验，避免损坏 catalog 进入 prompt。
-    dict_payload = json.loads(ASSET_PATH.read_text(encoding="utf-8"))  # RTL Markdown 约束目录载荷
+    # UTF-8 读取保证中文摘要在 prompt 和报告中稳定呈现。
+    dict_payload = json.loads(ASSET_PATH.read_text(encoding="utf-8"))  # 原始 catalog JSON 载荷
 
-    # 校验规则计数、唯一 id、执行级别和语义命名要求。
+    # 任一编号、状态或计数漂移都在返回前阻断。
     _validate_catalog(dict_payload)
 
-    # 返回缓存的目录对象，调用方应只读使用。
+    # 调用方只会收到已验证的固定目录。
     return dict_payload
 
-# prompt 摘要入口把完整 catalog 压缩成生成提示词片段。
+# summarize_constraints_for_prompt 将完整目录注入生成与审查提示。
 def summarize_constraints_for_prompt(*, max_rules_per_group: int = 5) -> str:
-    """生成适合注入 prompt 的 RTL Markdown 约束摘要。
+    """渲染包含全部 72 条 PG 门禁的稳定提示词摘要。
 
     参数:
-        max_rules_per_group: 预留兼容参数；当前摘要继续列出每个 topic 的所有规则。
-
+        max_rules_per_group: 兼容旧调用方的保留参数，不裁剪门禁。
     返回:
-        多行英文约束摘要，保留既有 prompt 文案和规则 id 形式。
+        按主题列出固定 PG 编号、级别、状态和摘要的多行文本。
     """
 
-    # 参数保留给旧调用方，当前版本不裁剪 topic 内规则。
+    # 保留参数兼容旧调用方，但固定目录禁止裁剪。
     del max_rules_per_group
 
-    # 读取已校验 catalog，保证摘要中的计数字段可信。
-    dict_catalog = load_rtl_md_constraints()  # 已校验约束目录
+    # 复用唯一 loader，避免 prompt 旁路 catalog 校验。
+    dict_catalog = load_rtl_md_constraints()  # 已验证的固定 PG 目录
 
-    # rules 列表后续会按 topic 聚合。
-    list_rules = list(dict_catalog["rules"])  # catalog 中的规则对象列表
+    # 列表副本用于按 catalog 顺序分组渲染。
+    list_rules = list(dict_catalog["rules"])  # 72 条固定规则记录
 
-    # topic 顺序固定排序，保证 prompt 文本可复现。
-    list_topic_order = sorted({str(rule["topic"]) for rule in list_rules})  # 规则主题顺序
-
-    # MUST 说明保留旧版英文措辞，强调自动 lint 会覆盖高置信阻断规则。
-    str_must_summary = (  # prompt 中说明 MUST 规则阻断属性的固定英文句
-        "MUST rules are blocking error constraints. "  # MUST 阻断级规则说明前半句
-        "High-confidence MUST rules are also checked by static lint."  # MUST 自动 lint 覆盖说明后半句
+    # dict.fromkeys 保留 topic 首次出现顺序。
+    list_topic_order = list(  # catalog 中稳定的主题顺序
+        dict.fromkeys(  # 去重主题且保留首次出现顺序
+            str(dict_rule["topic"])  # 当前规则所属主题
+            for dict_rule in list_rules  # 按固定编号顺序遍历规则
+        )
     )
 
-    # REC 说明保留旧版英文措辞，强调偏离建议规则时必须记录理由。
-    str_rec_summary = (  # prompt 中说明 REC 偏离需要记录理由的固定英文句
-        "REC rules are default warning-level preferences. "  # REC 建议级规则说明前半句
-        "Record any REC deviation in manifest checks with a concrete reason."  # REC 偏离记录要求后半句
-    )
+    # 头部声明 active、WARNING 和 reserved 的交付语义。
+    list_prompt_lines: list[str] = [  # 五行文字向生成模型声明阻断规则、严格警告、预留规则和目录数量的判定方法
+        "RTL PG gates:",  # 标明后续内容属于固定门禁摘要
+        "Active BLOCKER gates require passed status; any other status blocks delivery.",  # 告知模型阻断级规则采用非通过即失败语义
+        "Active WARNING gates also require passed status in strict mode.",  # 告知模型警告级规则在严格交付时必须通过
+        "Reserved gates remain generation and review guidance; they never count as passed or block delivery.",  # 告知模型预留规则只指导生成审查而不参与阻断
+        (
+            f"Coverage: {dict_catalog['total_rules']} fixed gates, "
+            f"{dict_catalog['active_rules']} active gates, "
+            f"{dict_catalog['reserved_rules']} reserved gates."
+        ),  # 从已验证目录动态呈现总数及激活与预留数量
+    ]
 
-    # manifest 说明要求 REC 偏离必须有 implementation 或 reviewability 证据。
-    str_manifest_summary = (  # prompt 中要求 manifest 记录偏离证据的固定英文句
-        "Manifest checks must record implementation_assessment or "  # manifest 记录要求前半句
-        "reviewability_assessment evidence for every relevant REC deviation."  # REC 偏离证据要求后半句
-    )
-
-    # 覆盖行集中展示总数、MUST/error 数和 REC/warning 数。
-    str_coverage_summary = (  # prompt 中展示 catalog 规则计数的覆盖摘要
-        f"Coverage: {dict_catalog['total_rules']} rules, "  # catalog 总规则数量片段
-        f"{dict_catalog['required_rules']} MUST/error rules, "  # MUST/error 规则数量片段
-        f"{dict_catalog['advisory_rules']} REC/warning rules."  # 建议规则数量片段
-    )
-
-    # 摘要头部保留旧版英文说明，避免改变 prompt 兼容性。
-    list_lines = [
-        "RTL Markdown constraints:",  # 摘要标题
-        str_must_summary,  # 阻断规则级别说明行
-        str_rec_summary,  # 建议规则偏离说明行
-        str_manifest_summary,  # manifest 证据要求说明行
-        str_coverage_summary,  # catalog 三类计数覆盖行
-    ]  # prompt 摘要行
-
-    # 每个 topic 单独列出规则 id、severity 和 enforcement。
+    # 每个主题聚合为一行，仍保留全部固定编号。
     for str_topic in list_topic_order:
 
-        # 当前 topic 下的规则保持 catalog 原始顺序。
-        list_topic_rules = [rule for rule in list_rules if rule["topic"] == str_topic]  # 当前主题规则列表
+        # 当前主题规则保持原始编号顺序。
+        list_topic_rules = [  # 当前主题的固定规则记录
+            dict_rule  # 保留完整 catalog 字段
+            for dict_rule in list_rules  # 扫描全部固定规则
+            if dict_rule["topic"] == str_topic  # 只选择当前主题
+        ]
 
-        # 逐条规则生成 prompt 片段，再合并为主题摘要。
-        list_rule_fragments = [
-            f"{rule['id']}({rule['severity']}/{rule['enforcement']})"  # 单条规则的 prompt 摘要片段
-            for rule in list_topic_rules  # 当前主题内按 catalog 顺序渲染的规则
-        ]  # 当前主题规则摘要片段
+        # 每个片段同时展示编号、等级、状态和摘要。
+        list_fragments = [  # 当前主题的 prompt 规则片段
+            f"{dict_rule['gate_id']}[{dict_rule['level']}/{dict_rule['status']}]: {dict_rule['summary']}"  # 单条规则摘要
+            for dict_rule in list_topic_rules  # 按编号顺序渲染主题规则
+        ]
 
-        # 单行渲染规则 id 和执行级别，方便 prompt 扫描。
-        str_rendered_rules = ", ".join(list_rule_fragments)  # 当前主题的规则摘要文本
+        # 主题行进入最终多行提示文本。
+        list_prompt_lines.append(f"- {str_topic}: " + " | ".join(list_fragments))
 
-        # 将主题摘要追加到 prompt 片段中。
-        list_lines.append(f"- {str_topic}: {str_rendered_rules}")
+    # 换行连接便于模型逐主题读取完整目录。
+    return "\n".join(list_prompt_lines)
 
-    # 返回与旧实现一致的换行拼接文本。
-    return "\n".join(list_lines)
-
-# 自动 lint 覆盖集合用于 static_lint 选择可执行的规则。
-def automated_constraint_ids() -> set[str]:
-    """返回由自动静态检查覆盖的规则 id 集合。
+# active_pg_gate_ids 提供当前实际执行编号的稳定顺序。
+def active_pg_gate_ids() -> tuple[str, ...]:
+    """返回按目录顺序排列的激活 PG 门禁编号。
 
     参数:
         无。
-
     返回:
-        enforcement 以 automated_ 开头的规则 id 集合。
+        67 条激活门禁的固定编号元组。
     """
 
-    # 自动规则集合读取同一份 catalog，保证 static lint 规则和发布资产一致。
-    dict_catalog = load_rtl_md_constraints()  # static lint 选择自动规则的 catalog
+    # 激活编号查询不能绕过 catalog 的结构与计数验证。
+    dict_catalog = load_rtl_md_constraints()  # active 过滤所使用的目录载荷
 
-    # 只暴露自动化规则，prompt-only 和 review-only 规则不进入静态 lint。
-    return {
-        str(rule["id"])  # 自动化规则 id
-        for rule in dict_catalog["rules"]  # catalog 规则对象
-        if str(rule.get("enforcement", "")).startswith("automated_")  # 自动执行级别
-    }
+    # 元组保持 catalog 顺序，供测试和报告稳定比较。
+    return tuple(
+        str(dict_rule["gate_id"])  # 当前激活规则的固定编号
+        for dict_rule in dict_catalog["rules"]  # 遍历全部 72 条目录记录
+        if dict_rule["status"] == "active"  # 排除 reserved 指导规则
+    )
 
-# catalog 校验器集中保护包内 RTL Markdown 约束资产。
-def _validate_catalog(payload: dict[str, Any]) -> None:
-    """校验 RTL Markdown 约束 catalog 的内部一致性。
+# automated_constraint_ids 保持旧集合型调用合同。
+def automated_constraint_ids() -> set[str]:
+    """返回兼容旧调用方的激活 PG 门禁编号集合。
 
     参数:
-        payload: 从 rtl_md_constraints.json 读取出的 catalog 字典。
-
+        无。
     返回:
-        无；校验失败时抛出 ValueError。
-
-    异常:
-        ValueError: catalog 缺少规则、计数字段不一致或规则元数据不合法。
+        当前阶段会执行的固定 PG 编号集合。
     """
 
-    # rules 是 catalog 的主数据，所有计数和摘要都从它派生。
-    list_rules = payload.get("rules")  # catalog 原始规则列表
+    # 集合仅改变容器形状，不引入第二套自动化规则清单。
+    return set(active_pg_gate_ids())
 
-    # 缺少规则数组说明资产损坏。
-    if not isinstance(list_rules, list) or not list_rules:
+# _validate_catalog 集中执行固定编号和阶段计数不变量。
+def _validate_catalog(dict_payload: dict[str, Any]) -> None:
+    """校验固定 PG 目录的编号、状态、级别与摘要计数。
 
-        # 阻止空 catalog 进入 prompt 或 static lint。
-        raise ValueError("> ERR: [Python] RTL constraint catalog must contain a non-empty rules array.")
+    参数:
+        dict_payload: 从 JSON 资产读取的目录载荷。
+    返回:
+        无；校验通过即正常返回。
+    异常:
+        ValueError: 目录结构或固定合同发生漂移。
+    """
 
-    # total_rules 必须等于实际规则数量。
-    if payload.get("total_rules") != len(list_rules):
+    # rules 是后续所有固定合同检查的基础列表。
+    list_rules = dict_payload.get("rules")  # catalog 的规则记录集合
 
-        # 计数不一致意味着资产打包时没有同步摘要字段。
-        raise ValueError("> ERR: [Python] RTL constraint catalog total_rules does not match rules length.")
+    # 固定目录必须始终完整包含 72 条记录。
+    if not isinstance(list_rules, list) or len(list_rules) != 72:
 
-    # required_rules 记录会阻断生成或审查的 error 规则数量。
-    int_required_rules = sum(1 for rule in list_rules if rule.get("severity") == "error")  # MUST 阻断规则总数
+        # 缺项或额外项都会破坏固定编号合同。
+        raise ValueError("> ERR: [Python] RTL PG catalog must contain exactly 72 rules.")
 
-    # advisory_rules 记录允许带理由偏离的 warning 规则数量。
-    int_advisory_rules = sum(1 for rule in list_rules if rule.get("severity") == "warning")  # REC 建议规则总数
+    # 编号列表用于一次性核对连续性、顺序和唯一性。
+    list_gate_ids = [  # catalog 实际固定编号顺序
+        str(dict_rule.get("gate_id") or "")  # 当前规则编号或空占位
+        for dict_rule in list_rules  # 遍历全部 72 条记录
+    ]
 
-    # required/advisory 两个摘要计数必须和 rules 内容一致。
-    if payload.get("required_rules") != int_required_rules or payload.get("advisory_rules") != int_advisory_rules:
+    # 精确元组比较同时防止重复、跳号和乱序。
+    if tuple(list_gate_ids) != EXPECTED_GATE_IDS:
 
-        # 阻止错误计数误导报告和 prompt 覆盖信息。
-        raise ValueError("> ERR: [Python] RTL constraint catalog severity counts are inconsistent.")
+        # 编号漂移会使报告和迁移映射失去稳定主键。
+        raise ValueError("> ERR: [Python] RTL PG catalog ids must remain PG1001 through PG1072 in order.")
 
-    # 规则 id 需要唯一且非空，供 lint 和 prompt 稳定引用。
-    list_rule_ids = [str(rule.get("id") or "") for rule in list_rules]  # catalog 规则 id 列表
+    # 每条规则都必须使用受控等级、状态并提供可读摘要。
+    for dict_rule in list_rules:
 
-    # 重复或空 id 会让 issue code 与规则映射产生歧义。
-    if len(list_rule_ids) != len(set(list_rule_ids)) or any(not item for item in list_rule_ids):
+        # 未知等级无法映射 strict 交付语义。
+        if dict_rule.get("level") not in ALLOWED_LEVELS:
 
-        # 直接拒绝不可靠的规则目录。
-        raise ValueError("> ERR: [Python] RTL constraint catalog rule ids must be non-empty and unique.")
+            # 状态诊断指向需要改回 active 或 reserved 的具体编号。
+            raise ValueError(f"> ERR: [Python] RTL PG gate {dict_rule.get('gate_id')} has an invalid level.")
 
-    # shuffle_seed 是当前发布包的稳定性护栏。
-    if payload.get("shuffle_seed") != 20260609:
+        # 未知状态无法区分执行规则与预留指导。
+        if dict_rule.get("status") not in ALLOWED_STATUSES:
 
-        # seed 变化说明 catalog 顺序可能被意外重排。
-        raise ValueError("> ERR: [Python] RTL constraint catalog must preserve the shuffled package seed.")
+            # 诊断包含具体编号，便于修复 catalog。
+            raise ValueError(f"> ERR: [Python] RTL PG gate {dict_rule.get('gate_id')} has an invalid status.")
 
-    # semantic_rule_names 必须启用，避免旧编号式规则重新进入包。
-    if not payload.get("semantic_rule_names"):
+        # 过短摘要不能形成可用 prompt 或报告说明。
+        if len(str(dict_rule.get("summary") or "")) < 8:
 
-        # 规则名称必须保持语义化，不能回退到章节编号。
-        raise ValueError("> ERR: [Python] RTL constraint catalog must use semantic rule names.")
+            # 诊断包含具体编号，便于补全规则语义。
+            raise ValueError(f"> ERR: [Python] RTL PG gate {dict_rule.get('gate_id')} has an incomplete summary.")
 
-    # enforcement 只允许这四种执行级别。
-    set_allowed_enforcement = {
-        "automated_error",  # 自动阻断级检查
-        "automated_warning",  # 自动 warning 级检查
-        "prompt_warning",  # prompt 提示但不自动 lint
-        "review_error",  # 人工 review 阻断级检查
-    }  # catalog 允许的执行级别
+    # 重算值防止 catalog 顶层声明与逐规则事实不一致。
+    tuple_actual_counts = _catalog_counts(dict_payload, list_rules)  # 版本及阶段计数实值
 
-    # enforcement_counts 从实际规则重新统计后对比 payload 摘要。
-    dict_enforcement_counts: dict[str, int] = {}  # 按 enforcement 聚合的规则数量
+    # 任一声明值或重算值不符都阻断 catalog 加载。
+    if tuple_actual_counts != EXPECTED_CATALOG_COUNTS:
 
-    # 逐条规则检查旧编号字段、摘要长度和执行级别。
-    for rule in list_rules:
+        # 单一错误文本保持 CLI 与测试诊断稳定。
+        raise ValueError("> ERR: [Python] RTL PG catalog status or level counts are inconsistent.")
 
-        # 旧章节字段不能随规则资产进入可发布目录。
-        for str_banned_field in ("section", "小节", "章节"):
+# _catalog_counts 同时统计顶层声明与逐规则真实数量。
+def _catalog_counts(dict_payload: dict[str, Any], list_rules: list[dict[str, Any]]) -> tuple[Any, ...]:
+    """构造 catalog 固定版本和阶段计数元组。
 
-            # 发现旧编号元数据时直接失败，避免引用过期文档结构。
-            if str_banned_field in rule:
+    参数:
+        dict_payload: 包含顶层声明计数的目录载荷。
+        list_rules: 已确认长度为 72 的规则记录。
+    返回:
+        可与固定 v3 不变量直接比较的八项元组。
+    """
 
-                # 错误中包含 rule id，方便定位坏规则。
-                raise ValueError(
-                    f"> ERR: [Python] RTL constraint rule {rule.get('id')} still contains old numbering metadata."
-                )
-
-        # summary 过短通常说明规则正文抽取失败。
-        str_summary = str(rule.get("summary") or "")  # 当前规则的人类可读摘要
-
-        # 摘要至少需要能表达具体约束。
-        if len(str_summary) < 8:
-
-            # 报告缺失摘要的规则 id。
-            raise ValueError(f"> ERR: [Python] RTL constraint rule {rule.get('id')} has an incomplete summary.")
-
-        # enforcement 决定规则进入自动 lint、prompt 或 review。
-        str_enforcement = str(rule.get("enforcement") or "")  # 当前规则执行级别
-
-        # 未知执行级别会让下游不知道如何处理规则。
-        if str_enforcement not in set_allowed_enforcement:
-
-            # 保留未知 enforcement 的 repr，便于排查空白或拼写错误。
-            raise ValueError(
-                f"> ERR: [Python] RTL constraint rule {rule.get('id')} has unknown enforcement {str_enforcement!r}."
-            )
-
-        # error 规则不能降级为 prompt warning。
-        if rule.get("severity") == "error" and str_enforcement == "prompt_warning":
-
-            # 阻止 MUST/error 规则被错误标成仅提示。
-            raise ValueError(
-                f"> ERR: [Python] RTL constraint rule {rule.get('id')} downgrades an error rule to prompt warning."
-            )
-
-        # 统计执行级别数量，用于最终和 payload 摘要对比。
-        dict_enforcement_counts[str_enforcement] = (
-            dict_enforcement_counts.get(str_enforcement, 0) + 1  # 当前 enforcement 累积后的规则数量
-        )
-
-    # enforcement_counts 必须和从 rules 派生出的统计一致。
-    if payload.get("enforcement_counts") != dict_enforcement_counts:
-
-        # 计数字段不同步时提示重新生成 catalog 摘要。
-        raise ValueError("> ERR: [Python] RTL constraint catalog enforcement_counts are inconsistent.")
+    # 元组前四项来自资产声明，后四项从规则记录重新计算。
+    return (
+        dict_payload.get("version"),  # catalog schema 版本
+        dict_payload.get("total_rules"),  # 声明的总规则数
+        dict_payload.get("active_rules"),  # 声明的激活规则数
+        dict_payload.get("reserved_rules"),  # 声明的预留规则数
+        sum(dict_rule["status"] == "active" for dict_rule in list_rules),  # 重算 active 数
+        sum(dict_rule["status"] == "reserved" for dict_rule in list_rules),  # 逐规则统计尚未执行的指导占位数量
+        sum(  # 重算激活 BLOCKER 数
+            dict_rule["status"] == "active" and dict_rule["level"] == "BLOCKER"  # 当前规则是否为激活阻断项
+            for dict_rule in list_rules  # 遍历全部固定规则
+        ),
+        sum(  # 校验 strict 模式消费的警告规则数量
+            dict_rule["status"] == "active" and dict_rule["level"] == "WARNING"  # 当前规则是否为激活警告项
+            for dict_rule in list_rules  # 从 72 条记录筛选激活警告项
+        ),
+    )

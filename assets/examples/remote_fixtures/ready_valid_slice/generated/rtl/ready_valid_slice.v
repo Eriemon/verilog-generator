@@ -41,7 +41,7 @@
 
 module ready_valid_slice
 #(
-	parameter C_DATA_WIDTH = 8                  // 数据总线位宽
+	parameter C_DATA_WIDTH = 32'd8              // 数据总线位宽
 )
 (
 	//-----------------全局信号-----------------//
