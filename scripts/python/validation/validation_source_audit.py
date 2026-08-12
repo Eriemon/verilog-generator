@@ -451,11 +451,11 @@ def verify_skill_load_resources(
 # verify_skill_design_documents 检查 skill 标准文档与工程目标文档的模式说明。
 def verify_skill_design_documents(source_audit_context: SourceAuditContext) -> None:
     """
-    检查设计标准文档和工程目标文档是否仍保留要求的模式说明。
+    检查设计标准文档是否仍保留要求的模式说明。
 
     :param source_audit_context: 设计文档审计依赖的路径与模式集合上下文。
-    :return: 不返回业务值；通过时表示设计文档中的关键模式说明完整存在。
-    :raises AssertionError: 当标准文档或工程目标文档缺失关键模式说明时抛出。
+    :return: 不返回业务值；通过时表示标准文档中的关键模式说明完整存在。
+    :raises AssertionError: 当标准文档缺失关键模式说明时抛出。
     """
 
     # path_standards 指向必须存在的 skill 标准文档。
@@ -497,20 +497,6 @@ def verify_skill_design_documents(source_audit_context: SourceAuditContext) -> N
             # 关键短语缺失时，立即阻断 skill 标准文档通过。
             raise AssertionError(
                 f"> ERR: [Python] references/skill/skill-standards.md must mention {str_marker!r}."
-            )
-
-    # str_goals_text 保存工程目标文档全文，供模式说明完整性复核。
-    str_goals_text = (source_audit_context.path_skill_root / "ENGINEERING_DESIGN_GOALS.md").read_text(encoding="utf-8")  # 供模式复核使用的工程目标文档全文
-
-    # 工程目标文档同样必须保留所有模式名称。
-    for str_marker in source_audit_context.tuple_pattern_names:
-
-        # 任一模式名缺失时，都说明工程目标文档与当前标准不一致。
-        if str_marker not in str_goals_text:
-
-            # 工程目标文档缺少模式名时，立即阻断一致性校验。
-            raise AssertionError(
-                f"> ERR: [Python] ENGINEERING_DESIGN_GOALS.md must preserve the {str_marker} pattern."
             )
 
 # verify_skill_eval_assets 确认 skill 效果评估运行时资产齐全。

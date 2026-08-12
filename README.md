@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/hero.svg" alt="Verilog Generator RTL workbench" width="100%">
+  <img src="assets/readme/hero.svg" alt="Verilog Generator RTL workbench" width="100%">
 </p>
 
 <p align="center">
@@ -76,7 +76,7 @@ always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
 end
 ```
 
-**[Open the complete commented source ->](docs/examples/axis_packet_meter.v)**
+**[Open the complete commented source ->](assets/examples/readme/axis_packet_meter.v)**
 
 | Repository-local static gate | Result |
 | --- | ---: |
@@ -93,12 +93,14 @@ end
 
 Restart Codex after installation so the skill is discovered.
 
-For a pinned install, use tag `v0.4.0` or `erie-verilog-generator-v0.4.0.zip` from [GitHub Releases](https://github.com/Eriemon/verilog-generator/releases).
+This README describes the latest public GitHub release, `v0.4.0`. A governed source checkout may be newer; use `VERSION` as the local package version authority and do not infer public release availability from it.
+
+For a pinned install, use tag `v0.4.0` or the automatically generated source archive on the [GitHub release page](https://github.com/Eriemon/verilog-generator/releases/tag/v0.4.0).
 
 ## Authors
 
 <p align="center">
-  <img src="docs/assets/authors.svg" alt="Jiyuan Liu and He Li, Southeast University HIQC Laboratory" width="100%">
+  <img src="assets/readme/authors.svg" alt="Jiyuan Liu and He Li, Southeast University HIQC Laboratory" width="100%">
 </p>
 
 ## How to cite
@@ -127,5 +129,5 @@ For a pinned install, use tag `v0.4.0` or `erie-verilog-generator-v0.4.0.zip` fr
   <span>&nbsp;&bull;&nbsp;</span>
   <a href="CITATION.cff">Citation</a>
   <span>&nbsp;&bull;&nbsp;</span>
-  <a href="mailto:erie@seu.edu.cn">Contact</a>
+  <a href="mailto:<REDACTED_EMAIL>">Contact</a>
 </p>

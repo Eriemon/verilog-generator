@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/hero-cn.svg" alt="Verilog Generator RTL 工作台" width="100%">
+  <img src="assets/readme/hero-cn.svg" alt="Verilog Generator RTL 工作台" width="100%">
 </p>
 
 <p align="center">
@@ -76,7 +76,7 @@ always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
 end
 ```
 
-**[查看完整注释源码 →](docs/examples/axis_packet_meter.v)**
+**[查看完整注释源码 →](assets/examples/readme/axis_packet_meter.v)**
 
 | 仓库本地静态门禁 | 结果 |
 | --- | ---: |
@@ -93,12 +93,14 @@ end
 
 安装后重启 Codex，让它重新发现该 Skill。
 
-需要固定版本时，使用 `v0.4.0` tag，或从 [GitHub Releases](https://github.com/Eriemon/verilog-generator/releases) 下载 `erie-verilog-generator-v0.4.0.zip`。
+本文档描述 GitHub 当前最新公开 release `v0.4.0`。受治理的源码 checkout 可能更新；本地包版本以 `VERSION` 为准，不应据此推断该版本已经公开发布。
+
+需要固定版本时，使用 `v0.4.0` tag，或下载 [GitHub release 页面](https://github.com/Eriemon/verilog-generator/releases/tag/v0.4.0)自动生成的源码归档。
 
 ## 作者
 
 <p align="center">
-  <img src="docs/assets/authors-cn.svg" alt="作者刘济源和李鹤，东南大学异构智能与量子计算实验室" width="100%">
+  <img src="assets/readme/authors-cn.svg" alt="作者刘济源和李鹤，东南大学异构智能与量子计算实验室" width="100%">
 </p>
 
 ## 如何引用
@@ -127,5 +129,5 @@ end
   <span>&nbsp;·&nbsp;</span>
   <a href="CITATION.cff">引用</a>
   <span>&nbsp;·&nbsp;</span>
-  <a href="mailto:erie@seu.edu.cn">联系</a>
+  <a href="mailto:<REDACTED_EMAIL>">联系</a>
 </p>

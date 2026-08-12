@@ -25,9 +25,8 @@ Useful local commands:
 ```powershell
 python -m scripts.python.workflow.cli --version
 python -m scripts.python.workflow.cli scaffold --name rtl_adapter --out .\reports\verilog\spec.json
-python -m scripts.python.workflow.cli validate --spec .\reports\verilog\spec.json --path .\reports\verilog\generated --no-external
+python -m scripts.python.workflow.cli quality-gate --path .\assets\examples\readme\axis_packet_meter.v
 python .\scripts\python\validation\validate_verilog_skill.py --no-require-remote
-python .\scripts\build_release.py
 ```
 
 External HDL tooling is optional for many changes, but required before claiming simulator or implementation-tool acceptance.

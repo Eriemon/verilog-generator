@@ -291,11 +291,11 @@
       }
     },
     "markdown_non_ascii_allowlist": [
+      "README-CN.md",
       "references/rules/verilog-code-comment-naming-standard.md",
       "references/corpus/verilog-style-observations.md"
     ],
     "legacy_term_allowlist": [
-      "ENGINEERING_DESIGN_GOALS.md",
       "assets/ideal_bad_style_metrics.json",
       "assets/verilog_style_rules.json",
       "scripts/python/facade/verilog_api.py",

@@ -1,15 +1,15 @@
 cff-version: 1.2.0
-message: "If you use this agent skill, please cite it using the metadata below."
+message: "If you use the latest public GitHub release of this agent skill, please cite it using the metadata below."
 title: "Verilog Generator: An Agent Skill for Verilog-2001 RTL Workflows"
 type: software
 authors:
   - family-names: "Liu"
     given-names: "Jiyuan"
-    email: "erie@seu.edu.cn"
+    email: "<REDACTED_EMAIL>"
     affiliation: "Southeast University"
   - family-names: "Li"
     given-names: "He"
-    email: "helix@seu.edu.cn"
+    email: "<REDACTED_EMAIL>"
     affiliation: "Southeast University"
 abstract: "Verilog Generator is a Codex-ready agent skill package for disciplined Verilog-2001 RTL generation, existing-RTL review and repair, validation gates, and evidence-backed workflow orchestration."
 keywords:
@@ -24,5 +24,4 @@ repository-code: "https://github.com/Eriemon/verilog-generator"
 url: "https://github.com/Eriemon/verilog-generator"
 version: "0.4.0"
 date-released: "2026-07-05"
-year: 2026
 license: "Apache-2.0"

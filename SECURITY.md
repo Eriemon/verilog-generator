@@ -19,4 +19,3 @@ Please report security issues through GitHub private vulnerability reporting if 
 ## Handling Expectations
 
 We will acknowledge valid reports, reproduce them in a minimal environment, and publish fixes with clear notes. Do not include real tokens, private keys, proprietary hardware designs, private server names, or private network details in a report.
-
