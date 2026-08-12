@@ -1113,8 +1113,8 @@ def spec(name="remote_verilog_quality_gates"):
 
 
 catalog = load_verilog_quality_gates()
-assert catalog["total_rules"] == 127, catalog
-assert catalog["active_rules"] == 127, catalog
+assert catalog["total_rules"] == 128, catalog
+assert catalog["active_rules"] == 128, catalog
 assert catalog["reserved_rules"] == 0, catalog
 prompt = render_prompt(spec(), stage="rtl")
 for marker in (
@@ -1125,10 +1125,11 @@ for marker in (
     "VG147",
     "VG148",
     "VG149",
+    "VG150",
 ):
     assert marker in prompt, marker
 summary = summarize_constraints_for_prompt(max_rules_per_group=3)
-assert "127 active gates" in summary, summary
+assert "128 active gates" in summary, summary
 assert "reserved gates" not in summary, summary
 
 smoke_root = Path(os.environ["VERILOG_GENERATOR_SMOKE_RUN_DIR"])

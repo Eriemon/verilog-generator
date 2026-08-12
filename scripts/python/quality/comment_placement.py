@@ -91,11 +91,38 @@ def validate_comment_placement(root: Path, comment_language: str) -> tuple[list[
         "by_construct": {},  # 构造类型到 checked/violations 的映射
     }
 
-    # 按路径排序保证报告顺序稳定。
-    for path_verilog in sorted(root.glob("**/*.v")):
+    # 单文件入口需要把父目录作为相对路径根，避免 glob 扫描到零个文件。
+    path_target = root.resolve()  # 当前注释门禁的规范路径
+
+    # 按入口类型选择单文件或目录扫描路径。
+    if path_target.is_file():
+
+        # 非 Verilog 单文件保持空扫描语义，Verilog 文件只进入一次队列。
+        list_sources = [path_target] if path_target.suffix.lower() == ".v" else []  # 单文件扫描列表
+
+        # 单文件报告使用父目录作为稳定的相对路径根。
+        path_scan_root = path_target.parent  # 单文件报告使用的相对路径根
+
+    # 目录入口沿用递归扫描和稳定排序行为。
+    else:
+
+        # 递归获取目录下全部 Verilog 文件。
+        list_sources = sorted(path_target.glob("**/*.v"))  # 目录下全部 Verilog 文件
+
+        # 目录本身作为报告中的相对路径根。
+        path_scan_root = path_target  # 目录报告使用的相对路径根
+
+    # 按路径排序保证报告顺序稳定；单文件列表本身已满足该条件。
+    for path_verilog in list_sources:
 
         # 单文件扫描会更新 list_issues 和 dict_metrics。
-        _scan_verilog_file(path_verilog, root, comment_language, list_issues, dict_metrics)
+        _scan_verilog_file(
+            path_verilog,
+            path_scan_root,
+            comment_language,
+            list_issues,
+            dict_metrics,
+        )
 
     # 返回发现项和统计信息给静态 lint 调用方。
     return list_issues, dict_metrics

@@ -69,6 +69,9 @@ from .vg_comb_selectors import base_target, map_static_output_actual, static_tar
 # VgFacts 是 source reports 与 external interfaces 的发现阶段权威输入。
 from .vg_semantic_facts import VgFacts
 
+# 原语 profile 作为受治理的 synthetic boundary，不进入普通 source implementation。
+from .vg_primitive_facts import primitive_output_boundary, primitive_profiles, primitive_module_interface
+
 # 冻结映射入口保证模块缓存只接收字典事实。
 def _frozen_mapping(value: object) -> FrozenFact:
     """把字典值收窄为 FrozenFact。
@@ -439,8 +442,23 @@ def build_module_implementation_index(facts: VgFacts) -> ModuleImplementationInd
         for str_name, list_items in sorted(dict_external_grouped.items())  # 外部 module 名排序
     )
 
-    # 两类索引在类型层保持物理分离，防止 external 被递归展开。
-    return ModuleImplementationIndex(tuple_implementations, tuple_external_interfaces)
+    # 原语 profile 只承载端口方向和 output boundary，不伪造可递归 source 实现。
+    tuple_primitive_profiles = tuple(  # 原语 profile 的冻结索引，供 exact-name synthetic boundary 查询
+        (
+            str_name,  # catalog 中的 exact primitive module 名称
+            _frozen_mapping(dict_profile),  # 隔离当前 profile 的端口与 boundary 事实
+        )
+        for str_name, dict_profile in sorted(  # 按名称建立稳定查找序列
+            primitive_profiles(getattr(facts, "primitive_catalog", {})).items()  # 兼容未提供原语目录的旧事实对象
+        )
+    )  # 当前 catalog 的原语 profile 查找序列
+
+    # 三类索引在类型层保持物理分离，防止 external 或 primitive 被错误递归展开。
+    return ModuleImplementationIndex(
+        tuple_implementations,
+        tuple_external_interfaces,
+        tuple_primitive_profiles,
+    )
 
 # 引用分类只根据完整 source/external 名录生成固定原因。
 def _reference_reason(
@@ -3103,6 +3121,53 @@ def _has_unknown_output_driver_fact(list_target_facts: list[dict[str, Any]]) -> 
     # 任一未知证据只污染当前 output，并强制局部 fail-closed。
     return bool_has_parse_error or bool_has_unknown_process
 
+# _primitive_output_driver_class 将 profile output boundary 映射到组合图类别。
+def _primitive_output_driver_class(
+    module: SpecializedModule,
+    port_name: str,
+) -> OutputDriverClass | None:
+    """返回原语输出边界类别；普通 RTL module 返回 ``None``。
+
+    参数:
+        module: 当前 child specialization。
+        port_name: 需要跨层绑定的 output formal 名称。
+    返回:
+        原语边界对应的驱动类别；没有 primitive profile 时返回 ``None``。
+    """
+
+    # 普通 RTL module 继续沿用 expression/storage 事实分类。
+    if module.primitive_profile is None:
+
+        # None 表示调用方应执行既有 RTL 分类路径。
+        return None
+
+    # profile 已在 facts 阶段冻结，避免再次读取 Vivado 库或猜测内部逻辑。
+    dict_profile = _mapping(module.primitive_profile)  # 当前原语 profile 快照
+
+    # output boundary 是原语跨层传播的唯一受治理事实。
+    str_boundary = primitive_output_boundary(dict_profile, port_name)  # 当前 output 边界
+
+    # 透明和时钟源输出继续沿层级向父端传播。
+    if str_boundary in {"transparent", "clock_source"}:
+
+        # P1/P2 透明边界可继续参与组合 source closure。
+        return "combinational"
+
+    # state_cut 在 Q 或存储输出处截断上游 ownership。
+    if str_boundary == "state_cut":
+
+        # 原语 D/enable/reset 输入由独立 endpoint 继续审查。
+        return "storage_q"
+
+    # 多驱动和双向 pad 不建立唯一反向 ownership。
+    if str_boundary in {"multi_driver", "inout"}:
+
+        # 只保留 resolved boundary 的局部语义。
+        return "unresolved_net_boundary"
+
+    # P3 opaque 或未知 boundary 只污染当前 output target。
+    return "unknown"
+
 # 公开驱动分类入口决定 child output 是否展开、截止或局部未知。
 def classify_output_driver(
     module: SpecializedModule,
@@ -3133,6 +3198,15 @@ def classify_output_driver(
 
         # unknown 只污染当前关联输出。
         return "unknown"
+
+    # 原语没有 RTL expression/storage facts，直接消费 profile boundary。
+    optional_primitive_class = _primitive_output_driver_class(module, port_name)  # 原语 output 分类
+
+    # None 只表示当前 module 不是原语 synthetic boundary。
+    if optional_primitive_class is not None:
+
+        # 透明、Q cut、resolved boundary 和 opaque 均已在 helper 中 fail-closed 分类。
+        return optional_primitive_class
 
     # inout 和 resolved-net 类型必须在 child 边界截止。
     if _port_is_unresolved_boundary(dict_port):
@@ -4095,6 +4169,277 @@ def _append_child_outputs(
         # 单端口处理器负责宽度、选择器和驱动类别分流。
         _append_child_output_port(state, occurrence, dict_port)
 
+# _primitive_specialized_module 建立无内部 RTL 的原语 synthetic module。
+def _primitive_specialized_module(
+    primitive_profile: dict[str, Any],
+) -> tuple[SpecializedModule, dict[str, Any]]:
+    """从原语 profile 建立特化模块和有序接口。
+
+    参数:
+        primitive_profile: 已通过 catalog 校验的原语 profile。
+    返回:
+        ``(specialized_module, interface)`` 二元组。
+    """
+
+    # 原语身份不依赖当前 RTL 路径，避免实例间共享 source definition。
+    str_module_name = str(primitive_profile.get("module_name") or primitive_profile.get("name") or "")  # 原语模块名
+
+    # 原语 identity 使用固定伪来源，不与真实 RTL 路径混合。
+    module_identity = ModuleImplementationIdentity(  # 原语身份
+        "<amd-xilinx-primitive>",  # 固定伪来源隔离 catalog 原语与 RTL source
+        str_module_name,  # 使用 catalog exact-name 作为 identity 的 module 名
+        SourceSpan(0, 0, 0, 0),  # 原语没有真实 RTL 源码范围
+    )
+
+    # 固定 specialization key 让同名原语的 profile boundary 可复用。
+    specialization_key = SpecializationKey(module_identity, "primitive")  # 原语特化键
+
+    # 原语 profile 不承载参数覆盖环境。
+    parameter_environment = ParameterEnvironment((), "primitive")  # 原语不携带实例参数覆盖环境
+
+    # profile 端口顺序是 positional association 的唯一受治理来源。
+    dict_interface = primitive_module_interface(primitive_profile)  # 原语接口投影
+
+    # 端口序列冻结后才能进入 hierarchy cache。
+    tuple_ports = tuple(_frozen_mapping(dict_port) for dict_port in dict_interface.get("ports", []))  # 冻结端口序列
+
+    # synthetic module 只暴露接口和 output boundary，不伪造内部实现。
+    specialized_module = SpecializedModule(  # 原语 synthetic module，作为无内部 RTL 的 child
+        key=specialization_key,  # 复用原语 identity 形成稳定 specialization key
+        parameter_environment=parameter_environment,  # 原语不接受实例参数覆盖
+        ports=tuple_ports,  # 按 profile 顺序提供 positional/named 端口接口
+        comb_expressions=(),  # 原语内部组合表达式由 boundary 语义取代
+        instances=(),  # 原语不展开任何内部实例
+        functions=(),  # 原语不伪造函数定义
+        storage_drivers=(),  # 原语存储切点由 output boundary 表示
+        loop_presence="absent",  # 原语没有 generate/loop 事实
+        unknown_regions=(),  # catalog 已验证的 profile 不增加未知区域
+        primitive_profile=_frozen_mapping(primitive_profile),  # 保存冻结 profile 供 output 分类
+    )
+
+    # 同时返回接口，避免主流程再次读取 profile 产生漂移。
+    return specialized_module, dict_interface
+
+# _primitive_input_actuals 保留原语 input formal 与 actual 的绑定事实。
+def _primitive_input_actuals(
+    dict_interface: dict[str, Any],
+    dict_actuals: dict[str, Any],
+) -> tuple[tuple[str, FrozenFact], ...]:
+    """从原语接口和已解析 actuals 提取 input 绑定。
+
+    参数:
+        dict_interface: 原语 profile 的有序接口投影。
+        dict_actuals: `_bind_port_associations` 返回的 formal 到 actual 映射。
+    返回:
+        可安全进入 ChildOccurrence 的冻结 input actual 元组。
+    """
+
+    # 只有存在 actual 的 input formal 才参与父级 source closure。
+    return tuple(
+        (
+            str(dict_port.get("name") or ""),
+            _frozen_mapping(dict_actuals[str(dict_port.get("name") or "")]),
+        )
+        for dict_port in dict_interface.get("ports", [])
+        if str(dict_port.get("direction") or "").lower() == "input"
+        and str(dict_port.get("name") or "") in dict_actuals
+    )
+
+# _build_primitive_instance_node 把 Xilinx 原语物化为 profile boundary。
+def _build_primitive_instance_node(
+    state: HierarchyBuildState,
+    parent_path: tuple[str, ...],
+    parent: SpecializedModule,
+    instance: dict[str, Any],
+    primitive_profile: dict[str, Any],
+) -> None:
+    """建立原语 child occurrence，并复用统一 output binding 逻辑。
+
+    参数:
+        state: 当前层级图构建状态。
+        parent_path: 当前实例所属父模块路径。
+        parent: 当前父模块特化。
+        instance: 已物化的原语实例事实。
+        primitive_profile: 已校验的原语 profile。
+    返回:
+        无；成功 child 或局部 unknown 结果写入构建状态。
+    """
+
+    # helper 返回已经冻结的原语 child 和有序接口。
+    tuple_primitive_result: tuple[SpecializedModule, dict[str, Any]] = _primitive_specialized_module(primitive_profile)  # 原语 child 与接口二元结果
+
+    # 第一个返回元素是无内部 RTL 的 synthetic child specialization。
+    tuple_specialized_module = tuple_primitive_result[0]  # 原语 child specialization 供 occurrence 和 hierarchy 使用
+
+    # 第二个返回元素保存 catalog 端口顺序与方向事实。
+    tuple_dict_interface = tuple_primitive_result[1]  # 原语接口供 positional binding 和 input closure 使用
+
+    # 接口 profile 再次冻结，避免普通字典进入 occurrence。
+    tuple_ports = tuple(_frozen_mapping(dict_port) for dict_port in tuple_dict_interface.get("ports", []))  # 原语端口序列
+
+    # profile port 顺序是 positional association 的唯一受治理来源。
+    tuple_binding = _bind_port_associations([dict(_mapping(frozen_port)) for frozen_port in tuple_ports], instance)  # 按 profile 端口顺序绑定 formal 与实例 actual
+
+    # 结构不完整时只污染当前 primitive instance actual。
+    if tuple_binding[1]:
+
+        # 保留 parser 的局部原因，不把不完整实例扩散到其他层级。
+        _append_unknown_actual_drivers(state.root, parent_path, parent, instance, tuple_binding[1], state.drivers)
+
+        # 未知绑定不再继续建立 child occurrence。
+        return
+
+    # 成功绑定后建立供 input closure 和 output endpoint 复用的 formal-to-actual 目录。
+    dict_actuals = dict(tuple_binding[0])  # 原语每个 formal 对应的父级 actual 表达式
+
+    # 只从 input formal 建立父级 source closure 绑定。
+    tuple_input_actuals = _primitive_input_actuals(tuple_dict_interface, dict_actuals)  # 原语 input formal 的父级 actual 绑定
+
+    # 统一 occurrence 模型承载 primitive output boundary。
+    occurrence = ChildOccurrence(  # 保存父级作用域、接口方向和连接表达式，供原语输出驱动写回父端点
+        parent_path,  # 当前原语实例所在的父模块路径
+        parent,  # 当前父模块 specialization
+        parent_path + (_instance_path_segment(instance),),  # 原语 child 的稳定实例路径
+        tuple_specialized_module,  # 保存 catalog 生成的无内部 RTL 原语 child，用于 output boundary 分类
+        instance,  # 当前原语实例事实
+        tuple(tuple_dict_interface.get("ports", [])),  # 原语接口端口
+        dict_actuals,  # 提供每个 formal 对应的父级 actual 表达式，供 output endpoint 回写
+        tuple_input_actuals,  # 保存 input formal 的 source closure 绑定，供来源审查
+    )
+
+    # 统一 child output 处理器消费 primitive profile 的 output boundary。
+    _append_child_outputs(state, occurrence)
+
+    # 原语没有内部 child，但 hierarchy node 仍保留稳定 specialization identity。
+    _build_hierarchy_node(state, occurrence.child_path, tuple_specialized_module, (tuple_specialized_module.key,))
+
+# _primitive_profile_for_instance 查询当前实例的 exact-name primitive profile。
+def _primitive_profile_for_instance(
+    state: HierarchyBuildState,
+    instance: dict[str, Any],
+) -> dict[str, Any]:
+    """返回当前实例的原语 profile，不匹配时返回空字典。
+
+    参数:
+        state: 当前层级图构建状态。
+        instance: 已物化的实例事实。
+    返回:
+        exact-name 命中的独立 profile 字典，或空字典。
+    """
+
+    # 只按 exact module name 查询，禁止原语前缀或后缀模糊放行。
+    str_module_name = str(instance.get("module_name") or "")  # 当前实例引用名
+
+    # 将索引复制成当前查询快照，避免后续调用改变 profile 解析结果。
+    dict_profiles = dict(state.index.primitive_profiles)  # 当前 catalog profile 索引
+
+    # _mapping 同时隔离 FrozenFact 与普通字典引用。
+    return _mapping(dict_profiles.get(str_module_name))
+
+# 原语分支尝试器负责命中 profile 后的 synthetic child 消费。
+def _try_build_primitive_instance_node(
+    state: HierarchyBuildState,
+    parent_path: tuple[str, ...],
+    parent: SpecializedModule,
+    instance: dict[str, Any],
+) -> bool:
+    """尝试构建命中的原语 child，并报告是否已消费当前实例。
+
+    参数:
+        state: 当前层级图构建状态。
+        parent_path: 当前实例所属父模块路径。
+        parent: 当前父模块特化。
+        instance: 已物化实例事实。
+    返回:
+        命中 catalog 原语并完成局部处理时返回 True，否则返回 False。
+    """
+
+    # exact-name 查询保证未知模块不会误套用相似原语 profile。
+    dict_primitive_profile = _primitive_profile_for_instance(state, instance)  # 当前实例的 catalog exact-name profile
+
+    # 未命中 profile 时交回普通 RTL implementation 解析路径。
+    if not dict_primitive_profile:
+
+        # False 表示调用方仍需处理普通 source/external module。
+        return False
+
+    # 参数化宽度未被当前静态事实解析时，禁止把默认 WIDTH=1 当成实例实宽。
+    if instance.get("parameter_overrides") and dict_primitive_profile.get("width_parameter"):
+
+        # 只污染当前原语实例的 actual，保留 fail-closed 原因供 VG097/VG146/VG147 使用。
+        _append_unknown_actual_drivers(
+            state.root,  # 当前层级图的 definition root
+            parent_path,  # 原语实例所在的父模块路径
+            parent,  # 父模块 specialization 与端点方向事实
+            instance,  # 带参数覆盖的原语实例事实
+            "parameterized primitive width requires explicit profile",  # 未解析 WIDTH 的局部原因
+            state.drivers,  # 写入受影响 actual 的 unknown producer
+        )
+
+        # 已命中原语但无法安全建模，调用方不得退回普通 RTL 猜测。
+        return True
+
+    # 命中 profile 时只建立 synthetic boundary，不读取 Vivado 库源码。
+    _build_primitive_instance_node(
+        state,  # 更新当前层级的 driver 与 hierarchy 目录
+        parent_path,  # 标记原语实例所属父级路径
+        parent,  # 提供父级端点与 specialization 上下文
+        instance,  # 传入已物化的原语实例事实
+        dict_primitive_profile,  # 传入 exact-name catalog boundary profile
+    )
+
+    # 原语 child 已完成局部 output binding，调用方不再继续 source 展开。
+    return True
+
+# 不完整实例处理器负责恢复 actual 影响并截断当前层级边。
+def _handle_incomplete_instance(
+    state: HierarchyBuildState,
+    parent_path: tuple[str, ...],
+    parent: SpecializedModule,
+    instance: dict[str, Any],
+) -> bool:
+    """处理 formatter 未完成解析的实例并报告是否已截断。
+
+    参数:
+        state: 当前层级图构建状态。
+        parent_path: 当前实例所属父模块路径。
+        parent: 当前父模块特化。
+        instance: 已物化实例事实。
+    返回:
+        实例关联不完整并已写入局部 unknown 证据时返回 True，否则返回 False。
+    """
+
+    # 完整实例不应在此 helper 中提前退出普通解析路径。
+    if bool(instance.get("parse_complete", True)):
+
+        # False 表示调用方可以继续 profile 或 source implementation 解析。
+        return False
+
+    # formatter 的局部原因必须原样进入 unknown producer 证据。
+    str_parse_reason = str(  # 当前实例结构化解析不完整原因
+        instance.get("unsupported_reason")  # 优先读取 formatter 的局部失败原因
+        or "instance associations are incomplete"  # 缺失原因时保持稳定诊断
+    )  # 当前实例结构化解析失败文本
+
+    # 尽可能先从残存 actual 恢复受影响的父端点。
+    int_recovered_endpoints = _append_unknown_actual_drivers(  # 成功定位的父端点数量
+        state.root,  # 使用当前层级图定义根
+        parent_path,  # 在解析失败实例的调用方作用域定位 actual
+        parent,  # 依据父端口方向排除输入来源
+        instance,  # 读取仍可恢复的结构化 actual
+        str_parse_reason,  # 把解析失败原因写入未知生产者
+        state.drivers,  # 更新当前构建期端点目录
+    )  # 当前实例能够恢复的受影响父端点数量
+
+    # 完全无法定位 actual 时升级为当前父 occurrence 的保守边界。
+    if int_recovered_endpoints == 0:
+
+        # 父 occurrence 边界阻止空连接事实让预算门静默通过。
+        _append_parent_unknown_boundary(state, parent_path, parent, instance, str_parse_reason)
+
+    # 不完整关联已经局部化，调用方不得继续解析 child 参数或端口方向。
+    return True
+
 # 单实例解析器负责唯一实现、参数绑定与 child occurrence 构造。
 def _build_instance_node(
     state: HierarchyBuildState,
@@ -4119,32 +4464,16 @@ def _build_instance_node(
     # 实例段附加 generate 或数组迭代身份。
     tuple_child_path = parent_path + (_instance_path_segment(instance),)  # 含 generate 或数组索引的 child occurrence 路径
 
-    # formatter 解析不完整时禁止进入参数特化或把空关联当作合法连接。
-    if not bool(instance.get("parse_complete", True)):
+    # 不完整关联由专用 helper 局部化，完整实例继续进入 profile/source 路径。
+    if _handle_incomplete_instance(state, parent_path, parent, instance):
 
-        # formatter 的局部原因必须原样进入 unknown producer 证据。
-        str_parse_reason = str(  # 当前实例结构化解析不完整原因
-            instance.get("unsupported_reason")  # 优先读取 formatter 的局部失败原因
-            or "instance associations are incomplete"  # 缺失原因时保持稳定诊断
-        )  # 当前实例结构化解析失败文本
+        # helper 已写入当前父端点 unknown 证据，不能再猜测 child。
+        return
 
-        # 尽可能先从残存 actual 恢复受影响的父端点。
-        int_recovered_endpoints = _append_unknown_actual_drivers(  # 成功定位的父端点数量
-            state.root,  # 使用当前层级图定义根
-            parent_path,  # 在解析失败实例的调用方作用域定位 actual
-            parent,  # 依据父端口方向排除输入来源
-            instance,  # 读取仍可恢复的结构化 actual
-            str_parse_reason,  # 把解析失败原因写入未知生产者
-            state.drivers,  # 更新当前构建期端点目录
-        )  # 当前实例能够恢复的受影响父端点数量
+    # 原语 helper 返回 True 时已经完成 boundary 绑定，普通路径不得重复消费。
+    if _try_build_primitive_instance_node(state, parent_path, parent, instance):
 
-        # 完全无法定位 actual 时升级为当前父 occurrence 的保守边界。
-        if int_recovered_endpoints == 0:
-
-            # 父 occurrence 边界阻止空连接事实让预算门静默通过。
-            _append_parent_unknown_boundary(state, parent_path, parent, instance, str_parse_reason)
-
-        # 不完整关联不得继续解析 child 参数或端口方向。
+        # 原语 child 已完成局部 output binding，不再进入 source implementation 路径。
         return
 
     # index 阶段已经局部分类缺失、重复和 external-only 引用。

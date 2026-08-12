@@ -2,15 +2,15 @@
   "version": 6,
   "name": "verilog_quality_gate_catalog",
   "description": "Unified VG catalog for readable Verilog RTL generation, review, and semantic validation.",
-  "total_rules": 127,
-  "active_rules": 127,
+  "total_rules": 128,
+  "active_rules": 128,
   "reserved_rules": 0,
   "status_counts": {
-    "active": 127
+    "active": 128
   },
   "active_level_counts": {
     "BLOCKER": 57,
-    "WARNING": 70
+    "WARNING": 71
   },
   "policy": {
     "active": "Every catalog rule executes through the unified Verilog quality gate.",
@@ -1035,6 +1035,14 @@
       "status": "active",
       "topic": "文件命名",
       "summary": "经名称、精确测试目录或用户确认识别的 testbench 必须使用非空 tb_<功能名> 文件名；普通命名但内容双证据疑似 testbench 时必须二次确认。"
+    },
+    {
+      "gate_id": "VG150",
+      "rule_key": "comments.semantic_integrity",
+      "level": "WARNING",
+      "status": "active",
+      "topic": "注释",
+      "summary": "实体 RTL 注释不得承载图谱、测试、验证或评审流程证据，也不得通过固定长度、周期重复的无关中文尾串填充注释；证据应保留在门禁报告中。"
     }
   ]
 }

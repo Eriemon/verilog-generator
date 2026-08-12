@@ -138,6 +138,13 @@ def _collect_deliverable_context(
     # comment gate 诊断补齐 code/rule/severity 字段。
     list_comment_gate_issues = [_comment_placement_issue_to_dict(issue) for issue in tuple_comment_gate[0]]  # 注释诊断字典集合
 
+    # 质量门中的 comments.* 诊断也属于注释审计，但仍保留在 quality_issues 作为唯一计数来源。
+    list_comment_quality_issues = [  # 汇总 comments.* 的外部显示副本
+        _comment_placement_issue_to_dict(issue)  # 保持质量诊断的行号和严重度
+        for issue in list_quality_issues  # 遍历质量门的既有诊断
+        if str(issue.get("rule") or "").startswith("comments.")  # 仅保留注释规则来源
+    ]  # 完成注释质量诊断投影列表
+
     # 子门禁上下文把原始对象和序列化诊断放在一起，避免重复转换。
     dict_context = {
         "quality_report": report_quality,  # 保留 AST summary 和 VG 规则统计
@@ -146,6 +153,7 @@ def _collect_deliverable_context(
         "quality_issues": list_quality_issues,  # 已序列化的 VG 规则诊断
         "vg_issues": list_vg_issues,  # 已统一为交付 issue 的 VG 诊断
         "comment_issues": list_comment_gate_issues,  # 已补齐 severity 的注释诊断
+        "comment_quality_issues": list_comment_quality_issues,  # 已在质量门计数的注释诊断投影
     }  # 交付门禁上下文
 
     # 返回供统计和报告组装复用的上下文。
@@ -683,9 +691,13 @@ def _build_deliverable_report(
     dict_report["vg_rule_results"] = dict_context["vg_report"]["vg_rule_results"]  # 72 条逐门禁结果
 
     # comment_gate 详情保留位置诊断和覆盖指标。
-    dict_report["comment_gate"] = {
-        "issues": dict_context["comment_issues"],  # 注释落点诊断列表
+    dict_report["comment_gate"] = {  # 注释 gate 的公开诊断与覆盖摘要
+        "issues": [  # 按入口来源合并注释审计诊断
+            *dict_context["comment_issues"],  # 首先保留落点规则的原始发现
+            *dict_context["comment_quality_issues"],  # 注释质量诊断投影
+        ],  # 完成 comment_gate 诊断列表
         "metrics": dict_context["comment_metrics"],  # 注释覆盖率统计
+        "scanned_files": dict_context["comment_metrics"].get("scanned_files", 0),  # 交付入口扫描文件数
     }
 
     # 返回完整报告。

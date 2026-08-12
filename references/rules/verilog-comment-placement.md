@@ -25,6 +25,7 @@ The comment gate checks placement and basic usefulness at the code-entity level.
 - `VG063` keeps ownership of leading-comment adjacency, alignment, and blank-line layout for procedural blocks, instances, and `case(state_current)` branches via `comments.case_branch_leading_comment`.
 - The formatter AST stores comments bound before a branch label on the corresponding `CaseItem.leading_comments`; renderers must preserve that field before the item label so formatter output cannot create a later `VG063` violation.
 - `VG067` owns pure `assign` subgroup spacing via `comments.assign_group_spacing`. The gate does not require every `assign` subgroup to exist; it only constrains the layout when such a pure comment is present.
+- `VG150` owns semantic-integrity checks for formatter-bound entity comments. Configured workflow evidence phrases are reported on their entity line, while unrelated tail strings are blocked only after the same entity category forms the configured high-confidence rotation family; banners and ordinary Chinese descriptions remain outside this detector.
 - `VG054` keeps ownership of next-state defaults, holds, and branch closure. `VG144` additionally requires a separate procedural combinational next-state process, forbids continuous assignment to `state_next`, and requires blocking `state_next = ...;` assignments in that process.
 
 ## Placement Matrix
@@ -51,6 +52,7 @@ The comment gate checks placement and basic usefulness at the code-entity level.
 - Formatter fallback comments such as `parameter`, `port signal`, `signal`, `assign`, `output bridge`, or `internal output signal`.
 - Hollow Chinese comments whose meaning is only "Chinese comment", "signal comment", "logic handling", "module logic", "data handling", or "port description".
 - Exact or near-duplicate entity comments after removing decorative dashes, numbering, identifier-only noise, and zero-width characters.
+- Workflow/evidence slogans attached to an RTL entity, or a fixed-length periodic tail family that is unrelated to that entity's meaning; the detector is configuration-driven and does not reject an isolated Chinese word by itself.
 - A pure comment placed between two code lines and reused for both.
 - Mechanical line-by-line comments that restate syntax without design meaning.
 - A continuation comment on a multiline macro that can hide or break backslash continuation semantics.

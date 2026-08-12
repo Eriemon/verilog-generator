@@ -162,6 +162,37 @@
         "drop identifier-only noise"
       ]
     },
+    "semantic_integrity": {
+      "diagnostic_code": "VG150",
+      "workflow_evidence_markers": [
+        "图谱审核",
+        "图谱证据",
+        "审核证据",
+        "评审验证",
+        "评审证据",
+        "测试流程",
+        "测试证据",
+        "验证步骤",
+        "验证证据",
+        "回归证据",
+        "流程证据",
+        "证据链",
+        "质量门证据",
+        "验证报告"
+      ],
+      "rotation_tail": {
+        "minimum_family_size": 8,
+        "minimum_distinct_tails": 4,
+        "minimum_chinese_prefix_chars": 4,
+        "tail_minimum_length": 4,
+        "tail_maximum_length": 8,
+        "minimum_variable_positions": 3,
+        "period_minimum": 2,
+        "period_maximum": 4,
+        "minimum_complete_cycles": 2,
+        "short_tail_minimum_length": 2
+      }
+    },
     "annotation_pipeline": [
       "format baseline",
       "comment draft",

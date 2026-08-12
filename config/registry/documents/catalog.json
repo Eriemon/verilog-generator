@@ -1,7 +1,7 @@
 {
   "documents": [
     {
-      "content_sha256": "bd6d24308734b561387c38d488b6f5edd04fe37cceb7cb66e21a40062371a56b",
+      "content_sha256": "17fd9dec97df7da581cf8f6eb2087f2df3ded5e44430c41bec3866e5ab159b3d",
       "id": "document.skill",
       "keywords": [
         "route",
@@ -105,7 +105,7 @@
         "remote run identity"
       ],
       "path": "references/integration/configuration.md",
-      "responsibility": "定义设置文件、文件角色确认、依赖、验证、远程目标、层次 source-closure fixture、工具链选择、远程运行身份绑定、效果评估工作区和运行目录配置合同。",
+      "responsibility": "定义设置文件、文件角色确认、依赖、验证、远程目标、层次 source-closure fixture、工具链选择、远程运行绑定、效果评估工作区和运行目录配置合同。",
       "source_anchor": "",
       "status": "current",
       "summary": "本地、远程、运行证据身份绑定与效果评估 Verilog 工作流配置合同。",
@@ -179,7 +179,7 @@
       "title": "Testbench Patterns"
     },
     {
-      "content_sha256": "5981c61c4ade1fa64f062679d4eb8e36a08a455af73888307c78fa3693acda35",
+      "content_sha256": "aa0f3fee253472b692d7e02096a9f7dbc2e56e5938a467824ddb83dd37e19c0c",
       "id": "document.references-rules-verilog-code-comment-naming-standard",
       "keywords": [
         "Verilog",
@@ -203,7 +203,7 @@
       "title": "Verilog Code Comment Naming Standard"
     },
     {
-      "content_sha256": "cc01d975b6540cefc4ca0e95ca88045fa281be48ce5a9a1b1958f8db7fe075c3",
+      "content_sha256": "844c881cbf3da430775c56e61902ca9d42568c574037b3450e20e5a33277e3ea",
       "id": "document.references-rules-verilog-comment-placement",
       "keywords": [
         "comment",
@@ -236,7 +236,7 @@
       "title": "Verilog Pattern Templates"
     },
     {
-      "content_sha256": "f1f3d2478d15e3a95c61e85eba8bf0f7034f7b4ec1d248697e874019c0035d28",
+      "content_sha256": "4357318dcb73e81f1d43a1430dcd000c6701b72ee5fe7bb8948c2bcb5662e9e4",
       "id": "document.references-rules-verilog-quality-gates",
       "keywords": [
         "VG",
@@ -271,7 +271,31 @@
       "title": "Verilog Quality Gates"
     },
     {
-      "content_sha256": "059f2153fdde590f9093919df56bab4e78ab27b7e86f935ea48df2acabf3e571",
+      "content_sha256": "621fab9866481bd5ecbbee5dbe39115fb2677b648e26646b449fef6ab64e951e",
+      "id": "document.references-rules-xilinx-primitive-exemptions",
+      "keywords": [
+        "Xilinx",
+        "AMD",
+        "UNISIM",
+        "XPM",
+        "primitive",
+        "VG097",
+        "VG132",
+        "VG146",
+        "VG147",
+        "exemption",
+        "clock",
+        "boundary"
+      ],
+      "path": "references/rules/xilinx-primitive-exemptions.md",
+      "responsibility": "定义 AMD-Xilinx UNISIM/XPM/project-IP 原语精确清单、支持级别、端口/时钟/输出边界和 VG097/VG132/VG146/VG147 的 fail-closed 豁免合同。",
+      "source_anchor": "",
+      "status": "current",
+      "summary": "原语 catalog 的完整名称、角色、边界与硬件证据限制。",
+      "title": "AMD-Xilinx 原语语义与豁免库"
+    },
+    {
+      "content_sha256": "dcc6adc0b494fcf6ad3d4dbd6ef4b9a0c848f286f4c9476a682104075d9a6dae",
       "id": "document.references-skill-script-guide",
       "keywords": [
         "SQLite",

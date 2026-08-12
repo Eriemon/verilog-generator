@@ -107,7 +107,8 @@
     "vg146_unsupported_call": "module dut\n(\n    input wire a,\n    output wire y\n);\nassign y = helper(a);\nendmodule\n",
     "vg147_three_iterations": "module dut\n(\n    input wire [2:0] data,\n    output reg parity\n);\ninteger i;\nalways @(*) begin\n    parity = 1'b0;\n    for (i = 0; i < 3; i = i + 1) begin\n        parity = parity ^ data[i];\n    end\nend\nendmodule\n",
     "vg147_four_iterations": "module dut\n(\n    input wire [3:0] data,\n    output reg parity\n);\ninteger i;\nalways @(*) begin\n    parity = 1'b0;\n    for (i = 0; i < 4; i = i + 1) begin\n        parity = parity ^ data[i];\n    end\nend\nendmodule\n",
-    "vg147_unknown_iterations": "module dut\n#(\n    parameter C_COUNT = 3\n)\n(\n    input wire [3:0] data,\n    output reg parity\n);\ninteger i;\nalways @(*) begin\n    parity = 1'b0;\n    for (i = 0; i < C_COUNT; i = i + 1) begin\n        parity = parity ^ data[i];\n    end\nend\nendmodule\n"
+    "vg147_unknown_iterations": "module dut\n#(\n    parameter C_COUNT = 3\n)\n(\n    input wire [3:0] data,\n    output reg parity\n);\ninteger i;\nalways @(*) begin\n    parity = 1'b0;\n    for (i = 0; i < C_COUNT; i = i + 1) begin\n        parity = parity ^ data[i];\n    end\nend\nendmodule\n",
+    "vg150_workflow_evidence": "module dut (\n    input wire clk,\n    input wire d,\n    output reg q\n);\n// 图谱审核证据\nalways @(posedge clk) begin\n    q <= d;\nend\nendmodule\n"
   },
   "shared_fixtures": {
     "positive": "canonical_clean",
@@ -1173,6 +1174,12 @@
       "positive": "vg148_protocol_digit_allow",
       "negative": "vg149_suffix_tb_reject",
       "inconclusive": "vg149_counter_ambiguous",
+      "allowed_overlaps": []
+    },
+    "VG150": {
+      "positive": "canonical_clean",
+      "negative": "vg150_workflow_evidence",
+      "inconclusive": "formatter_parse_error",
       "allowed_overlaps": []
     }
   }

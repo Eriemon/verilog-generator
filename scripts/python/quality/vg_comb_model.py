@@ -158,6 +158,9 @@ class ModuleImplementationIndex:
     # external interface 不进入可递归实现集合。
     external_interfaces: tuple[tuple[str, tuple[FrozenFact, ...]], ...]  # 外部接口索引
 
+    # primitive profiles 是受治理的合成边界，不伪造 source implementation。
+    primitive_profiles: tuple[tuple[str, FrozenFact], ...] = ()  # AMD-Xilinx 原语 profile 索引
+
 # 参数环境按声明顺序保存所有公开参数和局部参数。
 @dataclass(frozen=True)
 class ParameterEnvironment:
@@ -237,6 +240,9 @@ class SpecializedModule:
 
     # 未知区域只污染读取相关结构的后续目标。
     unknown_regions: tuple[UnknownRegion, ...]  # 当前特化局部未知区域
+
+    # 原语特化没有 RTL implementation，驱动分类由 profile output boundary 决定。
+    primitive_profile: FrozenFact | None = None  # 可选 AMD-Xilinx 原语语义 profile
 
 # 作用域目标把 definition root、实例路径和特化身份绑定到端点。
 @dataclass(frozen=True)

@@ -12,7 +12,7 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 - Public entry: `run_verilog_quality_gate(...)`
 - Report schema: v2
 - Report fields: `vg_catalog_version`, `vg_rule_summary`, and `vg_rule_results`
-- Catalog size: 127 active rules and 0 reserved rules
+- Catalog size: 128 active rules and 0 reserved rules
 - Combinational operation budget: `config.max_combinational_operations_per_target` is a required positive integer; the shipped value is `3`
 - Severity policy: BLOCKER non-pass results always block; WARNING non-pass results block strict runs
 
@@ -147,6 +147,7 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 | VG147 | BLOCKER | for_comb_operation_budget | active |
 | VG148 | BLOCKER | functional_verilog_filename | active |
 | VG149 | BLOCKER | testbench_filename_prefix | active |
+| VG150 | WARNING | comments.semantic_integrity | active |
 
 ## Recognition Scope Contracts
 
@@ -169,6 +170,7 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 - VG148 applies independently to every readable `.v` and `.sv` file. It rejects only a terminal independent version or pure-number suffix: `_vN`, `-vN`, `_verN`, `-verN`, `_versionN`, `-versionN`, `_N`, or `-N`, case-insensitively. Digits embedded in functional identities such as `axi4_lite`, `crc32`, `i2c_master`, and `ad9361_if` remain valid.
 - VG149 recognizes testbench role from a `tb_`, `_tb`, or `testbench` filename marker, an exact `tb`/`testbench`/`sim` directory segment, a user confirmation, or at least two independent content evidence groups. Every resolved testbench must use `tb_<function>`; `_tb` is evidence but never a naming waiver, so `counter_tb.v` is explicitly rejected.
 - The VG149 content evidence groups are `initial_process`, `simulation_task`, `clock_stimulus`, and `dut_self_check`. Comments and strings are masked before evidence detection. An ordinary filename with at least two groups remains `inconclusive` and sets `confirmation_required` until `file_role_confirmations` resolves it. A `design` confirmation makes VG149 not applicable; a `testbench` confirmation still fails until the file is renamed with `tb_`.
+- VG150 evaluates only formatter-bound entity comments. Configured workflow evidence markers such as graph, test, verification, review, and evidence-chain phrases fail closed on the entity line; evidence belongs in the gate report rather than RTL comments. It also rejects a high-confidence rotation family only when one entity label has at least eight candidates, four distinct fixed tails of length four to eight, at least four Chinese prefix characters, three changing positions, and two complete repeated cycles. A learned shorter tail is checked only after that family is established. Ordinary Chinese descriptions and isolated words do not fail solely because they contain a Chinese word.
 - Unreadable `.v`/`.sv` input fails closed. VG148 and VG149 return `error`, and the aggregate public report preserves the same stable relative-path read error through `VG000/file.encoding` without duplicating the `.v` diagnostic.
 
 ## Formerly Reserved Rules

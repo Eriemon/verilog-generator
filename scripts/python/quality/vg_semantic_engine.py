@@ -22,6 +22,9 @@ from .vg_expression_rules import evaluate_expression_gate
 # vg_comb_cone 只消费 formatter 类型化表达式事实并统一执行 VG146/VG147。
 from .vg_comb_cone import build_comb_target_cones, evaluate_comb_operation_gate
 
+# vg_comment_integrity 只消费 formatter AST 注释候选并执行 VG150。
+from .vg_comment_integrity import evaluate_comment_integrity_gate
+
 # 状态机、复位和结构模块承载本轮新增的语义域。
 from .vg_fsm_rules import evaluate_fsm_gate
 from .vg_file_rules import evaluate_file_gate
@@ -93,9 +96,9 @@ def run_vg_semantic_gate(
     # 以下参数控制预构建事实和显式外部接口来源。
     facts: VgFacts | None = None,
     external_interface_sources: tuple[Path, ...] = (),
-    catalog: dict[str, Any] | None = None,
+    **dict_options: Any,
 ) -> dict[str, Any]:
-    """运行 VG072 至 VG149 语义门禁并返回 fail-closed 报告。
+    """运行 VG072 至 VG150 语义门禁并返回 fail-closed 报告。
 
     参数:
         root: 待检查的 Verilog 文件或目录。
@@ -104,11 +107,34 @@ def run_vg_semantic_gate(
         include_testbench: 是否把 testbench 文件纳入设计 RTL 检查。
         facts: 可选的预构建 VG 事实；提供时禁止再次解析 RTL。
         external_interface_sources: 未提供预构建事实时装载的外部接口 stub 来源。
+        dict_options: 向后兼容关键字；支持 catalog 与 primitive_profile 两个可选覆盖项。
         catalog: 可选的已验证统一目录；由外层质量门提供时禁止再次加载。
+        primitive_profile: 可选的 AMD-Xilinx 原语 catalog、resolved profile 或显式 profile。
 
     返回:
-        包含 78 条逐门禁结果、摘要和交付结论的字典。
+        包含 catalog 语义段逐门禁结果、摘要和交付结论的字典。
+    异常:
+        TypeError: 调用方传入未声明的扩展关键字。
+        ValueError: 外层 catalog 或规则状态不满足 fail-closed 合同。
     """
+
+    # 只接受治理合同中声明的两个扩展关键字，避免静默拼写错误。
+    set_supported_options = {"catalog", "primitive_profile"}  # 允许的兼容关键字集合
+
+    # 计算调用方传入但未被公共合同声明的关键字。
+    set_unknown_options = set(dict_options) - set_supported_options  # 未声明的关键字集合
+
+    # 未知关键字不能改变规则执行路径。
+    if set_unknown_options:
+
+        # 将拼写错误变成可审计的调用失败。
+        raise TypeError("> ERR: [Python] run_vg_semantic_gate received an unsupported option.")
+
+    # 从兼容关键字读取外层目录，保持旧调用方的 catalog 语义。
+    dict_catalog_option: dict[str, Any] | None = dict_options.get("catalog")  # 外层传入的 VG catalog
+
+    # 从兼容关键字读取 AMD-Xilinx 原语事实来源。
+    dict_primitive_profile: dict[str, Any] | None = dict_options.get("primitive_profile")  # 原语目录或显式 profile
 
     # 绝对路径保证报告和 formatter 扫描使用同一目标。
     path_root = root.resolve()  # 待检查 RTL 根路径
@@ -116,8 +142,8 @@ def run_vg_semantic_gate(
     # 外层统一质量门可复用其目录；直接调用时仍只加载一次权威 JSON。
     dict_catalog = (  # 本轮语义执行唯一使用的已验证 VG 目录
         load_verilog_quality_gates()  # 直接语义入口自行加载目录
-        if catalog is None  # 只有调用方未提供目录时才读取资产
-        else catalog  # 复用外层质量门已经验证的目录对象
+        if dict_catalog_option is None  # 只有调用方未提供目录时才读取资产
+        else dict_catalog_option  # 复用外层质量门已经验证的目录对象
     )
 
     # loader 已严格校验配置类型和正整数范围，此处只读取一次共享阈值。
@@ -129,13 +155,14 @@ def run_vg_semantic_gate(
         spec=spec,  # 可选设计规格
         include_testbench=include_testbench,  # testbench 纳入策略
         external_interface_sources=external_interface_sources,  # 显式外部接口 stub
+        primitive_profile=dict_primitive_profile,  # 原语语义目录或显式 profile
     )
 
     # 两条组合预算规则共享一次不可变锥构建，禁止重复分析产生漂移。
     tuple_comb_cones = build_comb_target_cones(vg_facts_vg_facts)  # VG146/VG147 共享目标锥快照
 
     # 结果列表严格按 catalog 顺序保留全部激活和预留编号。
-    list_results: list[dict[str, Any]] = []  # 78 条逐门禁结果
+    list_results: list[dict[str, Any]] = []  # 语义段逐门禁结果
 
     # 只执行迁移后的语义段；既有 VG000-VG071 由统一质量门原生规则负责。
     for dict_rule in dict_catalog["rules"]:
@@ -181,8 +208,36 @@ def run_vg_semantic_gate(
         file_fact.to_dict() for file_fact in vg_facts_vg_facts.files  # 移除内部绝对路径
     ]
 
+    # 原语目录摘要进入报告，证明本轮不是 blanket whitelist。
+    dict_report["primitive_semantics"] = _primitive_semantics_summary(  # 当前扫描使用的原语事实摘要
+        getattr(vg_facts_vg_facts, "primitive_catalog", {}),  # 与规则共享的固定 catalog 快照
+    )
+
     # 返回同时包含逐规则结果和文件角色事实的报告。
     return dict_report
+
+# _primitive_semantics_summary 只公开目录身份和验证范围，不泄露全部 profile 细节。
+def _primitive_semantics_summary(dict_catalog: dict[str, Any]) -> dict[str, Any]:
+    """构造报告中的原语语义摘要。
+
+    参数:
+        dict_catalog: 当前 VG 扫描冻结的 AMD-Xilinx 原语目录。
+    返回:
+        包含目录身份、计数、冲突和验证范围的摘要字典。
+    """
+
+    # 摘要保留资产身份，方便审查报告追溯固定来源。
+    dict_summary = {  # 把原语资产身份、清单计数、冲突和器件验证范围写入审查报告
+        "catalog_id": dict_catalog.get("catalog_id", ""),  # 固定资产标识
+        "schema_version": dict_catalog.get("schema_version"),  # 资产 schema 版本
+        "counts": dict(dict_catalog.get("counts", {})),  # 三个 namespace 计数
+        "conflicts": dict(dict_catalog.get("conflicts", {})),  # 显式 profile 冲突记录
+        "validated_vivado_versions": list(dict_catalog.get("validated_vivado_versions", [])),  # 已验证 Vivado 版本
+        "validated_parts": list(dict_catalog.get("validated_parts", [])),  # 已验证的 FPGA part 清单
+    }
+
+    # 返回可序列化的独立摘要。
+    return dict_summary
 
 # _build_report 统一稳定的公开字段和修复语义。
 def _build_report(
@@ -268,7 +323,7 @@ def _evaluate_catalog_rule(
         return _result_dict(dict_rule, _parse_error_evaluation(facts.parse_errors))
 
     # 激活编号交给唯一对应的语义模块执行。
-    vg_evaluation_obj_evaluation: VgEvaluation = _run_active_evaluator(  # 当前固定规则的执行结论
+    vg_evaluation_result: VgEvaluation = _run_active_evaluator(  # 当前固定规则的执行结论
         str_gate_id,  # 当前激活 VG 编号
         facts,  # 共享解析事实
         int_comb_operation_limit,  # 目录拥有的组合操作预算
@@ -276,17 +331,17 @@ def _evaluate_catalog_rule(
     )
 
     # 未知状态属于规则实现错误，不能穿透公开报告。
-    if vg_evaluation_obj_evaluation.status not in VG_RESULT_STATUSES:
+    if vg_evaluation_result.status not in VG_RESULT_STATUSES:
 
         # 统一降级为阻断性的 error 状态。
-        vg_evaluation_obj_evaluation = VgEvaluation(  # 替换非法状态后的错误结论
+        vg_evaluation_result: VgEvaluation = VgEvaluation(  # 替换非法状态后的错误结论
             "error",  # 公开错误状态
             True,  # 激活规则具有适用性
             message="Evaluator returned an unsupported status.",  # 未知状态诊断
         )
 
     # catalog 元数据和规则证据在单一出口合并。
-    return _result_dict(dict_rule, vg_evaluation_obj_evaluation)
+    return _result_dict(dict_rule, vg_evaluation_result)
 
 # _parse_error_evaluation 把 formatter 故障转换为统一 fail-closed 结论。
 def _parse_error_evaluation(list_parse_errors: list[dict[str, Any]]) -> VgEvaluation:
@@ -332,13 +387,13 @@ def _run_active_evaluator(
         对应语义模块生成的逐门禁结论。
     """
 
-    # 文件门路由保留显式分支，供直接 evaluator 调用保持一致。
+    # 文件门需要独立的文件事实，不进入普通 module evaluator 表。
     if str_gate_id in FILE_NAMING_GATES:
 
         # 文件门只消费预检事实，不读取 formatter AST。
         return evaluate_file_gate(str_gate_id, facts.files)
 
-    # 新组合预算组必须先于旧结构组接管 VG146/VG147。
+    # 新组合预算组需要额外的阈值和共享锥快照。
     if str_gate_id in COMB_OPERATION_GATES:
 
         # 两条规则共享 typed-fact 分析器和目录阈值。
@@ -349,53 +404,39 @@ def _run_active_evaluator(
             cones=tuple_comb_cones,
         )
 
-    # 表达式组覆盖字面量、条件和位宽语义。
-    if str_gate_id in EXPRESSION_GATES:
+    # 其余模块 evaluator 具有统一的 gate_id、facts 参数形状。
+    tuple_evaluator_groups = (  # 固定 gate 集合到普通 evaluator 的一一映射
+        (EXPRESSION_GATES, evaluate_expression_gate),  # 表达式、条件和位宽
 
-        # 表达式规则共享同一 facts 对象。
-        return evaluate_expression_gate(str_gate_id, facts)
+        (BRANCH_GATES, evaluate_branch_gate),  # case 标签和互斥路径
 
-    # 分支组覆盖 case 标签、条件宽度和互斥控制路径。
-    if str_gate_id in BRANCH_GATES:
+        (CLOCK_GATES, evaluate_clock_gate),  # 时钟来源和边沿
 
-        # 分支规则共享 formatter 控制树和 module 事实。
-        return evaluate_branch_gate(str_gate_id, facts)
+        (SUBPROGRAM_GATES, evaluate_subprogram_gate),  # function/task 可综合边界合同
 
-    # 时钟组覆盖边沿和门控时钟语义。
-    if str_gate_id in CLOCK_GATES:
+        (DRIVER_GATES, evaluate_driver_gate),  # 声明类型和驱动所有权
 
-        # 时钟规则共享同一 facts 对象。
-        return evaluate_clock_gate(str_gate_id, facts)
+        (RESET_GATES, evaluate_reset_gate),  # 复位与触发器初始化
 
-    # 子程序组覆盖 function/task 的可综合边界。
-    if str_gate_id in SUBPROGRAM_GATES:
+        (FSM_GATES, evaluate_fsm_gate),  # 状态机结构和可达性
 
-        # 子程序规则共享同一 facts 对象。
-        return evaluate_subprogram_gate(str_gate_id, facts)
+        (STRUCTURE_GATES, evaluate_structure_gate),  # 组合结构和反馈
+    )  # 普通 evaluator 的固定路由表
 
-    # 驱动组覆盖 wire 和多来源所有权。
-    if str_gate_id in DRIVER_GATES:
+    # 按目录声明的 gate 集合查找唯一规则模块。
+    for set_gate_ids, obj_evaluator in tuple_evaluator_groups:
 
-        # 驱动规则共享同一 facts 对象。
-        return evaluate_driver_gate(str_gate_id, facts)
+        # 同一 gate 不应同时命中两个模块集合。
+        if str_gate_id in set_gate_ids:
 
-    # 复位组覆盖模式混用、循环边界、目标覆盖和触发极性。
-    if str_gate_id in RESET_GATES:
+            # 共享 facts 让所有普通规则读取同一份解析快照。
+            return obj_evaluator(str_gate_id, facts)
 
-        # 复位规则共享 formatter always 与控制树事实。
-        return evaluate_reset_gate(str_gate_id, facts)
+    # 注释完整性规则只消费实体注释候选，不读取第二套语法树。
+    if str_gate_id == "VG150":
 
-    # FSM 组覆盖复位入口、默认恢复、状态图和规模边界。
-    if str_gate_id in FSM_GATES:
-
-        # FSM 规则共享可信 module 文本并只在完整状态图上作结论。
-        return evaluate_fsm_gate(str_gate_id, facts)
-
-    # 结构组覆盖锁存反馈、数组越界和普通组合环。
-    if str_gate_id in STRUCTURE_GATES:
-
-        # 结构规则共享可信 module 文本并按层级隔离依赖图。
-        return evaluate_structure_gate(str_gate_id, facts)
+        # VG150 以配置驱动的流程证据和结构化尾族判定阻断注释幻觉。
+        return evaluate_comment_integrity_gate(facts)
 
     # 其余激活编号属于既有控制结构组。
     return evaluate_control_gate(str_gate_id, facts)
@@ -486,7 +527,7 @@ def _result_dict(dict_rule: dict[str, Any], evaluation: VgEvaluation) -> dict[st
 
 # _summarize_results 同时统计目录状态和执行状态。
 def _summarize_results(list_results: list[dict[str, Any]]) -> dict[str, Any]:
-    """按状态和目录类别汇总 76 条结果。
+    """按状态和目录类别汇总 128 条结果。
 
     参数:
         list_results: 按 catalog 顺序生成的全部规则结果。

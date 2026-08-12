@@ -15,7 +15,7 @@
 - `VG145`：连续赋值与组合 `always` 共用完整 module 局部依赖锥，展开后的运行时来源最多三个；搬入组合 `always` 不能规避。只有输出端口直接连接时序驱动 `_o` `reg` 的单信号 bridge 可豁免。
 - `VG146`/`VG147`：每个静态目标在完整 source closure 中最多使用目录配置的操作数；formatter 结构化端口关联、参数特化、definition root 与完整 instance path 决定独立硬件身份。已知 child output 会递归展开，inout 保持 resolved boundary，多驱动 wire/tri 合并全部已知驱动，寄存器 Q 是切点而 D 输入仍检查。`loop_presence=unknown` 时两条 gate 共享下界证据并同时 fail 或 inconclusive。优先用流水寄存、注册预译码或多周期 FSM 降低组合链路。
 - `VG031`、`VG052`、`VG061`：覆盖固定区域 banner、output bridge 所属区域、参数/声明/过程块/实例的区域归属。
-- `VG040`、`VG041`、`VG055`、`VG056`、`VG060`、`VG066`：覆盖中文优先注释、占位注释、同线注释覆盖、尾随注释对齐、重复/近似重复注释。
+- `VG040`、`VG041`、`VG055`、`VG056`、`VG060`、`VG066`、`VG150`：覆盖中文优先注释、占位注释、同线注释覆盖、尾随注释对齐、重复/近似重复注释，以及流程证据词和结构化无关尾串。
 - `VG063`：覆盖过程块、实例以及 `case(state_current)` 下 `ST_*:begin`、`default:begin` 的前导纯注释贴邻、左对齐和空行布局。
 - `VG067`：覆盖 assign 纯分组注释的空行布局；写了分组注释就必须满足“上一段代码后恰好一行空行或区域横幅直连”。
 - `JSON/配置已覆盖`：`assets/verilog_style_rules.json` 中的 `profiles`、`files`、`comments`、`statements`、`protocols`、`known_differences` 已是现行机器真源；本文档只做解释，不再重复声明为独立 `VGxxx`。
@@ -743,6 +743,12 @@ assign o_done = done_o;                     // 输出完成标志
 - always、initial、generate、function/task 和实例前导注释必须说明当前块或实例的作用，不能用“数据处理逻辑”“模块逻辑”等套话复用。
 - 交付门禁会在去除装饰符、编号、标识符噪声、零宽字符和占位外壳后检测精确重复与近似重复；命中 `VG066` 时 strict 模式阻断，非 strict 模式降为 warning。
 - 对同一类信号可以保持相似的句式，但必须说明不同方向、来源、目标、时序条件、协议通道或取值语义；只改 `01/02`、`A/B`、信号名或前后缀不算有效差异。
+
+#### VG150 注释语义完整性
+
+- `VG150` 只检查已经绑定到 formatter 实体的注释，不把区域 banner、文件头或普通中文词语当作违规证据。
+- `assets/verilog_style_rules.json` 中的 `comments.semantic_integrity.workflow_evidence_markers` 是流程/图谱/测试/验证/评审证据短语的唯一词表；命中时应把证据写入门禁报告，而不是伪装成 RTL 实体说明。
+- 无关尾串只有在同一实体类别形成固定长度、多个位置变化、完整周期重复的高置信度族后才阻断；族建立后的短尾才按已学习位置检查。单个孤立词、普通中文功能说明或非周期性的并列描述不因词语本身被拒绝。
 
 ### 13.7 注释覆盖范围
 

@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 # dataclass 用于声明不可变的扫描事实。
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # Path 负责扫描根和 RTL 文件路径处理。
 from pathlib import Path
@@ -14,6 +14,9 @@ from typing import Any, Iterator
 
 # formatter_ast 提供唯一受信任的 Verilog 解析入口。
 from .formatter_ast import build_ast_report_for_path, iter_verilog_sources, read_verilog_source
+
+# 原语目录提供外部库边界和 VG097/VG132/VG146/VG147 语义。
+from .vg_primitive_facts import coerce_primitive_catalog
 
 # 文件命名预检独立覆盖 .v 与 .sv，不受 formatter AST 支持边界限制。
 from .vg_file_rules import VgFileFacts, collect_vg_file_facts
@@ -61,6 +64,9 @@ class VgFacts:
     # external_modules 只供需要跨模块接口的规则消费，不进入普通 RTL 规则扫描。
     external_modules: tuple[dict[str, Any], ...] = ()  # 受治理 stub 提供的模块接口
 
+    # primitive_catalog 是本轮默认或显式解析的 Xilinx 原语语义快照。
+    primitive_catalog: dict[str, Any] = field(default_factory=dict)  # 原语 profile 目录
+
 # build_vg_facts 只通过 formatter AST 建立规则事实。
 def build_vg_facts(
     root: Path,
@@ -68,6 +74,7 @@ def build_vg_facts(
     spec: dict[str, Any] | None = None,
     include_testbench: bool = False,
     external_interface_sources: tuple[Path, ...] = (),
+    primitive_profile: dict[str, Any] | None = None,
 ) -> VgFacts:
     """建立可供固定 VG 规则消费的可信源码事实。
 
@@ -76,6 +83,7 @@ def build_vg_facts(
         spec: 可选的归一化设计规格。
         include_testbench: 是否把 testbench 纳入设计 RTL 检查。
         external_interface_sources: 只为跨模块接口规则提供事实的 stub 来源。
+        primitive_profile: 可选原语 catalog、resolved profile 或显式 profile。
     返回:
         包含源码、AST、解析错误和规格的不可变事实对象。
     """
@@ -140,6 +148,9 @@ def build_vg_facts(
     # 在主返回对象外预先完成可选依赖读取，避免表达式过度密集。
     tuple_external_modules = _load_external_modules(external_interface_sources)  # 供下游规则使用
 
+    # 原语目录在事实构建阶段冻结，后续规则共享同一份来源快照。
+    dict_primitive_catalog = coerce_primitive_catalog(primitive_profile)  # 冻结供 VG097/132/146/147 共享的 AMD-Xilinx catalog
+
     # 文件角色事实复用本轮已经构建的 formatter 报告。
     tuple_file_facts = collect_vg_file_facts(  # 全部 `.v/.sv` 文件角色事实
         path_root,  # 当前扫描根
@@ -150,11 +161,24 @@ def build_vg_facts(
     # 不可变事实对象防止规则之间相互污染输入。
     return VgFacts(
         root=path_root,  # 本轮扫描的规范根路径
+
+        # 文件顺序固定后，所有门禁消费同一份 source facts。
         sources=tuple(list_sources),  # 稳定顺序的文件事实
+
+        # 解析错误完整保留，供 fail-closed 报告层判断。
         parse_errors=tuple(list_parse_errors),  # 所有阻断解析诊断
+
+        # spec 复制后与调用方的可变对象断开。
         spec=dict(spec or {}),  # 复制可选规格，隔离调用方后续修改
+
+        # 外部接口只作为显式 stub 事实进入 VG097。
         external_modules=tuple_external_modules,  # 已冻结的可选依赖
+
+        # 文件级角色事实复用本轮 formatter 报告。
         files=tuple_file_facts,  # 文件命名与角色事实
+
+        # 原语目录作为同一轮扫描的固定语义来源。
+        primitive_catalog=dict_primitive_catalog,  # 本轮原语 profile 快照
     )
 
 # build_vg_facts_from_reports 复用统一质量门的 AST，避免二次解析。
@@ -164,6 +188,7 @@ def build_vg_facts_from_reports(
     *,
     spec: dict[str, Any] | None = None,
     external_interface_sources: tuple[Path, ...] = (),
+    primitive_profile: dict[str, Any] | None = None,
 ) -> VgFacts:
     """复用统一质量门已经生成的 formatter AST 报告构建语义事实。
 
@@ -172,6 +197,7 @@ def build_vg_facts_from_reports(
         reports: 已完成 formatter 解析的逐文件 AST 报告。
         spec: 可选归一化设计规格。
         external_interface_sources: 只为跨模块接口规则提供事实的 stub 来源。
+        primitive_profile: 可选原语 catalog、resolved profile 或显式 profile。
     返回:
         可供全部 VG 语义规则共享的不可变事实对象。
     """
@@ -224,13 +250,29 @@ def build_vg_facts_from_reports(
         )
 
     # 聚合结果保留报告顺序，并隔离后续规则对输入集合的修改。
+    dict_primitive_catalog = coerce_primitive_catalog(primitive_profile)  # 从复用报告重建稳定的原语 catalog
+
+    # 将报告路径、解析诊断和原语事实组合成一次扫描快照。
     return VgFacts(
         root=path_root,  # 复用报告对应的统一扫描入口
+
+        # 保留 formatter 报告原有的文件次序。
         sources=tuple(list_sources),  # 按既有 AST 报告顺序冻结文件事实
+
+        # 复用报告中的 error 诊断，维持 fail-closed。
         parse_errors=tuple(list_parse_errors),  # 复用报告内的 formatter 错误集合
+
+        # 为语义规则隔离调用方 spec 容器。
         spec=dict(spec or {}),  # 为语义规则复制可选设计合同
+
+        # 显式 stub 只服务于外部接口位宽检查。
         external_modules=_load_external_modules(external_interface_sources),  # VG097 外部接口集合
+
+        # 文件角色事实从同一批 AST reports 补齐。
         files=collect_vg_file_facts(path_root, spec, reports=reports),  # 复用报告并补齐 .sv
+
+        # 原语 catalog 与复用报告绑定为同一事实快照。
+        primitive_catalog=dict_primitive_catalog,  # 绑定本轮复用报告的原语 profile 快照
     )
 
 # 外部接口装载与普通 RTL 事实隔离，避免 stub 触发无关规则。
