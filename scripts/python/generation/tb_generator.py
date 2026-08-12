@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""为单个 RTL 模块生成带语义注释的 Verilog/SystemVerilog 测试平台骨架。"""
+"""为单个 RTL 模块生成带语义注释的 Verilog 测试平台骨架。"""
 
 # 延迟注解求值，避免 CLI 脚本导入时解析复杂类型。
 from __future__ import annotations
@@ -55,10 +55,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Treat input as rtl_analysis.json instead of a Verilog source file.",
     )
 
-    # 注册输出 testbench 语言，SystemVerilog 模式会追加简单断言。
+    # 注册输出 testbench 语言，当前 skill 只生成 Verilog-2001。
     parser.add_argument(
         "--tb-language",
-        choices=("verilog", "systemverilog"),
+        choices=("verilog",),
         default="verilog",
     )
 
@@ -671,7 +671,7 @@ def generate_testbench(
     :param module_name: 待测 Verilog 模块名称。
     :param ports: 标准化端口描述列表。
     :param clk_period_ns: 测试平台时钟周期，单位 ns。
-    :param tb_language: 输出语言，取值为 verilog 或 systemverilog。
+    :param tb_language: 输出语言，当前仅支持 verilog。
     :return: 带语义行尾注释的 testbench 源码文本。
     """
 
@@ -702,14 +702,6 @@ def generate_testbench(
 
     # 写入 DUT 例化和端口映射。
     _append_dut_instance_lines(list_lines, module_name, ports)
-
-    # SystemVerilog 输出模式追加一个未知态观察断言。
-    _append_systemverilog_assertion_lines(
-        list_lines,
-        ports,
-        list_reset_ports,
-        tb_language,
-    )
 
     # 写入波形、激励、保守 fatal 和仿真结束流程。
     _append_main_stimulus_lines(list_lines, str_tb_name, ports, list_reset_ports)
@@ -922,76 +914,6 @@ def _append_dut_instance_lines(
 
     # 结束 DUT 例化并追加空行。
     _append_many(list_lines, ("    );", ""))
-
-# 在 SystemVerilog 模式下写入未知态断言。
-def _append_systemverilog_assertion_lines(
-    list_lines: list[str],
-    ports: list[dict[str, str | bool | None]],
-    reset_ports: list[dict[str, str | bool | None]],
-    tb_language: str,
-) -> None:
-    """
-    为 SystemVerilog 输出追加一个轻量未知态观察断言。
-
-    :param list_lines: testbench 源码行缓存。
-    :param ports: 标准化端口描述列表。
-    :param reset_ports: 自动识别出的复位端口列表。
-    :param tb_language: 输出语言，只有 systemverilog 会生成断言。
-    :return: 本函数原地更新 list_lines，无业务返回值。
-    """
-
-    # Verilog 输出模式不追加 property/assert 语句。
-    if tb_language != "systemverilog":
-
-        # 直接返回，保持 Verilog-2001 默认输出。
-        return
-
-    # 选择第一个时钟端口，缺失时使用 clk 占位。
-    str_clock_name = next(  # 断言采样时钟
-        (str(dict_port["name"]) for dict_port in ports if dict_port["is_clock"]),  # 首个时钟端口
-        "clk",  # 缺省采样时钟名
-    )
-
-    # 选择第一个复位端口，缺失时使用 rst_n 占位。
-    str_reset_name = next(  # 断言禁用复位
-        (str(dict_port["name"]) for dict_port in reset_ports),  # 首个复位端口
-        "rst_n",  # 缺省复位名
-    )
-
-    # 选择第一个输出端口作为未知态观察目标。
-    str_observation_signal = next(  # 断言观察输出信号
-        (
-            str(dict_port["name"])  # 候选未知态观察信号名
-            for dict_port in ports  # 断言候选端口全集
-            if dict_port["direction"] == "output"  # 仅输出端口可观察未知态
-        ),  # 首个 DUT 输出端口
-        "",  # 无输出端口时禁用断言
-    )
-
-    # 没有输出端口时无法生成有意义的未知态断言。
-    if not str_observation_signal:
-
-        # 保持 SystemVerilog 文件仍可生成，只是不追加断言。
-        return
-
-    # 写入 property 和 assert property 语句。
-    _append_many(
-        list_lines,
-        (
-            f"    property p_{str_observation_signal}_known;",
-            (
-                f"        @(posedge {str_clock_name}) disable iff (!{str_reset_name}) "
-                f"!$isunknown({str_observation_signal});"
-            ),
-            "    endproperty",
-            (
-                f"    assert property (p_{str_observation_signal}_known) else "
-                f"$error(\"[TB_ERROR] Time: %0t | Unknown output detected on "
-                f"{str_observation_signal}.\", $time);"
-            ),
-            "",
-        ),
-    )
 
 # 写入波形、初始化、激励和保守 fatal 流程。
 def _append_main_stimulus_lines(

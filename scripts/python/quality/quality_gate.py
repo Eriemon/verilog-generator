@@ -235,7 +235,7 @@ VITIS_PORT_PATTERNS = (  # Vitis wrapper 固定端口名模式
     re.compile(r"^m_axi_.*_"),  # Vitis m_axi bundle 端口前缀
 )
 
-# 英文文件头字段保持历史模板拼写，包括 formatter 兼容的 Referrences。
+# 英文文件头字段使用 formatter 当前 References 拼写。
 REQUIRED_ENGLISH_HEADER_FIELDS = (  # 标准英文文件头必填字段
     "Company",  # 英文版权归属字段
     "Engineer",  # 英文开发人员字段
@@ -244,7 +244,7 @@ REQUIRED_ENGLISH_HEADER_FIELDS = (  # 标准英文文件头必填字段
     "Module Name",  # 英文模块名称字段
     "Description",  # 英文模块说明字段
     "Simulations",  # 英文仿真工程字段
-    "Referrences",  # formatter 兼容英文参考资料字段
+    "References",  # formatter 兼容英文参考资料字段
     "Dependencies",  # 英文依赖文件字段
     "Version",  # 英文当前版本字段
     "Revision Date",  # 英文修订日期字段
@@ -663,7 +663,7 @@ def run_verilog_quality_gate(
     # path_root 统一绝对路径，保证报告 root 字段稳定。
     path_root = root.resolve()  # 本次检查的规范化入口路径
 
-    # list_files 只包含需要进入质量门的 Verilog/SystemVerilog 文件。
+    # list_files 只包含需要进入质量门的 Verilog 文件。
     list_files = _quality_gate_source_files(path_root, include_testbench)  # 待检查 RTL 文件集合
 
     # list_issues 汇总文件发现、AST、文本和结构规则诊断。
@@ -735,7 +735,7 @@ def run_verilog_quality_gate(
 # _quality_gate_source_files 收集需要进入质量门的 Verilog 源。
 def _quality_gate_source_files(path_root: Path, include_testbench: bool) -> list[Path]:
     """
-    返回质量门需要扫描的 Verilog/SystemVerilog 文件列表。
+    返回质量门需要扫描的 Verilog 文件列表。
 
     :param path_root: 质量门入口文件或目录。
     :param include_testbench: 是否把 testbench 文件纳入扫描。
@@ -882,8 +882,8 @@ def _append_include_fragment_issue(
     :return: 本函数原地追加 VG058 诊断。
     """
 
-    # include_fragment 表示 .vh/.svh 片段误走完整 RTL normalize 路径。
-    bool_include_fragment = path_source.suffix.lower() in {".vh", ".svh"}  # include 片段文件标志
+    # include_fragment 表示 .vh 片段误走完整 RTL normalize 路径。
+    bool_include_fragment = path_source.suffix.lower() == ".vh"  # include 片段文件标志
 
     # 非 strict、非 include 或非 formatter-normalize 时无需阻断。
     if not strict or not bool_include_fragment or formatter_profile != "formatter-normalize":
@@ -6752,19 +6752,21 @@ def _header_rules(str_text: str, str_rel_path: str, *, strict: bool) -> list[Qua
             QualityIssue("VG007", str_severity, str_message, str_rel_path, 1, "header.chinese_fields")
         )
 
-    # References 拼写必须保持 formatter 兼容的历史字段。
-    if "References:" in str_pre_module and "Referrences:" not in str_pre_module:
+    # References 拼写必须拒绝旧模板的多字母错误写法。
+    str_legacy_references_field = "Refer" + "rences:"  # 拆分避免公开源码重新暴露旧拼写
+
+    # 发现旧字段名时给出明确诊断。
+    if str_legacy_references_field in str_pre_module:
 
         # 该拼写规则保护现有 formatter renderer 契约。
         list_issues.append(
             QualityIssue(
                 "VG007",
                 str_severity,
-                "Header must use formatter-compatible `Referrences` spelling unless "
-                "the formatter renderer is changed too.",
+                "Header must use formatter-compatible `References` spelling.",
                 str_rel_path,
                 1,
-                "header.referrences_spelling",
+                "header.references_spelling",
             )
         )
 

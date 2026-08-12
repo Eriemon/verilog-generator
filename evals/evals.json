@@ -236,7 +236,7 @@
         "diff_present": true,
         "tb_hooks_injected": true,
         "auto_apply_backup_created": true,
-        "systemverilog_upgrade_recorded": true
+        "auto_apply_verilog_recorded": true
       }
     },
     {
@@ -318,7 +318,7 @@
       "expectations": {
         "recommended_flow": "verify_existing_verilog",
         "entry_mode": "evidence-first debug/repair",
-        "risk_flags_contains": [
+        "blocking_findings_contains": [
           "compile_failure"
         ],
         "missing_inputs_not_contains": [
@@ -341,9 +341,9 @@
       "expectations": {
         "recommended_flow": "verify_existing_verilog",
         "entry_mode": "evidence-first debug/repair",
-        "risk_flags_contains": [
+        "blocking_findings_contains": [
           "sim_timeout",
-          "dut_tb_contract_risk"
+          "dut_tb_contract_drift"
         ],
         "provenance_policy_present": true,
         "temporary_source_workspace_absent": true
@@ -360,7 +360,7 @@
         "missing_inputs_contains": [
           "rtl"
         ],
-        "risk_flags_contains": [
+        "blocking_findings_contains": [
           "missing_artifact_inputs"
         ],
         "provenance_policy_present": true,
@@ -380,7 +380,7 @@
           "remote_selection",
           "remote_workspace_settings"
         ],
-        "risk_flags_contains": [
+        "blocking_findings_contains": [
           "remote_validation_requested"
         ],
         "next_action_contains": "erie-remote-ssh",

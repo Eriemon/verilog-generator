@@ -17,7 +17,7 @@ from typing import Any, Iterable
 sys.dont_write_bytecode = True  # 关闭当前脚本运行时的 pyc 写入
 
 # Verilog 源文件后缀集中维护，供目录递归筛选复用。
-SET_VERILOG_SUFFIXES = {".v", ".sv", ".vh", ".svh"}  # 允许进入语料统计的 Verilog 文件后缀
+SET_VERILOG_SUFFIXES = {".v", ".vh"}  # 允许进入语料统计的 Verilog 文件后缀
 
 # 端口声明正则保留旧脚本对 input/output/inout 行的宽松识别。
 RE_PORT_DECL = re.compile(  # 端口声明行匹配器

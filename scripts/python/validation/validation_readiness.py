@@ -749,12 +749,6 @@ def _run_xsim(
         # list_xvlog_command 是 xvlog 编译命令。
         list_xvlog_command = ["xvlog"]  # 编译 all_files 的 xvlog 命令骨架
 
-        # SystemVerilog 文件需要显式 -sv。
-        if _has_systemverilog_files(all_files):
-
-            # 追加 SystemVerilog 编译开关。
-            list_xvlog_command.append("-sv")
-
         # 添加所有 RTL/testbench 文件。
         list_xvlog_command.extend(all_files)
 
@@ -851,7 +845,7 @@ def _run_vcs_verdi(
             return list_issues, list_executed_tools
 
         # list_vcs_command 是基础 VCS 编译命令。
-        list_vcs_command = ["vcs", "-full64", "-sverilog", "-o", str(path_simv), *all_files]  # VCS 对 all_files 生成 simv 的基础命令
+        list_vcs_command = ["vcs", "-full64", "-o", str(path_simv), *all_files]  # VCS 对 all_files 生成 simv 的基础命令
 
         # execute readiness 使用 -R 直接运行。
         if readiness_at_least(readiness, "execute"):
@@ -906,9 +900,6 @@ def _run_iverilog(
         # list_command 先保存编译器入口，再按文件类型追加参数。
         list_command = ["iverilog"]  # 使用 -tnull 前的 iverilog 编译命令骨架
 
-        # 生成 sim.vvp 时同样要启用 2012 语法以覆盖 .sv testbench。
-        _append_iverilog_sv_flag(list_command, all_files)
-
         # -tnull 让编译不生成输出镜像。
         list_command.extend(["-tnull", *all_files])
 
@@ -935,9 +926,6 @@ def _run_iverilog(
 
         # list_command 是 iverilog 构建命令。
         list_command = ["iverilog"]  # 生成 sim.vvp 前的 iverilog 命令骨架
-
-        # SystemVerilog 文件需要 -g2012。
-        _append_iverilog_sv_flag(list_command, all_files)
 
         # 输出 sim.vvp 并包含所有输入文件。
         list_command.extend(["-o", str(path_sim_image), *all_files])
@@ -968,32 +956,6 @@ def _run_iverilog(
 
     # 返回 iverilog/vvp 执行结果。
     return list_issues, list_executed_tools
-
-# _append_iverilog_sv_flag 在需要时追加 -g2012。
-def _append_iverilog_sv_flag(list_command: list[str], all_files: list[str]) -> None:
-    """当输入包含 SystemVerilog 文件时追加 -g2012。
-
-    :param list_command: 需要原位补充参数的 iverilog 命令列表。
-    :param all_files: 即将交给 iverilog 的输入文件路径。
-    :return: None，参数追加到 list_command。
-    """
-
-    # SystemVerilog 后缀触发 iverilog 2012 模式。
-    if _has_systemverilog_files(all_files):
-
-        # 追加 -g2012 以兼容 .sv testbench。
-        list_command.append("-g2012")
-
-# _has_systemverilog_files 判断输入集合是否包含 .sv 文件。
-def _has_systemverilog_files(all_files: list[str]) -> bool:
-    """返回输入文件列表是否包含 SystemVerilog 文件。
-
-    :param all_files: simulator 输入文件路径列表。
-    :return: 任一文件以 .sv 结尾时返回 True。
-    """
-
-    # 后缀判断使用小写路径，兼容 Windows 大小写。
-    return any(str(str_path).lower().endswith(".sv") for str_path in all_files)
 
 # _testbench_top 推导 testbench 顶层模块名。
 def _testbench_top(spec: dict[str, Any]) -> str:

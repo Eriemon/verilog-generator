@@ -10,7 +10,7 @@
 // Description: 	Description/ready_valid_slice_Design.pdf
 // Simulations:		TestBench/Vivado/2021.1/ready_valid_slice
 //
-// Referrences:		None
+// References:		None
 //
 // Dependencies:	None
 //

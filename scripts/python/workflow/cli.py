@@ -40,6 +40,7 @@ def _command_handlers() -> dict[str, CommandHandler]:
         "quality-gate": cli_generation.cmd_quality_gate,
 
         # workflow 组保持 staged、batch 和只读路由命令的入口。
+        "review": cli_workflow.cmd_review,
         "run-workflow": cli_workflow.cmd_run_workflow,
         "run-batch": cli_workflow.cmd_run_batch,
         "route-workflow": cli_workflow.cmd_route_workflow,

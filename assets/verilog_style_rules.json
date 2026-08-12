@@ -1,19 +1,11 @@
 {
   "meta": {
     "generated_date": "2026-06-16",
-    "source_zip": "/mnt/data/verilog-formatter.zip",
-    "input_notes": [
-      "/mnt/data/粘贴的 markdown (1)。md",
-      "/mnt/data/粘贴的 markdown (2)。md"
-    ],
-    "scope": "Verilog/SystemVerilog formatter-derived project coding/comment/naming convention"
+    "scope": "Verilog-2001 project coding/comment/naming convention"
   },
   "files": {
     "extensions": [
-      ".v",
-      ".sv",
-      ".vh",
-      ".svh"
+      ".v"
     ],
     "indent": "tab",
     "trailing_comment_column": 49,
@@ -21,7 +13,6 @@
     "standard_preamble": "`timescale 1ns / 1ps`"
   },
   "profiles": {
-    "formatter-auto": "score first; preserve/micro-format/controlled normalize/fail-no-write",
     "formatter-preserve": "preserve structure; no port/param sorting; no prefix autofix; no always split; no inline wire rewrite",
     "formatter-normalize": "force structural renderer; may rename/reorder/split/add bridges/rebuild header",
     "formatter-lint": "never rewrite; lint/check only",
@@ -221,7 +212,6 @@
     ]
   },
   "known_differences": [
-    "header currently renders Referrences spelling",
     "packed width and identifier may be rendered without a separating space",
     "flag semantic terms end/req/ack require generator/manual naming; formatter may not infer all",
     "protocol-specific clock/reset names require generator/user override",

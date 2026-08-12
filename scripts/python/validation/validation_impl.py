@@ -70,8 +70,8 @@ from scripts.python.workflow.vectors import extract_vector_hashes, find_vector_c
 # verifier 检查规格接口和 RTL 接口漂移。
 from scripts.python.existing_rtl.verifier import plan_contract_interface_issues
 
-# VERILOG_EXTENSIONS 限定 validation 扫描的 RTL-like 文件范围。
-VERILOG_EXTENSIONS = {".v", ".sv", ".vh", ".svh"}  # Verilog/SystemVerilog 源文件后缀集合
+# VERILOG_EXTENSIONS 限定 validation 扫描的 RTL 文件范围。
+VERILOG_EXTENSIONS = {".v"}  # Verilog-2001 源文件后缀集合
 
 # BLOCKED_ARTIFACT_PARTS 防止开发产物进入生成目录或发布包。
 BLOCKED_ARTIFACT_PARTS = {"tests", "smoke", "reports", "runs", "_smoke_runs", "__pycache__", ".pytest_cache"}  # 禁止嵌入的开发产物目录名
@@ -887,7 +887,7 @@ def _validate_declared_artifact_tree(spec: dict[str, Any], root: Path) -> list[V
             # 当前文件是合法输出。
             continue
 
-        # str_suffix 用于区分未声明 RTL、SystemVerilog 和其他旁路文件。
+        # str_suffix 用于区分未声明 RTL 和其他旁路文件。
         str_suffix = path_item.suffix.lower()  # artifact 文件后缀
 
         # 未声明 .v 需要明确提示为额外 Verilog artifact。
@@ -907,28 +907,11 @@ def _validate_declared_artifact_tree(spec: dict[str, Any], root: Path) -> list[V
             # 当前未声明 Verilog 文件已记录，继续检查下一个 artifact。
             continue
 
-        # SystemVerilog 只允许作为声明过的 testbench 输出。
-        if str_suffix == ".sv":
-
-            # 记录未声明或位置不合规的 SystemVerilog artifact。
-            list_issues.append(
-                ValidationIssue(
-                    "error",
-                    "SystemVerilog artifacts are allowed only for testbenches declared in outputs.",
-                    str_rel_path,
-                    "static",
-                    "spec_issue",
-                )
-            )
-
-            # 当前 SystemVerilog 合同违规已记录，继续检查下一个 artifact。
-            continue
-
         # 其他文件类型不属于 skill 当前发布 artifact 合同。
         list_issues.append(
             ValidationIssue(
                 "error",
-                "Only declared Verilog .v or SystemVerilog testbench .sv artifacts are allowed.",
+                "Only declared Verilog .v artifacts are allowed.",
                 str_rel_path,
                 "static",
                 "spec_issue",
@@ -980,18 +963,18 @@ def _declared_output_paths(spec: dict[str, Any]) -> set[str]:
     # 返回声明输出集合。
     return set_paths
 
-# _rtl_files 返回根目录下的 Verilog-like 文件。
+# _rtl_files 返回根目录下的 Verilog 文件。
 def _rtl_files(root: Path) -> list[Path]:
     """
     返回 RTL 源文件和 testbench 文件。
 
     :param root: 生成 artifact 根目录。
-    :return: 按路径排序的 Verilog/SystemVerilog 文件列表。
+    :return: 按路径排序的 Verilog 文件列表。
     """
 
-    # list_files 保存排序后的 Verilog-like 文件。
-    list_files = sorted(  # Verilog-like 文件列表
-        path_item  # 匹配到的 Verilog-like 文件
+    # list_files 保存排序后的 Verilog 文件。
+    list_files = sorted(  # Verilog 文件列表
+        path_item  # 匹配到的 Verilog 文件
         for path_item in _iter_existing_tree_paths(root)  # 递归扫描当前仍可访问的候选文件
         if _path_is_existing_file(path_item) and path_item.suffix.lower() in VERILOG_EXTENSIONS  # 只保留文件和支持后缀
     )

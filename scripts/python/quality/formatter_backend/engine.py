@@ -14,8 +14,8 @@ from . import constants
 from .analysis_mixin import AnalysisMixin
 # 控制流解析 mixin 负责 always、case、if 等过程结构拆解。
 from .control_parse_mixin import ControlParseMixin
-# 路由结果类型和轻量格式化入口服务写回策略。
-from .format_routing import FormatRouteResult, micro_format_text
+# 路由结果类型服务写回策略。
+from .format_routing import FormatRouteResult
 # 文件头 mixin 负责 Vivado 风格头部元数据提取与渲染。
 from .header_mixin import HeaderMixin
 # 版面 mixin 负责端口、参数和内部信号的分组排序。
@@ -58,8 +58,6 @@ from .parse_mixin import ParseMixin
 from .rename_mixin import RenameMixin
 # renderer mixin 负责把结构化模型重新输出为 Verilog 文本。
 from .render_mixin import ModuleRenderContext, RenderMixin
-# 评分模块在写回前判断是否允许结构化重排。
-from .scoring import ScoreReport, score_verilog_source
 # statement renderer mixin 负责 always、assign、instance 等语句渲染。
 from .statement_render_mixin import StatementRenderMixin
 # 语法工具 mixin 提供注释切分、括号扫描和严格错误辅助。
@@ -198,7 +196,7 @@ class VerilogFormatterEngine(
     """聚合内置 Verilog formatter 的解析、分析、重命名和渲染阶段。"""
 
     # __init__ 保存配置和跨阶段缓存，实例级状态只在单次格式化内复用。
-    def __init__(self, config: dict):
+    def __init__(self, config: dict) -> None:
         """初始化 formatter facade 的配置和运行态缓存。
 
         :param config: formatter 配置字典，包含缩进、备份、header 和 rewrite_policy 等字段。
@@ -337,8 +335,8 @@ class VerilogFormatterEngine(
     def format_text(self, source: str, source_path: Path | None = None) -> str:
         """格式化内存中的 Verilog 文本。
 
-        :param source: 待格式化的 Verilog/SystemVerilog 源文本。
-        :param source_path: 可选来源路径，用于评分和诊断定位。
+        :param source: 待格式化的 Verilog 源文本。
+        :param source_path: 可选来源路径，用于诊断定位。
         :return: 格式化后的 Verilog 文本。
         :raises VerilogFormatterError: 路由层判定当前文本不能安全写回时抛出。
         """
@@ -346,7 +344,7 @@ class VerilogFormatterEngine(
         # 路由层先判断是否能结构化重排或只能保留文本。
         format_route_result_format_route_result: FormatRouteResult = self._route_format_text(source, source_path)  # 写回路由结果。
 
-        # text 为 None 表示评分硬门禁阻止生成格式化输出。
+        # text 为 None 表示确定性写回策略阻止生成格式化输出。
         if format_route_result_format_route_result.text is None:
 
             # 失败消息使用统一错误前缀，保留路由层原始说明。
@@ -357,136 +355,76 @@ class VerilogFormatterEngine(
         # 返回允许写回或保留的文本。
         return format_route_result_format_route_result.text
 
-    # _route_format_text 根据 rewrite_policy 和评分结果选择写回动作。
+    # _route_format_text 根据 rewrite_policy 选择确定性写回动作。
     def _route_format_text(self, source: str, source_path: Path | None = None) -> FormatRouteResult:
         """选择当前文本的 formatter 写回路径。
 
-        :param source: 待评分和格式化的 Verilog 源文本。
-        :param source_path: 可选来源路径，用于评分上下文。
-        :return: 包含决策、动作、评分报告和候选文本的路由结果。
+        :param source: 待格式化的 Verilog 源文本。
+        :param source_path: 可选来源路径，用于诊断上下文。
+        :return: 包含决策、动作、诊断报告和候选文本的路由结果。
         """
 
-        # rewrite_policy.mode 控制 normalize、preserve、never 和 auto 行为。
-        str_mode = self.config.get("rewrite_policy", {}).get("mode", "auto")  # 写回策略模式。
+        # rewrite_policy.mode 控制 normalize、preserve 和 never 行为。
+        str_mode = str(self.config.get("rewrite_policy", {}).get("mode", "preserve"))  # 写回策略模式。
 
-        # normalize 模式绕过评分分支，强制走结构化 renderer。
+        # 历史配置若仍传入 auto，按 preserve 处理，避免恢复已删除的自动评分路由。
+        if str_mode == "auto":
+
+            # 兼容旧配置但不暴露自动写回语义。
+            str_mode = "preserve"  # 旧 auto 配置统一降级到保守模式
+
+        # 路由报告只记录确定性策略，不再携带数字评分字段。
+        dict_report = {
+            "policy": str_mode,  # 本次采用的写回策略。
+            "source_path": str(source_path) if source_path is not None else None,  # 可选来源路径。
+        }  # formatter 路由报告。
+
+        # normalize 模式强制走结构化 renderer。
         if str_mode == "normalize":
 
-            # 强制 normalize 仍记录评分报告，便于调用方追踪风险。
+            # 结构化 normalize 会执行完整解析、重命名和渲染流程。
             return FormatRouteResult(
                 decision="normalize_forced",
                 action="normalize",
-                report=self.score_text(source, source_path),
+                report=dict_report,
                 text=self._format_text_normalize(source, source_path),
                 message="rewrite_policy.mode=normalize: structural renderer selected.",
-            )
-
-        # 评分报告决定 auto/preserve/never 下是否允许重排。
-        score_report = self.score_text(source, source_path)  # 当前源文本评分报告。
-
-        # decision 字段来自评分报告，统一转字符串以防配置载入成非字符串。
-        str_decision = str(score_report["decision"])  # 评分层路由决策。
-
-        # 硬门禁失败时不产生输出文本。
-        if str_decision == "fail_no_write":
-
-            # hard_gates 展示具体阻断项，缺失时给出兜底说明。
-            str_hard_gates = (  # 评分硬门禁摘要文本。
-                ", ".join(str(obj_item) for obj_item in score_report.get("hard_gates", []))  # 评分器列出的硬阻断项。
-                or "unknown hard gate"  # 评分器未返回细节时的兜底文本。
-            )
-
-            # 返回 no_write 结果，让上层决定是否抛异常或报告。
-            return FormatRouteResult(
-                decision=str_decision,
-                action="no_write",
-                report=score_report,
-                text=None,
-                message=f"Scoring hard gate failed; no formatted output was written: {str_hard_gates}",
             )
 
         # never 模式禁止 formatter 产生任何改写。
         if str_mode == "never":
 
-            # 已符合标准时可以原样通过。
-            if str_decision == "already_standard":
-
-                # preserve 动作保留原文，避免无意义写回。
-                return FormatRouteResult(
-                    str_decision,
-                    "preserve",
-                    score_report,
-                    source,
-                    "rewrite_policy.mode=never: source is already standard.",
-                )
-
-            # 非标准文本在 never 模式下被明确阻断。
+            # never 表示仅允许检查路径继续，格式化候选不写出。
             return FormatRouteResult(
-                decision=str_decision,
+                decision="write_blocked",
                 action="no_write",
-                report=score_report,
+                report=dict_report,
                 text=None,
-                message=(
-                    "rewrite_policy.mode=never: formatting changes are blocked; "
-                    "run score_verilog.py --json for the scoring report."
-                ),
+                message="rewrite_policy.mode=never: formatting changes are blocked.",
             )
 
-        # preserve 模式只允许轻量微格式化或原样保留。
+        # preserve 模式保持原文，不做结构化重排、重命名或轻量改写。
         if str_mode == "preserve":
 
-            # 评分允许 micro-format 时仅整理局部空白。
-            if str_decision == "preserve_micro_format":
-
-                # micro_format_text 不做结构化重排或重命名。
-                return FormatRouteResult(
-                    str_decision,
-                    "micro_format",
-                    score_report,
-                    micro_format_text(source, self.indent_unit),
-                    "Micro-format only.",
-                )
-
-            # preserve 模式对其它决策保持原文。
+            # preserve 动作保留原文，避免未经显式请求的写回。
             return FormatRouteResult(
-                str_decision,
                 "preserve",
-                score_report,
+                "preserve",
+                dict_report,
                 source,
-                "Preserve mode selected; structural renderer blocked.",
+                "Preserve mode selected; source text kept unchanged.",
             )
 
-        # auto 模式允许受控候选进入结构化 renderer。
-        if str_mode == "auto" and str_decision == "controlled_normalize_candidate":
+        # 未知模式按 preserve 兜底并在报告中显式标记。
+        dict_report["unsupported_policy"] = str_mode  # 报告记录不支持的策略名
 
-            # 结构化 normalize 会执行完整解析、重命名和渲染流程。
-            return FormatRouteResult(
-                decision=str_decision,
-                action="normalize",
-                report=score_report,
-                text=self._format_text_normalize(source, source_path),
-                message="Auto route selected controlled normalize candidate.",
-            )
-
-        # auto 模式下的轻量候选只做 micro-format。
-        if str_mode == "auto" and str_decision == "preserve_micro_format":
-
-            # 保守整理空白，不触碰 module 结构。
-            return FormatRouteResult(
-                str_decision,
-                "micro_format",
-                score_report,
-                micro_format_text(source, self.indent_unit),
-                "Auto route selected micro-format.",
-            )
-
-        # 其它 auto 决策统一保留原文。
+        # 未知策略不产生改写，只把原文作为候选返回。
         return FormatRouteResult(
-            str_decision,
+            "unsupported_policy_preserved",
             "preserve",
-            score_report,
+            dict_report,
             source,
-            "Auto route preserved source text.",
+            "Unsupported rewrite policy preserved source text.",
         )
 
     # _format_text_normalize 执行完整结构化格式化，并在结束时恢复运行态。
@@ -592,7 +530,7 @@ class VerilogFormatterEngine(
     def check_text(self, source: str, source_path: Path | None = None) -> list[str]:
         """检查内存中的 Verilog 文本是否符合 formatter 输出。
 
-        :param source: 待检查的 Verilog/SystemVerilog 源文本。
+        :param source: 待检查的 Verilog 源文本。
         :param source_path: 可选来源路径，用于诊断定位。
         :return: formatter 发现的诊断消息列表。
         """
@@ -620,32 +558,6 @@ class VerilogFormatterEngine(
 
         # 返回本次检查收集到的诊断列表。
         return self.violations
-
-    # score_path 是文件级评分入口，只读源文件并返回结构化评分。
-    def score_path(self, path: Path) -> ScoreReport:
-        """对指定 RTL 文件执行格式评分但不渲染或写回。
-
-        :param path: 待评分的 RTL 文件路径。
-        :return: 评分模块生成的结构化报告。
-        """
-
-        # 先解析为绝对路径，评分报告中的定位信息保持稳定。
-        path_resolved = path.resolve()  # 评分文件绝对路径。
-
-        # 文件内容读取后交给文本级评分入口。
-        return self.score_text(read_verilog_text(path_resolved), path_resolved)
-
-    # score_text 是评分模块的 facade 包装，不触发 renderer。
-    def score_text(self, source: str, source_path: Path | None = None) -> ScoreReport:
-        """对内存中的 RTL 文本执行格式风险评分。
-
-        :param source: 待评分的 Verilog/SystemVerilog 源文本。
-        :param source_path: 可选来源路径，用于诊断定位。
-        :return: 评分模块生成的结构化报告。
-        """
-
-        # score_verilog_source 是写回路由前唯一的评分口径。
-        return score_verilog_source(source, source_path, self.config)
 
     # _collect_initial_module_state 负责单 module 的解析和基础归一化准备。
     def _collect_initial_module_state(self, source: str) -> InitialModuleState:

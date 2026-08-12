@@ -1,4 +1,4 @@
-"""评分驱动 formatter 写回前的安全路由辅助。"""
+"""确定性 formatter 写回前的安全路由辅助。"""
 
 # 延迟注解解析，避免 dataclass 类型在导入期产生额外依赖。
 from __future__ import annotations
@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-# 写回路由结果使用不可变结构，避免后续阶段误改评分证据。
+# 写回路由结果使用不可变结构，避免后续阶段误改诊断证据。
 @dataclass(frozen=True)
 class FormatRouteResult:
     """描述 formatter 写文件前选择的动作、报告和候选文本。"""
@@ -19,7 +19,7 @@ class FormatRouteResult:
     # action 映射到调用方后续执行的格式化动作。
     action: str  # 调用方动作标识
 
-    # report 携带评分、差异和拒绝原因等结构化证据。
+    # report 携带确定性策略、差异和拒绝原因等结构化证据。
     report: dict[str, Any]  # 格式化路由报告
 
     # text 只在允许写回或预览时保存候选 Verilog 文本。

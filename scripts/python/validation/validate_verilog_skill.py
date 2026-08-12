@@ -2425,13 +2425,12 @@ def _allowed_skill_markdown_dependency_line(str_line: str) -> bool:
         "dependency" in str_lower_line
         or "route to the installed FPGA" in str_line
         or "developer routing" in str_lower_line
-        or "verification testbenches may" in str_lower_line
         or "tb_language" in str_line
     )
 
 # _allowed_integration_dependency_line 解释 integration 参考文档的测试夹具说明。
 def _allowed_integration_dependency_line(str_line: str) -> bool:
-    """判断 integration.md 中的 legacy 术语是否属于 testbench 兼容说明。
+    """判断 integration.md 中的 legacy 术语是否属于 testbench 说明。
 
     :param str_line: 正在检查的单行文本。
     :return: 返回布尔值；True 表示“判断 integration.md 中的 legacy 术语是否属于 testbench 兼容说明。”对应条件命中。
@@ -2440,8 +2439,8 @@ def _allowed_integration_dependency_line(str_line: str) -> bool:
     # integration allowlist 需要忽略语言名大小写。
     str_lower_line = str_line.lower()  # integration 文本折叠结果
 
-    # integration 文档允许验证 testbench、tb_language 字段和 SystemVerilog 兼容描述。
-    return "verification testbench" in str_lower_line or "tb_language" in str_line or "systemverilog" in str_lower_line
+    # integration 文档只允许验证 testbench 和 tb_language 字段。
+    return "verification testbench" in str_lower_line or "tb_language" in str_line
 
 # _allowed_configuration_dependency_line 解释 configuration 参考文档的依赖示例。
 def _allowed_configuration_dependency_line(str_line: str) -> bool:
@@ -2486,8 +2485,6 @@ def _allowed_validate_script_dependency_line(str_line: str) -> bool:
         "VCS+Verdi",  # 支持的仿真后端组合名
         "/tools/Xilinx/Vitis/*/settings64.sh",  # 远程工具链路径样例
         "simulator_backend",  # 仿真后端配置字段
-        "systemverilog",  # SV 语言兼容术语
-        ".sv",  # SV 文件后缀
         "Vivado",  # 本脚本硬编码路径扫描允许识别的 FPGA 工具名
         "Vitis",  # 硬编码路径扫描允许识别的 Vitis 工具名
         "/tools/Xilinx/",  # Xilinx 工具链根路径样例
@@ -2520,17 +2517,14 @@ def _allowed_dependency_manager_line(str_line: str) -> bool:
 
 # _allowed_tb_generator_dependency_line 解释 testbench 生成脚本的语言选项。
 def _allowed_tb_generator_dependency_line(str_line: str) -> bool:
-    """判断 tb_generator.py 中的 legacy 术语是否属于 testbench 语言兼容项。
+    """判断 tb_generator.py 中的 legacy 术语是否属于 testbench 语言选项。
 
     :param str_line: 正在检查的单行文本。
     :return: 返回布尔值；True 表示“判断 tb_generator.py 中的 legacy 术语是否属于 testbench 语言兼容项。”对应条件命中。
     """
 
-    # tb_generator allowlist 同时匹配 CLI 选项和语言名。
-    str_lower_line = str_line.lower()  # tb 语言匹配缓存
-
-    # testbench 生成脚本允许描述 SystemVerilog 和 tb-language 兼容选项。
-    return "systemverilog" in str_lower_line or "tb-language" in str_lower_line
+    # testbench 生成脚本只允许保留 tb-language CLI 选项名。
+    return "tb-language" in str_line.lower()
 
 # _allowed_cli_generation_dependency_line 解释 CLI generation facade 的兼容字段。
 def _allowed_cli_generation_dependency_line(str_line: str) -> bool:
@@ -2639,7 +2633,7 @@ def _allowed_toolchain_gate_line(str_line: str) -> bool:
     # 工具链 gate 的字段名和示例路径不应被当作旧生成残留。
     return _line_contains_any(str_line, tuple_toolchain_gate_markers)
 
-# _allowed_eval_dependency_line 解释 eval fixture 的 SystemVerilog 覆盖项。
+# _allowed_eval_dependency_line 解释 eval fixture 的保留例外。
 def _allowed_eval_dependency_line(str_line: str) -> bool:
     """判断 evals/evals.json 中的 legacy 术语是否属于验证 fixture。
 
@@ -2647,33 +2641,21 @@ def _allowed_eval_dependency_line(str_line: str) -> bool:
     :return: 返回布尔值；True 表示“判断 evals/evals.json 中的 legacy 术语是否属于验证 fixture。”对应条件命中。
     """
 
-    # eval allowlist 需要同时匹配后缀与语言全称。
-    str_lower_line = str_line.lower()  # eval fixture 折叠文本
+    # eval 描述不再允许旧方言或后缀例外。
+    return False
 
-    # eval 描述允许声明 SystemVerilog fixture 或 .sv 文件。
-    return "systemverilog" in str_lower_line or ".sv" in str_lower_line
-
-# _allowed_existing_rtl_improvement_line 解释 existing RTL improvement 的 SV/SVA 支持。
+# _allowed_existing_rtl_improvement_line 关闭 existing RTL improvement 的旧方言豁免。
 def _allowed_existing_rtl_improvement_line(str_line: str) -> bool:
-    """判断 existing_rtl_improvement.py 中的 legacy 术语是否属于 SV/SVA 兼容说明。
+    """判断 existing_rtl_improvement.py 中的 legacy 术语是否属于保留例外。
 
     :param str_line: 正在检查的单行文本。
-    :return: 返回布尔值；True 表示“判断 existing_rtl_improvement.py 中的 legacy 术语是否属于 SV/SVA 兼容说明。”对应条件命中。
+    :return: 返回布尔值；True 表示“判断 existing_rtl_improvement.py 中的 legacy 术语是否属于保留例外。”对应条件命中。
     """
 
-    # improvement allowlist 需要识别 SVA property 示例。
-    str_lower_line = str_line.lower()  # improvement 文档折叠文本
+    # existing RTL improvement 不再允许旧方言或断言语法例外。
+    return False
 
-    # SV 输入说明覆盖语言名和 .sv 文件后缀。
-    bool_mentions_systemverilog = "systemverilog" in str_lower_line or ".sv" in str_lower_line  # SV 输入兼容说明
-
-    # SVA 示例覆盖 assert property 和 property p_ 片段。
-    bool_mentions_sva_property = "assert property" in str_lower_line or "property p_" in str_lower_line  # SVA 属性示例
-
-    # existing RTL improvement 允许提到 SV 或 SVA 语义约束。
-    return bool_mentions_systemverilog or bool_mentions_sva_property
-
-# _allowed_skill_effectiveness_dependency_line 解释 effectiveness 评估的 SV 覆盖项。
+# _allowed_skill_effectiveness_dependency_line 解释 effectiveness 评估的保留例外。
 def _allowed_skill_effectiveness_dependency_line(str_line: str) -> bool:
     """判断 skill_effectiveness.py 中的 legacy 术语是否属于测试覆盖项。
 
@@ -2681,15 +2663,12 @@ def _allowed_skill_effectiveness_dependency_line(str_line: str) -> bool:
     :return: 返回布尔值；True 表示“判断 skill_effectiveness.py 中的 legacy 术语是否属于测试覆盖项。”对应条件命中。
     """
 
-    # effectiveness allowlist 关注评估样例里的 SV 表述。
-    str_lower_line = str_line.lower()  # effectiveness 覆盖项缓存
-
-    # effectiveness 评估允许引用 SystemVerilog 或 .sv 作为测试覆盖项。
-    return "systemverilog" in str_lower_line or ".sv" in str_lower_line
+    # effectiveness 评估不再允许旧方言或后缀例外。
+    return False
 
 # _allowed_verify_repair_dependency_line 解释 verify-repair 的 testbench 语言字段。
 def _allowed_verify_repair_dependency_line(str_line: str) -> bool:
-    """判断 verify_repair.py 中的 legacy 术语是否属于 SV/testbench 兼容字段。
+    """判断 verify_repair.py 中的 legacy 术语是否属于 testbench 字段。
 
     :param str_line: 正在检查的单行文本。
     :return: 返回布尔值；True 表示“判断 verify_repair.py 中的 legacy 术语是否属于 SV/testbench 兼容字段。”对应条件命中。
@@ -2698,14 +2677,11 @@ def _allowed_verify_repair_dependency_line(str_line: str) -> bool:
     # verify-repair allowlist 关注修复报告里的 testbench 表述。
     str_lower_line = str_line.lower()  # verify-repair 语言字段缓存
 
-    # 修复验证中的 SV 兼容说明覆盖语言名和 .sv 文件后缀。
-    bool_mentions_sv = "systemverilog" in str_lower_line or ".sv" in str_lower_line  # 修复验证 SV 兼容说明
-
     # testbench 语言字段是 verify-repair 接口兼容的一部分。
     bool_mentions_tb_language = "tb_languages" in str_lower_line or "tb_language" in str_lower_line  # testbench 语言字段说明
 
-    # verify-repair 可保留 SV 和 testbench 语言兼容字段。
-    return bool_mentions_sv or bool_mentions_tb_language
+    # verify-repair 可保留 testbench 语言字段。
+    return bool_mentions_tb_language
 
 # _allowed_test_dependency_line 解释测试文件里的真实工具链和 fixture 术语。
 def _allowed_test_dependency_line(str_line: str) -> bool:
@@ -2715,27 +2691,16 @@ def _allowed_test_dependency_line(str_line: str) -> bool:
     :return: 返回布尔值；True 表示“判断 tests/ 下的 legacy 术语是否属于测试 fixture 或工具链字段。”对应条件命中。
     """
 
-    # 测试文件允许写出后端名、工具链路径和 SV fixture 后缀。
+    # 测试文件允许写出后端名和工具链路径。
     tuple_test_markers = (
-        "systemverilog",  # SV 语言 fixture 关键词
-        ".sv",  # tests fixture 使用的 SystemVerilog 文件后缀
         "Vivado",  # 单元测试 fixture 中的 FPGA 工具链名
         "Vitis",  # tests fixture 使用的 Vitis 工具名
         "/tools/Xilinx/",  # 测试中的工具链根路径样例
         "simulator_backend",  # 测试配置 fixture 中的仿真后端字段
     )  # 测试文件允许的后端和工具链标记
 
-    # 大小写敏感匹配保留原有工具链字段语义。
-    bool_mentions_test_marker = _line_contains_any(str_line, tuple_test_markers)  # 测试行是否命中工具链标记
-
-    # 小写匹配补充识别 SystemVerilog 和 .sv fixture 描述。
-    str_lower_line = str_line.lower()  # 测试当前行的小写文本
-
-    # 测试中的 SV 文件或语言描述可作为额外豁免条件。
-    bool_mentions_test_sv = "systemverilog" in str_lower_line or ".sv" in str_lower_line  # 测试 SV fixture 描述
-
-    # 测试文件允许保留真实工具链、仿真后端和 SV fixture 术语。
-    return bool_mentions_test_marker or bool_mentions_test_sv
+    # 测试文件允许保留真实工具链和仿真后端字段。
+    return _line_contains_any(str_line, tuple_test_markers)
 
 # _build_dependency_term_handlers 构造 legacy 术语扫描的精确路径分派表。
 def _build_dependency_term_handlers() -> dict[str, Callable[[str], bool]]:
@@ -2787,7 +2752,7 @@ def _allowed_dependency_term_line(str_rel: str, str_line: str) -> bool:
         # helper 返回 True 表示该行 legacy 术语属于可解释的依赖上下文。
         return func_exact_handler(str_line)
 
-    # tests/ 下的 fixture 允许真实工具链、后端和 SystemVerilog 术语。
+    # tests/ 下的 fixture 允许真实工具链和后端术语。
     if str_rel.startswith("tests/"):
 
         # 测试目录共享同一套 fixture/toolchain 例外。

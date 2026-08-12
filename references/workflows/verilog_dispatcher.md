@@ -2,7 +2,9 @@
 
 ## Entry decision
 
-Treat a request as an Readable Verilog Generator task when it asks for Verilog, RTL, `.v`, `.sv`, FPGA, ASIC, modules, finite-state machines, AXI, AXIS, APB, SPI, I2C, UART, or a hardware interface/register behavior description.
+Treat a request as a Readable Verilog Generator task when it asks for Verilog, RTL, `.v`, FPGA, ASIC, modules, finite-state machines, AXI, AXIS, APB, SPI, I2C, UART, or a hardware interface/register behavior description.
+
+Requests for other HDL dialect files are out of scope for generation and repair. Route them to a clear unsupported-dialect finding instead of widening this skill boundary.
 
 ## Task classes
 

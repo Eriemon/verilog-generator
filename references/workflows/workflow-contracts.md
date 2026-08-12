@@ -46,7 +46,7 @@ The stable route decision fields are:
 - `missing_inputs`
 - `next_action`
 - `safe_recovery_hint`
-- `risk_flags`
+- `blocking_findings`
 - `provenance_policy`
 
 Entry modes are limited to:
@@ -198,9 +198,8 @@ compile, execute, or implement readiness with external execution disabled, valid
 `toolchain_issue` error and separates `static_passed`, `compile_not_run`, `sim_not_run`, and
 remote-required status in metrics.
 
-SystemVerilog testbenches are allowed as `.sv` verification artifacts. Backend commands must use
-SystemVerilog compile flags (`xvlog -sv`, `vcs -sverilog`, or `iverilog -g2012`) when any `.sv`
-testbench is present. Synthesizable RTL source remains Verilog-2001 `.v`.
+Verification testbenches remain Verilog-2001 `.v` artifacts. Source RTL and generated
+verification files use the same Verilog-only boundary.
 
 ## Language Governance
 

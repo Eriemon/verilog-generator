@@ -38,7 +38,7 @@ PLAN_ARTIFACT_NAMES = ("codegen_plan.json", "_adapter_inputs/codegen_plan.json")
 class RouteRequest:
     """保存入口路由公开参数归一化前的请求字段。"""
 
-    # 摘要文本只用于 remote 意图和风险关键词扫描。
+    # 摘要文本只用于 remote 意图和证据关键词扫描。
     request_summary: str = ""  # remote 关键词扫描文本
 
     # 规格输入可以是路径，也可以是调用方已解析的映射。
@@ -76,7 +76,7 @@ ROUTE_REQUEST_FIELDS = frozenset(RouteRequest.__dataclass_fields__)  # route_ver
 class RouteFacts:
     """保存入口路由前已经归一化的请求事实。"""
 
-    # summary 是风险关键词扫描使用的原始请求摘要。
+    # summary 是证据关键词扫描使用的原始请求摘要。
     summary: str  # 原始请求摘要
 
     # spec_requested 表示用户或 artifact_dir 触发了规格入口。
@@ -181,8 +181,8 @@ def route_verilog_entry(*, request: RouteRequest | None = None, **overrides: Any
         set_present_inputs,  # 本次请求已经满足的输入名称
     )
 
-    # risk flags 汇总缺失 artifact、远程请求和日志特征。
-    list_risk_flags = _risk_flags(route_facts_facts_route)  # 当前请求的风险标志列表
+    # blocking findings 汇总缺失 artifact、远程请求和日志特征。
+    list_blocking_findings = _blocking_findings(route_facts_facts_route)  # 当前请求的阻断发现列表
 
     # next_action 单独计算，避免返回字典中嵌套长调用。
     str_next_action = _next_action(  # route_decision 展示给用户的下一步动作
@@ -200,7 +200,7 @@ def route_verilog_entry(*, request: RouteRequest | None = None, **overrides: Any
         "missing_inputs": _dedupe(list_missing_inputs),
         "next_action": str_next_action,
         "safe_recovery_hint": route_selection_selection_route.safe_recovery_hint,
-        "risk_flags": _dedupe(list_risk_flags),
+        "blocking_findings": _dedupe(list_blocking_findings),
         "provenance_policy": _provenance_policy(),
     }
 
@@ -300,7 +300,7 @@ def classify_diagnosis_route(
         # 编译失败先归为 toolchain_issue，避免误报 RTL 语义缺陷。
         return "toolchain_issue"
 
-    # assertion/protocol/timeout 属于本地 RTL 或 DUT/TB 合同风险。
+    # assertion/protocol/timeout 属于本地 RTL 或 DUT/TB 合同问题。
     if str_outcome in {"assertion_fail", "protocol_violation", "timeout"}:
 
         # augment 模式下优先提示 DUT/TB 合同漂移。
@@ -724,55 +724,55 @@ def _next_action(entry_mode: str, *, remote_validation_requested: bool, plan_rea
     # evidence-first 默认先分类证据。
     return "Classify logs or validation evidence before selecting repair or rerun."
 
-# _risk_flags 根据路由事实提取风险标志。
-def _risk_flags(route_facts: RouteFacts) -> list[str]:
+# _blocking_findings 根据路由事实提取阻断发现。
+def _blocking_findings(route_facts: RouteFacts) -> list[str]:
     """
-    根据请求摘要、日志和 validation 报告生成风险标志。
+    根据请求摘要、日志和 validation 报告生成阻断发现。
 
     :param route_facts: 已归一化的路由事实。
-    :return: 按发现顺序排列的风险标志列表。
+    :return: 按发现顺序排列的阻断发现列表。
     """
 
-    # flags 按发现顺序记录，最后由调用方去重。
-    list_flags: list[str] = []  # 路由报告中的风险标签序列
+    # findings 按发现顺序记录，最后由调用方去重。
+    list_findings: list[str] = []  # 路由报告中的阻断发现序列
 
     # summary 用于捕获用户文本里的 remote 意图。
     str_lower_summary = route_facts.summary.lower()  # 小写请求摘要
 
-    # remote 显式请求或摘要提到 remote 都标记风险。
+    # remote 显式请求或摘要提到 remote 都标记需要远程配置。
     if route_facts.remote_validation_requested or "remote" in str_lower_summary:
 
         # 远程验证声明必须依赖后续 remote gate。
-        list_flags.append("remote_validation_requested")
+        list_findings.append("remote_validation_requested")
 
     # 显式输入不存在时标记 artifact 缺失。
     if route_facts.missing_artifacts:
 
         # 缺失 artifact 会影响 present_inputs 判断。
-        list_flags.append("missing_artifact_inputs")
+        list_findings.append("missing_artifact_inputs")
 
     # 日志内容只从实际存在的日志路径读取。
     str_combined_logs = "\n".join(_safe_read_text(path_log) for path_log in route_facts.existing_log_paths).lower()  # 合并后的日志文本
 
-    # 编译关键字标记 compile failure 风险。
+    # 编译关键字标记 compile failure 发现。
     if any(str_token in str_combined_logs for str_token in ("syntax error", "compile error", "** error", "fatal")):
 
         # compile_failure 提示先处理编译证据。
-        list_flags.append("compile_failure")
+        list_findings.append("compile_failure")
 
-    # timeout 关键字标记仿真超时风险。
+    # timeout 关键字标记仿真超时发现。
     if "timeout" in str_combined_logs:
 
         # sim_timeout 提示仿真可能未收敛。
-        list_flags.append("sim_timeout")
+        list_findings.append("sim_timeout")
 
-    # testbench 协议关键字标记 DUT/TB 合同风险。
+    # testbench 协议关键字标记 DUT/TB 合同问题。
     if any(str_token in str_combined_logs for str_token in ("[tb_error]", "protocol violation", "mismatch")):
 
-        # DUT/TB 合同风险需要先看接口和时序约定。
-        list_flags.append("dut_tb_contract_risk")
+        # DUT/TB 合同问题需要先看接口和时序约定。
+        list_findings.append("dut_tb_contract_drift")
 
-    # validation issue 中的 toolchain_issue 也进入风险标志。
+    # validation issue 中的 toolchain_issue 也进入阻断发现。
     list_validation_issues = _validation_issues(route_facts.validation_payload)  # validation 报告 issue 列表
 
     # toolchain source 说明验证工具链本身可能失败。
@@ -794,11 +794,11 @@ def _risk_flags(route_facts: RouteFacts) -> list[str]:
     # 工具链 issue 不能归咎于 RTL 生成逻辑。
     if bool_has_toolchain_issue:
 
-        # 工具链风险不能包装成 RTL 功能错误。
-        list_flags.append("toolchain_issue")
+        # 工具链问题不能包装成 RTL 功能错误。
+        list_findings.append("toolchain_issue")
 
-    # 返回发现的风险标志。
-    return list_flags
+    # 返回发现的阻断项。
+    return list_findings
 
 # _validation_report_dict 兼容对象式 validation report。
 def _validation_report_dict(validation_report: Any | None) -> dict[str, Any]:

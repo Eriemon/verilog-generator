@@ -17,19 +17,19 @@ class VerilogAstError(ValueError):
     """表示 formatter parser 无法构造安全的结构化模型。"""
 
 # 支持的后缀集合限定 AST 扫描范围。
-VERILOG_EXTENSIONS = {".v", ".sv", ".vh", ".svh"}  # Verilog/SystemVerilog 后缀集合
+VERILOG_EXTENSIONS = {".v"}  # Verilog-2001 源文件后缀集合
 
 # 读取顺序优先覆盖 UTF-8，再兼容中文工程中常见编码。
 SOURCE_ENCODINGS = ("utf-8", "gb18030", "latin1")  # Verilog 文本候选编码顺序
 
 # iter_verilog_sources 收集单文件或目录树中的 RTL 输入。
 def iter_verilog_sources(root: Path) -> list[Path]:
-    """返回文件或目录路径下的 Verilog-like 源文件列表。
+    """返回文件或目录路径下的 Verilog 源文件列表。
 
     参数:
         root: 待扫描的单文件或目录路径。
     返回:
-        按稳定顺序排列的 Verilog/SystemVerilog 源文件路径列表。
+        按稳定顺序排列的 Verilog 源文件路径列表。
     """
 
     # resolve 让后续报告使用稳定的绝对路径。
@@ -59,7 +59,7 @@ def read_verilog_source(path: Path) -> tuple[str, str]:
     """按项目兼容编码读取 Verilog 文本。
 
     参数:
-        path: 待读取的 Verilog/SystemVerilog 文件路径。
+        path: 待读取的 Verilog 文件路径。
     返回:
         源文本和实际命中的编码名称。
     异常:
@@ -103,10 +103,10 @@ def build_ast_report_for_path(path: Path, *, profile: str = "formatter-normalize
     """为单个源文件构建结构化 AST 报告。
 
     参数:
-        path: 待检查的 Verilog/SystemVerilog 文件路径。
+        path: 待检查的 Verilog 文件路径。
         profile: formatter profile 名称或路径。
     返回:
-        包含结构、诊断、评分和编码信息的 AST 报告字典。
+        包含结构、诊断和编码信息的 AST 报告字典。
     """
 
     # 读取文本时同时保留实际编码。
@@ -179,8 +179,8 @@ def build_ast_report_for_text(
     """为 Verilog 文本构建 formatter 后端支撑的 AST 报告。
 
     参数:
-        source: 待解析的 Verilog/SystemVerilog 源文本。
-        source_path: 可选源路径，用于报告展示和 formatter 评分。
+        source: 待解析的 Verilog 源文本。
+        source_path: 可选源路径，用于报告展示。
         profile: formatter profile 名称或路径。
     返回:
         包含 header、module、诊断、formatter 违规和文本指标的 AST 报告。
@@ -189,11 +189,8 @@ def build_ast_report_for_text(
     # 后端创建只使用随包配置，避免 ad-hoc parser 分叉。
     formatter_backend_formatter_engine: FormatterBackend = create_formatter_backend(profile=profile)  # 负责 normalize 与 AST 复检的后端
 
-    # diagnostics 收集 warning/error，不让 scoring 异常掩盖 parser 结果。
+    # diagnostics 收集 warning/error，不让 parser 细节泄漏到调用方。
     list_diagnostics: list[dict[str, Any]] = []  # AST 诊断列表
-
-    # score/header/modules 分别记录 formatter 评分和结构模型。
-    dict_score = _score_source(formatter_backend_formatter_engine, source, source_path, list_diagnostics)  # formatter 评分报告
 
     # formatter parser 负责提取 header 与 module 结构。
     tuple_parse = _parse_source_with_formatter(formatter_backend_formatter_engine, source, list_diagnostics)  # header 与模块解析结果
@@ -207,16 +204,12 @@ def build_ast_report_for_text(
     # check_text 结果保留为 formatter 原生违规文本。
     list_formatter_violations = _formatter_violations(formatter_backend_formatter_engine, source, source_path)  # 报告中保留的 formatter 原生违规文本
 
-    # hard gate 失败必须升级为 AST 报告 error。
-    _append_hard_gate_diagnostics(dict_score, list_diagnostics)
-
     # 返回字段保持 v0.3.0 quality gate 契约。
     return {
         "version": 1,
         "path": str(source_path) if source_path is not None else None,
         "profile": profile,
         "ok": not any(dict_item.get("severity") == "error" for dict_item in list_diagnostics),
-        "score": dict_score,
         "header": dict_header,
         "formatter_violations": list_formatter_violations,
         "diagnostics": list_diagnostics,
@@ -234,19 +227,19 @@ def normalize_text_with_formatter_ast(
     """通过随包 formatter 规范化文本，并返回规范化后的 AST 报告。
 
     参数:
-        source: 待格式化的 Verilog/SystemVerilog 源文本。
-        source_path: 可选源路径，用于 formatter 评分和报告展示。
+        source: 待格式化的 Verilog 源文本。
+        source_path: 可选源路径，用于 formatter 报告展示。
         profile: formatter profile 名称或路径。
     返回:
         格式化后的源文本和二次 AST 报告。
     异常:
-        VerilogAstError: formatter hard gate 拒绝格式化结果时抛出。
+        VerilogAstError: formatter 拒绝格式化结果时抛出。
     """
 
     # 后端创建沿用同一 profile，确保 format 和 AST 检查一致。
     formatter_backend_formatter_engine: FormatterBackend = create_formatter_backend(profile=profile)  # formatter 后端实例
 
-    # format_text 可能被 hard gate 拒绝，错误转换为 AST 层错误。
+    # format_text 可能被写回策略拒绝，错误转换为 AST 层错误。
     try:
 
         # formatted 是 formatter 后端的唯一输出文本。
@@ -264,41 +257,6 @@ def normalize_text_with_formatter_ast(
     # 返回文本和报告给 model provider 或 CLI。
     return str_formatted, dict_report
 
-# _score_source 封装 formatter scoring 异常降级逻辑。
-def _score_source(
-    formatter_engine: Any,
-    source: str,
-    source_path: Path | None,
-    list_diagnostics: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """运行 formatter scoring，并把异常记录为 warning。
-
-    参数:
-        formatter_engine: 随包 formatter 后端实例。
-        source: 待评分的 Verilog/SystemVerilog 源文本。
-        source_path: 可选源路径，用于 formatter 报告展示。
-        list_diagnostics: 调用方维护的 AST 诊断列表。
-    返回:
-        formatter 评分报告字典；评分失败时返回空字典。
-    """
-
-    # scoring 是质量信息来源，但不能阻断 parser 诊断。
-    try:
-
-        # 返回普通 dict，避免 dataclass 或自定义对象泄漏到 JSON。
-        return dict(formatter_engine.score_text(source, source_path))
-
-    # scoring 失败不能阻断后续 AST 解析。
-    except Exception as exc:
-
-        # scoring 失败降级为 warning，后续 parser 仍继续。
-        list_diagnostics.append(
-            _diagnostic("warning", "FORMATTER_SCORE", f"Formatter scoring failed: {exc}")
-        )
-
-        # 空 score 保持报告结构稳定。
-        return {}
-
 # _parse_source_with_formatter 调用 formatter 内部结构化 parser。
 def _parse_source_with_formatter(
     formatter_engine: Any,
@@ -309,7 +267,7 @@ def _parse_source_with_formatter(
 
     参数:
         formatter_engine: 随包 formatter 后端实例，需提供内部 parser 钩子。
-        source: 待解析的 Verilog/SystemVerilog 源文本。
+        source: 待解析的 Verilog 源文本。
         list_diagnostics: 调用方维护的 AST 诊断列表。
     返回:
         可选 header 字典和 module 字典列表。
@@ -392,7 +350,7 @@ def _formatter_violations(
 
     参数:
         formatter_engine: 随包 formatter 后端实例。
-        source: 待检查的 Verilog/SystemVerilog 源文本。
+        source: 待检查的 Verilog 源文本。
         source_path: 可选源路径，用于 formatter 报告展示。
     返回:
         formatter check_text 输出的违规文本列表。
@@ -409,35 +367,6 @@ def _formatter_violations(
 
         # 违规文本仍由调用方展示，不转换为 AST error。
         return [str(exc)]
-
-# _append_hard_gate_diagnostics 把 scoring 发现的硬阻断写入 AST error 诊断。
-def _append_hard_gate_diagnostics(
-    dict_score: dict[str, Any],
-    list_diagnostics: list[dict[str, Any]],
-) -> None:
-    """把 formatter scoring hard gate 转换为 error 诊断。
-
-    参数:
-        dict_score: formatter scoring 产生的报告字典。
-        list_diagnostics: 调用方维护的 AST 诊断列表。
-    返回:
-        无返回值；必要时原地追加 error 诊断。
-    """
-
-    # hard_gates 来自 formatter scoring，非空说明输出不能被信任。
-    list_hard_gates = list(dict_score.get("hard_gates", []))  # scoring 返回的硬阻断列表
-
-    # 任一 hard gate 都表示 formatter 不应信任输出。
-    if list_hard_gates:
-
-        # hard gate 文本合并成单条 error，保持报告简洁。
-        list_diagnostics.append(
-            _diagnostic(
-                "error",
-                "FORMATTER_HARD_GATE",
-                ", ".join(str(item) for item in list_hard_gates),
-            )
-        )
 
 # _parse_module_with_formatter 把 formatter module 模型转成稳定 JSON 字典。
 def _parse_module_with_formatter(formatter_engine: Any, module_text: str, *, index: int) -> dict[str, Any]:
@@ -1230,7 +1159,7 @@ def _source_metrics(source: str) -> dict[str, Any]:
     """计算 AST 报告需要的源文本指标。
 
     参数:
-        source: 待统计的 Verilog/SystemVerilog 源文本。
+        source: 待统计的 Verilog 源文本。
     返回:
         包含行数、注释、缩进和 header 特征的轻量指标字典。
     """

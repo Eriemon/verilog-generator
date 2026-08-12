@@ -268,7 +268,7 @@ def _mock_erie_rtl_source_text(spec: dict[str, Any]) -> str:
 // Description: \tDescription/{mock_port_layout_snapshot.top}_Design.pdf
 // Simulations:\t\tTestBench/Vivado/2021.1/{mock_port_layout_snapshot.top}
 // 
-// Referrences:\t\tNone
+// References:\t\tNone
 //
 // Dependencies:\tNone
 //
@@ -716,7 +716,7 @@ def _mock_erie_comb_source_text(layout: MockPortLayout) -> str:
 // Description: \tDescription/{layout.top}_Design.pdf
 // Simulations:\t\tTestBench/Vivado/2021.1/{layout.top}
 //
-// Referrences:\t\tNone
+// References:\t\tNone
 //
 // Dependencies:\tNone
 //

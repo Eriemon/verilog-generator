@@ -888,26 +888,11 @@ def _validate_output(output: Any) -> None:
         # 错误文案包含原路径，便于用户定位非法输出项。
         raise SpecError(f"> ERR: [Python] Output path must be safe and relative: {str_path!r}")
 
-    # 后缀用于校验 Verilog 与 SystemVerilog 输出扩展名。
+    # 后缀用于校验 Verilog 输出扩展名。
     str_suffix = Path(str_path).suffix.lower()  # 输出文件后缀
-
-    # kind 控制 testbench 的 SystemVerilog 例外。
-    str_kind = str(output.get("kind", "")).lower()  # 输出文件类型
 
     # 语言默认为 verilog，兼容旧规格缺省行为。
     str_language = str(output.get("language") or "verilog").lower()  # 输出文件语言
-
-    # 只有 testbench 允许 SystemVerilog，且必须使用 .sv 后缀。
-    if str_kind == "testbench" and str_language == "systemverilog":
-
-        # SystemVerilog 测试平台必须显式使用 .sv 文件。
-        if str_suffix != ".sv":
-
-            # SystemVerilog testbench 使用 .v 会误导后续工具链识别。
-            raise SpecError("> ERR: [Python] SystemVerilog testbench outputs must use .sv paths.")
-
-        # SystemVerilog 测试平台到此完成校验。
-        return
 
     # Verilog 源文件和 Verilog testbench 都必须使用 .v 后缀。
     if str_suffix != ".v":
@@ -915,11 +900,11 @@ def _validate_output(output: Any) -> None:
         # Verilog 输出统一要求 .v，避免文件语言和扩展名冲突。
         raise SpecError("> ERR: [Python] Verilog RTL and Verilog testbench outputs must use .v paths.")
 
-    # 非 SystemVerilog 例外场景下，语言必须是 verilog。
+    # 当前 workflow 只允许 Verilog 语言标签。
     if str_language != "verilog":
 
-        # 非 testbench 的 SystemVerilog 产物当前没有生成和验证合同。
-        raise SpecError("> ERR: [Python] Output language must be verilog unless kind=testbench uses systemverilog.")
+        # 非 Verilog 产物当前没有生成和验证合同。
+        raise SpecError("> ERR: [Python] Output language must be verilog.")
 
 # 多形态用户输入统一转为列表。
 def _as_list(value: Any) -> list[Any]:

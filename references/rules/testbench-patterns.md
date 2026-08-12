@@ -1,6 +1,6 @@
 # Testbench Patterns
 
-Use this reference when generating or reviewing Verilog-2001 or SystemVerilog self-checking testbench scaffolds for the Erie workflow. Synthesizable RTL remains Verilog-2001 `.v`; SystemVerilog is allowed only for testbench `.sv` artifacts.
+Use this reference when generating or reviewing Verilog-2001 self-checking testbench scaffolds for the Erie workflow. Synthesizable RTL and verification testbenches remain Verilog-2001 `.v` artifacts.
 
 ## In Scope
 
@@ -50,7 +50,7 @@ When `python -m scripts.python.generation.tb_generator` is used without expectat
 - Boundary or corner conditions are represented.
 - Timeout handling exists.
 - PASS and FAIL strings are easy to grep from simulator output, and PASS is reachable only after comparison code.
-- `.sv` testbenches are compiled with SystemVerilog flags when an external backend is used.
+- Testbenches are compiled as Verilog `.v` files when an external backend is used.
 
 ## Comparison Note
 

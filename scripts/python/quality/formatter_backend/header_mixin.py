@@ -1427,7 +1427,7 @@ class HeaderMixin:
         list_english_suffix = [  # 英文头部版本与历史字段块
             f"// Simulations:\t\t{section_values['simulations']}",  # 英文仿真工程字段
             "// ",  # 英文仿真工程与参考资料之间的空白分隔行
-            f"// Referrences:\t\t{section_values['references']}",  # 英文参考资料字段
+            f"// References:\t\t{section_values['references']}",  # 英文参考资料字段
             "//",  # 英文参考资料与依赖段之间的分隔行
             "//",  # 英文依赖段与版本历史之间的分隔行
             f"// Version:\t\t\t{section_values['version']}",  # 英文当前版本字段

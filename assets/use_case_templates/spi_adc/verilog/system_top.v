@@ -10,7 +10,7 @@
 // Description: 	Description/spi_adc_system_top_Design.pdf
 // Simulations:		TestBench/Vivado/2021.1/spi_adc_system_top
 // 
-// Referrences:		None
+// References:		None
 //
 // Dependencies:	None
 //

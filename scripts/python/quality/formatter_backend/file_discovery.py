@@ -1,4 +1,4 @@
-"""发现 formatter 应处理的 Verilog/SystemVerilog 文件。"""
+"""发现 formatter 应处理的 Verilog 文件。"""
 
 # 延迟类型注解求值，保持工具模块导入简单
 from __future__ import annotations

@@ -10,7 +10,7 @@
 // Description: 	Description/mxfe_mixed_system_top_Design.pdf
 // Simulations:		TestBench/Vivado/2021.1/mxfe_mixed_system_top
 // 
-// Referrences:		None
+// References:		None
 //
 // Dependencies:	None
 //

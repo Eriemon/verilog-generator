@@ -10,7 +10,7 @@
 // Description: 	Description/pipeline_delay_Design.pdf
 // Simulations:		TestBench/Vivado/2021.1/pipeline_delay
 //
-// Referrences:		None
+// References:		None
 //
 // Dependencies:	None
 //

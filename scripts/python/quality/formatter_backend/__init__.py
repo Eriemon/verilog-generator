@@ -6,7 +6,6 @@ from .builtin_backend import BuiltinFormatterBackend
 from .engine import VerilogFormatterEngine, VerilogFormatterError
 from .factory import create_backend
 from .format_routing import FormatRouteResult
-from .scoring import ScoreReport, score_verilog_source
 
 # __all__ 明确暴露 formatter backend 的稳定 API 名称。
 __all__ = [
@@ -15,7 +14,5 @@ __all__ = [
     "VerilogFormatterEngine",  # 具体解析和渲染引擎
     "VerilogFormatterError",  # formatter 层统一异常
     "FormatRouteResult",  # 路由阶段结果模型
-    "ScoreReport",  # 格式评分报告模型
     "create_backend",  # 后端工厂入口
-    "score_verilog_source",  # 文本评分便捷函数
 ]

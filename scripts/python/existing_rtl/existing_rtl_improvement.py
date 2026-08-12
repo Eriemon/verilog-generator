@@ -997,7 +997,7 @@ def _merge_assist(
 
 # 规范化 testbench 语言名称，并在非法值时给出统一错误前缀。
 def _require_tb_language(tb_language: str) -> str:
-    """校验 testbench 语言选项，仅允许 verilog 或 systemverilog。
+    """校验 testbench 语言选项，仅允许 verilog。
 
     参数:
         tb_language: 用户指定的 testbench 语言名称。
@@ -1012,12 +1012,12 @@ def _require_tb_language(tb_language: str) -> str:
     # 统一转成小写，便于后续做固定集合判断。
     str_normalized = tb_language.lower()  # 归一化后的 testbench 语言名称
 
-    # 仅允许 verilog 或 systemverilog 两种 testbench 方言。
-    if str_normalized not in {"verilog", "systemverilog"}:
+    # 仅允许 Verilog-2001 testbench 方言。
+    if str_normalized != "verilog":
 
         # 语言不在允许集合时，立即返回统一前缀的参数错误。
         raise ValueError(
-            "> ERR: [Python] tb_language 仅支持 'verilog' 或 'systemverilog'。"
+            "> ERR: [Python] tb_language 仅支持 'verilog'。"
         )
 
     # 返回归一化后的语言名称。
@@ -1035,7 +1035,7 @@ def _write_tb_from_analysis(
     参数:
         analysis: RTL 结构化分析结果。
         output_path: 生成 testbench 文件的输出路径。
-        tb_language: 目标 testbench 语言，可选 verilog 或 systemverilog。
+        tb_language: 目标 testbench 语言，当前仅支持 verilog。
 
     返回:
         None。函数会直接把 testbench 内容写入输出文件。
@@ -1072,9 +1072,6 @@ def _write_tb_from_analysis(
 
     # 追加脚手架启动横幅，方便判断 testbench 是否被执行。
     list_lines.extend(_tb_startup_banner_lines())
-
-    # 在 SystemVerilog 模式下补充最基础的未知态断言。
-    list_lines.extend(_tb_sv_assertion_lines(list_ports, tb_language=str_tb_language))
 
     # 追加 initial 主激励序列与收尾日志。
     list_lines.extend(
@@ -1267,91 +1264,6 @@ def _tb_verilog_placeholder_lines() -> list[str]:
         "        end",
     ]
 
-# 生成 SystemVerilog 模式的未知态提示片段，帮助用户快速发现输出异常。
-def _tb_unknown_output_hint_lines(str_output_signal: str) -> list[str]:
-    """返回基于默认输出信号的未知态提示片段。
-
-    参数:
-        str_output_signal: 需要观测的默认输出信号名称。
-
-    返回:
-        SystemVerilog 模式追加到 initial 序列末尾的提示文本列表。
-    """
-
-    # 使用统一模板拼出最轻量的未知态提示分支。
-    return [
-        f"        if (^{{{str_output_signal}}} === 1'bx) begin",
-        f'            $display("FAIL: unknown output observed on {str_output_signal}");',
-        "        end",
-    ]
-
-# 在 SystemVerilog 模式下补充基于默认输出信号的未知态断言。
-def _tb_sv_assertion_lines(
-    list_ports: list[dict[str, Any]],
-    *,
-    tb_language: str,
-) -> list[str]:
-    """生成 SystemVerilog 输出未知态断言文本。
-
-    参数:
-        list_ports: 顶层端口定义列表。
-        tb_language: 目标 testbench 语言名称。
-
-    返回:
-        SystemVerilog 模式下的未知态断言文本列表；纯 Verilog 时返回空列表。
-    """
-
-    # 纯 Verilog 模式不输出 assertion 片段。
-    if tb_language != "systemverilog":
-
-        # 非 SystemVerilog 模式直接返回空片段。
-        return []
-
-    # 优先选 clock/reset/output 角色，缺失时用保守默认值兜底。
-    str_clock_name = _tb_preferred_port_name(  # 断言采样使用的时钟名称
-        list_ports, role="clock", default="clk"  # assertion 默认时钟端口选择条件
-    )
-
-    # 选择断言屏蔽使用的复位名称，缺失时用保守默认值兜底。
-    str_reset_name = _tb_preferred_port_name(  # 断言屏蔽使用的复位名称
-        list_ports, role="reset", default="rst_n"  # assertion 默认复位端口选择条件
-    )
-
-    # 选择 assertion 默认观测的输出信号名称。
-    str_observation_signal = _tb_preferred_port_name(  # assertion 默认观测的输出信号名称
-        list_ports, direction="output", default=None  # assertion 默认输出端口选择条件
-    )
-
-    # 缺少输出端口时，不生成未知态断言。
-    if not str_observation_signal:
-
-        # 缺少输出观测对象时，不输出断言文本。
-        return []
-
-    # 先为 property 命名，方便后面的 assert property 直接复用。
-    str_property_name = f"p_{str_observation_signal}_known"  # 输出未知态断言属性名
-
-    # 再拼出 property 主体，固定在时钟沿上检查输出是否出现未知态。
-    str_property_body = (  # 输出未知态断言主体
-        f"        @(posedge {str_clock_name}) disable iff (!{str_reset_name}) "
-        f"!$isunknown({str_observation_signal});"
-    )
-
-    # 最后准备断言失败时打印的错误文本。
-    str_error_text = (  # 输出未知态断言失败时的报错文本
-        f'    assert property ({str_property_name}) else $error("[TB_ERROR] Time: %0t | '
-        f'Unknown output detected on {str_observation_signal}.", $time);'
-    )
-
-    # 返回 assertion 文本片段。
-    return [
-        f"    property {str_property_name};",
-        str_property_body,
-        "    endproperty",
-        str_error_text,
-        "",
-    ]
-
 # 生成 testbench 的 initial 主激励、日志与收尾片段。
 def _tb_initial_sequence_lines(
     list_ports: list[dict[str, Any]],
@@ -1453,17 +1365,8 @@ def _tb_initial_sequence_lines(
     # 再输出机器可解析的 VERILOG-GEN-RESULT 横幅。
     list_lines.append(str_result_banner)
 
-    # Verilog 模式只留占位提醒；SystemVerilog 模式补未知态观测提示。
-    if tb_language == "verilog":
-
-        # 纯 Verilog 脚手架仅提示用户补全模块专属检查。
-        list_lines.extend(_tb_verilog_placeholder_lines())
-
-    # SystemVerilog 且存在输出端口时，再补一个简单的未知态提示。
-    elif str_output_signal:
-
-        # 已存在输出观测对象时，再追加一个轻量未知态提示。
-        list_lines.extend(_tb_unknown_output_hint_lines(str_output_signal))
+    # Verilog 脚手架仅提示用户补全模块专属检查。
+    list_lines.extend(_tb_verilog_placeholder_lines())
 
     # 最后追加统一的仿真收尾语句。
     list_lines.extend(

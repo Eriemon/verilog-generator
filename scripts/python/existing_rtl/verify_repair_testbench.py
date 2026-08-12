@@ -234,10 +234,10 @@ def augment_existing_testbench(
     # 原始 TB 文本用于 diff、语言识别和注入点定位。
     str_original_text = path_existing_tb_source.read_text(encoding="utf-8")  # 用户既有 testbench 文本
 
-    # 语言识别影响 SystemVerilog assertion 注入。
+    # 语言识别当前固定为 Verilog，保留字段用于报告兼容。
     str_language_before = tb_language_from_path(path_existing_tb_source, str_original_text)  # 原始 TB 语言
 
-    # 自动化策略决定是否允许升级到 SystemVerilog。
+    # 自动化策略当前不会改变 testbench 语言。
     str_language_after = resolve_augment_language(  # 增强后用于候选 TB 的语言标签
         str_language_before,  # 原 TB 的实际语言
         str_requested_tb_language,  # 调用方请求的目标 TB 语言
@@ -295,7 +295,7 @@ def augment_existing_testbench(
     tuple_apply_paths = _maybe_apply_tb(  # 写回 helper 返回备份路径和活动路径
         path_existing_tb_source=path_existing_tb_source,  # 可能被 auto_apply 写回的用户 TB
         str_augmented_text=str_augmented_text,  # 写回或候选引用的增强 TB 文本
-        str_language_after=str_language_after,  # SystemVerilog 时写回到并列 .sv
+        str_language_after=str_language_after,  # 增强后保持 Verilog
         str_automation_mode=str_automation_mode,  # 写回权限来自自动化模式
         path_candidate=path_candidate,  # 非写回模式下作为 active path
     )  # 自动写回阶段返回的备份和活动路径
@@ -355,12 +355,8 @@ def _write_tb_augment_diff(
         None: 直接写出 tb_augment_diff.txt。
     """
 
-    # SystemVerilog 增强 diff 的目标后缀应显示 `.sv`。
-    str_target_suffix = (
-        ".sv"  # SystemVerilog 候选在 diff 中显示为 .sv
-        if str_language_after == "systemverilog"  # 只有语言升级时替换显示后缀
-        else path_existing_tb_source.suffix  # 保持原 TB 后缀用于 Verilog 候选
-    )  # diff 展示路径使用的目标后缀
+    # diff 展示路径保持原 TB 后缀。
+    str_target_suffix = path_existing_tb_source.suffix  # diff 展示路径使用的目标后缀
 
     # diff 目标路径仅用于显示，不一定真实写回。
     path_diff_target = path_existing_tb_source.with_suffix(str_target_suffix)  # diff 中展示的目标路径
@@ -428,17 +424,13 @@ def _write_tb_candidate(
         path_out_dir: 当前 verify-repair run 的输出目录。
         path_existing_tb_source: 原始 TB 路径，用于派生候选文件名。
         str_augmented_text: 候选文件要写入的增强 TB 文本。
-        str_language_after: 候选 TB 语言，用于选择 `.v` 或 `.sv` 后缀。
+        str_language_after: 候选 TB 语言，当前固定为 Verilog。
     返回:
         Path: 写出的增强候选 TB 路径。
     """
 
-    # 候选后缀反映增强后的真实语言。
-    str_candidate_suffix = (
-        ".sv"  # SystemVerilog 候选文件使用 .sv 后缀
-        if str_language_after == "systemverilog"  # 语言升级时改写候选文件后缀
-        else path_existing_tb_source.suffix  # Verilog 候选沿用原始 TB 后缀
-    )  # 候选文件反映增强后语言的后缀
+    # 候选后缀沿用原始 TB 后缀。
+    str_candidate_suffix = path_existing_tb_source.suffix  # 候选文件后缀
 
     # 候选文件放在 run 目录下，不覆盖用户源文件。
     path_candidate = (
@@ -470,7 +462,7 @@ def _maybe_apply_tb(
     参数:
         path_existing_tb_source: 可能被 auto_apply 写回的用户 TB 文件。
         str_augmented_text: 准备写回或作为候选展示的增强 TB 文本。
-        str_language_after: 增强后的 TB 语言标签。
+        str_language_after: 增强后的 TB 语言标签，当前固定为 Verilog。
         str_automation_mode: 调用方选择的自动化写回策略。
         path_candidate: 非写回模式下作为活动文件的候选 TB 路径。
     返回:
@@ -489,23 +481,11 @@ def _maybe_apply_tb(
     # 保存备份，防止自动写回不可逆。
     shutil.copyfile(path_existing_tb_source, path_backup)
 
-    # SystemVerilog 写回到并列 `.sv` 文件。
-    if str_language_after == "systemverilog":
+    # Verilog 写回仍沿用用户提供的原文件。
+    path_active = path_existing_tb_source  # 原地覆盖后的 TB 路径
 
-        # `.sv` active path 避免改写原 `.v` 文件语义。
-        path_active = path_existing_tb_source.with_suffix(".sv")  # SystemVerilog 活动 TB 路径
-
-        # 写入升级后的 testbench。
-        path_active.write_text(str_augmented_text, encoding="utf-8")
-
-    # Verilog 增强直接覆盖原 TB。
-    else:
-
-        # Verilog 写回仍沿用用户提供的原文件。
-        path_active = path_existing_tb_source  # 原地覆盖后的 TB 路径
-
-        # 写回增强后的 testbench。
-        path_active.write_text(str_augmented_text, encoding="utf-8")
+    # 写回增强后的 testbench。
+    path_active.write_text(str_augmented_text, encoding="utf-8")
 
     # 返回备份和活动路径。
     return path_backup, path_active
@@ -577,7 +557,7 @@ def build_augmented_testbench(
     # 动作清单记录每个注入理由。
     list_actions: list[dict[str, Any]] = []  # TB 增强动作列表
 
-    # 模块名用于 SystemVerilog property 命名。
+    # 模块名用于动作记录和诊断上下文。
     str_module_name = str(dict_analysis["module_info"]["name"])  # 被测模块名
 
     # 选择第一个输出信号作为最小观测点。
@@ -587,7 +567,7 @@ def build_augmented_testbench(
         if dict_item.get("direction") == "output"  # 只保留可被 testbench 采样的输出端口
     ]  # 可观测输出端口名列表
 
-    # 输出信号可能缺失，此时跳过数据监控和 assertion。
+    # 输出信号可能缺失，此时跳过数据监控。
     str_output_signal = list_outputs[0] if list_outputs else ""  # TB 观测输出信号
 
     # 时钟信号缺失时使用传统 clk 兜底。
@@ -601,14 +581,14 @@ def build_augmented_testbench(
     )  # TB 监控使用的时钟名
 
     # 复位信号缺失时使用 rst_n 兜底。
-    str_reset_name = next(  # SystemVerilog property 使用的复位端口名
+    str_reset_name = next(  # TB_ERROR 占位分支使用的复位端口名
         (
             dict_item["name"]  # reset role 对应的端口名
             for dict_item in dict_analysis.get("ports", [])  # 扫描端口以寻找复位角色
             if dict_item.get("role") == "reset"  # reset role 是 property disable 的唯一自动依据
         ),
         "rst_n",  # 分析缺少 reset role 时沿用常见低有效复位名
-    )  # SystemVerilog property 使用的复位名
+    )  # TB_ERROR 占位分支复位名
 
     # 只注入前四个 checkpoint，避免 legacy TB 被塞入过多报告语句。
     list_checkpoints = dict_analysis.get("verification_targets", [])[:4]  # monitor 日志最多展示的验证目标切片
@@ -662,7 +642,7 @@ def build_augmented_testbench(
         "str_language_after": str_language_after,  # 语言决定使用 property 还是占位分支
     }
 
-    # 端口和模块字段单独分组，便于理解 SystemVerilog property 的构造来源。
+    # 端口和模块字段单独分组，便于理解错误路径构造来源。
     dict_error_context.update(  # TB_ERROR 注入所需的模块和信号名称
         str_module_name=str_module_name,  # property 名称使用的被测模块名
         str_clock_name=str_clock_name,  # property 或 always 采样使用的时钟名
@@ -673,7 +653,7 @@ def build_augmented_testbench(
     # error helper 通过属性对象读取上下文，减少参数面。
     simple_namespace_error_context = SimpleNamespace(**dict_error_context)  # TB_ERROR 注入上下文对象
 
-    # 缺少 TB_ERROR 路径时补充 assertion 或占位 error branch。
+    # 缺少 TB_ERROR 路径时补充占位 error branch。
     _append_error_block(simple_namespace_context=simple_namespace_error_context)
 
     # 没有动作说明 legacy TB 已经具备必要 hooks。
@@ -979,57 +959,23 @@ def _append_error_block(*, simple_namespace_context: SimpleNamespace) -> None:
     # 动作写入计划，说明新增了可被日志诊断识别的失败路径。
     simple_namespace_context.list_actions.append(dict_error_action)
 
-    # SystemVerilog 且有输出信号时使用 property。
-    if simple_namespace_context.str_language_after == "systemverilog" and simple_namespace_context.str_output_signal:
+    # Verilog 分支保留原非触发条件，只补日志路径供人工替换。
+    str_error_placeholder_line = (
+        '            $error("[TB_ERROR] Time: %0t | Replace legacy checks '  # 占位错误日志前半句
+        'with module-specific expectations.", $time);'  # 提示人工替换为模块期望
+    )  # Verilog 占位失败日志语句
 
-        # property 名称沿用模块名，避免多个增强块之间重名。
-        str_property_name = f"p_{simple_namespace_context.str_module_name}_known"  # 未知值检查 property 名称
-
-        # property 主体检查采样点输出不能为 X/Z。
-        str_property_condition = (
-            f"        @(posedge {simple_namespace_context.str_clock_name}) "  # property 采样时钟
-            f"disable iff (!{simple_namespace_context.str_reset_name}) "  # 复位有效时屏蔽检查
-            f"!$isunknown({simple_namespace_context.str_output_signal});"  # 输出未知值检查表达式
-        )  # SystemVerilog 未知值检查条件
-
-        # assertion 失败日志保持 TB_ERROR 协议标签。
-        str_assert_error_line = (
-            f'    assert property ({str_property_name}) else '  # assertion 绑定上方 property
-            f'$error("[TB_ERROR] Time: %0t | Unknown output detected on '  # 失败日志前半段
-            f'{simple_namespace_context.str_output_signal}.", $time);'  # 输出信号名嵌入失败日志
-        )  # SystemVerilog assertion 失败日志语句
-
-        # 注入未知值检查 property。
-        simple_namespace_context.list_injected_blocks.extend(
-            [
-                f"    property {str_property_name};",
-                str_property_condition,
-                "    endproperty",
-                str_assert_error_line,
-                "",
-            ]
-        )
-
-    # Verilog 路径保持非触发占位错误分支。
-    else:
-
-        # Verilog 分支保留原非触发条件，只补日志路径供人工替换。
-        str_error_placeholder_line = (
-            '            $error("[TB_ERROR] Time: %0t | Replace legacy checks '  # 占位错误日志前半句
-            'with module-specific expectations.", $time);'  # 提示人工替换为模块期望
-        )  # Verilog 占位失败日志语句
-
-        # 注入不会触发的 error path，提示后续替换为模块特定检查。
-        simple_namespace_context.list_injected_blocks.extend(
-            [
-                "    initial begin",
-                "        if (^1'b0 === 1'b1) begin",
-                str_error_placeholder_line,
-                "        end",
-                "    end",
-                "",
-            ]
-        )
+    # 注入不会触发的 error path，提示后续替换为模块特定检查。
+    simple_namespace_context.list_injected_blocks.extend(
+        [
+            "    initial begin",
+            "        if (^1'b0 === 1'b1) begin",
+            str_error_placeholder_line,
+            "        end",
+            "    end",
+            "",
+        ]
+    )
 
 # 注入块插到最后一个 endmodule 前，缺失 endmodule 时追加到末尾。
 def _insert_blocks_before_endmodule(str_original_text: str, list_injected_blocks: list[str]) -> str:
@@ -1057,7 +1003,7 @@ def _insert_blocks_before_endmodule(str_original_text: str, list_injected_blocks
     # 在 endmodule 前插入增强块。
     return str_prefix + "\n" + "\n".join(list_injected_blocks) + "endmodule\n"
 
-# TB 语言识别只看后缀和 SystemVerilog property 痕迹。
+# TB 语言识别当前固定为 Verilog。
 def tb_language_from_path(path_source: Path, str_text: str) -> str:
     """判断 testbench 文本的语言。
 
@@ -1065,19 +1011,13 @@ def tb_language_from_path(path_source: Path, str_text: str) -> str:
         path_source: testbench 源文件路径。
         str_text: testbench 文本内容。
     返回:
-        str: `verilog` 或 `systemverilog` 语言标签。
+        str: `verilog` 语言标签。
     """
 
-    # `.sv` 或 property/assert property 视为 SystemVerilog。
-    if path_source.suffix.lower() == ".sv" or "assert property" in str_text or "property p_" in str_text:
-
-        # 返回 SystemVerilog 标签。
-        return "systemverilog"
-
-    # 其余保持 Verilog。
+    # 当前边界固定为 Verilog。
     return "verilog"
 
-# conservative 不主动升级 TB 语言；自动/半自动可升级到 SystemVerilog。
+# 语言解析当前始终保持 Verilog。
 def resolve_augment_language(str_language_before: str, str_requested_tb_language: str, str_automation_mode: str) -> str:
     """根据自动化模式确定增强后的 testbench 语言。
 
@@ -1089,20 +1029,8 @@ def resolve_augment_language(str_language_before: str, str_requested_tb_language
         str: 增强候选 TB 实际采用的语言标签。
     """
 
-    # conservative 只报告候选，不改变语言。
-    if str_automation_mode == "conservative":
-
-        # 返回原语言，降低人工审查负担。
-        return str_language_before
-
-    # semi_auto/auto_apply 允许按请求升级到 SystemVerilog。
-    if str_automation_mode in {"semi_auto", "auto_apply"} and str_requested_tb_language == "systemverilog":
-
-        # 返回请求的 SystemVerilog。
-        return "systemverilog"
-
-    # 默认保持原语言。
-    return str_language_before
+    # 默认保持 Verilog，自动化模式不改变语言边界。
+    return "verilog"
 
 # 备份路径带时间戳，避免覆盖旧备份。
 def backup_path(path_source: Path) -> Path:

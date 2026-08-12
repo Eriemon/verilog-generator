@@ -1370,14 +1370,14 @@ def _evaluate_verify_existing_augment_case(
         path_case_root / "auto_apply",  # auto_apply testbench 副本的落盘目录
     )
 
-    # systemverilog 语言升级路径验证自动注入和备份记录。
+    # auto_apply 路径验证 Verilog testbench 自动注入和备份记录。
     dict_auto_apply = verify_existing_verilog(  # 自动注入 hooks 后的 augment 分支结果
         [path_source, path_auto_apply_tb],  # RTL 与可改写 testbench 的组合输入
         out_dir=path_case_root / "auto_apply_run",  # auto_apply 分支自己的 run 目录
         spec_source=path_spec_source,  # 与 conservative 共享同一份规格说明
         automation_mode="auto_apply",  # 允许自动应用 testbench 变更
         tb_mode="augment",  # 继续走 testbench 增强模式
-        tb_language="systemverilog",  # 验证语言升级到 SystemVerilog
+        tb_language="verilog",  # Verilog-only 边界下保持 testbench 语言不升级
         readiness="static",  # 先只验证静态注入结果
         run_external=False,  # 本轮不接仿真器，只看注入后的 contract
     )  # 返回 auto_apply augment 分支写出的 contract、diff 与 verification 工件
@@ -1407,7 +1407,7 @@ def _evaluate_verify_existing_augment_case(
         dict_auto_apply_contract["active_testbench_path"]  # auto_apply 最终生效的 testbench 路径
     ).read_text(encoding="utf-8")  # auto_apply 后的 testbench 文本
 
-    # 提取 augment case 最终启用的断言开关。
+    # 提取 augment case 最终启用的合同检查开关。
     dict_expectations = _case_expectations(case)  # 控制 augment 双路径合同检查启停的开关集合
 
     # 这里把保守路径与 auto_apply 路径的关键契约一起核对。
@@ -1433,12 +1433,12 @@ def _evaluate_verify_existing_augment_case(
                 dict_auto_apply_contract.get("backup_testbench_path")  # contract 中是否记录 backup_testbench_path
             )
             and Path(dict_auto_apply_contract["backup_testbench_path"]).exists(),  # auto_apply 路径是否留下 testbench 备份
-            "systemverilog_upgrade_recorded": (  # auto_apply augment 必须同时记录语言升级和自动注入策略
-                dict_auto_apply_contract.get("language_after") == "systemverilog"  # 合同里是否声明增强后语言升级到 SystemVerilog
+            "auto_apply_verilog_recorded": (  # auto_apply augment 必须同时记录 Verilog 边界和自动注入策略
+                dict_auto_apply_contract.get("language_after") == "verilog"  # 合同里是否声明增强后仍保持 Verilog
                 and dict_auto_apply_result.get("tb_mutation", {}).get("policy") == "auto_apply"  # verification_result 是否记录自动应用策略
-            ),  # 合同与验证结果是否记录 systemverilog 升级
+            ),  # 合同与验证结果是否记录 Verilog-only 自动应用
         },
-        dict_expectations,  # 只启用 augment case 为双路径 contract 与语言升级显式打开的检查项
+        dict_expectations,  # 只启用 augment case 为双路径 contract 与自动应用显式打开的检查项
     )
 
     # 只有 conservative 未应用且 auto_apply 已应用时，双路径状态才算稳定。
@@ -1765,12 +1765,12 @@ def _evaluate_routing_case(
             str_item not in dict_decision.get("missing_inputs", [])  # 当前输入不应被误判为缺失
         )
 
-    # risk_flags_contains 逐项检查必须出现的风险标记。
-    for str_item in dict_expectations.get("risk_flags_contains", []):
+    # blocking_findings_contains 逐项检查必须出现的阻断发现。
+    for str_item in dict_expectations.get("blocking_findings_contains", []):
 
-        # 风险标记用于提示 host 需要更保守的后续动作。
-        dict_checks[f"risk_flags_contains_{str_item}"] = (
-            str_item in dict_decision.get("risk_flags", [])  # 当前风险标记是否被 route 标出
+        # 阻断发现用于提示 host 需要更保守的后续动作。
+        dict_checks[f"blocking_findings_contains_{str_item}"] = (
+            str_item in dict_decision.get("blocking_findings", [])  # 当前阻断发现是否被 route 标出
         )
 
     # next_action_contains 检查人类可读建议中是否包含关键短语。

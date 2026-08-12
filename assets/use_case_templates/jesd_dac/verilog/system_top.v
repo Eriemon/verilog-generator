@@ -10,7 +10,7 @@
 // Description: 	Description/jesd_dac_system_top_Design.pdf
 // Simulations:		TestBench/Vivado/2021.1/jesd_dac_system_top
 // 
-// Referrences:		None
+// References:		None
 //
 // Dependencies:	None
 //

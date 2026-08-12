@@ -21,8 +21,8 @@ AUTOMATION_MODES = ("conservative", "semi_auto", "auto_apply")  # verify-repair 
 # testbench 模式定义 generate/augment 两条受控路径。
 TB_MODES = ("generate", "augment")  # testbench 处理模式
 
-# testbench 语言限定 Verilog 与 SystemVerilog 两种后端可解释形式。
-TB_LANGUAGES = ("verilog", "systemverilog")  # testbench 输出语言集合
+# testbench 语言限定为 Verilog-2001。
+TB_LANGUAGES = ("verilog",)  # testbench 输出语言集合
 
 # automation mode 是越权保护边界，必须在入口处收敛。
 def require_automation_mode(str_value: str) -> str:
@@ -76,7 +76,7 @@ def require_tb_mode(str_value: str) -> str:
     # 返回可直接写入报告的模式文本。
     return str_normalized
 
-# tb_language 控制 Verilog/SystemVerilog testbench 生成边界。
+# tb_language 控制 Verilog testbench 生成边界。
 def require_tb_language(str_value: str) -> str:
     """规范化 testbench 语言选择。
 
@@ -87,7 +87,7 @@ def require_tb_language(str_value: str) -> str:
         返回验证流程可识别的标准 testbench 语言标签。
 
     异常:
-        ValueError: 当语言不属于 Verilog/SystemVerilog 支持集合时抛出。
+        ValueError: 当语言不属于 Verilog 支持集合时抛出。
     """
 
     # 内部语言分支统一使用小写字符串。
@@ -96,7 +96,7 @@ def require_tb_language(str_value: str) -> str:
     # 只允许本 skill 声明支持的 testbench 语言。
     if str_normalized not in TB_LANGUAGES:
 
-        # 语言越界会影响仿真后端参数，必须提前失败。
+        # 语言越界会影响验证合同，必须提前失败。
         raise ValueError(f"> ERR: [Python] tb_language must be one of {', '.join(TB_LANGUAGES)}.")
 
     # 返回标准语言标签。
@@ -128,7 +128,7 @@ def normalize_verify_options(
     # testbench 模式决定 generate/augment 分支。
     str_checked_tb_mode = require_tb_mode(str_tb_mode)  # 安全后的 testbench 模式
 
-    # testbench 语言决定生成 `.v` 还是 `.sv` 语义。
+    # testbench 语言当前固定生成 `.v` 语义。
     str_checked_tb_language = require_tb_language(str_tb_language)  # 安全后的 testbench 语言
 
     # readiness 复用 validation 模块的层级规则。

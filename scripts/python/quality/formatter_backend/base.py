@@ -7,12 +7,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-# 评分报告类型由 scoring 模块统一定义
-from .scoring import ScoreReport
-
 # FormatterBackend 是 formatter CLI 和 runtime AST 检查之间的稳定协议
 class FormatterBackend(ABC):
-    """约束 formatter 后端的格式化、检查和评分接口。"""
+    """约束 formatter 后端的格式化和检查接口。"""
 
     # 路径级格式化接口同时覆盖写文件、检查和 diff 三类 CLI 模式
     @abstractmethod
@@ -51,7 +48,7 @@ class FormatterBackend(ABC):
         """
         格式化内存中的 RTL 文本。
 
-        :param source: 待格式化的 Verilog/SystemVerilog 文本。
+        :param source: 待格式化的 Verilog 文本。
         :param source_path: 可选来源路径，用于错误消息和规则上下文。
         :return: 格式化后的 RTL 文本。
         :raises NotImplementedError: 具体后端未提供文本格式化实现时抛出。
@@ -68,7 +65,7 @@ class FormatterBackend(ABC):
         """
         检查内存中的 RTL 文本并返回诊断列表。
 
-        :param source: 待检查的 Verilog/SystemVerilog 文本。
+        :param source: 待检查的 Verilog 文本。
         :param source_path: 可选来源路径，用于诊断定位。
         :return: formatter 检查发现的诊断消息列表。
         :raises NotImplementedError: 具体后端未提供文本检查实现时抛出。
@@ -77,35 +74,3 @@ class FormatterBackend(ABC):
         # 诊断生成依赖后端规则集，协议层只固定返回类型
         raise NotImplementedError("> ERR: [Python] formatter 后端未实现文本检查接口。")
 
-    # 路径级评分接口负责读取文件并产出结构化评分
-    @abstractmethod
-
-    # 文件评分入口负责把磁盘 RTL 转换为统一评分报告
-    def score_path(self, path: Path) -> ScoreReport:
-        """
-        对指定 RTL 文件执行格式质量评分。
-
-        :param path: 待评分的 RTL 源文件路径。
-        :return: 结构化格式评分报告。
-        :raises NotImplementedError: 具体后端未提供路径评分实现时抛出。
-        """
-
-        # 文件评分需要后端读取并解释 RTL 内容，基类不兜底
-        raise NotImplementedError("> ERR: [Python] formatter 后端未实现路径评分接口。")
-
-    # 文本级评分接口用于尚未落盘的 generated RTL
-    @abstractmethod
-
-    # 文本评分入口用于生成链路在写盘前做质量判定
-    def score_text(self, source: str, source_path: Path | None = None) -> ScoreReport:
-        """
-        对内存中的 RTL 文本执行格式质量评分。
-
-        :param source: 待评分的 Verilog/SystemVerilog 文本。
-        :param source_path: 可选来源路径，用于诊断定位。
-        :return: 结构化格式评分报告。
-        :raises NotImplementedError: 具体后端未提供文本评分实现时抛出。
-        """
-
-        # 文本评分的指标口径由后端统一维护，基类只声明契约
-        raise NotImplementedError("> ERR: [Python] formatter 后端未实现文本评分接口。")

@@ -1949,7 +1949,7 @@ class RenameMixin:
             return self._module_resolution_cache[tuple_cache_key]
 
         # 优先检查源码同目录下的同名 Verilog 文件。
-        for extension in (".v", ".sv", ".svh"):
+        for extension in (".v", ".vh"):
 
             # path_candidate 是同目录候选模块文件。
             path_candidate = path_source_dir / f"{module_name}{extension}"  # 同目录候选文件

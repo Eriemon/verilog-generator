@@ -42,7 +42,7 @@ def _module_names(source: str) -> list[str]:
     """
     提取 RTL 源码中的真实 module 名称。
 
-    :param source: 待检查的 Verilog/SystemVerilog 源码文本。
+    :param source: 待检查的 Verilog 源码文本。
     :return: 按出现顺序排列的 module 名称列表。
     """
 
@@ -72,7 +72,7 @@ def _preprocessor_directives(source: str) -> list[str]:
     """
     收集影响 Verilog 编译边界的预处理指令。
 
-    :param source: 待检查的 Verilog/SystemVerilog 源码文本。
+    :param source: 待检查的 Verilog 源码文本。
     :return: 原始顺序保留的关键预处理指令行。
     """
 

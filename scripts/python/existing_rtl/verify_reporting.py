@@ -289,7 +289,7 @@ def run_summary_payload(
     # testbench 模式保留给上层报告展示 TB 生成策略
     dict_summary["tb_mode"] = tb_contract.get("tb_mode")  # 报告展示用 testbench 模式
 
-    # testbench 语言用于区分 Verilog/SystemVerilog 输出
+    # testbench 语言字段保留给报告兼容层
     dict_summary["tb_language"] = tb_contract.get("tb_language")  # 报告展示用 testbench 语言
 
     # RTL patch 状态说明本轮是否修改过设计文件

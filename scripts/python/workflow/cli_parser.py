@@ -191,6 +191,32 @@ def _validation_command_specs() -> tuple[CommandSpec, ...]:
         ),
     )
 
+# _review_command_spec 构造真实 review gate 入口。
+def _review_command_spec() -> CommandSpec:
+    """构造 review 子命令规格。
+
+    参数:
+        无外部业务参数。
+
+    返回:
+        运行 Verilog 交付门禁的 review 子命令规格。
+    """
+
+    # review 命令必须进入 deliverable gate，而不是只做路由分类。
+    return CommandSpec(
+        "review",
+        "Run the Verilog deliverable gate and print review findings.",
+        "review",
+        (
+            arg("--target", type=Path),
+            arg("--report-json", type=Path),
+            arg("--report-md", type=Path),
+            arg("--formatter-profile", default="formatter-normalize"),
+            arg("--comment-language", choices=COMMENT_LANGUAGES, default="zh"),
+            arg("--non-strict", action="store_true"),
+        ),
+    )
+
 # _execution_command_specs 这些入口保护 regular/deep_review 与 batch/workflow routing 合同。
 def _execution_command_specs() -> tuple[CommandSpec, ...]:
     """构造端到端 workflow 与 batch 路由子命令规格。
@@ -202,8 +228,9 @@ def _execution_command_specs() -> tuple[CommandSpec, ...]:
         workflow、batch 和 route-workflow 子命令规格元组。
     """
 
-    # 固定审计入口顺序，便于用户按证据构建流程阅读 help。
+    # 固定 workflow 入口顺序，便于用户按证据构建流程阅读 help。
     return (
+        _review_command_spec(),
         CommandSpec(
             "run-workflow",
             "Run or resume an end-to-end staged workflow.",

@@ -27,7 +27,7 @@ Independent static lint and testbench scaffold helpers are part of the overall s
 
 - Generate only Verilog-2001 `.v` code artifacts for new RTL, while allowing JSON/Markdown evidence artifacts for analysis, improvement, verify-repair, and comparison flows.
 - Keep `target` in specs for compatibility, but accept only `rtl`.
-- Reject HLS, C/C++ kernel, Vitis, and SystemVerilog design-generation requests. Verification testbenches may use SystemVerilog when the verify-repair flow needs assertion/property support.
+- Reject HLS, C/C++ kernel, Vitis, and non-Verilog design-generation requests. Verification testbenches remain Verilog-2001 `.v` artifacts.
 - Prefer Vivado xsim for external simulation, fall back to VCS+Verdi, then to iverilog/vvp; use `yosys` only for implementation readiness.
 - Keep local and remote validation paths configurable through JSON settings; remote validation must use `erie-remote-ssh` and server-list JSON rather than direct SSH/SCP logic.
 - Keep all implementation and generated support files inside this skill folder or caller-selected run directories.

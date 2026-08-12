@@ -242,7 +242,7 @@ def _mock_rtl_stage_file_text(
         return _mock_erie_rtl_source_text(spec)
 
     # 仿真文件统一生成自检 testbench，供后续 smoke 流程直接消费。
-    if str_suffix in {".v", ".sv"}:
+    if str_suffix == ".v":
 
         # 当前接口场景对应的 testbench 需要携带向量驱动和自检断言。
         return _mock_erie_rtl_testbench_text(spec, vectors, vector_hash)

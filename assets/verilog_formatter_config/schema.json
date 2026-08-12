@@ -8,7 +8,6 @@
     "backup",
     "reporting",
     "text_io",
-    "scoring",
     "rewrite_policy",
     "compat",
     "header",
@@ -124,32 +123,12 @@
         "format_include_fragments": { "type": "boolean" }
       }
     },
-    "scoring": {
-      "type": "object",
-      "required": ["thresholds"],
-      "additionalProperties": false,
-      "properties": {
-        "thresholds": {
-          "type": "object",
-          "required": ["already_standard_min", "micro_format_min", "preserve_format_min", "syntax_preserve_min", "rewrite_need_min", "rewrite_risk_auto_max"],
-          "additionalProperties": false,
-          "properties": {
-            "already_standard_min": { "type": "integer" },
-            "micro_format_min": { "type": "integer" },
-            "preserve_format_min": { "type": "integer" },
-            "syntax_preserve_min": { "type": "integer" },
-            "rewrite_need_min": { "type": "integer" },
-            "rewrite_risk_auto_max": { "type": "integer" }
-          }
-        }
-      }
-    },
     "rewrite_policy": {
       "type": "object",
       "required": ["mode"],
       "additionalProperties": false,
       "properties": {
-        "mode": { "type": "string", "enum": ["preserve", "auto", "normalize", "never"] }
+        "mode": { "type": "string", "enum": ["preserve", "normalize", "never"] }
       }
     },
     "compat": {

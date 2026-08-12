@@ -14,10 +14,7 @@
     "dry_run": true,
     "fail_on_missing_input": true,
     "include_extensions": [
-      ".v",
-      ".sv",
-      ".vh",
-      ".svh"
+      ".v"
     ],
     "workspace_scan_exclude_dir_names": [
       ".git",
@@ -68,18 +65,8 @@
     "final_newline_policy": "preserve",
     "format_include_fragments": false
   },
-  "scoring": {
-    "thresholds": {
-      "already_standard_min": 95,
-      "micro_format_min": 85,
-      "preserve_format_min": 70,
-      "syntax_preserve_min": 75,
-      "rewrite_need_min": 30,
-      "rewrite_risk_auto_max": 35
-    }
-  },
   "rewrite_policy": {
-    "mode": "auto"
+    "mode": "preserve"
   },
   "compat": {
     "legacy_yaml_import": false,

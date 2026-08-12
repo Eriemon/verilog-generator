@@ -1,4 +1,4 @@
-"""读取 Verilog/SystemVerilog 源文件文本的编码辅助函数。"""
+"""读取 Verilog 源文件文本的编码辅助函数。"""
 
 # 延迟类型注解求值，避免运行时额外类型处理
 from __future__ import annotations
@@ -12,7 +12,7 @@ READ_ENCODINGS = ("utf-8", "utf-8-sig", "gb18030", "gbk", "latin-1")  # RTL 文�
 # 源文件读取需要兼容用户项目中的多种历史编码
 def read_verilog_text(path: Path) -> str:
     """
-    按候选编码读取 Verilog/SystemVerilog 文本。
+    按候选编码读取 Verilog 文本。
 
     :param path: 待读取的 RTL 源文件路径。
     :return: 解码后的源文件文本。

@@ -43,8 +43,8 @@
 ## 1. 总体原则
 
 1. **代码风格统一为 Erie/VerilogFormatter 风格。** 默认输出包含标准双语文件头、ANSI-style module header、Tab 缩进、固定区域 banner、尾随注释对齐和严格命名。
-2. **默认面向单个可综合 RTL 模块。** 普通 normalize 路径按单模块处理；多模块、vendor/IP、复杂 generate/preprocessor、复杂 lvalue、难拆分 always 等属于高风险输入，应先评分/人工审查。
-3. **安全优先。** formatter 的默认 `formatter-auto` 会先评分，然后选择保留、微格式化、受控 normalize 或拒绝写出。禁止在高风险场景下直接猜测改写。
+2. **默认面向单个可综合 RTL 模块。** 普通 normalize 路径按单模块处理；多模块、vendor/IP、复杂 generate/preprocessor、复杂 lvalue、难拆分 always 等复杂输入，应先人工审查。
+3. **安全优先。** formatter 使用确定性 profile：保守保留、强制 normalize 或只检查；禁止在复杂场景下直接猜测改写。
 4. **注释不能改变 RTL token。** 添加/优化注释必须走 `format baseline -> comment draft -> verify -> format final -> verify` 流水线，只允许 `//` 注释变化。
 5. **历史约束优先成为项目交付规范。** 当历史约束比 formatter 自动规则更严格时，交付代码按历史约束执行；formatter 未完全覆盖的部分由生成器/人工评审补足。
 
@@ -54,26 +54,26 @@
 
 ### 2.1 文件类型与扫描范围
 
-- 默认识别扩展名：`.v`、`.sv`、`.vh`、`.svh`。
+- 默认识别扩展名：`.v`。
 - 默认递归扫描；默认排除：`.git`、`__pycache__`、`.pytest_cache`、`dist`、`out`、`ref`、`tests/verilog-formatter/baselines`。
-- `.vh/.svh` include fragment 默认不结构化格式化：`format_include_fragments = false`。include 片段中宏、条件编译、局部 declarations 不应被当作完整模块强行 normalize。
+- `.vh` include fragment 默认不结构化格式化：`format_include_fragments = false`。include 片段中宏、条件编译、局部 declarations 不应被当作完整模块强行 normalize。
 - 文本 I/O 默认保留 encoding、EOL、BOM、final newline 策略；微格式化内部会使用 LF 进行处理并确保最终换行，交付时应按项目仓库行尾策略统一。
 
 ### 2.2 Profile 使用规范
 
 | Profile | 用途 | 改写策略 | 关键行为 |
 |---|---|---|---|
-| `formatter-auto` | 默认推荐入口 | `auto` | 先评分；已规范则保留；轻微问题只微格式化；可控结构问题才 normalize；硬门禁失败不写出。 |
-| `formatter-preserve` | 保守保留 | `preserve` | 不排序 ports/params，不自动修 prefix，不重排区域，不拆 always，不改 inline wire assign；仅在评分允许时做微格式化。 |
+| `formatter-preserve` | 默认保守入口 | `preserve` | 不排序 ports/params，不自动修 prefix，不重排区域，不拆 always，不改 inline wire assign。 |
 | `formatter-normalize` | 强制结构化 | `normalize` | 强制渲染标准模板，可能重命名、重排区域、拆 always、补 output bridge、改 header；仅用于确认可控代码或生成器输出。 |
-| `formatter-lint` | 只检查 | `never` | dry-run/lint；非已规范文件不写出，用于 CI 或风险评估。 |
+| `formatter-lint` | 只检查 | `never` | dry-run/lint；不写出格式化结果，用于 CI 或人工审查。 |
 | `vitis-wrapper` | AMD/Vitis ABI wrapper 专用 | format | 保留 `ap_clk`、`ap_rst_n`、`interrupt`、`s_axi_control_*`、`m_axi_*_*` 顶层 ABI 端口名；仅在明确是 Vitis wrapper 时使用。 |
 
-### 2.3 Rewrite/评分行为
+### 2.3 Rewrite 行为
 
-- 评分决策包括：`already_standard`、`preserve_micro_format`、`preserve_format`、`preserve_with_warnings`、`controlled_normalize_candidate`、`fail_no_write`。
-- 只允许微格式化的内容：空白、缩进、空行、行尾空格、尾随注释对齐、保持顺序的 header/layout 细节。
-- 结构化改写包括：端口排序、参数排序、信号重命名、区域重排、always 拆分、inline wire assign 拆分、header 重建、output bridge、reset/header 综合等。结构化改写只能在 normalize 或 auto 判断为可控候选时发生。
+- `formatter-preserve` 保留原文，不做结构化重排或自动写回。
+- `formatter-normalize` 才允许结构化渲染，且必须配合 review/quality gate。
+- `formatter-lint` 用于只检查流程，不产生格式化输出。
+- 结构化改写包括：端口排序、参数排序、信号重命名、区域重排、always 拆分、inline wire assign 拆分、header 重建、output bridge、reset/header 综合等。结构化改写只能在 normalize 模式下发生。
 - 硬门禁失败必须停止，不应写文件。常见硬门禁：无法识别 module、preprocessor/module 名丢失风险、strict mode 下缺失时钟/复位、unsupported syntax、FSM 不满足强约束、实例化块不完整等。
 
 ---
@@ -84,13 +84,13 @@
 
 交付文件必须使用标准双语文件头；标准 preamble 包含 ``timescale 1ns / 1ps`。formatter 当前会重建如下字段：
 
-- 英文段：`Company`、`Engineer`、`Create Date`、`Design Name`、`Module Name`、`Description`、`Simulations`、`Referrences`、`Dependencies`、`Version`、`Revision Date`、`History`。
+- 英文段：`Company`、`Engineer`、`Create Date`、`Design Name`、`Module Name`、`Description`、`Simulations`、`References`、`Dependencies`、`Version`、`Revision Date`、`History`。
 - 中文段：`版权归属`、`开发人员`、`创建日期`、`设计名称`、`模块名称`、`模块说明`、`仿真工程`、`参考资料`、`依赖文件`、`当前版本`、`修订日期`、`修订历史`。
 - 默认身份字段：`Erie`。
 - 默认版本：`V1.0`。
 - 默认说明路径：`Description/<module>_Design.pdf`。
 - 默认仿真路径：`TestBench/Vivado/2021.1/<module>`。
-- formatter 当前英文 header 中使用拼写 `Referrences`。为了与工具输出一致，不要在被 formatter 接管的文件中手动改成 `References`，除非同步修改工具。
+- formatter 当前英文 header 中使用拼写 `References`。为了与工具输出一致，不要在被 formatter 接管的文件中手动改成 `References`，除非同步修改工具。
 
 ### 3.2 版本号规范
 
@@ -443,7 +443,7 @@ wire x;                                     // signal
 assign x = expr;                            // assign
 ```
 
-- unpacked array、复杂类型或 SystemVerilog 高级类型不应期待 formatter 完整结构化改写；必要时放入保守路径并人工评审。
+- unpacked array、复杂类型或超出 Verilog-2001 的高级结构不应期待 formatter 完整结构化改写；必要时放入保守路径并人工评审。
 
 ### 8.3 端口声明中的类型
 
@@ -757,7 +757,7 @@ assign o_done = done_o;                     // 输出完成标志
 - generate 嵌套复杂，或 generate 内含多层 always/instance/function/task。
 - always 同时赋值多个目标且无法安全拆分。
 - concat/part-select/array select 等复杂 lvalue 作为拆分目标。
-- SystemVerilog interface/modport/class/package 等 formatter 未明确支持的高级结构。
+- 非 Verilog-2001 interface/modport/class/package 等 formatter 未明确支持的高级结构。
 - latch、异步置位、高有效复位、无复位时序 always。
 - FSM 命名/结构不清晰但含 state 语义。
 
@@ -802,7 +802,7 @@ assign o_done = done_o;                     // 输出完成标志
 // Description:     Description/module_name_Design.pdf
 // Simulations:        TestBench/Vivado/2021.1/module_name
 // 
-// Referrences:        None
+// References:        None
 //
 // Dependencies:    None
 //
@@ -909,13 +909,13 @@ endmodule
 这些是“读源码后确认的现状”，交付和后续维护时要特别注意：
 
 1. **端口/信号 packed width 与 name 当前可能无空格。** 这是渲染实现事实；不影响语义，但会影响人工期待。
-2. **`Referrences` 拼写按实现输出。** 若要求英文正确拼写，需要改 header 渲染代码。
+2. **`References` 拼写按实现输出。** 若要求英文正确拼写，需要改 header 渲染代码。
 3. **三段式 FSM 的项目规范强于工具自动验证。** 工具能检查一部分状态机结构，但不能证明完整三段式语义。
 4. **`end/req/ack/done/valid` 等 flag 语义不一定全部自动加 `flag_`。** 生成器必须主动遵守。
 5. **协议专用 clock/reset 名不一定由 formatter 自动推断。** `i_axi_aclk`、`i_axis_arstn` 等要由生成器或人工指定。
 6. **实例名规范主要靠项目模板。** formatter 保证实例语法和位置，但不强制实例名语义化。
 7. **function/task 内部是 raw-block 级处理。** 可参与标识符重命名，但不会完整拆解语义。
-8. **复杂 SystemVerilog 不应直接 normalize。** interface/package/class/modport 等需保守处理。
+8. **复杂非 Verilog-2001 结构不应直接 normalize。** interface/package/class/modport 等需保守处理。
 9. **output direct assign 与 output bridge 有区别。** direct output assign 可能不会生成内部 `_o`；时序/复杂输出必须 bridge。
 10. **默认 auto 不等于强制 normalize。** auto 可能保留源文件，这是设计上的安全策略。
 
@@ -974,22 +974,22 @@ endmodule
 
 ## 19. 推荐命令
 
-评分：
+Review：
 
 ```bash
-python scripts/score_verilog.py <input.v> --profile formatter-auto --json --report-json score.json
+python -m scripts.python.workflow.cli review --target <input.v> --report-json review.json
 ```
 
-自动安全格式化：
+保守检查：
 
 ```bash
-python scripts/format_verilog.py <input.v> --profile formatter-auto -o <output.v> --score-report --report-json report.json
+python scripts/format_verilog.py <input.v> --profile formatter-preserve -o <output.v> --report-json report.json
 ```
 
 强制 normalize（确认可控后使用）：
 
 ```bash
-python scripts/format_verilog.py <input.v> --profile formatter-normalize -o <output.v> --score-report --report-json report.json
+python scripts/format_verilog.py <input.v> --profile formatter-normalize -o <output.v> --report-json report.json
 ```
 
 只检查不写：

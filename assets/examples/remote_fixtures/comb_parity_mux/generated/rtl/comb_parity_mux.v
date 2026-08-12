@@ -10,7 +10,7 @@
 // Description: 	Description/comb_parity_mux_Design.pdf
 // Simulations:		TestBench/Vivado/2021.1/comb_parity_mux
 //
-// Referrences:		None
+// References:		None
 //
 // Dependencies:	None
 //

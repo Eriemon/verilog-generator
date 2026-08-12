@@ -8,7 +8,7 @@
 // Description:     <Description Path or Summary>
 // Simulations:     <Simulation Project>
 //
-// Referrences:     <Reference Summary>
+// References:     <Reference Summary>
 //
 // Dependencies:
 //      Module Name                 Version

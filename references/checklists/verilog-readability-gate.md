@@ -23,14 +23,14 @@ Use this checklist after deterministic tools pass and before delivering generate
 
 ## Must answer no
 
-1. Did any high-risk macro, include fragment, complex generate, unsupported SystemVerilog construct, or multi-module file get normalized without an explicit risk decision?
+1. Did any macro, include fragment, complex generate, unsupported non-Verilog-2001 construct, or multi-module file get normalized without an explicit gate decision?
 2. Did formatting or annotation change module names, port lists, lvalues, reset polarity, always targets, or instance connections unexpectedly?
 3. Are output ports assigned directly inside always blocks?
 4. Are there inline wire assignments, block comments, trailing whitespace, space indentation, or missing final newline?
 5. Are generic fallback comments still present where real signal meaning is known?
 6. Are comments reused by changing only a number, endpoint letter, signal name, or other template shell?
 7. Did validation rely on model self-assessment text instead of AST/static/tool evidence?
-8. Did an include fragment, vendor/IP wrapper, or complex SystemVerilog construct go through strong normalize without an explicit preserve/lint decision?
+8. Did an include fragment, vendor/IP wrapper, or complex non-Verilog-2001 construct go through strong normalize without an explicit preserve/lint decision?
 9. Do runtime code, scripts, or tests load fixtures from the temporary input area instead of `tests/cases`?
 
 ## Reviewer labels

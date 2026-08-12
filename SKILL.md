@@ -185,7 +185,7 @@ Developer routing preference is: `vivado-developer`, then `vitis-developer`, for
 
 Strict quality control is mandatory. The required quality chain is:
 
-1. Generate only synthesizable Verilog-2001 RTL in `.v` files. Verification testbenches may stay in Verilog-2001 `.v` files or use SystemVerilog `.sv` files when the verify-repair flow needs assertion/property support; source RTL `.sv` files remain outside this skill boundary.
+1. Generate only synthesizable Verilog-2001 RTL and Verilog-2001 verification testbenches in `.v` files. Other HDL dialect files are outside this skill boundary.
 2. Prefer standardized interfaces: AXI-Stream for streaming data, AXI4-Lite for control/status registers, AXI4 for memory-mapped bulk transfers, and AHB/APB when a platform requires them. If a custom shape still needs bus unification, extend AXI-Stream with explicit sideband metadata in `interface_profile`.
 3. Use the local standard bus templates in `assets/interface_templates` whenever `interface_family` is `axi_stream`, `axi4_lite`, `axi4`, `ahb`, or `apb`. Treat their port names, parameter names, and Chinese comments as strict-preferred defaults; only adapt them when the confirmed spec explicitly conflicts, and record the adaptation reason in the generated checks.
 4. When `workflow.use_case_template_id` is set, preserve the selected family bundle from `assets/use_case_templates/` as board-level guidance and keep any adaptation visible in the generated checks and codegen plan.
@@ -194,7 +194,7 @@ Strict quality control is mandatory. The required quality chain is:
 7. Avoid Verilog `function` and `task` blocks in generated Verilog, especially synthesizable RTL; prefer explicit always/assign logic and inline testbench checks for easier waveform debugging.
 8. Apply ASIC quality review rules for generated RTL: complete combinational assignments, case defaults, no raw gated clocks, documented CDC/reset assumptions, and timing-reviewable datapath/control structure. Load `references/rules/asic-verilog-quality.md` for detailed review guidance.
 9. Apply the distilled RTL Markdown constraints in `references/rules/rtl-md-constraints.md` and `assets/rtl_md_constraints.json`: all `MUST` rules are blocking generation/review constraints, high-confidence `MUST` rules are enforced by the static gate, and `REC` rules are default preferences whose deviations must be recorded in manifest checks.
-10. Validate with static checks by default; when external simulation is requested, select the highest available backend in this order: Vivado xsim, VCS+Verdi, then iverilog/vvp. SystemVerilog testbenches require the matching backend flags (`xvlog -sv`, `vcs -sverilog`, or `iverilog -g2012`). Use `yosys` only for implement readiness.
+10. Validate with static checks by default; when external simulation is requested, select the highest available backend in this order: Vivado xsim, VCS+Verdi, then iverilog/vvp. Use `yosys` only for implement readiness.
 
 For `optimize_assist`, QoR output is advisory by default: it produces structural summaries and optional `yosys` evidence when available, but it does not automatically approve or rewrite RTL.
 For `merge_assist`, the flow stays plan-only by default: it emits `merge_plan.json`, `merge_wrapper.v`, `merge_validation.json`, and `merge_equivalence.json` to support wrapper-first repartition or recompose work without silently rewriting the source RTL.
