@@ -625,7 +625,7 @@ formatter 源码中的自动验证重点检查 state 参数/信号出现时是�
 
 - loop 必须显式 `begin/end`。
 - generate block 放入 `生成块区域`。
-- generate 中可包含 `if`/`case`/`for` generate、nested always、initial、function/task raw block、实例化等，但复杂结构会提高风险；normalize 前应评分。
+- generate 中可包含 `if`/`case`/`for` generate、nested always、initial、function/task raw block、实例化等，但复杂结构会提高风险；normalize 前应先做人工审查。
 - `genvar` 声明应放入合适信号/生成区域，不要与业务信号混杂。
 
 ### 12.4 function/task
@@ -749,7 +749,7 @@ assign o_done = done_o;                     // 输出完成标志
 
 ### 15.1 高风险输入
 
-以下情况需要先评分/人工审查，不应直接强制 normalize：
+以下情况需要先做人工审查，不应直接强制 normalize：
 
 - 一个文件多个 module。
 - vendor/IP wrapper 或 ABI 必须保留端口名的模块。
@@ -964,7 +964,7 @@ endmodule
 
 ### 18.5 工具与安全检查
 
-- [ ] 对未知/高风险代码先跑 `formatter-lint` 或评分。
+- [ ] 对未知/高风险代码先跑 `formatter-lint` 或人工审查。
 - [ ] 对 Vitis wrapper 使用 `vitis-wrapper` profile。
 - [ ] normalize 前确认不是 vendor/IP 或 ABI-sensitive 顶层。
 - [ ] guard 不通过时不写文件。

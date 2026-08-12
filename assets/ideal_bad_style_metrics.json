@@ -1,7 +1,7 @@
 {
   "meta": {
     "version": 1,
-    "note": "Corpus traits are advisory; generated delivery RTL is enforced by scripts/python/quality/quality_gate.py and formatter_ast.py."
+    "note": "Corpus traits are advisory; generated delivery RTL is enforced by scripts/python/quality/quality_gate.py and scripts/python/quality/formatter_ast.py."
   },
   "ideal": {
     "file_count": 57,
@@ -25,7 +25,7 @@
         "max": 2702.0
       },
       "comment_density": {
-        "avg": 0.7612777740469121,
+        "avg": 0.761277774046912,
         "median": 0.6730769230769231,
         "min": 0.3867069486404834,
         "max": 1.3722222222222222
@@ -73,8 +73,8 @@
         "max": 36.0
       },
       "region_banners": {
-        "avg": 11.842105263157896,
-        "median": 10.0,
+        "avg": 8.719298245614034,
+        "median": 6.0,
         "min": 0.0,
         "max": 94.0
       },
@@ -104,8 +104,8 @@
       }
     },
     "encodings": {
-      "gb18030": 14,
-      "utf-8": 43
+      "utf-8": 52,
+      "gb18030": 5
     },
     "sample_low_style": [
       {
@@ -127,7 +127,7 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 30,
         "assigns": 24,
-        "style_score": 2.3800990191250646
+        "style_signal": 2.3800990191250646
       },
       {
         "path": "Core_HBM_Ctrl_Interface.v",
@@ -148,7 +148,7 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 29,
         "assigns": 14,
-        "style_score": 2.402950558213716
+        "style_signal": 2.402950558213716
       },
       {
         "path": "Core_Rst_Ctrl_Interface.v",
@@ -169,7 +169,7 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 15,
         "assigns": 8,
-        "style_score": 2.405909265831445
+        "style_signal": 2.405909265831445
       },
       {
         "path": "CMD_DPKG_Interface.v",
@@ -190,7 +190,7 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 0,
         "assigns": 75,
-        "style_score": 2.481865284974093
+        "style_signal": 2.481865284974093
       },
       {
         "path": "Task_Time_Interface.v",
@@ -211,7 +211,7 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 11,
         "assigns": 12,
-        "style_score": 2.4850746268656714
+        "style_signal": 2.4850746268656714
       },
       {
         "path": "Core_Ping_Ctrl_Interface.v",
@@ -232,7 +232,7 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 9,
         "assigns": 7,
-        "style_score": 2.512258953168044
+        "style_signal": 2.512258953168044
       },
       {
         "path": "Core_Ptp_Ctrl_Interface.v",
@@ -253,7 +253,7 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 6,
         "assigns": 7,
-        "style_score": 2.5693263570961413
+        "style_signal": 2.5693263570961413
       },
       {
         "path": "App_HBM_Send_Ctrl_Interface.v",
@@ -274,7 +274,7 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 37,
         "assigns": 63,
-        "style_score": 2.600358422939068
+        "style_signal": 2.600358422939068
       },
       {
         "path": "Task_Ctrl_PTP_Send_Interface.v",
@@ -295,7 +295,7 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 16,
         "assigns": 29,
-        "style_score": 2.62890625
+        "style_signal": 2.62890625
       },
       {
         "path": "CMD_PKG_Interface.v",
@@ -316,7 +316,7 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 0,
         "assigns": 34,
-        "style_score": 2.6341463414634148
+        "style_signal": 2.6341463414634148
       }
     ]
   },
@@ -342,7 +342,7 @@
         "max": 801.0
       },
       "comment_density": {
-        "avg": 0.18374918636149015,
+        "avg": 0.18374918636149012,
         "median": 0.0,
         "min": 0.0,
         "max": 1.1923076923076923
@@ -390,7 +390,7 @@
         "max": 11.0
       },
       "region_banners": {
-        "avg": 0.7153284671532847,
+        "avg": 0.45985401459854014,
         "median": 0.0,
         "min": 0.0,
         "max": 15.0
@@ -421,12 +421,12 @@
       }
     },
     "encodings": {
-      "gb18030": 7,
-      "utf-8": 130
+      "utf-8": 134,
+      "gb18030": 3
     },
     "sample_low_style": [
       {
-        "path": "corpus/stress_cases/protocol_grouping/spi_mon.v",
+        "path": "stress\\protocol_grouping\\spi_mon.v",
         "encoding": "utf-8",
         "lines": 186,
         "code_lines": 160,
@@ -444,10 +444,10 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 4,
         "assigns": 4,
-        "style_score": -1.239717741935484
+        "style_signal": -1.239717741935484
       },
       {
-        "path": "corpus/stress_cases/datapath_compute/multiplier.v",
+        "path": "stress\\datapath_compute\\multiplier.v",
         "encoding": "utf-8",
         "lines": 276,
         "code_lines": 236,
@@ -465,10 +465,10 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 1,
         "assigns": 4,
-        "style_score": -0.828973225251781
+        "style_signal": -0.828973225251781
       },
       {
-        "path": "corpus/stress_cases/protocol_grouping/simpleuart.v",
+        "path": "stress\\protocol_grouping\\simpleuart.v",
         "encoding": "utf-8",
         "lines": 139,
         "code_lines": 127,
@@ -486,10 +486,10 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 2,
         "assigns": 4,
-        "style_score": -0.7421259842519685
+        "style_signal": -0.7421259842519685
       },
       {
-        "path": "corpus/stress_cases/legacy_large_designs/PE_array.v",
+        "path": "stress\\legacy_large_designs\\PE_array.v",
         "encoding": "utf-8",
         "lines": 129,
         "code_lines": 116,
@@ -507,10 +507,10 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 4,
         "assigns": 7,
-        "style_score": -0.6735498529804865
+        "style_signal": -0.6735498529804865
       },
       {
-        "path": "corpus/stress_cases/legacy_large_designs/PE.v",
+        "path": "stress\\legacy_large_designs\\PE.v",
         "encoding": "utf-8",
         "lines": 35,
         "code_lines": 33,
@@ -528,10 +528,10 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 1,
         "assigns": 0,
-        "style_score": -0.6571428571428571
+        "style_signal": -0.6571428571428571
       },
       {
-        "path": "corpus/stress_cases/legacy_large_designs/PE_line.v",
+        "path": "stress\\legacy_large_designs\\PE_line.v",
         "encoding": "utf-8",
         "lines": 56,
         "code_lines": 51,
@@ -549,10 +549,10 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 0,
         "assigns": 4,
-        "style_score": -0.6071428571428571
+        "style_signal": -0.6071428571428571
       },
       {
-        "path": "corpus/stress_cases/protocol_grouping/negotiate.v",
+        "path": "stress\\protocol_grouping\\negotiate.v",
         "encoding": "utf-8",
         "lines": 305,
         "code_lines": 234,
@@ -570,10 +570,10 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 11,
         "assigns": 3,
-        "style_score": -0.6048900098080425
+        "style_signal": -0.6048900098080425
       },
       {
-        "path": "corpus/stress_cases/legacy_large_designs/MM_in_buffer.v",
+        "path": "stress\\legacy_large_designs\\MM_in_buffer.v",
         "encoding": "utf-8",
         "lines": 268,
         "code_lines": 229,
@@ -591,10 +591,10 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 18,
         "assigns": 6,
-        "style_score": -0.5415987746855243
+        "style_signal": -0.5415987746855243
       },
       {
-        "path": "fixtures/rtl/vitis_wrapper_good.v",
+        "path": "fixtures\\vitis_wrapper_good.v",
         "encoding": "utf-8",
         "lines": 26,
         "code_lines": 26,
@@ -612,10 +612,10 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 1,
         "assigns": 5,
-        "style_score": -0.5384615384615384
+        "style_signal": -0.5384615384615384
       },
       {
-        "path": "corpus/stress_cases/fsm_control/ep_sync_detect.v",
+        "path": "stress\\fsm_control\\ep_sync_detect.v",
         "encoding": "utf-8",
         "lines": 226,
         "code_lines": 186,
@@ -633,9 +633,8 @@
         "placeholder_comment_hits": 0,
         "always_blocks": 1,
         "assigns": 6,
-        "style_score": -0.5352554952897516
+        "style_signal": -0.5352554952897516
       }
     ]
   }
 }
-

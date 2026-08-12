@@ -7157,7 +7157,7 @@ def _empty_metrics() -> dict[str, Any]:
         "line_comments": 0,  # 含双斜线的文本行数
         "commented_code_lines": 0,  # 带真实行注释的代码行数
         "block_comment_markers": 0,  # 块注释边界标记数
-        "formatter_decisions": {},  # formatter score 决策分布
+        "formatter_decisions": {},  # formatter 路由决策分布
         "encodings": {},  # 源文件编码分布
     }
 
@@ -7219,14 +7219,23 @@ def _accumulate_metrics(dict_metrics: dict[str, Any], str_text: str, dict_ast_re
     # 累计块注释边界标记数。
     dict_metrics["block_comment_markers"] += int_block_marker_count  # 累计块注释边界数
 
-    # str_decision 提取 formatter score 决策，缺失时归为 unknown。
-    str_decision = str((dict_ast_report.get("score") or {}).get("decision") or "unknown")  # formatter 评分路由决策名
+    # 仅在 AST 报告仍显式提供 formatter 路由决策时累计该统计。
+    obj_score_payload = dict_ast_report.get("score")  # 兼容旧报告结构的 formatter 路由载荷
 
-    # 初始化当前 formatter 决策计数。
-    dict_metrics["formatter_decisions"].setdefault(str_decision, 0)
+    # 旧报告会提供包含 decision 字段的字典；新报告缺失时不再伪造 unknown。
+    if isinstance(obj_score_payload, dict):
 
-    # 当前文件对应决策计数加一。
-    dict_metrics["formatter_decisions"][str_decision] += 1  # 当前 formatter 决策出现次数
+        # 提取旧报告中的 formatter 路由决策名。
+        str_decision = str(obj_score_payload.get("decision") or "").strip()  # 旧报告中的决策标签
+
+        # 只有真实决策标签存在时才累计统计，避免把缺失字段误报成 unknown。
+        if str_decision:
+
+            # 初始化当前 formatter 决策计数。
+            dict_metrics["formatter_decisions"].setdefault(str_decision, 0)
+
+            # 当前文件对应决策计数加一。
+            dict_metrics["formatter_decisions"][str_decision] += 1  # 当前 formatter 决策出现次数
 
 # _rel_path 生成报告中使用的相对路径。
 def _rel_path(path_source: Path, path_root: Path) -> str:

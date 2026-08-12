@@ -28,7 +28,7 @@ Confirm the intent contract first: module name, ports, clock/reset, interface fa
 
 ### `modify`
 
-Build a formatter-AST report and risk score for the original RTL before deciding whether to preserve, micro-format, normalize, or fail without writing. Any change touching interfaces, port names, reset polarity, always-block splitting, FSMs, or output bridges must report risk and verification evidence.
+Build a formatter-AST report and change-risk review for the original RTL before deciding whether to preserve, micro-format, normalize, or fail without writing. Any change touching interfaces, port names, reset polarity, always-block splitting, FSMs, or output bridges must report risk and verification evidence.
 
 Existing RTL modify requests require a real source target. If the target RTL or required context is missing, fail with `TARGET_OR_CODE_REQUIRED` or the nearest equivalent rule. Do not generate placeholder RTL or directly replaceable template patches for an unspecified asset.
 
@@ -38,7 +38,7 @@ Run exactly: `format baseline -> comment draft -> verify comment-only -> deliver
 
 ### `analyze`
 
-Read-only analysis must not write source files. It may output AST summaries, style deltas, risk grades, and suggested commands, but suggestions are not executed work.
+Read-only analysis must not write source files. It may output AST summaries, style deltas, review-priority notes, and suggested commands, but suggestions are not executed work.
 
 Existing-asset analysis and reports may locate issues and explain risk, but they must not output drop-in replacement code unless the user has explicitly requested modify/repair and supplied the real target asset.
 

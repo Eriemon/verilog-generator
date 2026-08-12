@@ -100,7 +100,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--sample-size",
         type=int,
         default=10,
-        help="Number of lowest-style-score samples to retain.",
+        help="Number of lowest-style-signal samples to retain.",
     )
 
     # 返回完整解析器给 main 调用。
@@ -322,7 +322,7 @@ def metric_dict(path_source: Path, path_root: Path) -> dict[str, Any]:
     # C_ 命名比例需要从全部 parameter 名称中筛出命中项。
     for str_name in list_parameters:
 
-        # C_ 前缀参数是 Erie 风格评分中的正向特征。
+        # C_ 前缀参数是 Erie 理想语料中的正向特征。
         if str_name.startswith("C_"):
 
             # 记录当前命中项，供后续参数比例计算。
@@ -392,7 +392,7 @@ def extract_ports(str_text: str) -> list[str]:
         # 无法识别名称的声明不进入统计。
         if str_name:
 
-            # 追加到端口列表供前缀评分使用。
+            # 追加到端口列表供前缀覆盖统计使用。
             list_ports.append(str_name)
 
     # 返回当前文件全部端口名。
@@ -433,59 +433,59 @@ def summarize_number(list_values: list[float]) -> dict[str, float]:
         "max": float_max,
     }
 
-# style_score 计算低风格样本排序用的启发式分数。
-def style_score(dict_item: dict[str, Any]) -> float:
+# style_signal 计算低风格样本排序用的启发式信号值。
+def style_signal(dict_item: dict[str, Any]) -> float:
     """
-    根据单文件指标计算启发式风格分。
+    根据单文件指标计算启发式风格信号。
 
     :param dict_item: metric_dict 产出的单文件指标字典。
-    :return: 分数越低表示越值得人工查看。
+    :return: 信号值越低表示越值得人工查看。
     """
 
-    # 分数从零开始累加正负特征。
-    float_score = 0.0  # 当前文件启发式风格分
+    # 信号值从零开始累加正负特征。
+    float_signal = 0.0  # 当前文件启发式风格信号
 
     # 有端口时，端口前缀比例作为正向特征。
     if dict_item["ports"]:
 
-        # i_/o_/io_ 前缀越完整，得分越高。
-        float_score += dict_item["prefixed_ports"] / dict_item["ports"]  # 端口命名前缀贡献
+        # i_/o_/io_ 前缀越完整，信号值越偏向理想语料。
+        float_signal += dict_item["prefixed_ports"] / dict_item["ports"]  # 端口命名前缀贡献
 
     # 有参数时，C_ 参数比例作为正向特征。
     if dict_item["parameters"]:
 
         # 项目参数前缀越完整，正例语料特征越明显。
-        float_score += dict_item["c_parameters"] / dict_item["parameters"]  # 参数命名前缀贡献
+        float_signal += dict_item["c_parameters"] / dict_item["parameters"]  # 参数命名前缀贡献
 
-    # 注释密度按 1.0 封顶，避免超密注释支配分数。
-    float_score += min(dict_item["comment_density"], 1.0)  # 注释密度贡献
+    # 注释密度按 1.0 封顶，避免超密注释支配信号值。
+    float_signal += min(dict_item["comment_density"], 1.0)  # 注释密度贡献
 
     # 区域横幅按 4 个封顶，鼓励结构化但不过度奖励。
-    float_score += min(dict_item["region_banners"] / 4.0, 1.0)  # 区域横幅贡献
+    float_signal += min(dict_item["region_banners"] / 4.0, 1.0)  # 区域横幅贡献
 
     # 双语头部是模板完整性的正向信号。
-    float_score += dict_item["has_bilingual_header"]  # 双语头部贡献
+    float_signal += dict_item["has_bilingual_header"]  # 双语头部贡献
 
     # 块注释标记在该项目风格中通常是不鼓励的格式。
-    float_score -= min(dict_item["block_comment_markers"], 3) * 0.25  # 块注释扣分
+    float_signal -= min(dict_item["block_comment_markers"], 3) * 0.25  # 块注释扣分
 
     # 占位注释命中直接提示模板未清理。
-    float_score -= min(dict_item["placeholder_comment_hits"], 5) * 0.5  # 占位注释扣分
+    float_signal -= min(dict_item["placeholder_comment_hits"], 5) * 0.5  # 占位注释扣分
 
     # 空格缩进比例用于暴露和项目 tab 缩进偏好的偏差。
-    float_score -= min(dict_item["space_indented_lines"] / max(dict_item["lines"], 1), 1.0)  # 空格缩进扣分
+    float_signal -= min(dict_item["space_indented_lines"] / max(dict_item["lines"], 1), 1.0)  # 空格缩进扣分
 
-    # 返回排序使用的最终分数。
-    return float_score
+    # 返回排序使用的最终信号值。
+    return float_signal
 
-# corpus_report 汇总一个语料根的文件级指标和低分样本。
+# corpus_report 汇总一个语料根的文件级指标和低信号样本。
 def corpus_report(path_root: Path, *, int_sample_size: int) -> dict[str, Any]:
     """
     生成单个语料根的汇总报告。
 
     :param path_root: 语料根目录或单个 Verilog 文件路径。
-    :param int_sample_size: 需要保留的低风格分样本数量。
-    :return: 包含文件数、统计摘要、编码分布和低分样本的字典。
+    :param int_sample_size: 需要保留的低风格信号样本数量。
+    :return: 包含文件数、统计摘要、编码分布和低信号样本的字典。
     """
 
     # 文件级指标先全部收集，便于后续多字段汇总。
@@ -515,17 +515,17 @@ def corpus_report(path_root: Path, *, int_sample_size: int) -> dict[str, Any]:
         # 计数采用 get 兼容首次出现的编码。
         dict_encodings[str_encoding] = dict_encodings.get(str_encoding, 0) + 1  # 更新后的编码文件数量
 
-    # 低风格样本按启发式分数升序截取。
-    list_low_samples = sorted(list_metrics, key=style_score)[:int_sample_size]  # 低风格分样本列表
+    # 低风格信号样本按启发式信号值升序截取。
+    list_low_samples = sorted(list_metrics, key=style_signal)[:int_sample_size]  # 低风格信号样本列表
 
-    # 样本条目附带 style_score，方便人工复核排序原因。
-    list_low_sample_reports: list[dict[str, Any]] = []  # 带风格分的低分样本报告
+    # 样本条目附带 style_signal，方便人工复核排序原因。
+    list_low_sample_reports: list[dict[str, Any]] = []  # 带风格信号的低信号样本报告
 
-    # 样本报告逐个追加，便于说明 style_score 的来源。
+    # 样本报告逐个追加，便于说明 style_signal 的来源。
     for dict_item in list_low_samples:
 
-        # 当前样本保留原指标并追加排序使用的分数。
-        dict_sample = dict_item | {"style_score": style_score(dict_item)}  # 单个低分样本报告条目
+        # 当前样本保留原指标并追加排序使用的信号值。
+        dict_sample = dict_item | {"style_signal": style_signal(dict_item)}  # 单个低信号样本报告条目
 
         # 追加后的列表直接进入 JSON 报告。
         list_low_sample_reports.append(dict_sample)
