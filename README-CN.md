@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="Apache-2.0 许可证" src="https://img.shields.io/badge/license-Apache--2.0-2ad4ee"></a>
-  <img alt="VERSION v1.2.0" src="https://img.shields.io/badge/version-v1.2.0-8ce85d">
+  <img alt="VERSION v1.2.1" src="https://img.shields.io/badge/version-v1.2.1-8ce85d">
   <img alt="Verilog-2001" src="https://img.shields.io/badge/RTL-Verilog--2001-ffb85c">
   <img alt="Codex 技能" src="https://img.shields.io/badge/target-Codex%20skill-8ce85d">
 </p>
@@ -148,7 +148,7 @@ Jiyuan Liu、He Li · Southeast University（东南大学）· HIQC（Heterogene
   author       = {Jiyuan Liu and He Li},
   title        = {{Verilog Generator}: An Agent Skill for Verilog-2001 RTL Workflows},
   year         = {2026},
-  version      = {1.2.0},
+  version      = {1.2.1},
   date         = {2026-08-12},
   url          = {https://github.com/Eriemon/verilog-generator},
   license      = {Apache-2.0},
