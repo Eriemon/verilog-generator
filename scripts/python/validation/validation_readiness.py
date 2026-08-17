@@ -98,8 +98,7 @@ def run_rtl_readiness(
         # not-run 状态体现本轮没有真实外部验证证据。
         _mark_external_not_run(dict_metrics, readiness)
 
-        # 缺失外部证据时返回每个要求工具的阻断问题。
-        # tuple_required_tools 是 readiness 阶段要求的真实外部工具证据。
+        # 缺失外部证据时，根据 readiness 阶段要求的真实工具列表返回逐项阻断问题。
         tuple_required_tools = _required_tools_for_readiness(readiness, dict_sim_config, deps)  # 未运行时的工具要求
 
         # 返回每个未运行工具对应的阻断诊断。
@@ -549,8 +548,7 @@ def _run_implementation_readiness(
     # str_top 是待综合顶层名。
     str_top = str(spec.get("name") or "")  # yosys synth 顶层模块名
 
-    # str_read_command 复用 yosys read_verilog 命令格式。
-    # list_yosys_inputs 保存 yosys 命令中已经转义的 RTL 路径。
+    # 复用 yosys read_verilog 命令格式，并保存已经转义的 RTL 输入路径。
     list_yosys_inputs: list[str] = []  # yosys read_verilog 的转义输入路径
 
     # 逐个路径 quoting，保证包含空格的本地路径不会破坏命令。

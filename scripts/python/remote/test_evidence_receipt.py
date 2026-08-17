@@ -233,8 +233,7 @@ def tests_tree_content_facts(path_project: Path) -> dict[str, Any]:
         # 读取原始字节，禁止文本换行或编码规范化改变摘要。
         bytes_content = path_file.read_bytes()  # 测试文件原始字节
 
-        # 先写路径长度和路径，再写内容长度和内容。
-        # 先写相对路径长度，保证不同路径不会产生串联歧义。
+        # 先写相对路径长度和路径，再写内容长度和内容，保证不同路径不会产生串联歧义。
         hash_tree.update(len(bytes_relative).to_bytes(8, "big"))
 
         # 再写路径本身，绑定文件在测试树中的位置。

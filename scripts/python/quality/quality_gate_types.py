@@ -4,9 +4,19 @@
 from __future__ import annotations
 
 # 标准库类型与 dataclass 足以表达质量门报告结构。
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+# v3 诊断模块负责 VG finding 的契约校验和兼容别名。
+from .vg_diagnostics import (
+    build_legacy_diagnostic,
+    diagnostic_from_mapping,
+    diagnostic_path_line,
+)
+
+# v3 renderer 把结构化 finding 展开为 Agent 可直接执行的 Markdown。
+from .vg_diagnostic_render import render_finding_markdown
 
 # 供 `QualityIssue` 复用的结构化类型，专门承载描述单条 Verilog 质量门诊断。
 @dataclass
@@ -31,6 +41,54 @@ class QualityIssue:
     # rule 保留稳定的规则命名空间，便于外部统计。
     rule: str | None = None  # 规则命名空间
 
+    # vg_diagnostic 保存 VG v3 flat finding，非 VG issue 保持 None。
+    vg_diagnostic: dict[str, Any] | None = field(default=None, repr=False)  # 可执行 VG 诊断
+
+    # metadata 保留历史调用方传入的结构化扩展字段。
+    metadata: dict[str, Any] = field(default_factory=dict, repr=False)  # 兼容 finding 扩展元数据
+
+    # __post_init__ 为历史 native emitter 补齐 v3 诊断而不伪造行号。
+    def __post_init__(self) -> None:
+        """校验或构造 VG 诊断载荷。
+
+        参数:
+            self: 当前质量门 issue 对象。
+        返回:
+            无业务返回值。
+        """
+
+        # 非 VG issue 继续使用原有六字段合同。
+        if not self.code.startswith("VG"):
+
+            # 非 VG 规则不应被强行包装成 VG finding。
+            return
+
+        # 显式 v3 载荷必须经过统一复制和校验。
+        if self.vg_diagnostic is not None:
+
+            # 诊断转换层拒绝缺字段或错误状态。
+            dict_diagnostic = diagnostic_from_mapping(self.vg_diagnostic)  # 已有 v3 诊断副本
+
+        # 旧 issue 分支保留真实 path/line 并进入兼容适配。
+        else:
+
+            # 旧 native issue 仍保留真实 path/line/message/evidence 事实。
+            dict_legacy_payload: dict[str, Any] = {  # 旧质量门字段用于构造源码定位、证据和修复步骤
+                "rule_id": self.code,  # 绑定当前 issue 的 VG 规则编号
+                "rule_key": self.rule or "legacy_quality_issue",  # lookup 对应规则的机器键
+                "severity": self.severity,  # native issue 严重等级
+                "path": self.path,  # native issue 文件路径
+                "line": self.line,  # source 定位可用的真实源码行号
+                "message": self.message,  # native issue 问题文本
+                "evidence": self.rule or "native quality gate issue",  # native 规则事实
+            }  # native issue 的实际观察事实
+
+            # 兼容适配器不把未知行号转换为 line=1。
+            dict_diagnostic = build_legacy_diagnostic(dict_legacy_payload)  # 生成带定位和 guidance 的 finding
+
+        # 保存规范化诊断，后续报告只读取该字段。
+        self.vg_diagnostic = dict_diagnostic  # 保存规范化 VG 诊断
+
     # to_dict 输出 JSON 兼容字段。
     def to_dict(self) -> dict[str, Any]:
         """
@@ -40,15 +98,53 @@ class QualityIssue:
         :return: JSON 可序列化的报告或诊断字典。
         """
 
-        # 返回字段名保持 v0.3.0 报告契约。
-        return {
-            "code": self.code,
-            "severity": self.severity,
-            "message": self.message,
-            "path": self.path,
-            "line": self.line,
-            "rule": self.rule,
-        }
+        # 先保留旧字段，再附加 v3 扁平诊断字段。
+        dict_payload = {  # legacy issue 的稳定字段集合
+            "code": self.code,  # 旧规则编号
+            "severity": self.severity,  # 旧严重等级
+            "message": self.message,  # 旧诊断正文
+            "path": self.path,  # 旧文件路径
+            "line": self.line,  # 旧源码行
+            "rule": self.rule,  # 旧规则命名空间
+            "metadata": dict(self.metadata),  # 非 VG 诊断的兼容扩展字段
+        }  # legacy issue 字段
+
+        # 非 VG issue 没有 v3 finding，但仍提供结构化事实供旧消费者读取。
+        if self.vg_diagnostic is None and not self.code.startswith("VG"):
+
+            # 外部 parser 等调用方至少能获得可序列化的错误事实对象。
+            dict_payload["evidence"] = {
+                "node_kind": str(self.metadata.get("origin") or "quality_issue"),  # 证据来源节点类型
+                "source_excerpt": self.message,  # 原始问题正文作为外部事实片段
+                "detail": self.message,  # 结构化事实细节保持与正文一致
+            }
+
+        # VG issue 使用可执行 finding 作为新增主载荷。
+        if self.vg_diagnostic is not None:
+
+            # 从 v3 location 派生兼容 path/line，未知行号保持 None。
+            tuple_path_line = diagnostic_path_line(self.vg_diagnostic)  # v3 location 的兼容别名
+
+            # v3 finding 作为新增 flat 字段覆盖 legacy 同名字段。
+            dict_payload = {**dict_payload, **self.vg_diagnostic}  # 合并 flat v3 finding 字段
+
+            # 公开 path 只反映 location 的真实文件。
+            dict_payload["path"] = tuple_path_line[0]  # v3 location 文件别名
+
+            # 公开 line 只反映 source location 的真实起始行。
+            dict_payload["line"] = tuple_path_line[1]  # v3 source 起始行别名
+
+            # v3 finding 同时公开旧 rule/code/metadata 别名，便于旧消费者继续读取。
+            dict_payload["code"] = self.code  # 兼容规则编号别名
+
+            # 兼容规则键别名保持与 v3 rule_key 同源。
+            dict_payload["rule"] = self.rule  # 兼容规则键别名
+
+            # 兼容扩展字段使用独立副本，避免调用方修改内部状态。
+            dict_payload["metadata"] = dict(self.metadata)  # 兼容结构化扩展字段
+
+        # 返回 JSON 兼容 issue/finding 字典。
+        return dict_payload
 
 # 供 `QualityGateReport` 复用的结构化类型，专门承载汇总一次 RTL 质量门运行的诊断、指标和 AST 报告。
 @dataclass
@@ -130,15 +226,49 @@ class QualityGateReport:
         :return: JSON 可序列化的报告或诊断字典。
         """
 
+        # list_findings 提供顶层 v3 findings，同时保留独立 legacy issues 投影。
+        list_findings: list[dict[str, Any]] = []  # 可执行 VG finding 的顶层副本
+
+        # v3 finding 与 legacy issue 的严重度语义必须分别投影。
+        for issue in self.issues:
+
+            # 非 VG issue 不进入顶层 actionable findings。
+            if issue.vg_diagnostic is None:
+
+                # 继续收集下一条 VG finding。
+                continue
+
+            # 复制兼容字段，确保顶层 finding 仍含旧 code/path/line 等别名。
+            dict_finding = issue.to_dict()  # 当前 issue 的兼容 finding 字典
+
+            # 顶层 v3 finding 保留 catalog/emitter 的大写等级。
+            dict_finding["severity"] = issue.vg_diagnostic["severity"]  # 顶层 v3 诊断等级
+
+            # 保存与原对象隔离的 finding 副本。
+            list_findings.append(dict_finding)
+
+        # legacy issues 使用小写 error/warning，兼容旧质量门消费者。
+        list_issues: list[dict[str, Any]] = [issue.to_dict() for issue in self.issues]  # 旧 issues 的独立副本
+
+        # v3 finding 的严重度保持在 list_findings 中，不被 legacy 投影覆盖。
+        for issue, dict_issue in zip(self.issues, list_issues):
+
+            # 仅 VG issue 需要把 catalog 等级转回旧小写枚举。
+            if str(dict_issue.get("code") or "").startswith("VG"):
+
+                # 兼容 issues[*].severity 的历史 error/warning 语义，并保留 strict 升级。
+                dict_issue["severity"] = str(issue.severity).lower()  # 转回 legacy issues 小写等级，保持旧消费者合同
+
         # dict_report 保持历史字段和嵌套结构。
         dict_report = {  # 质量门 JSON 报告主体
-            "version": 2,  # 统一 VG 质量门报告结构版本
+            "version": 3,  # 统一 VG 质量门报告结构版本
             "root": str(self.root),  # 检查入口路径文本
             "ok": self.ok(),  # error 诊断是否为零
             "strict": self.strict,  # 本次运行 strict 开关
             "errors": self.errors,  # error 级诊断数量
             "warnings": self.warnings,  # 非阻断诊断数量
-            "issues": [issue.to_dict() for issue in self.issues],  # JSON 诊断列表
+            "issues": list_issues,  # JSON legacy 诊断列表
+            "findings": list_findings,  # 顶层可执行 VG finding 列表
             "metrics": self.metrics,  # 文本和结构聚合指标
             "ast_report": self.ast_report,  # 原始结构解析聚合树
             "vg_catalog_version": self.vg_catalog_version,  # 统一规则目录版本
@@ -182,28 +312,59 @@ class QualityGateReport:
             # Markdown 文件总是以换行结尾。
             return "\n".join(list_markdown_lines) + "\n"
 
-        # 表头保持外部文档中的列顺序。
-        list_markdown_lines.append("| Severity | Code | Path | Line | Message |")
+        # v3 findings 逐条展开问题、证据、指导和 bad/good 示例。
+        list_vg_findings = [  # 可执行 VG finding 的 Markdown 输入
+            issue.to_dict() for issue in self.issues if issue.vg_diagnostic is not None  # 只渲染 v3 诊断
+        ]
 
-        # 表格分隔行固定为 GitHub Markdown 格式。
-        list_markdown_lines.append("|---|---|---|---:|---|")
+        # 有 VG finding 时优先输出 Agent 可直接执行的结构化诊断。
+        if list_vg_findings:
 
-        # 每条诊断转成 Markdown 表格行。
-        for issue in self.issues:
+            # 标题把 v3 诊断与历史表格分开，避免字段语义混淆。
+            list_markdown_lines.extend(["## Actionable VG findings", ""])
 
-            # str_path 为空字符串时表示聚合级诊断。
-            str_path = issue.path or ""  # Markdown 表格中的路径文本
+            # 每个 finding 使用稳定编号作为 Markdown 锚点。
+            for int_index, dict_finding in enumerate(list_vg_findings, start=1):
 
-            # str_line 为空字符串时表示无精确行号。
-            str_line = "" if issue.line is None else str(issue.line)  # Markdown 表格中的行号文本
+                # 锚点文本与 finding 内容分离，保证报告链接稳定。
+                str_anchor = f"vg-finding-{int_index}"  # 当前 finding 的 Markdown 锚点
 
-            # str_message 转义竖线，避免破坏 Markdown 表格。
-            str_message = issue.message.replace("|", "\\|")  # 表格安全诊断文本
+                # 渲染器负责 location、evidence、guidance 和 examples 的细节布局。
+                str_finding_markdown = render_finding_markdown(dict_finding, str_anchor)  # 将 v3 finding 转成包含修复步骤和示例的 Markdown 诊断块
 
-            # 追加单条诊断行。
-            list_markdown_lines.append(
-                f"| {issue.severity} | {issue.code} | `{str_path}` | {str_line} | {str_message} |"
-            )
+                # 去除尾部换行后再拼接一个段落间隔。
+                list_markdown_lines.extend([str_finding_markdown.rstrip("\n"), ""])
+
+        # 非 VG issue 保留历史表格，维持非 VG 调用方兼容。
+        list_legacy_issues = [  # 非 VG 兼容诊断集合
+            issue for issue in self.issues if issue.vg_diagnostic is None  # 保留非 VG 旧问题
+        ]
+
+        # 表格只展示未被 v3 renderer 接管的旧问题。
+        if list_legacy_issues:
+
+            # 表头保持外部文档中的列顺序。
+            list_markdown_lines.append("| Severity | Code | Path | Line | Message |")
+
+            # 表格分隔行固定为 GitHub Markdown 格式。
+            list_markdown_lines.append("|---|---|---|---:|---|")
+
+            # 每条旧诊断转成 Markdown 表格行。
+            for issue in list_legacy_issues:
+
+                # str_path 为空字符串时表示聚合级诊断。
+                str_path = issue.path or ""  # Markdown 表格中的路径文本
+
+                # str_line 为空字符串时表示无精确行号。
+                str_line = "" if issue.line is None else str(issue.line)  # Markdown 表格中的行号文本
+
+                # str_message 转义竖线，避免破坏 Markdown 表格。
+                str_message = issue.message.replace("|", "\\|")  # 表格安全诊断文本
+
+                # 追加单条兼容诊断行。
+                list_markdown_lines.append(
+                    f"| {issue.severity} | {issue.code} | `{str_path}` | {str_line} | {str_message} |"
+                )
 
         # Markdown 报告保持末尾换行。
         return "\n".join(list_markdown_lines) + "\n"

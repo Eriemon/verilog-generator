@@ -1694,8 +1694,7 @@ def _append_if_facts(
     # 普通功能条件需要解析并计入分支目标组合锥。
     if not bool_is_reset and bool_constant_condition is None:
 
-        # formatter header 已隔离完整条件控制头。
-        # 局部解析失败被保存为 unsupported 控制事实。
+        # formatter header 已隔离条件控制头；解析失败时仍把当前表达式保存为 unsupported 控制事实。
         dict_condition = _safe_parsed_expression(  # 当前条件类型化表达式
             str_condition,  # 已隔离的功能条件表达式
             f"{context.prefix}:condition",  # 条件操作编号前缀

@@ -24,7 +24,7 @@ class StaticLintIssue:
         severity: `error` 或 `warning`。
         message: 人类可读的 VG 门禁消息。
         path: 触发问题的相对文件路径。
-        line: 一基源码行号。
+        line: 一基源码行号；无法验证时为空。
         source: 问题来源类别。
         code: 固定 VG 门禁编号。
 
@@ -41,8 +41,8 @@ class StaticLintIssue:
     # path 使用相对路径定位违规 RTL 文件。
     path: str  # finding 提供的 RTL 相对路径
 
-    # line 使用一基行号兼容既有报告消费者。
-    line: int  # finding 提供或回退的一基行号
+    # line 只保留 finding 的真实一基行号，未知时使用 None。
+    line: int | None  # finding 提供的可验证源码行
 
     # source 区分 VG 引擎与其他质量门来源。
     source: str = "current_module_issue"  # 兼容默认诊断来源
@@ -111,7 +111,7 @@ def lint_generated_rtl(spec: dict[str, Any], root: Path) -> list[StaticLintIssue
             list_findings = [
                 {
                     "path": "",  # 空路径表示规则没有可靠文件定位
-                    "line": 1,  # 缺少精确位置时使用稳定的一基行号
+                    "line": None,  # 缺少精确位置时保留未知坐标
                     "message": dict_result.get("message") or f"{dict_result['gate_id']} did not pass.",  # 门禁级诊断
                 }
             ]
@@ -125,7 +125,13 @@ def lint_generated_rtl(spec: dict[str, Any], root: Path) -> list[StaticLintIssue
                     severity=str_severity,  # 旧接口据此选择 error 或 warning 展示
                     message=str(dict_finding.get("message") or dict_result.get("message") or "VG gate did not pass."),  # VG 诊断文本
                     path=str(dict_finding.get("path") or ""),  # finding 提供的 RTL 路径
-                    line=int(dict_finding.get("line") or 1),  # finding 提供的一基行号
+                    line=(
+                        dict_finding.get("line")
+                        if isinstance(dict_finding.get("line"), int)
+                        and not isinstance(dict_finding.get("line"), bool)
+                        and dict_finding.get("line") > 0
+                        else None
+                    ),  # 只接受真实的一基行号
                     source="verilog_quality_gate",  # 权威规则来源标识
                     code=str(dict_result["gate_id"]),  # 当前固定 VG 编号
                 )

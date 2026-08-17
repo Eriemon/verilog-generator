@@ -183,8 +183,7 @@ def evaluate_comment_integrity_gate(facts: VgFacts) -> VgEvaluation:
             "实体注释包含流程证据措辞或结构化无关尾串。",
         )
 
-    # 候选存在但没有高置信度违规时仍返回可审计的 applicable=True。
-    # 通过结论仍公开适用性，便于审查者区分无候选和低风险候选。
+    # 候选存在但无高置信度违规时仍返回 applicable=True，便于审查者区分低风险候选与无候选。
     return passed(applicable=bool_applicable)
 
 # _load_comment_integrity_config 读取规则资产并完成边界校验。

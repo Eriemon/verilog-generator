@@ -569,7 +569,7 @@ def _codegen_needs_human(
     # ready_for_generation 和 open_questions 共同决定是否阻塞生成。
     bool_has_open_questions = bool(dict_codegen_plan.get("open_questions"))  # codegen plan 是否仍有未闭合问题
 
-    # 未 ready 或仍有问题时需要先请求人工确认。
+    # 需求状态存在待确认问题时需要先请求人工确认。
     bool_needs_human = not dict_codegen_plan.get("ready_for_generation", False) or bool_has_open_questions  # 需求未闭合时阻塞生成
 
     # ready 时继续后续 stage。

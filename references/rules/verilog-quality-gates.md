@@ -10,9 +10,12 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 ## Contract
 
 - Public entry: `run_verilog_quality_gate(...)`
-- Report schema: v2
-- Report fields: `vg_catalog_version`, `vg_rule_summary`, and `vg_rule_results`
-- Catalog size: 133 active rules and 0 reserved rules
+- Report schema: v3
+- Report fields: `version`, `vg_catalog_version`, `vg_rule_summary`, `vg_rule_results`, and actionable `findings`
+- Catalog size: 136 active rules and 0 reserved rules; catalog version 9
+- Every applicable active non-passed rule emits at least one actionable finding.
+- Each finding exposes `rule_id`, `status`, `severity`, structured `location` and `evidence`, a concrete `problem`, and `guidance` containing the change instruction, ordered steps, risk, human-review obligation, and a non-empty `examples` list of bad/good objects.
+- Exact source locations use confirmed `file` plus one-based `line_start`/`line_end` under `scope=file`; aggregate or unknown locations use `scope=file`, `scope=cross_file`, or `scope=run` without a fabricated line number and include a boundary `note`.
 - Combinational operation budget: `config.max_combinational_operations_per_target` is a required positive integer; the shipped value is `3`
 - Packed dynamic lookup budget: `config.packed_dynamic_lookup_block_bits` is a required positive integer; the shipped value is `1024`
 - Severity policy: BLOCKER non-pass results always block; WARNING non-pass results block strict runs
@@ -154,6 +157,9 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 | VG153 | BLOCKER | read_without_driver | active |
 | VG154 | WARNING | unused_declaration | active |
 | VG155 | BLOCKER | ready_valid_transfer_integrity | active |
+| VG156 | BLOCKER | naming.declaration_digit_tokens | active |
+| VG157 | BLOCKER | comments.version_markers | active |
+| VG158 | BLOCKER | naming.functional_declaration | active |
 
 ## Recognition Scope Contracts
 
@@ -183,6 +189,10 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 - VG153 checks only read signals and output ports that lack a confirmable driver. It does not treat an unread, undriven declaration as a read-without-driver violation, and input/inout ports are boundary-driven facts.
 - VG154 is a WARNING-level declaration liveness check covering parameters, localparams, reg/wire declarations, functions, and tasks. Subprogram bodies are not counted as top-level observable use; structured function-call facts and top-level references are the use evidence. Findings expose `symbol`, `declaration_kind`, and `use_state=unused`.
 - VG155 consumes top-level `handshake_channels` or `interface_profile.handshake_channels` role facts without a module-name field. A channel must expose valid and ready ports (payload is optional evidence); each observed transfer consumer must be controlled by both roles. Findings retain the channel id plus valid, ready, payload, controls, and missing-role evidence.
+- VG156 checks only variable declarations exposed by the formatter AST: module parameters, localparams, ports and internal declarations plus function/task formals and local declarations. After splitting an identifier on `_`, every token containing a digit must exactly match the case-insensitive allowlist `i2c`, `axi4`, `axi4lite`, `crc8`, `crc16`, `crc32`, `crc64`, `ddr2`, `ddr3`, `ddr4`, `ddr5`, `pcie3`, `pcie4`, `pcie5`, `sfp28`, `ad9361`, `sha1`, `sha2`, `sha256`, `md5`, `10g`, `25g`, `40g`, or `100g`. Sequence tokens such as `v1`, `w0`, `1`, and `2` fail.
+- VG157 scans lexical line and block comments after masking string literals. Matching is case-insensitive and rejects ordinary-comment forms `vN`, `vN.N`, `verN`, `versionN`, and `version N`. The only exemption is the exact fixed bilingual header and revision-history prefix that the formatter itself recognized and stripped; user-authored comments elsewhere remain applicable.
+- VG158 checks the same declaration set as VG156. It repeatedly strips `i_`, `o_`, `io_`, `C_`, `ST_`, `reg_`, `cnt_`, `state_`, `flag_`, `enc_`, and `dec_`, then repeatedly strips `_o`. At least one remaining underscore-delimited token must not belong to the configured meaningless-token set. Unknown domain terms pass by default, so the rule rejects only a closed list of obvious placeholders or generic type words. `data` is functional; `data_1` passes VG158 but fails VG156.
+- If a function/task declaration shape prevents complete recovery of applicable formals or local declarations, VG156/VG158 preserve any definite violations; otherwise they return `inconclusive` rather than fabricating a pass or line 1 location.
 
 ## Formerly Reserved Rules
 

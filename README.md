@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="Apache-2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-2ad4ee"></a>
-  <img alt="VERSION v1.2.1" src="https://img.shields.io/badge/version-v1.2.1-8ce85d">
+  <img alt="VERSION v1.3.1" src="https://img.shields.io/badge/version-v1.3.1-8ce85d">
   <img alt="Verilog-2001" src="https://img.shields.io/badge/RTL-Verilog--2001-ffb85c">
   <img alt="Agent skill" src="https://img.shields.io/badge/target-Codex%20skill-8ce85d">
 </p>
@@ -22,7 +22,7 @@
 
 Verilog Generator is a Codex skill for practical Verilog-2001 work. It helps you create a module from a clear requirement, understand an existing RTL design, add semantic comments, repair a problem from real diagnostics, and run the checks that your task actually needs.
 
-## What it is useful for
+## What it does
 
 - Turn a module requirement into readable, synthesizable Verilog-2001 RTL.
 - Explain an existing module through its ports, clock/reset behavior, state, timing, and data flow.
@@ -34,11 +34,11 @@ The skill keeps results honest: a static review, a simulation, a synthesis run, 
 
 ## Install
 
-> Ask AI to install the skill from https://github.com/Eriemon/verilog-generator.
+> Ask your AI to install the skill from https://github.com/Eriemon/verilog-generator.
 
 After installation, call the skill in the same conversation with `$readable-verilog-generator` or describe the Verilog task directly.
 
-## What to prepare
+## Before you start
 
 Prepare only the material that matches your task:
 
@@ -102,6 +102,12 @@ Depending on the request, the handoff can include:
 - review, repair, static-check, simulation, or tool reports showing only checks that actually ran;
 - a concise explanation of remaining assumptions, warnings, and unverified areas.
 
+## Review and deliver
+
+![Reviewable delivery](assets/readme/evidence-guard.png)
+
+Review the generated files and the checks that actually ran before accepting the handoff. Keep assumptions and unverified areas visible.
+
 ## Example result
 
 The example below is a 32-bit AXI-Stream meter. It counts bytes only after a `TVALID`/`TREADY` transfer, counts packets on a transferred `TLAST`, and saturates instead of wrapping.
@@ -148,7 +154,7 @@ If this skill supports your research, teaching, or engineering work, cite [CITAT
   author       = {Jiyuan Liu and He Li},
   title        = {{Verilog Generator}: An Agent Skill for Verilog-2001 RTL Workflows},
   year         = {2026},
-  version      = {1.2.1},
+  version      = {1.3.1},
   date         = {2026-08-12},
   url          = {https://github.com/Eriemon/verilog-generator},
   license      = {Apache-2.0},

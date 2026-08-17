@@ -104,8 +104,7 @@ def _literal_declared_width_matches_value(facts: VgFacts) -> VgEvaluation:
                 # 继续检查当前 module 的其他确定数值字面量。
                 continue
 
-            # 参数声明表达设计接口宽度，全零常量表达复位/清零宽度，二者不按最小数值位宽收缩。
-            # 最近换行位置限定字面量所在声明行。
+            # 参数声明和全零常量的宽度保留设计接口语义，最近换行位置用于定位字面量所在声明行。
             int_line_start = str_module_text.rfind("\n", 0, obj_match.start()) + 1  # 当前源码行起始偏移
 
             # 行前缀用于识别 parameter/localparam 合同。
@@ -173,8 +172,7 @@ def _literal_actual_width(str_base: str, str_digits: str) -> int:
         # 未知十进制数位按最保守的每位四比特估计。
         return max(1, len(str_digits) * 4)
 
-    # 确定数值通过 Python 整数位长得到精确最小宽度。
-    # 当前进制标识映射为 Python 整数解析基数。
+    # 确定数值按进制映射为 Python 整数解析基数，以便计算精确最小宽度。
     int_radix = {"b": 2, "o": 8, "d": 10, "h": 16}[str_base]  # 当前字面量数值进制
 
     # 确定数位转换为非负整数值。
@@ -969,8 +967,7 @@ def _expression_width(str_expression: str, dict_widths: dict[str, int | None]) -
     # 其余受支持形式都是当前 module 的简单标识符。
     return dict_widths.get(str_expression)
 
-# 表达式规则继续保留内部函数名，但实际统一使用共享事实实现。
-# module_widths 别名让既有表达式调用切换到共享声明事实。
+# 表达式规则保留既有内部函数名，并让 module_widths 别名统一指向共享声明事实。
 _module_widths = vg_value_facts.module_widths  # 共享 module 位宽入口
 
 # parse_width 别名保留本模块内部调用合同。

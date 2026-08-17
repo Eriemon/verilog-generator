@@ -1363,8 +1363,6 @@ def _classify_header_section_block(
             # 返回合法 table_mode 以及真实数据行数量。
             return "table_mode", len(list_data_rows)
 
-# 既不是合法 none_mode，也不是合法 table_mode。
-
     # 返回空模式标记，提示调用方当前块不满足任一合法版式。
     return None, 0
 

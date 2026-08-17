@@ -51,11 +51,15 @@ def create_parser() -> argparse.ArgumentParser:
     # Vitis wrapper 模式保留 ABI 顶层端口命名。
     parser.add_argument("--vitis-wrapper", action="store_true", help="Preserve Vitis ABI top-level port names.")
 
-    # JSON 报告路径可选，缺省只打印 Markdown。
-    parser.add_argument("--json", type=Path, help="Optional JSON report path.")
+    # JSON 报告路径可选，缺省与 Markdown 一起写入 reports/readable。
+    parser.add_argument("--json", type=Path, help="JSON report path; defaults to reports/readable/quality_gate.json.")
 
     # Markdown 报告路径可选，用于归档人工可读结果。
-    parser.add_argument("--markdown", type=Path, help="Optional Markdown report path.")
+    parser.add_argument(
+        "--markdown",
+        type=Path,
+        help="Markdown report path; defaults to reports/readable/quality_gate.md.",
+    )
 
     # warn-only 保留 CI 探测场景的零退出码兼容。
     parser.add_argument("--warn-only", action="store_true", help="Always return 0 while still reporting findings.")
@@ -86,6 +90,42 @@ def _ensure_runtime_import_path() -> None:
         # 将 runtime 包所在目录放到导入路径最前。
         sys.path.insert(0, str_skill_root)
 
+# _resolve_report_paths 为 CLI 提供稳定的双格式默认落盘位置。
+def _resolve_report_paths(
+    path_json: Path | None,
+    path_markdown: Path | None,
+) -> tuple[Path, Path]:
+    """解析质量门 CLI 的 JSON/Markdown 报告路径。
+
+    参数:
+        path_json: 用户显式指定的 JSON 路径，可为空。
+        path_markdown: 用户显式指定的 Markdown 路径，可为空。
+    返回:
+        解析后的 JSON 与 Markdown 路径元组。
+    异常:
+        ValueError: 两个路径解析后指向同一文件。
+    """
+
+    # cwd 是 CLI 默认输出边界，库调用不会经过此 helper。
+    path_report_dir = Path.cwd() / "reports" / "readable"  # 质量门默认报告目录
+
+    # JSON 缺省值固定为机器报告文件，避免每次运行推断不同路径。
+    path_json_target = path_json or path_report_dir / "quality_gate.json"  # 最终 JSON 报告路径
+
+    # 人工报告入口沿用机器报告根目录，便于一起归档和清理。
+    path_markdown_target = path_markdown or path_report_dir / "quality_gate.md"  # 归档人工报告的最终目标
+
+    # 同一路径会导致两种格式互相覆盖，必须在运行门禁前拒绝。
+    if path_json_target.resolve() == path_markdown_target.resolve():
+
+        # ValueError 由 CLI 转换为 invocation/report exit 2。
+        raise ValueError(
+            "> ERR: [Python] JSON and Markdown report paths must differ."
+        )
+
+    # 返回保留用户相对路径的目标，writer 会按需创建父目录。
+    return path_json_target, path_markdown_target
+
 # main 连接参数解析、质量门执行和退出码判定。
 def main() -> int:
     """执行 Verilog 质量门 CLI。
@@ -94,7 +134,7 @@ def main() -> int:
         本函数不接收业务参数，命令行参数由 argparse 从进程参数读取。
 
     返回:
-        返回进程退出码；0 表示通过或 warn-only，1 表示严格质量门失败。
+        返回进程退出码；0 表示通过或 warn-only，1 表示质量门失败，2 表示调用/报告合同错误。
     """
 
     # 入口阶段才准备 runtime 导入路径，避免 import-time 副作用。
@@ -103,9 +143,27 @@ def main() -> int:
     # runtime 质量门在路径准备后再导入。
     from scripts.python.quality.quality_gate import run_verilog_quality_gate, write_quality_gate_report
     from scripts.python.quality.quality_gate_common import ensure_runtime_visible_target_path
+    from scripts.python.quality.vg_diagnostic_render import format_terminal_finding
+    from scripts.python.quality.vg_diagnostics import VgDiagnosticContractError
+    from scripts.python.quality.vg_report_publisher import VgReportPublishError
 
     # 解析命令行参数，保持 argparse 默认错误和退出语义。
     args = create_parser().parse_args()  # 命令行参数命名空间
+
+    # 默认和显式参数都解析为双格式报告路径。
+    try:
+
+        # tuple_path_json/tuple_path_markdown 供 writer 和终端摘要复用。
+        tuple_path_json, tuple_path_markdown = _resolve_report_paths(args.json, args.markdown)  # CLI 报告目标
+
+    # 同路径属于命令调用错误，不进入 RTL 扫描。
+    except ValueError as exc:
+
+        # 固定错误前缀便于 Agent 识别调用合同失败。
+        sys.stderr.write("> ERR: [Python] report path contract failed: {}\n".format(exc))
+
+        # invocation/report 合同错误使用专用退出码。
+        return 2
 
     # 写报告前先确认目标路径对当前运行宿主可见。
     try:
@@ -122,33 +180,61 @@ def main() -> int:
             "use a path visible to the current Python runtime.\n"
         )
 
-        # 路径前置条件不满足时返回失败。
-        return 1
+        # 路径前置条件不满足时返回 invocation 失败。
+        return 2
 
-    # 核心质量门返回 Markdown、JSON 和退出状态所需报告对象。
-    report = run_verilog_quality_gate(  # Verilog 质量门报告
-        path_target,  # 待检查 RTL 路径
-        strict=not args.non_strict,  # 是否启用严格检查
-        comment_language=args.comment_language,  # 期望注释语言
-        formatter_profile=args.formatter_profile,  # formatter-AST 配置档位
-        include_testbench=args.include_testbench,  # 是否纳入 testbench 检查
-        vitis_wrapper=args.vitis_wrapper,  # 是否按 Vitis wrapper ABI 放宽端口
-    )
+    # 核心执行、结构化诊断校验和双格式报告发布统一映射合同错误。
+    try:
 
-    # 只在显式请求时写出 JSON 和 Markdown 报告文件。
-    write_quality_gate_report(report, json_path=args.json, markdown_path=args.markdown)
+        # 核心质量门返回包含 v3 findings 的报告对象。
+        report = run_verilog_quality_gate(  # Verilog 质量门报告
+            path_target,  # 待检查 RTL 路径
+            strict=not args.non_strict,  # 是否启用严格检查
+            comment_language=args.comment_language,  # 期望注释语言
+            formatter_profile=args.formatter_profile,  # formatter-AST 配置档位
+            include_testbench=args.include_testbench,  # 是否纳入 testbench 检查
+            vitis_wrapper=args.vitis_wrapper,  # 是否按 Vitis wrapper ABI 放宽端口
+        )
 
-    # 未显式请求报告时只输出短摘要，不在 cwd 落默认文件。
-    if args.json is None and args.markdown is None:
+        # CLI 总是发布双格式报告，库入口仍保持 no-path 无副作用。
+        write_quality_gate_report(
+            report,
+            json_path=tuple_path_json,
+            markdown_path=tuple_path_markdown,
+        )
 
-        # 纯检查模式保持无副作用，避免误污染当前工作目录。
-        print("> INFO: [Python] Verilog quality gate finished; no report files were written.")  # 无副作用摘要
+    # 统一捕获诊断合同、报告写出和文件系统错误。
+    except (VgDiagnosticContractError, VgReportPublishError, OSError, ValueError) as exc:
 
-    # 显式请求报告时继续给出简短落盘摘要。
-    else:
+        # 诊断或报告合同错误不应伪装成 RTL 违规。
+        sys.stderr.write("> ERR: [Python] report publication failed: {}\n".format(exc))
 
-        # 显式报告路径模式只回显短摘要，不把完整报告刷到终端。
-        print("> INFO: [Python] Verilog quality gate finished; requested reports were written.")  # 显式写报告摘要
+        # invocation/report/contract 错误使用退出码 2。
+        return 2
+
+    # 终端逐条打印紧凑 finding，完整指导和示例留在 Markdown/JSON。
+    dict_report = report.to_dict()  # 机器报告字典
+
+    # 每个 finding 都使用带 Python 前缀的人工可读摘要。
+    for dict_finding in dict_report.get("findings", []):
+
+        # 终端行包含规则、定位、问题、修改指令和报告追溯路径。
+        str_terminal_finding = format_terminal_finding(dict_finding, tuple_path_json)  # 单条终端诊断
+
+        # 输出保留完整问题、定位和修复指令，但不刷完整 JSON。
+        print("> INFO: [Python] VG finding: {}".format(str_terminal_finding))
+
+    # 无论是否有 finding，都回显两个最终报告路径。
+    str_json_output = str(tuple_path_json)  # 终端摘要中的机器输出路径
+
+    # 人工报告路径单独命名，避免和机器输出混淆。
+    str_markdown_output = str(tuple_path_markdown)  # 终端摘要中的人工输出路径
+
+    # JSON 路径摘要用于 Agent 追溯机器报告。
+    print("> INFO: [Python] quality JSON report: {}".format(str_json_output))
+
+    # Markdown 路径摘要用于 Agent 查看完整修复指导。
+    print("> INFO: [Python] quality Markdown report: {}".format(str_markdown_output))
 
     # warn-only 模式用于只收集报告、不阻断流水线。
     if args.warn_only:

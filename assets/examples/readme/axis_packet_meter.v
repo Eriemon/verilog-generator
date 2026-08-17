@@ -63,17 +63,18 @@ module axis_packet_meter
 	//用户接口--统计控制与读出
 	reg [31:0]reg_frame_total = 32'd0;          // 数据包计数的未钳位内部状态
 	reg [31:0]reg_byte_total = 32'd0;           // 有效字节计数的未钳位内部状态
+
 	//流水化统计中间值
-	reg [2:0]reg_byte_increment_d1 = 3'd0;      // 单拍有效字节数量缓存
+	reg [2:0]reg_byte_quantity_buffered = 3'd0; // 流水缓存的单拍有效字节数量
 
 	//-----------------标志信号-----------------//
 	//AXI-Stream 事务与数据包边界
 	wire flag_transfer;                         // 本拍完成 valid-ready 握手
 	wire flag_packet_end;                       // 本拍完成数据包末拍握手
-	reg flag_packet_end_d1 = 1'b0;              // 延迟一拍的数据包结束事件
-	reg flag_transfer_d1 = 1'b0;                // 延迟一拍的有效传输事件
-	reg flag_packet_overflow_d1 = 1'b0;         // 数据包计数进位事件缓存
-	reg flag_byte_overflow_d2 = 1'b0;           // 字节计数进位事件缓存
+	reg flag_packet_end_pending = 1'b0;         // 待处理的数据包结束事件
+	reg flag_transfer_pending = 1'b0;           // 待处理的有效传输事件
+	reg flag_packet_overflow_pending = 1'b0;    // 待锁存的数据包计数进位事件
+	reg flag_byte_overflow_pending = 1'b0;      // 待锁存的字节计数进位事件
 	reg flag_packet_saturated = 1'b0;           // 数据包计数饱和状态
 	reg flag_byte_saturated = 1'b0;             // 字节计数饱和状态
 
@@ -97,11 +98,11 @@ module axis_packet_meter
 	assign data_frame_sum = {1'b0, reg_frame_total} + 1'b1; // 用扩展位捕获数据包计数进位
 
 	//单拍字节数与饱和累加量
-	assign data_byte_sum = {1'b0, reg_byte_total} + reg_byte_increment_d1; // 使用缓存增量捕获字节计数进位
+	assign data_byte_sum = {1'b0, reg_byte_total} + reg_byte_quantity_buffered; // 使用缓存字节数捕获计数进位
 
 	//饱和统计输出选择
-	assign cnt_packet_o = (flag_packet_saturated | flag_packet_overflow_d1) ? 32'hFFFF_FFFF : reg_frame_total; // 饱和后钳位数据包计数
-	assign cnt_byte_o = (flag_byte_saturated | flag_byte_overflow_d2) ? 32'hFFFF_FFFF : reg_byte_total; // 饱和后钳位有效字节计数
+	assign cnt_packet_o = (flag_packet_saturated | flag_packet_overflow_pending) ? 32'hFFFF_FFFF : reg_frame_total; // 饱和后钳位数据包计数
+	assign cnt_byte_o = (flag_byte_saturated | flag_byte_overflow_pending) ? 32'hFFFF_FFFF : reg_byte_total; // 饱和后钳位有效字节计数
 
 	//---------------输出信号连线---------------//
 	//用户接口--统计控制与读出
@@ -120,7 +121,7 @@ module axis_packet_meter
 					reg_frame_total <= 32'd0;   // 软件清零优先于当前数据包事件
 				end
 				default:begin
-					case(flag_packet_end_d1)
+					case(flag_packet_end_pending)
 						1'b1:begin
 							reg_frame_total <= data_frame_sum[31:0]; // 累计流水数据包事件
 						end
@@ -143,7 +144,7 @@ module axis_packet_meter
 					reg_byte_total <= 32'd0;    // 软件清零优先于流水传输事件
 				end
 				default:begin
-					case(flag_transfer_d1)
+					case(flag_transfer_pending)
 						1'b1:begin
 							reg_byte_total <= data_byte_sum[31:0]; // 累计前级缓存的有效字节数量
 						end
@@ -159,14 +160,14 @@ module axis_packet_meter
 	//数据包进位事件寄存器更新逻辑
 	always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
 		if(i_axis_arstn == 1'b0)begin
-			flag_packet_overflow_d1 <= 1'b0;    // 异步复位清除数据包进位事件
+			flag_packet_overflow_pending <= 1'b0; // 异步复位清除数据包进位事件
 		end else begin
 			case(i_clear)
 				1'b1:begin
-					flag_packet_overflow_d1 <= 1'b0; // 软件清零丢弃当前进位事件
+					flag_packet_overflow_pending <= 1'b0; // 软件清零丢弃当前进位事件
 				end
 				default:begin
-					flag_packet_overflow_d1 <= flag_packet_end_d1 & data_frame_sum[32]; // 缓存流水数据包进位
+					flag_packet_overflow_pending <= flag_packet_end_pending & data_frame_sum[32]; // 缓存流水数据包进位
 				end
 			endcase
 		end
@@ -182,7 +183,7 @@ module axis_packet_meter
 					flag_packet_saturated <= 1'b0; // 软件清零释放数据包饱和状态
 				end
 				default:begin
-					flag_packet_saturated <= flag_packet_saturated | flag_packet_overflow_d1; // 锁存已缓存的数据包进位
+					flag_packet_saturated <= flag_packet_saturated | flag_packet_overflow_pending; // 锁存已缓存的数据包进位
 				end
 			endcase
 		end
@@ -191,23 +192,23 @@ module axis_packet_meter
 	//字节数量预译码寄存器更新逻辑
 	always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
 		if(i_axis_arstn == 1'b0)begin
-			reg_byte_increment_d1 <= 3'd0;      // 异步复位清除字节增量缓存
+			reg_byte_quantity_buffered <= 3'd0; // 异步复位清除缓存字节数
 		end else begin
-			reg_byte_increment_d1 <= i_axis_tkeep[0] + i_axis_tkeep[1] + i_axis_tkeep[2] + i_axis_tkeep[3]; // 流水预译码有效字节数量
+			reg_byte_quantity_buffered <= i_axis_tkeep[0] + i_axis_tkeep[1] + i_axis_tkeep[2] + i_axis_tkeep[3]; // 流水预译码有效字节数量
 		end
 	end
 
 	//数据包结束事件缓存标志更新逻辑
 	always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
 		if(i_axis_arstn == 1'b0)begin
-			flag_packet_end_d1 <= 1'b0;         // 异步复位清除数据包结束事件
+			flag_packet_end_pending <= 1'b0;    // 异步复位清除数据包结束事件
 		end else begin
 			case(i_clear)
 				1'b1:begin
-					flag_packet_end_d1 <= 1'b0; // 软件清零冲刷当前数据包事件
+					flag_packet_end_pending <= 1'b0; // 软件清零冲刷当前数据包事件
 				end
 				default:begin
-					flag_packet_end_d1 <= flag_packet_end; // 缓存本拍数据包末拍握手
+					flag_packet_end_pending <= flag_packet_end; // 缓存本拍数据包末拍握手
 				end
 			endcase
 		end
@@ -216,14 +217,14 @@ module axis_packet_meter
 	//首级传输事件缓存标志更新逻辑
 	always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
 		if(i_axis_arstn == 1'b0)begin
-			flag_transfer_d1 <= 1'b0;           // 异步复位清除首级传输事件
+			flag_transfer_pending <= 1'b0;      // 异步复位清除待处理传输事件
 		end else begin
 			case(i_clear)
 				1'b1:begin
-					flag_transfer_d1 <= 1'b0;   // 清零时冲刷首级传输事件
+					flag_transfer_pending <= 1'b0; // 清零时冲刷待处理传输事件
 				end
 				default:begin
-					flag_transfer_d1 <= flag_transfer; // 缓存本拍有效传输事件
+					flag_transfer_pending <= flag_transfer; // 缓存本拍有效传输事件
 				end
 			endcase
 		end
@@ -232,14 +233,14 @@ module axis_packet_meter
 	//字节进位事件寄存器更新逻辑
 	always@(posedge i_axis_aclk or negedge i_axis_arstn)begin
 		if(i_axis_arstn == 1'b0)begin
-			flag_byte_overflow_d2 <= 1'b0;      // 异步复位清除字节进位事件
+			flag_byte_overflow_pending <= 1'b0; // 异步复位清除字节进位事件
 		end else begin
 			case(i_clear)
 				1'b1:begin
-					flag_byte_overflow_d2 <= 1'b0; // 软件清零丢弃当前字节进位事件
+					flag_byte_overflow_pending <= 1'b0; // 软件清零丢弃当前字节进位事件
 				end
 				default:begin
-					flag_byte_overflow_d2 <= flag_transfer_d1 & data_byte_sum[32]; // 缓存流水字节进位
+					flag_byte_overflow_pending <= flag_transfer_pending & data_byte_sum[32]; // 缓存流水字节进位
 				end
 			endcase
 		end
@@ -255,7 +256,7 @@ module axis_packet_meter
 					flag_byte_saturated <= 1'b0; // 软件清零释放字节饱和状态
 				end
 				default:begin
-					flag_byte_saturated <= flag_byte_saturated | flag_byte_overflow_d2; // 锁存已缓存的字节进位
+					flag_byte_saturated <= flag_byte_saturated | flag_byte_overflow_pending; // 锁存已缓存的字节进位
 				end
 			endcase
 		end

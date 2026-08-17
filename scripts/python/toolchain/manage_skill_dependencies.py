@@ -643,9 +643,9 @@ def build_parser() -> argparse.ArgumentParser:
     # route 显式设置命令名，兼容早期 argparse 子解析行为。
     argument_parser_route.set_defaults(command="fpga-route")
 
-    # cleanup 子命令迁移旧 FPGA-Agent 子技能。
+    # cleanup 子命令迁移旧 FPGA-Agent skill。
     argument_parser_cleanup: argparse.ArgumentParser = sub_parsers_action_subcommands.add_parser(  # 旧 FPGA-Agent 迁移解析器
-        "cleanup-fpga-agent-skills",  # 迁移旧 FPGA-Agent 子 skill 的子命令名
+        "cleanup-fpga-agent-skills",  # 迁移旧 FPGA-Agent skill 的子命令名
         help="Move legacy FPGA-Agent Vivado/Vitis skills to a backup directory.",  # 迁移子命令帮助文本
     )
 

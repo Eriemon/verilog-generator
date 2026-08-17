@@ -1253,8 +1253,7 @@ def _write_waveforms(
                 # 裸 re-raise 保留渲染器堆栈和错误类型。
                 raise
 
-            # 注入替身接收已经校验过的 WaveJSON 对象。
-            # 对象调用只在显式注入 renderer 时启用。
+            # 仅在显式注入 renderer 时调用替身，并传入已经校验过的 WaveJSON 对象。
             dict_render = func_renderer(diagram_value["wavejson"], path_svg)  # 对象形式渲染结果
 
         # 记录当前图的所有交付路径和 renderer 摘要。
@@ -1286,12 +1285,10 @@ def _publish_stage(stage_root: Path, out_root: Path) -> None:
             # 计算相对于暂存树的发布位置。
             target_file = out_root / stage_file.relative_to(stage_root)  # 目标交付路径
 
-            # 父目录先创建，保证 write_bytes 不依赖外部预创建。
-            # 目录创建是发布单元的第一个可见副作用。
+            # 先创建父目录，确保发布单元的第一个可见副作用不依赖外部预创建。
             target_file.parent.mkdir(parents=True, exist_ok=True)
 
-            # 以二进制复制保留 SVG 和 JSON 的原始字节。
-            # 字节复制保持 renderer 生成内容不被重新编码。
+            # 以二进制复制保留 renderer 生成的 SVG 和 JSON 原始字节，避免重新编码。
             target_file.write_bytes(stage_file.read_bytes())
 
 # 清理 helper 删除本次生成的暂存证据，不碰目标根旧文件。
@@ -1311,19 +1308,16 @@ def _cleanup_stage(stage_parent: Path) -> None:
         # 文件和链接可以直接解除引用。
         if path_item.is_file() or path_item.is_symlink():
 
-            # missing_ok 允许异常路径已被外部清理时继续完成收尾。
-            # 解除文件引用后暂存树才能安全逐层删除。
+            # 解除文件引用后才能安全逐层删除暂存树；missing_ok 允许外部已清理异常路径。
             path_item.unlink(missing_ok=True)
 
         # 空目录按深度逆序移除。
         elif path_item.is_dir():
 
-            # 暂存树目录不应携带用户文件。
-            # 空目录移除保证后续 stage_parent.rmdir 成功。
+            # 移除不应携带用户文件的空暂存目录，保证后续 stage_parent.rmdir 成功。
             path_item.rmdir()
 
-    # 最外层目录最后移除，确保没有临时证据泄漏到工作区。
-    # 目录清理完成后不再留下本轮生成痕迹。
+    # 最后移除最外层目录，确保工作区不残留本轮生成的临时证据。
     stage_parent.rmdir()
 
 # 公共 bundle 入口在全部模块成功后原子发布交付文件。
@@ -1396,8 +1390,7 @@ def write_spec_bundle(
     # 输出根解析为绝对路径，便于阶段目录和链接转换。
     path_out_root = Path(out_dir).resolve()  # 绝对交付根目录
 
-    # 目标根可以不存在，但必须先建立用于暂存的同父层级。
-    # 目录创建是唯一允许在验证通过后的首个可见副作用。
+    # 先建立目标根的同父暂存层级，把目录创建限制为验证通过后的首个可见副作用。
     path_out_root.mkdir(parents=True, exist_ok=True)
 
     # 暂存父目录与目标根同父，保证最终复制不跨文件系统。
@@ -1421,8 +1414,7 @@ def write_spec_bundle(
             # 路径 helper 统一 feature 目录和文件命名规则。
             dict_paths = _module_paths(path_stage_root, module_value)  # 当前模块路径集合
 
-            # 模块目录和波形目录必须在写文件前存在。
-            # 先建立 Markdown 所在目录。
+            # 先建立 Markdown 所在的模块目录和配套波形目录，再写入文件。
             dict_paths["module_dir"].mkdir(parents=True, exist_ok=True)
 
             # 再建立该模块专属的 WaveDrom 子目录。
@@ -1446,15 +1438,13 @@ def write_spec_bundle(
                 }
             )  # 模块输出记录
 
-        # 所有模块都成功才覆盖目标目录中的对应文件。
-        # 发布 helper 只复制暂存树中的完整文件。
+        # 只有所有模块都成功后，发布 helper 才复制暂存树中的完整文件覆盖目标目录。
         _publish_stage(path_stage_root, path_out_root)
 
     # 不吞掉渲染或 IO 异常，调用方需要看到失败原因。
     finally:
 
-        # 清理暂存目录不会影响目标根中的旧 bundle。
-        # finally 保证渲染异常也不会遗留临时目录。
+        # finally 清理暂存目录，同时不影响目标根中的旧 bundle，即使渲染异常也不残留临时目录。
         _cleanup_stage(path_stage_parent)
 
     # 将报告中的暂存前缀替换为实际交付根，便于调用方定位产物。
@@ -1466,8 +1456,7 @@ def write_spec_bundle(
         # 每个波形记录也转换为目标路径。
         for waveform_output in module_output["waveforms"]:
 
-            # JSON5 和 SVG 都按同一相对路径映射。
-            # 先映射 JSON5，再映射配套 SVG。
+            # 按同一相对路径先映射 JSON5，再映射配套 SVG。
             waveform_output["json5"] = str(path_out_root / Path(waveform_output["json5"]).relative_to(path_stage_root))  # 把暂存 JSON5 映射为最终交付路径
 
             # SVG 与 JSON5 使用同一相对目录，保持链接配对。

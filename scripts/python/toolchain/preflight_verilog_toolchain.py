@@ -207,8 +207,7 @@ def build_report(dict_settings: dict[str, Any], str_readiness: str) -> dict[str,
     # meta 只有是字典时才可信。
     bool_meta_is_dict = isinstance(dict_meta, dict)  # meta 是否可按字典读取
 
-    # 旧远程状态用于给出迁移提示。
-    # 非字典 meta 不参与旧状态迁移提示。
+    # 仅当 meta 为字典时读取旧远程状态，以便给出迁移提示而不猜测非法结构。
     value_legacy_state = dict_meta.get("legacy_remote_state", []) if bool_meta_is_dict else []  # 旧版远程状态原始值
 
     # 下游只需要判断是否存在旧状态条目。

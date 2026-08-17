@@ -322,8 +322,7 @@ def _observable_output_checkpoint(str_output_name: str) -> dict[str, Any]:
         observe_* 形态的检查点字典。
     """
 
-    # 输出检查点字段属于计划 JSON 形状，保持下游兼容。
-    # 长提示文本独立成变量，避免输出检查点字典行过宽。
+    # 输出检查点字段保持计划 JSON 形状兼容，并把长提示文本独立成变量以避免字典行过宽。
     str_output_hint = (
         f"Observe `{str_output_name}` in both reference checkpoints and transcript output payloads."  # 输出观察镜像要求
     )  # 输出 transcript 对齐提示

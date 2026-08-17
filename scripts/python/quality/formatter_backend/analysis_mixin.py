@@ -11,6 +11,7 @@ from typing import cast
 
 # 低有效复位名称统一复用质量层的下划线语义段边界。
 from ..reset_name_roles import is_low_active_reset_name
+from ..declaration_region_policy import resolve_declaration_region
 
 # formatter 错误类型和参数/端口模型支撑本模块的归一化与校验
 from .models import (
@@ -1531,7 +1532,7 @@ class AnalysisMixin:
                     node,  # loop/generate/block 包装节点
                     target,  # 子树中保留的赋值目标
                     known_targets,  # 多目标拆分上下文
-                    hold_statement,  # 子 if 可用的保持语句
+                    hold_statement,  # 条件分支缺失时沿用的保持语句
                 )
 
                 # 保留仍有有效赋值内容的容器节点。
@@ -2745,62 +2746,14 @@ class AnalysisMixin:
             # output 内部 assign 与普通 assign 使用不同渲染区域。
             return "output_assign" if decl.name in output_signal_names else "other_assign"
 
-        # str_name 保留声明原名，用于后缀和集合判断。
-        str_name = decl.name  # 当前声明名称
-
-        # str_lowered_name 用于前缀匹配，避免大小写差异影响区域识别。
-        str_lowered_name = str_name.lower()  # 小写声明名称
-
-        # output 内部信号优先进入 output_internal 区域。
-        if str_name in output_signal_names or str_name.endswith(self.config["naming"]["internal_output_suffix"]):
-
-            # output 相关内部信号和合成后缀信号靠近端口渲染。
-            return "output_internal"
-
-        # 实例连接信号根据实例亲缘单独聚合。
-        if str_name in instance_signal_names:
-
-            # 实例端口连线进入 instance_signal 区域。
-            return "instance_signal"
-
-        # counter 前缀信号进入计数器区域。
-        if str_lowered_name.startswith(self.config["naming"]["counter_prefix"]):
-
-            # 计数器命名信号集中渲染。
-            return "counter_signal"
-
-        # state 前缀信号进入状态区域。
-        if str_lowered_name.startswith(self.config["naming"]["state_signal_prefix"]):
-
-            # FSM 状态信号集中渲染。
-            return "state_signal"
-
-        # flag 前缀信号进入标志位区域。
-        if str_lowered_name.startswith(self.config["naming"]["flag_prefix"]):
-
-            # 标志信号集中渲染。
-            return "flag_signal"
-
-        # encoder 前缀信号进入编码器区域。
-        if str_lowered_name.startswith(self.config["naming"]["encoder_prefix"]):
-
-            # 编码器辅助信号集中渲染。
-            return "encoder_signal"
-
-        # decoder 前缀信号进入解码器区域。
-        if str_lowered_name.startswith(self.config["naming"]["decoder_prefix"]):
-
-            # 解码器辅助信号集中渲染。
-            return "decoder_signal"
-
-        # register 前缀信号进入寄存器区域。
-        if str_lowered_name.startswith(self.config["naming"]["register_prefix"]):
-
-            # 普通寄存器信号集中渲染。
-            return "register_signal"
-
-        # 未命中特定亲缘或前缀的声明进入普通区域。
-        return "other_signal"
+        # 普通声明统一交给共享优先级策略，避免 formatter 与门禁分叉。
+        return resolve_declaration_region(
+            decl.name,
+            decl.kind,
+            output_signal_names,
+            instance_signal_names,
+            self.config["naming"],
+        )
 
     # _instance_signal_exclusion_prefixes 返回不应归入实例连线区域的命名前缀。
     def _instance_signal_exclusion_prefixes(self) -> tuple[str, ...]:

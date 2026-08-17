@@ -824,6 +824,7 @@ class StatementRenderMixin:
             port_marker_context.list_lines,  # 协议标题写入的端口行缓存
             port_marker_context.port,  # 触发子组优先标题的端口模型
             str_current_group,  # 当前端口所属的总线分组标题
+            port_marker_context.bool_rendered_port,  # 首组紧贴 banner，后续组保留单空行
         )
 
         # 子组切换后 section 在新子组内重新开始。
@@ -1049,6 +1050,7 @@ class StatementRenderMixin:
         list_lines: list[str],
         port: PortDecl,
         str_current_group: str,
+        bool_rendered_port: bool,
     ) -> str:
         """
         输出 subgroup_first 布局下的协议子组标题。
@@ -1056,14 +1058,12 @@ class StatementRenderMixin:
         :param list_lines: 正在累积的端口声明输出行。
         :param port: 当前端口模型。
         :param str_current_group: 当前总线分组标题。
+        :param bool_rendered_port: 当前子组之前是否已有端口声明。
         :return: 已输出的 subgroup 标题。
         """
 
-        # 子组标题前保留视觉空行，延续旧 formatter 版式。
-        if list_lines and list_lines[-1] != "":
-
-            # 插入单个空行，避免 banner 与协议子标题粘连。
-            list_lines.append("")
+        # 首子组紧贴区域 banner；后续子组与上一组之间固定一个空行。
+        self._ensure_single_blank_line_before_cluster(list_lines, bool_rendered_port)
 
         # subgroup_first 标题需要带上当前 group 上下文。
         str_header = self._render_port_subgroup_header(port, str_current_group or port.group)  # 带分组上下文的子组标题

@@ -380,7 +380,7 @@ def evaluate_liveness_gate(facts: VgFacts, str_gate_id: str) -> VgEvaluation:
                     _finding(
                         obj_source,
                         dict_module,
-                        line=1,
+                        line=None,
                         message="输出端口没有可确认的驱动源。",
                         evidence=str_name,
                         metadata=(("symbol", str_name), ("driver_state", "undriven_output")),

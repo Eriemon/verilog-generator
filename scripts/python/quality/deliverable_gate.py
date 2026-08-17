@@ -11,6 +11,9 @@ from typing import Any
 # 子门禁模块提供 AST、静态 lint、注释位置和规则源一致性证据。
 from .comment_placement import validate_comment_placement
 from .quality_gate import run_verilog_quality_gate
+from .vg_diagnostics import VgDiagnosticContractError, diagnostic_from_mapping, diagnostic_path_line
+from .vg_diagnostic_render import render_finding_markdown
+from .vg_report_publisher import publish_vg_reports
 from scripts.python.validation.rulebook import load_verilog_rulebook
 
 # 文本形式便于保持公开矩阵顺序，同时避免手写多行常量被误改。
@@ -121,7 +124,7 @@ def _collect_deliverable_context(
     )  # Verilog 质量门报告对象
 
     # 统一质量门报告已经包含完整逐规则结果，无需再次解析 RTL。
-    dict_vg_report = report_quality.to_dict()  # 兼容后续聚合变量名的 schema v2 VG 报告
+    dict_vg_report = report_quality.to_dict()  # 兼容后续聚合变量名的 schema v3 VG 报告
 
     # 注释位置 gate 输出诊断和覆盖率统计。
     tuple_comment_gate = validate_comment_placement(path_root, comment_language)  # 注释位置 gate 原始结果
@@ -512,6 +515,12 @@ def _count_issue_severity(list_issues: list[dict[str, Any]]) -> tuple[int, int]:
         # severity 是公开矩阵 ready 计算的唯一严重级别来源。
         str_severity = str(dict_issue.get("severity")).lower()  # 当前诊断严重级别
 
+        # v3 finding 使用 BLOCKER/WARNING，旧交付矩阵继续消费 error/warning。
+        if str_severity == "blocker":
+
+            # BLOCKER 在交付统计中等价于 error。
+            str_severity = "error"  # 统一阻断严重级别
+
         # error 严重级别会直接阻断交付。
         if str_severity == "error":
 
@@ -592,14 +601,19 @@ def _count_delivery_issues_by_rule(
         # severity 决定当前诊断在 strict 下是否需要修复。
         str_severity = str(dict_issue.get("severity") or "").lower()  # 诊断严重级别
 
+        # v3 BLOCKER finding 必须进入旧 delivery issue 的 error 分支。
+        if str_severity == "blocker":
+
+            # 将目录 BLOCKER 映射为聚合函数使用的 error 级别。
+            str_severity = "error"  # 规则聚合所需的统一阻断级别
+
         # 非 strict warning 不进入交付问题聚合。
         if str_severity != "error" and not (strict and str_severity == "warning"):
 
             # 当前诊断不会阻断本次交付，跳过规则聚合。
             continue
 
-        # code 优先，其次 rule，最后给稳定兜底编号。
-        # 规则来源先保留原始对象，便于 None 和非字符串统一收敛。
+        # 优先读取 code，再回退 rule，并保留原始对象以统一收敛空值和非字符串。
         object_rule_source = dict_issue.get("code") or dict_issue.get("rule") or "DELIVERABLE_ISSUE"  # 修复队列规则来源
 
         # 规则编号最终必须是 JSON key 兼容字符串。
@@ -617,8 +631,7 @@ def _count_delivery_issues_by_rule(
     # 如果某些子门禁只给聚合计数而没有细粒度诊断，保留兜底可追踪项。
     if not dict_counts and (dict_totals["errors"] > 0 or (strict and dict_totals["strict_warnings"] > 0)):
 
-        # 兜底计数等于最终阻断合计。
-        # 聚合阻断总量用于缺失细粒度 issue 的兜底报告。
+        # 缺少细粒度 issue 时，兜底计数使用最终阻断合计。
         int_blocked_issue_count = dict_totals["errors"] + dict_totals["strict_warnings"]  # 聚合阻断总量
 
         # 兜底 key 保证修复队列仍能定位阻断规模。
@@ -665,7 +678,7 @@ def _build_deliverable_report(
 
     # 报告骨架先写入摘要字段，随后补充子门禁详情。
     dict_report: dict[str, Any] = {
-        "version": 2,  # 报告结构版本
+        "version": 3,  # 报告结构版本
         "root": str(path_root),  # 被检查的 Verilog 入口
         "strict": strict,  # 是否启用 strict 交付策略
         "delivery_ready": dict_totals["delivery_ready"],  # strict 交付布尔结论
@@ -676,6 +689,7 @@ def _build_deliverable_report(
         "strict_warnings": dict_totals["strict_warnings"],  # strict 模式警告合计
         "checks": dict_checks,  # workflow trace 读取的子门禁摘要
         "issues": list_issues,  # VG/lint/comment 合并诊断
+        "findings": _collect_vg_findings(list_issues),  # 顶层可执行 VG finding 列表
     }
 
     # quality_gate 详情保留完整 AST 与 VG 规则命中。
@@ -703,6 +717,34 @@ def _build_deliverable_report(
     # 返回完整报告。
     return dict_report
 
+# _collect_vg_findings 只从统一质量诊断中提取 v3 VG finding。
+def _collect_vg_findings(list_issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """提取交付报告顶层的可执行 VG finding。
+
+    参数:
+        list_issues: 交付报告合并后的诊断字典列表。
+    返回:
+        只包含 v3 VG finding 的稳定列表。
+    """
+
+    # 只保留以 VG 编号标识且已经具备 v3 problem 的诊断。
+    list_findings: list[dict[str, Any]] = []  # 顶层 Agent 可执行 finding
+
+    # quality gate 已按 catalog 顺序生成统一诊断。
+    for dict_issue in list_issues:
+
+        # 非 VG 或旧式注释诊断不属于 actionable VG finding。
+        if not str(dict_issue.get("code") or "").startswith("VG") or "problem" not in dict_issue:
+
+            # 继续收集后续 VG finding。
+            continue
+
+        # 保留原始字典，避免交付层改变质量门诊断身份。
+        list_findings.append(dict_issue)
+
+    # 返回稳定的 catalog/finding 顺序。
+    return list_findings
+
 # 报告写出函数只处理文件 IO，不改变门禁结果。
 def write_verilog_deliverable_gate_report(
     report: dict[str, Any],
@@ -720,23 +762,13 @@ def write_verilog_deliverable_gate_report(
         本函数只写文件，不返回业务值。
     """
 
-    # JSON 报告用于 CI 或自动化流程消费。
-    if json_path is not None:
-
-        # JSON 输出目录必须先创建，避免报告写出失败。
-        json_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # 写出保留中文的 JSON 文本。
-        json_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-    # Markdown 报告用于人工审查。
-    if markdown_path is not None:
-
-        # Markdown 输出目录独立创建，兼容只写人工报告的调用。
-        markdown_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # 写出 Markdown 摘要和诊断表。
-        markdown_path.write_text(_deliverable_report_to_markdown(report), encoding="utf-8")
+    # 统一 writer 负责路径冲突、原子替换和部分发布证据。
+    publish_vg_reports(
+        report,
+        _deliverable_report_to_markdown(report),
+        json_path=json_path,
+        markdown_path=markdown_path,
+    )
 
 # VG 结果转换器只展开激活门禁的非通过状态。
 def _vg_results_to_issues(list_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -747,6 +779,8 @@ def _vg_results_to_issues(list_results: list[dict[str, Any]]) -> list[dict[str, 
 
     返回:
         激活门禁中所有非通过结果对应的 issue 字典列表。
+    异常:
+        VgDiagnosticContractError: 适用的非通过规则缺少 actionable finding。
     """
 
     # 结果列表保留 catalog 顺序，便于报告稳定比较。
@@ -761,39 +795,50 @@ def _vg_results_to_issues(list_results: list[dict[str, Any]]) -> list[dict[str, 
             # 当前结果无需报告为问题，继续处理下一条。
             continue
 
-        # finding 为空时仍要保留 fail-closed 状态的通用问题。
+        # not_run 且不可用时不产生伪造的交付问题。
+        if dict_result["status"] == "not_run" and not dict_result.get("applicable", False):
+
+            # 无输入由质量门的 VG000 或调用方前置检查负责说明。
+            continue
+
+        # finding 必须来自语义 emitter，交付层不再合成泛化行号。
         list_findings = list(dict_result.get("findings") or [])  # 当前 VG 门禁的定位证据
 
-        # 没有具体定位时使用门禁级消息承载不确定或执行错误。
-        if not list_findings:
+        # 适用的非通过规则缺失 finding 时直接暴露实现合同错误。
+        if dict_result.get("applicable") and not list_findings:
 
-            # 通用 finding 保留状态信息，避免无定位结果静默消失。
-            list_findings = [
-                {
-                    "path": None,  # 无定位结果时明确表示没有可靠文件路径
-                    "line": 1,  # 无精确定位时使用稳定的一基起始行
-                    "message": dict_result.get("message") or f"{dict_result['gate_id']} did not pass.",  # 门禁级失败说明
-                    "evidence": dict_result["status"],  # 保留触发 fail-closed 的原始状态
-                }
-            ]
+            # 交付门不能替规则 emitter 发明 problem、evidence 或 location。
+            raise VgDiagnosticContractError(
+                "> ERR: [Python] deliverable VG rule returned no actionable finding."
+            )
 
         # 每条定位证据都转换为独立 issue，便于修复计数和报告展示。
         for dict_finding in list_findings:
 
+            # finding 在写入交付报告前必须通过 v3 字段校验。
+            dict_diagnostic = diagnostic_from_mapping(dict_finding)  # 将 finding 规范化为交付诊断对象
+
             # catalog 等级决定该 finding 在交付报告中的严重度。
             str_severity = "error" if dict_result["level"] == "BLOCKER" else "warning"  # 交付问题严重级别
+
+            # location 派生旧 path/line 别名，未知行号保持 None。
+            tuple_path_line = diagnostic_path_line(dict_diagnostic)  # v3 location 的兼容坐标
 
             # VG 编号直接成为公开 code，不再添加其他前缀。
             dict_issue = {
                 "code": dict_result["gate_id"],  # 固定 VG 编号是公开问题码
                 "rule": dict_result["gate_id"],  # 规则字段与公开问题码保持一致
                 "severity": str_severity,  # catalog 等级映射后的报告严重度
-                "message": dict_finding.get("message") or dict_result.get("message") or "VG gate did not pass.",  # 优先使用定位诊断
-                "path": dict_finding.get("path"),  # 违规 RTL 的相对路径
-                "line": int(dict_finding.get("line") or 1),  # 违规位置的一基行号
+                "message": dict_diagnostic["problem"],  # v3 finding 的具体问题
+                "path": tuple_path_line[0],  # v3 location 的文件别名
+                "line": tuple_path_line[1],  # v3 source 的真实行号
                 "source": "verilog_quality_gate",  # 诊断来源标识
-                "detail": dict_finding.get("evidence") or dict_result["status"],  # 原始证据或 fail-closed 状态
+                "detail": dict_diagnostic["evidence"].get("detail", ""),  # v3 evidence 的观察事实
+                "metadata": dict(dict_finding.get("metadata") or {}),  # 所有 VG finding 的兼容扩展字段
             }  # 当前 finding 对应的统一交付问题
+
+            # 顶层新增字段保留 v3 的完整可执行诊断。
+            dict_issue.update(dict_diagnostic)  # 合并 location、guidance 和 examples
 
             # 文件角色 finding 的固定扩展字段继续进入交付报告。
             dict_metadata = {  # 当前 finding 可供宿主消费的确认元数据
@@ -862,11 +907,17 @@ def _merge_vg_finding_metadata(
                 # 继续检查当前结果的其他 finding。
                 continue
 
-            # 精确路径与行号防止同一规则多文件证据串扰。
-            str_path = str(dict_finding.get("path") or "")  # 当前 finding 相对路径
+            # 解析 v3 location，未知行号保持 None 而不制造伪坐标。
+            dict_diagnostic = diagnostic_from_mapping(dict_finding)  # metadata 合并前的 finding 合同
 
-            # 一基行号与 quality issue 的定位合同保持一致。
-            int_line = int(dict_finding.get("line") or 1)  # 当前 finding 一基行号
+            # 兼容坐标由结构化 location 统一派生。
+            tuple_path_line = diagnostic_path_line(dict_diagnostic)  # 当前 finding 的兼容坐标
+
+            # 路径用于匹配已经去重的质量诊断。
+            str_path = str(tuple_path_line[0] or "")  # 当前 finding 相对路径
+
+            # 行号未知时保留 None，避免制造默认行一。
+            int_line = tuple_path_line[1]  # 当前 finding 一基行号或未知值
 
             # 查找统一质量门已经生成的同一诊断。
             for dict_issue in list_quality_issues:
@@ -875,7 +926,7 @@ def _merge_vg_finding_metadata(
                 if (
                     str(dict_issue.get("code") or "") != str_gate_id
                     or str(dict_issue.get("path") or "") != str_path
-                    or int(dict_issue.get("line") or 1) != int_line
+                    or dict_issue.get("line") != int_line
                 ):
 
                     # 非对应 issue 继续参与后续匹配。
@@ -933,50 +984,94 @@ def _deliverable_report_to_markdown(report: dict[str, Any]) -> str:
         "",  # 摘要结束后的表格断点
     ]  # Markdown 输出行集合
 
-    # 无诊断时返回成功摘要。
-    if not report.get("issues"):
+    # 顶层 findings 是 Agent 需要立即执行的 v3 诊断集合。
+    list_findings = list(report.get("findings") or [])  # 可执行 VG finding 列表
+
+    # 旧式 issue 只保留非 VG 诊断，避免同一 VG 问题重复展示。
+    list_other_issues: list[dict[str, Any]] = []  # 非 VG 的注释和其他交付门禁诊断
+
+    # 逐条过滤 v3 VG finding，避免兼容表重复展示。
+    for dict_issue in report.get("issues", []):
+
+        # code/problem 联合判断当前诊断是否属于顶层 finding。
+        bool_is_vg_finding = str(dict_issue.get("code") or "").startswith("VG") and "problem" in dict_issue  # 决定是否跳过已渲染的 v3 VG 诊断
+
+        # actionable VG finding 已由专用 renderer 输出。
+        if bool_is_vg_finding:
+
+            # 当前 issue 不再进入旧式兼容表。
+            continue
+
+        # 其他诊断保留在兼容表中。
+        list_other_issues.append(dict_issue)
+
+    # v3 finding 逐条输出问题、证据、修复步骤、风险和 bad/good 示例。
+    if list_findings:
+
+        # 标题明确区分 actionable 诊断和其他交付问题。
+        list_lines.append("## Actionable VG findings")
+
+        # 空行隔离小节标题与第一个 finding。
+        list_lines.append("")
+
+        # 稳定锚点便于 Agent 或宿主直接跳到对应规则。
+        for int_index, dict_finding in enumerate(list_findings, start=1):
+
+            # renderer 统一渲染 v3 结构，JSON 与 Markdown 共用同一 finding。
+            list_lines.append(
+                render_finding_markdown(dict_finding, anchor=f"vg-finding-{int_index}")
+            )
+
+    # 非 VG 诊断仍保留既有摘要表，保证旧宿主兼容。
+    if list_other_issues:
+
+        # 其他诊断表头维持原有公开列。
+        list_lines.append("## Other deliverable findings")
+
+        # 空行隔离小节标题与诊断表。
+        list_lines.append("")
+
+        # 表头明确非 VG 诊断的兼容字段。
+        list_lines.append("| Severity | Code | Path | Line | Message |")
+
+        # 写入 Markdown 表格分隔行，保证人工报告能正常渲染。
+        list_lines.append("|---|---|---|---:|---|")
+
+        # 逐条写入非 VG 诊断。
+        for dict_issue in list_other_issues:
+
+            # 诊断消息中的竖线必须转义，避免破坏 Markdown 表格列。
+            str_message = str(dict_issue.get("message") or "").replace("|", "\\|")  # 表格安全诊断文本
+
+            # 结构化确认元数据在 Markdown 中使用稳定键序列展开。
+            dict_metadata = dict(dict_issue.get("metadata") or {})  # 当前 issue 的可选扩展字段
+
+            # VG149 的角色来源、证据与确认要求必须对人工审查可见。
+            if dict_metadata:
+
+                # JSON 编码保留列表、布尔值与 null 的机器语义。
+                str_metadata = ", ".join(  # Markdown 消息尾部的稳定 metadata 文本
+                    f"{str_key}={json.dumps(obj_value, ensure_ascii=False)}"  # 单个键值的 JSON 表示
+                    for str_key, obj_value in dict_metadata.items()  # 沿固定插入顺序渲染
+                )
+
+                # 分号把原始诊断与确认上下文保持清晰分隔。
+                str_message = f"{str_message}; {str_metadata}"  # 含角色确认信息的诊断文本
+
+            # str_line 为空时保持表格单元为空。
+            str_line = "" if dict_issue.get("line") is None else str(dict_issue.get("line"))  # 行号文本
+
+            # 追加 Markdown 表格行。
+            list_lines.append(
+                f"| {dict_issue.get('severity')} | {dict_issue.get('code')} | "
+                f"`{dict_issue.get('path') or ''}` | {str_line} | {str_message} |"
+            )
+
+    # 两类诊断均为空时返回成功摘要。
+    if not list_findings and not list_other_issues:
 
         # 保留简短通过文案。
         list_lines.append("No deliverable-gate findings.")
-
-        # 返回带末尾换行的 Markdown。
-        return "\n".join(list_lines) + "\n"
-
-    # 写入诊断表头的列名。
-    list_lines.append("| Severity | Code | Path | Line | Message |")
-
-    # 写入 Markdown 表格分隔行，保证人工报告能正常渲染。
-    list_lines.append("|---|---|---|---:|---|")
-
-    # 逐条写入诊断。
-    for dict_issue in report.get("issues", []):
-
-        # 诊断消息中的竖线必须转义，避免破坏 Markdown 表格列。
-        str_message = str(dict_issue.get("message") or "").replace("|", "\\|")  # 表格安全诊断文本
-
-        # 结构化确认元数据在 Markdown 中使用稳定键序列展开。
-        dict_metadata = dict(dict_issue.get("metadata") or {})  # 当前 issue 的可选扩展字段
-
-        # VG149 的角色来源、证据与确认要求必须对人工审查可见。
-        if dict_metadata:
-
-            # JSON 编码保留列表、布尔值与 null 的机器语义。
-            str_metadata = ", ".join(  # Markdown 消息尾部的稳定 metadata 文本
-                f"{str_key}={json.dumps(obj_value, ensure_ascii=False)}"  # 单个键值的 JSON 表示
-                for str_key, obj_value in dict_metadata.items()  # 沿固定插入顺序渲染
-            )
-
-            # 分号把原始诊断与确认上下文保持清晰分隔。
-            str_message = f"{str_message}; {str_metadata}"  # 含角色确认信息的诊断文本
-
-        # str_line 为空时保持表格单元为空。
-        str_line = "" if dict_issue.get("line") is None else str(dict_issue.get("line"))  # 行号文本
-
-        # 追加 Markdown 表格行。
-        list_lines.append(
-            f"| {dict_issue.get('severity')} | {dict_issue.get('code')} | "
-            f"`{dict_issue.get('path') or ''}` | {str_line} | {str_message} |"
-        )
 
     # 返回完整 Markdown 文本。
     return "\n".join(list_lines) + "\n"

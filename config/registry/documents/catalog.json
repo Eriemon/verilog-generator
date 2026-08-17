@@ -1,7 +1,7 @@
 {
   "documents": [
     {
-      "content_sha256": "3e40471ee1a7f27f1d8b526270c99b37bc43841d5648811c12c75a5caa2ef2b8",
+      "content_sha256": "accbf7972da511315478c1755116c7358c4393de1943a710a8e3546eb82795ac",
       "id": "document.skill",
       "keywords": [
         "route",
@@ -18,13 +18,16 @@
         "VG153",
         "VG154",
         "VG155",
+        "VG156",
+        "VG157",
+        "VG158",
         "filename",
         "testbench",
         "parameter constraints",
         "ready-valid"
       ],
       "path": "SKILL.md",
-      "responsibility": "定义技能触发、外层任务路由、强制质量链、VG151–VG155 模块无关参数/资源/生存性/握手合同、Verilog 文件名角色合同、跨实例组合锥合同、停止边界与渐进披露入口。",
+      "responsibility": "定义技能触发、外层任务路由、强制质量链、VG151–VG158 模块无关结构/命名/注释合同、Verilog 文件名角色合同、跨实例组合锥合同、停止边界与渐进披露入口。",
       "source_anchor": "",
       "status": "current",
       "summary": "readable-verilog-generator 的最外层执行合同。",
@@ -186,7 +189,7 @@
       "title": "Testbench Patterns"
     },
     {
-      "content_sha256": "aa0f3fee253472b692d7e02096a9f7dbc2e56e5938a467824ddb83dd37e19c0c",
+      "content_sha256": "05d9b9f0a51f224a82d4915f096c5a162268384e983a09515ee115f905c610fb",
       "id": "document.references-rules-verilog-code-comment-naming-standard",
       "keywords": [
         "Verilog",
@@ -198,12 +201,19 @@
         "VG147",
         "VG148",
         "VG149",
+        "VG156",
+        "VG157",
+        "VG158",
         "source closure",
         "filename",
-        "testbench"
+        "testbench",
+        "digit token",
+        "functional naming",
+        "version markers",
+        "group spacing"
       ],
       "path": "references/rules/verilog-code-comment-naming-standard.md",
-      "responsibility": "保存可读 Verilog 代码、注释、文件名角色、命名、区域、格式与跨实例组合锥约束的完整规范正文。",
+      "responsibility": "保存可读 Verilog 代码、普通注释版本字样、变量数字 token、功能型命名、声明唯一归属、分组空行、文件名角色与跨实例组合锥约束的完整规范正文。",
       "source_anchor": "",
       "status": "current",
       "summary": "Verilog 代码注释命名规范的权威规则书。",
@@ -243,7 +253,7 @@
       "title": "Verilog Pattern Templates"
     },
     {
-      "content_sha256": "f256111d807d65888147337179cb02e68ae125dadfe03c4ce5edb5211a86355b",
+      "content_sha256": "71f9bd09a051bc01472e377cd8f8b6f947b0d67f8a2f393cdd0b131233e4d152",
       "id": "document.references-rules-verilog-quality-gates",
       "keywords": [
         "VG",
@@ -257,6 +267,9 @@
         "VG153",
         "VG154",
         "VG155",
+        "VG156",
+        "VG157",
+        "VG158",
         "file_role_confirmations",
         "tb_",
         "catalog",
@@ -283,7 +296,7 @@
         "quality"
       ],
       "path": "references/rules/verilog-quality-gates.md",
-      "responsibility": "定义 VG 规则目录、严重度、结果状态、VG151–VG155 的模块无关参数/资源/生存性/握手合同、文件名角色与确认语义、跨实例 source-closure 计数、loop unknown 双 gate 语义、统一执行和报告 schema。",
+      "responsibility": "定义 VG 规则目录、严重度、结果状态、VG151–VG158 的模块无关结构/命名/注释合同、文件名角色与确认语义、跨实例 source-closure 计数、loop unknown 双 gate 语义、统一执行和报告 schema。",
       "source_anchor": "",
       "status": "current",
       "summary": "统一 Verilog VG 质量门禁合同。",
@@ -366,7 +379,7 @@
       "title": "Verilog Dispatcher"
     },
     {
-      "content_sha256": "920e62578ca20bf64101482c305d6e638e7e1aa3034b3842822a650b5cc60e70",
+      "content_sha256": "57e606ea0800d84bc5a3ddec947c36afd3a6ea19fce82c347c3bebf1fbbaeefb",
       "id": "document.references-workflows-workflow-contracts",
       "keywords": [
         "workflow",

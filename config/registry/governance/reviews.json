@@ -102,32 +102,32 @@
             "preview": "---"
           },
           {
-            "block_index": "193",
+            "block_index": "195",
             "path": "references/rules/verilog-code-comment-naming-standard.md",
             "preview": "---"
           },
           {
-            "block_index": "196",
+            "block_index": "198",
             "path": "references/rules/verilog-code-comment-naming-standard.md",
             "preview": "---"
           },
           {
-            "block_index": "207",
+            "block_index": "209",
             "path": "references/rules/verilog-code-comment-naming-standard.md",
             "preview": "---"
           },
           {
-            "block_index": "210",
+            "block_index": "212",
             "path": "references/rules/verilog-code-comment-naming-standard.md",
             "preview": "---"
           },
           {
-            "block_index": "214",
+            "block_index": "216",
             "path": "references/rules/verilog-code-comment-naming-standard.md",
             "preview": "---"
           },
           {
-            "block_index": "226",
+            "block_index": "228",
             "path": "references/rules/verilog-code-comment-naming-standard.md",
             "preview": "---"
           }
@@ -862,5 +862,5 @@
   ],
   "schema_version": 2,
   "status": "current",
-  "user_confirmation": "not_required"
+  "user_confirmation": "confirmed"
 }

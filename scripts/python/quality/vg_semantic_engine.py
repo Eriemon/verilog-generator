@@ -16,6 +16,13 @@ from scripts.python.workflow.verilog_gate_catalog import (
     load_verilog_quality_gates,
 )
 
+# v3 诊断适配器用于 parse error 和旧 finding 的统一公开字段。
+from .vg_diagnostics import (
+    VG_REPORT_VERSION,
+    VgDiagnosticContractError,
+    build_legacy_diagnostic,
+)
+
 # 各规则模块按语义域执行固定编号。
 from .vg_branch_rules import evaluate_branch_gate
 from .vg_clock_rules import evaluate_clock_gate
@@ -29,6 +36,9 @@ from .vg_comb_cone import build_comb_target_cones, evaluate_comb_operation_gate
 # vg_comment_integrity 只消费 formatter AST 注释候选并执行 VG150。
 from .vg_comment_integrity import evaluate_comment_integrity_gate
 
+# VG157 只消费 formatter 词法注释事实并豁免其识别出的固定文件头。
+from .vg_comment_version import evaluate_comment_version_gate
+
 # 参数合同、资源结构、生存性和 ready-valid 规则共享同一份 formatter 事实。
 from .vg_contract_rules import (
     evaluate_handshake_gate,
@@ -40,6 +50,7 @@ from .vg_contract_rules import (
 # 状态机、复位和结构模块承载本轮新增的语义域。
 from .vg_fsm_rules import evaluate_fsm_gate
 from .vg_file_rules import evaluate_file_gate
+from .vg_identifier_rules import evaluate_identifier_gate
 from .vg_reset_rules import evaluate_reset_gate
 from .vg_structure_rules import evaluate_structure_gate
 
@@ -106,6 +117,9 @@ LIVENESS_GATES = frozenset({"VG153", "VG154"})  # 读取无驱动和未使用声
 # VG155 负责 ready-valid 消费条件的角色完整性。
 HANDSHAKE_GATES = frozenset({"VG155"})  # ready-valid 完整性规则
 
+# VG156/VG158 共享 formatter 声明事实和配置驱动的命名词表。
+IDENTIFIER_GATES = frozenset({"VG156", "VG158"})  # 数字 token 与功能语义命名规则
+
 # 文件命名规则独立于 formatter AST 来源与解析状态执行。
 FILE_NAMING_GATES = frozenset({"VG148", "VG149"})  # .v/.sv 文件级预检编号
 
@@ -122,7 +136,7 @@ def run_vg_semantic_gate(
     external_interface_sources: tuple[Path, ...] = (),
     **dict_options: Any,
 ) -> dict[str, Any]:
-    """运行 VG072 至 VG155 语义门禁并返回 fail-closed 报告。
+    """运行 VG072 至 VG158 语义门禁并返回 fail-closed 报告。
 
     参数:
         root: 待检查的 Verilog 文件或目录。
@@ -237,6 +251,9 @@ def run_vg_semantic_gate(
         file_fact.to_dict() for file_fact in vg_facts_vg_facts.files  # 移除内部绝对路径
     ]
 
+    # 声明区域事实直接发布 AST 已计算的共享映射，消费者无需再次推导优先级。
+    dict_report["region_facts"] = _declaration_region_facts(vg_facts_vg_facts)  # 模块到声明区域的公开映射
+
     # 原语目录摘要进入报告，证明本轮不是 blanket whitelist。
     dict_report["primitive_semantics"] = _primitive_semantics_summary(  # 当前扫描使用的原语事实摘要
         getattr(vg_facts_vg_facts, "primitive_catalog", {}),  # 与规则共享的固定 catalog 快照
@@ -244,6 +261,55 @@ def run_vg_semantic_gate(
 
     # 返回同时包含逐规则结果和文件角色事实的报告。
     return dict_report
+
+# _declaration_region_facts 发布 formatter AST 中已经确认的声明区域。
+def _declaration_region_facts(facts: VgFacts) -> dict[str, dict[str, str]]:
+    """构造模块名到声明区域映射的公开报告字段。
+
+    参数:
+        facts: 当前语义门禁共享的 formatter AST 事实。
+    返回:
+        形如 `{module: {declaration: region}}` 的稳定映射。
+    """
+
+    # 模块映射按 source、module 和 declaration 的解析顺序稳定插入。
+    dict_regions: dict[str, dict[str, str]] = {}  # 模块名到声明区域的公开映射
+
+    # 每个来源只消费其唯一 formatter AST 报告。
+    for source_facts in facts.sources:
+
+        # 多 module 文件按 formatter 切分顺序发布声明事实。
+        for dict_module in source_facts.report.get("modules", []) or []:
+
+            # 缺少模块名的局部不完整事实不能形成公开索引键。
+            str_module_name = str(dict_module.get("name") or "")  # 当前 module 名称
+
+            # 未命名模块跳过，避免多个错误事实合并到空字符串键。
+            if not str_module_name:
+
+                # 继续处理同一来源中的下一个模块。
+                continue
+
+            # 同名模块事实按确定性扫描顺序合并声明映射。
+            dict_module_regions = dict_regions.setdefault(str_module_name, {})  # 当前模块声明区域映射
+
+            # 每个声明只发布 AST 已计算的名称和 region 字段。
+            for dict_declaration in dict_module.get("decls", []) or []:
+
+                # 空名称或空区域都不是可消费的共享归属事实。
+                str_decl_name = str(dict_declaration.get("name") or "")  # 当前声明名称
+
+                # region 必须由共享策略在 AST 序列化出口写入。
+                str_region = str(dict_declaration.get("region") or "")  # 当前声明区域键
+
+                # 两个字段都可信时才进入公开映射。
+                if str_decl_name and str_region:
+
+                    # 后续消费者直接复用此值，不再执行分类规则。
+                    dict_module_regions[str_decl_name] = str_region  # 当前声明的共享区域归属
+
+    # 返回保持插入顺序的普通字典，便于 JSON 确定性序列化。
+    return dict_regions
 
 # _primitive_semantics_summary 只公开目录身份和验证范围，不泄露全部 profile 细节。
 def _primitive_semantics_summary(dict_catalog: dict[str, Any]) -> dict[str, Any]:
@@ -297,7 +363,7 @@ def _build_report(
 
     # 修复与重跑布尔值始终与 delivery_ready 互为反值。
     return {
-        "version": 2,
+        "version": VG_REPORT_VERSION,
         "vg_catalog_version": int(catalog_version),
         "root": str(path_root),
         "strict": strict,
@@ -375,6 +441,55 @@ def _evaluate_catalog_rule(
     # catalog 元数据和规则证据在单一出口合并。
     return _result_dict(dict_rule, vg_evaluation_result)
 
+# _parse_error_finding 把单个 formatter 故障转换成操作性 error finding。
+def _parse_error_finding(dict_error: dict[str, Any]) -> VgFinding:
+    """构造不伪造行号的 formatter error finding。
+
+    参数:
+        dict_error: formatter 返回的单条解析错误。
+    返回:
+        带 error 状态和修复指导的 VG finding。
+    """
+
+    # path/line 只复用 formatter 的真实坐标，未知值保持 None。
+    str_path = str(dict_error.get("path") or "") or None  # formatter 文件路径
+
+    # 只有正整数行号才可以进入 source 定位。
+    int_line_value = dict_error.get("line")  # formatter 返回的原始行号值
+
+    # 仅把 formatter 明确确认的正整数保留为源码坐标。
+    int_line = int(int_line_value) if isinstance(int_line_value, int) and int_line_value > 0 else None  # 可信源码行号
+
+    # message 是 Agent 需要看到的解析失败事实。
+    str_message = str(dict_error.get("message") or "Formatter AST parse failed.")  # 解析失败正文
+
+    # code/evidence 保留 formatter 提供的可追溯错误信息。
+    str_code = str(dict_error.get("code") or "FORMATTER_AST_PARSE")  # formatter 可追溯错误码
+
+    # 构造不伪造来源坐标的 formatter error 诊断载荷。
+    dict_diagnostic = build_legacy_diagnostic(  # formatter error v3 诊断载荷
+        {
+            "rule_id": "VG000",  # formatter error 的兼容规则编号
+            "rule_key": "formatter_ast_parse",  # formatter error 的稳定机器键
+            "severity": "BLOCKER",  # 解析失败始终阻断交付
+            "path": str_path,  # formatter 提供的真实文件路径
+            "line": int_line,  # formatter 提供的可选真实行号
+            "message": str_message,  # Agent 需要修复的解析事实
+            "evidence": str_code,  # 供宿主回溯 formatter 分支的标识码
+            "status": "error",  # 解析失败的公开状态
+        }
+    )
+
+    # 返回完整 finding，后续 _public_finding_dict 会绑定真实 gate_id。
+    return VgFinding(
+        path=str_path,
+        line=int_line,
+        message=str_message,
+        evidence=str_code,
+        severity="BLOCKER",
+        diagnostic=dict_diagnostic,
+    )
+
 # _parse_error_evaluation 把 formatter 故障转换为统一 fail-closed 结论。
 def _parse_error_evaluation(list_parse_errors: list[dict[str, Any]]) -> VgEvaluation:
     """生成包含全部 formatter AST 故障位置的 VG 错误结论。
@@ -385,20 +500,33 @@ def _parse_error_evaluation(list_parse_errors: list[dict[str, Any]]) -> VgEvalua
         可供任一激活规则复用的阻断性 error 结论。
     """
 
-    # 每条解析错误都保留文件、行号、诊断文本和 formatter 错误码。
+    # 仅有局部未闭合子程序时，AST 仍保留事实但不能给出确定门禁结论。
+    set_error_codes = {str(dict_error.get("code") or "") for dict_error in list_parse_errors}  # parser 错误码集合
+
+    # 局部不完整原因集合保持显式，避免把未来 parser 错误意外降级。
+    set_incomplete_codes = {"FORMATTER_AST_INCOMPLETE_SUBPROGRAM"}  # 可返回 inconclusive 的错误码集合
+
+    # 其他 parser error 表示整体 AST 不可信，继续使用 error 状态。
+    bool_only_incomplete_subprogram = bool(set_error_codes) and set_error_codes == set_incomplete_codes  # 是否仅局部不完整
+
+    # 局部覆盖不足使用 inconclusive，整体解析失败继续使用 error。
+    str_status = "inconclusive" if bool_only_incomplete_subprogram else "error"  # 当前 parser 故障公开状态
+
+    # 默认文案保持整体 formatter AST 失败的既有合同。
+    str_message = "Formatter AST parse failed."  # 当前 parser 故障公开说明
+
+    # 局部覆盖不足使用独立文案，避免把已保留事实误报为整体解析崩溃。
+    if bool_only_incomplete_subprogram:
+
+        # inconclusive 文案说明结论缺口来自覆盖不完整。
+        str_message = "Formatter AST coverage is incomplete."  # 局部子程序覆盖不足说明
+
+    # 每条解析错误都保留真实文件、可选行号和 formatter 错误码。
     return VgEvaluation(
-        "error",
+        str_status,
         True,
-        tuple(
-            VgFinding(
-                str(dict_error.get("path") or ""),
-                int(dict_error.get("line") or 1),
-                str(dict_error.get("message") or "Formatter AST parse failed."),
-                str(dict_error.get("code") or "FORMATTER_AST_PARSE"),
-            )
-            for dict_error in list_parse_errors
-        ),
-        "Formatter AST parse failed.",
+        tuple(_parse_error_finding(dict_error) for dict_error in list_parse_errors),
+        str_message,
     )
 
 # _run_active_evaluator 维护固定编号到规则模块的唯一映射。
@@ -462,6 +590,18 @@ def _run_active_evaluator(
         # VG155 要求同一通道的 valid 与 ready 同时控制消费行为。
         return evaluate_handshake_gate(facts)
 
+    # 声明命名规则只消费 module/function/task 中的变量声明事实。
+    if str_gate_id in IDENTIFIER_GATES:
+
+        # VG156 和 VG158 分别检查数字 token 与功能型主体。
+        return evaluate_identifier_gate(str_gate_id, facts)
+
+    # 版本字样规则只消费 formatter AST 已公开的词法注释事实。
+    if str_gate_id == "VG157":
+
+        # 固定双语文件头的 formatter 识别范围由注释事实显式标记豁免。
+        return evaluate_comment_version_gate(facts)
+
     # 其余模块 evaluator 具有统一的 gate_id、facts 参数形状。
     tuple_evaluator_groups = (  # 固定 gate 集合到普通 evaluator 的一一映射
         (EXPRESSION_GATES, evaluate_expression_gate),  # 表达式、条件和位宽
@@ -522,40 +662,90 @@ def _ordered_findings(dict_rule: dict[str, Any], evaluation: VgEvaluation) -> tu
         sorted(
             evaluation.findings,
             key=lambda obj_finding: (
-                obj_finding.path,
-                obj_finding.line,
+                obj_finding.path or "",
+                obj_finding.line or 0,
                 obj_finding.evidence,
                 str(dict_rule["gate_id"]),
             ),
         )
     )
 
-# 组合预算 finding 在 message 中镜像 evidence，供既有 issue-only Markdown writer 展示。
-def _public_finding_dict(dict_rule: dict[str, Any], obj_finding: VgFinding) -> dict[str, Any]:
-    """把 finding 映射为保持 schema-v2 的公开字典。
+# 组合预算 finding 不再把 evidence 拼进 message，v3 字段保持扁平。
+def _public_finding_dict(
+    dict_rule: dict[str, Any],
+    obj_finding: VgFinding,
+    status: str,
+) -> dict[str, Any]:
+    """把 finding 绑定到 catalog 规则并输出 v3 字典。
 
     参数:
         dict_rule: 当前固定规则的 catalog 元数据。
         obj_finding: 当前规则生成的不可变定位证据。
+        status: 当前规则执行状态。
 
     返回:
-        字段结构不变且组合预算 message 可被 Markdown 完整展示的字典。
+        包含 location、problem、evidence、guidance 的 v3 finding 字典。
     """
 
-    # 标准模型先生成 path、line、message、evidence 和 severity 固定字段。
-    dict_finding = obj_finding.to_dict()  # 当前 finding 的 schema-v2 字典
+    # emitter 可为同一规则提供 BLOCKER/WARNING 两类证据，缺省才继承 catalog 等级。
+    str_severity = str(obj_finding.severity or dict_rule.get("level") or "WARNING")  # 当前 finding 严重等级
 
-    # 普通 VG 规则继续保持既有 message 文本和 evidence 分离合同。
-    if str(dict_rule["gate_id"]) not in COMB_OPERATION_GATES or not obj_finding.evidence:
+    # 绑定真实 gate_id/rule_key，替换旧 emitter 的 VG000 占位。
+    vg_finding_obj_bound: VgFinding = obj_finding.with_rule_context(  # 已绑定 catalog 规则上下文的 finding
+        rule_id=str(dict_rule["gate_id"]),  # 当前 catalog 的固定规则编号
+        rule_key=str(dict_rule["rule_key"]),  # 当前 catalog 的稳定机器键
+        severity=str_severity,  # 当前 finding 或 catalog 治理等级
+        status=status,  # 当前执行状态用于状态义务校验
+    )  # 真实规则上下文的 finding
 
-        # 未变化的 finding 字典直接进入公开结果。
-        return dict_finding
+    # to_dict 输出 flat v3 字段，evidence 不再污染 message。
+    return vg_finding_obj_bound.to_dict()
 
-    # 既有 Markdown writer 只读取 message，因此镜像同一层次 evidence 文本。
-    dict_finding["message"] = f"{obj_finding.message} Evidence: {obj_finding.evidence}"  # Markdown 可见组合证据
+# _missing_finding 把适用但缺少坐标的状态转成项目级可执行诊断。
+def _missing_finding(
+    dict_rule: dict[str, Any],
+    evaluation: VgEvaluation,
+) -> VgFinding:
+    """为没有 emitter finding 的 fail-closed 状态保留真实原因。
 
-    # evidence 字段继续作为机器读取的权威结构化字符串。
-    return dict_finding
+    参数:
+        dict_rule: 当前固定 VG 规则的 catalog 元数据。
+        evaluation: 当前规则返回的非通过状态和原因。
+    返回:
+        不伪造文件或行号、但包含修复指导的项目级 finding。
+    """
+
+    # 空 message 也必须有可读问题正文，避免 Agent 只看到状态码。
+    str_problem = str(evaluation.message or "").strip() or (  # 当前规则的状态原因
+        f"{dict_rule['gate_id']} ({dict_rule['rule_key']}) 返回了 {evaluation.status} 状态，"
+        "但没有提供可验证的源码级证据。"
+    )
+
+    # evidence 明确说明坐标缺失的事实边界，禁止下游误解为精确行证据。
+    str_evidence = (
+        f"gate_id={dict_rule['gate_id']}; rule_key={dict_rule['rule_key']}; "
+        f"status={evaluation.status}; applicable={evaluation.applicable}; "
+        f"reason={str_problem}"
+    )  # 项目级状态证据
+
+    # 复用统一旧 finding 转换器补齐 guidance、风险和 bad/good 示例。
+    return VgFinding(
+        path=None,  # 当前 emitter 未提供可信文件路径
+        line=None,  # 当前 emitter 未提供可信源码行
+        message=str_problem,  # 保留规则真实状态原因
+        evidence=str_evidence,  # 记录缺少坐标的可审计边界
+        severity=str(dict_rule.get("level") or "WARNING"),  # 继承 catalog 等级
+        diagnostic=build_legacy_diagnostic(
+            {
+                "rule_id": str(dict_rule["gate_id"]),
+                "rule_key": str(dict_rule["rule_key"]),
+                "severity": str(dict_rule.get("level") or "WARNING"),
+                "message": str_problem,
+                "evidence": str_evidence,
+                "status": evaluation.status,
+            }
+        ),
+    )
 
 # _result_dict 集中定义单条 VG 结果的公开字段。
 def _result_dict(dict_rule: dict[str, Any], evaluation: VgEvaluation) -> dict[str, Any]:
@@ -566,21 +756,33 @@ def _result_dict(dict_rule: dict[str, Any], evaluation: VgEvaluation) -> dict[st
         evaluation: 对应规则实现生成的执行结论。
     返回:
         可序列化的单条 VG 公开结果。
+    异常:
+        VgDiagnosticContractError: 非通过且适用的规则缺失可执行 finding。
     """
 
     # 组合预算结果在公开序列化前执行最后一道确定性 finding 排序。
     tuple_findings = _ordered_findings(dict_rule, evaluation)  # 当前规则公开输出顺序的 finding 集合
 
+    # 失败、无法判断和解析错误必须携带至少一条可执行诊断。
+    if evaluation.applicable and evaluation.status in {"failed", "inconclusive", "error"} and not tuple_findings:
+
+        # 坐标未知时保留项目级状态证据，不伪造文件或 line=1。
+        tuple_findings = (_missing_finding(dict_rule, evaluation),)  # 为无源码坐标状态补充项目级可执行证据
+
     # 所有字段在此集中映射，避免各规则模块形成报告漂移。
     return {
         "gate_id": dict_rule["gate_id"],
+        "rule_id": dict_rule["gate_id"],
         "rule_key": dict_rule["rule_key"],
         "level": dict_rule["level"],
         "catalog_status": dict_rule["status"],
         "status": evaluation.status,
         "applicable": evaluation.applicable,
         "message": evaluation.message,
-        "findings": [_public_finding_dict(dict_rule, obj_finding) for obj_finding in tuple_findings],
+        "findings": [
+            _public_finding_dict(dict_rule, obj_finding, evaluation.status)
+            for obj_finding in tuple_findings
+        ],
     }
 
 # _summarize_results 同时统计目录状态和执行状态。

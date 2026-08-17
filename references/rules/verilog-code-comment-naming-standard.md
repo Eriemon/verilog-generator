@@ -14,6 +14,8 @@
 - `VG144`：FSM 必须严格使用三个独立过程；下一状态必须在组合过程内用阻塞赋值 `=` 计算，严禁 `assign state_next = ...`。
 - `VG145`：连续赋值与组合 `always` 共用完整 module 局部依赖锥，展开后的运行时来源最多三个；搬入组合 `always` 不能规避。只有输出端口直接连接时序驱动 `_o` `reg` 的单信号 bridge 可豁免。
 - `VG146`/`VG147`：每个静态目标在完整 source closure 中最多使用目录配置的操作数；formatter 结构化端口关联、参数特化、definition root 与完整 instance path 决定独立硬件身份。已知 child output 会递归展开，inout 保持 resolved boundary，多驱动 wire/tri 合并全部已知驱动，寄存器 Q 是切点而 D 输入仍检查。`loop_presence=unknown` 时两条 gate 共享下界证据并同时 fail 或 inconclusive。优先用流水寄存、注册预译码或多周期 FSM 降低组合链路。
+- `VG156`、`VG158`：覆盖 module、function 与 task 中变量声明的数字 token 白名单和功能型命名主体；不检查 module/instance/function/task 名称、位宽、常量、索引或 generate label。
+- `VG157`：覆盖普通注释中的版本字样；仅 formatter 识别并剥离的固定双语文件头与修订历史范围豁免。
 - `VG031`、`VG052`、`VG061`：覆盖固定区域 banner、output bridge 所属区域、参数/声明/过程块/实例的区域归属。
 - `VG040`、`VG041`、`VG055`、`VG056`、`VG060`、`VG066`、`VG150`：覆盖中文优先注释、占位注释、同线注释覆盖、尾随注释对齐、重复/近似重复注释，以及流程证据词和结构化无关尾串。
 - `VG063`：覆盖过程块、实例以及 `case(state_current)` 下 `ST_*:begin`、`default:begin` 的前导纯注释贴邻、左对齐和空行布局。
@@ -121,6 +123,7 @@
 - 模块名、功能摘要、设计说明路径、仿真路径等属于 header 字段，不要在 `module` 前另写零散说明注释。
 - 注释增强流水线中，文件开头/模块前的自由注释不算有效 RTL 注释增量，因为 header 可能被重建并丢弃。
 - 普通 RTL 注释必须贴近 port、parameter、signal、assign、always、generate、function/task 等结构。
+- 普通 RTL 注释禁止出现 `vN`、`vN.N`、`verN`、`versionN`、`version N`、`版本N`、`版本 N` 等版本字样，匹配不区分大小写。需要记录版本时只能写入 formatter 识别的固定双语 header/revision-history 范围。
 
 ---
 
@@ -274,6 +277,9 @@ module module_name
 - 禁止重复前缀：`i_i_data`、`C_C_DATA_WIDTH`、`ST_ST_IDLE`、`reg_reg_data`、`cnt_cnt_pixel`、`flag_flag_done`、`enc_enc_addr`、`dec_dec_sel`、`state_state_current` 等必须去重。
 - legacy 端口尾缀 `_i`/`_o` 会被剥离后转换为标准方向前缀。例如 `start_i` -> `i_start`，`done_o` -> `o_done` 或内部 `done_o`。
 - 不要依赖缩写造成歧义；保持语义可读。
+- 变量声明名称按 `_` 切分后，任何含数字 token 都必须完整命中受管白名单：`i2c`、`axi4`、`axi4lite`、`crc8/16/32/64`、`ddr2/3/4/5`、`pcie3/4/5`、`sfp28`、`ad9361`、`sha1/2/256`、`md5`、`10g/25g/40g/100g`。`v1`、`v2`、`w0`、独立 `1/2/3` 等序号式 token 禁止交付。
+- 变量声明必须使用功能型名称。重复剥离 `i_`、`o_`、`io_`、`C_`、`ST_`、`reg_`、`cnt_`、`state_`、`flag_`、`enc_`、`dec_` 和 `_o` 后，至少保留一个不属于占位/泛化词表的 token。未知领域词默认有效；`data` 有效，`tmp`、`dummy`、`signal` 等纯泛化主体无效。
+- `data_1` 在功能语义上包含 `data`，因此通过 `VG158`，但数字 token `1` 不在白名单中，因此仍由 `VG156` 阻断；两条规则职责不重叠也不互相豁免。
 
 ### 6.2 端口命名
 
@@ -434,6 +440,9 @@ formatter 默认启用 `enforce_region_order = true`。综合 `defaults.json`、
 
 - 参数区：module parameter 与部分 top-level localparam 会被合并/排序；state parameter 单独进入状态参数区。
 - 信号区：按命名/用途归类。`cnt_` 进入计数信号，`state_` 进入状态机信号，`reg_` 进入寄存器信号，`flag_` 进入标志信号，`enc_`/`dec_` 分别进入编码/译码信号，`*_o` 进入输出信号，其余进入其他信号。
+- 单个声明同时命中多个类别时，归属判定优先级固定为：`output_internal`、`counter_signal`、`state_signal`、`flag_signal`、`encoder_signal`、`decoder_signal`、`register_signal`、`instance_signal`、`other_signal`。这是“唯一归属”的冲突消解优先级，不改变 7.1 声明的区域展示顺序。
+- 区域 banner 与首个非空分组注释之间零空行，分组注释与该组首条声明之间零空行；同一区域内上一组声明与下一组注释之间恰好一行空行。禁止输出空分组，每个非空区域结束后恰好保留一行空行。
+- formatter 必须在第一次输出后收敛；第二次格式化的字节必须与第一次输出完全相同。
 - 连线区：非 output bridge 进入其他信号连线，output port 连接进入输出信号连线。
 - always 区：输出内部信号目标进入输出信号处理区域，状态寄存器/next-state 进入状态机区域，引用 state 的任务处理进入状态任务处理区域，其他进入主要任务处理区域。
 - 常规情况下实例化位于模块尾部；若存在 `参数检查区域`，则实例化区域位于其前，`参数检查区域` 作为最终内部区域收尾。
@@ -743,6 +752,12 @@ assign o_done = done_o;                     // 输出完成标志
 - always、initial、generate、function/task 和实例前导注释必须说明当前块或实例的作用，不能用“数据处理逻辑”“模块逻辑”等套话复用。
 - 交付门禁会在去除装饰符、编号、标识符噪声、零宽字符和占位外壳后检测精确重复与近似重复；命中 `VG066` 时 strict 模式阻断，非 strict 模式降为 warning。
 - 对同一类信号可以保持相似的句式，但必须说明不同方向、来源、目标、时序条件、协议通道或取值语义；只改 `01/02`、`A/B`、信号名或前后缀不算有效差异。
+
+#### VG157 普通注释版本字样
+
+- `VG157` 使用 formatter AST 暴露的词法注释事实，字符串字面量中的 `//` 或 `/* */` 标记不作为注释。
+- 普通行注释、尾随注释、区域/分组注释和块注释都不得出现版本标记；匹配不区分大小写，并使用标识符边界避免把 `valid`、`axi4` 等功能词误判为版本。
+- 唯一豁免是 formatter 明确认出的固定双语文件头和修订历史范围。仅仅位于文件开头、长得像 header，或由用户自由书写，都不能扩大豁免范围。
 
 #### VG150 注释语义完整性
 

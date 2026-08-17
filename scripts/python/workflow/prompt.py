@@ -1162,6 +1162,16 @@ def _rtl_style_rules(dict_spec: dict[str, Any], str_comment_language: str) -> li
         ),
         "Do not duplicate signal prefixes.",
         (
+            "Before emitting a declaration, split its name on `_`. Reject any token containing a digit "
+            "unless the complete token is one governed functional identity: i2c, axi4, axi4lite, "
+            "crc8/16/32/64, ddr2/3/4/5, pcie3/4/5, sfp28, ad9361, sha1/2/256, md5, or 10g/25g/40g/100g."
+        ),
+        (
+            "Every declared variable must have a functional name after repeatedly removing the governed "
+            "direction/type prefixes and `_o`; never use a body made only of tmp, dummy, placeholder, "
+            "signal, variable, wire, reg, logic, net, or another configured meaningless token."
+        ),
+        (
             "When an FSM is present, use explicit `state_current` and `state_next` registers, "
             "`ST_*` localparams for every encoded state, and pure leading comments above each "
             "`ST_*:begin` and `default:begin` branch."
@@ -1204,6 +1214,14 @@ def _rtl_style_rules(dict_spec: dict[str, Any], str_comment_language: str) -> li
             "between adjacent groups."
         ),
         (
+            "Place the first group comment directly below its region banner, place its first statement "
+            "directly below the comment, and leave exactly one blank line before each later group comment."
+        ),
+        (
+            "Do not emit empty groups. End every non-empty region with exactly one blank line and require "
+            "the second formatter pass to be byte-identical to the first."
+        ),
+        (
             "`输出信号`, `输出信号连线`, and `输出信号处理区域` must mirror the module interface "
             "group labels and output signal order exactly."
         ),
@@ -1211,6 +1229,10 @@ def _rtl_style_rules(dict_spec: dict[str, Any], str_comment_language: str) -> li
         (
             "Preserve a header that includes version/revision/history fields, including version, "
             "revision date, and revision history, in both the English and Chinese sections."
+        ),
+        (
+            "Never write vN, verN, version N, or 版本 N markers in ordinary comments. Version text is "
+            "allowed only inside the formatter-recognized fixed bilingual header and revision history."
         ),
         "For AXI/AXIS/APB/AHB interfaces, group ports by channel and role with nearby comments.",
         "If an FSM is present, implement a three-block state machine that matches the template exactly.",
@@ -1742,8 +1764,7 @@ def _artifact_context(
             # str_text 读取文本并容忍编码错误，避免单个 artifact 阻断 prompt。
             str_text = path_artifact.read_text(encoding="utf-8", errors="ignore")  # 上游 artifact 文本
 
-            # list_files 记录 path、kind 和裁剪后的正文。
-            # dict_file_summary 是 prompt 可见的单个上游 artifact 摘要。
+            # dict_file_summary 记录 prompt 可见的 path、kind 和裁剪正文。
             dict_file_summary = {
                 "path": dict_entry["path"],  # manifest 中声明的相对路径
                 "kind": dict_entry.get("kind"),  # 上游文件用途

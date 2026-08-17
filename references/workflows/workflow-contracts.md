@@ -102,11 +102,15 @@ The workflow does not enter prompt-driven code generation until the confirmed re
 
 `run_verilog_deliverable_gate(...)` returns the public delivery contract. The stable top-level fields are:
 
+- `version=3`
 - `delivery_ready`
 - `repair_required`
 - `rerun_required_after_repair`
 - `delivery_issues_by_rule`
 - `checks`
+- `findings`
+
+`findings` is the Agent-facing actionable projection. Every applicable active VG rule that is not `passed` must contribute one or more entries with `rule_id`, `status`, `severity`, a structured `location` and `evidence`, a concrete `problem`, and `guidance`. `guidance` contains the direct change instruction, ordered steps, risk, human-review obligation, and a non-empty `examples` list whose objects expose `kind`, `bad`, `good`, and `note`. Exact locations use `scope=file` with confirmed one-based `line_start`/`line_end`; unknown or aggregate locations keep `scope=file`, `scope=cross_file`, or `scope=run`, set line fields to `null`, and carry a boundary `note`.
 
 The `checks` object must contain exactly these eight public gates:
 

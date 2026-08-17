@@ -472,7 +472,7 @@ def _payload_has_strict_blocker(object_payload: Any) -> bool:
             # 任一子字段阻断即可终止扫描。
             if _payload_has_strict_blocker(object_value):
 
-                # 子 payload 已表达 blocker。
+                # 嵌套 payload 已表达 blocker。
                 return True
 
         # 当前 dict 及其子字段都没有 strict blocker。

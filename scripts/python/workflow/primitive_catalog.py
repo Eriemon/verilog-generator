@@ -96,8 +96,7 @@ def _load_primitive_catalog_cached() -> dict[str, Any]:
         # kind 错误意味着资产职责已经发生漂移。
         raise ValueError("> ERR: [Python] Xilinx primitive semantic catalog kind is invalid.")
 
-    # 每个 namespace 先做精确名称校验，再进行 profile 归一化。
-    # 校验 UNISIM 名称集合和 profile 类型。
+    # 每个 namespace 先校验 UNISIM 名称集合和 profile 类型，再进行 profile 归一化。
     _validate_namespace(dict_payload, "unisim", tuple_expected_unisim_primitives)
 
     # 校验 XPM 名称集合，保证 CDC/FIFO 清单不发生漂移。
@@ -106,8 +105,7 @@ def _load_primitive_catalog_cached() -> dict[str, Any]:
     # 校验项目 IP manifest 分类，避免把工程 IP 当成原语实现。
     _validate_namespace(dict_payload, "project_ip", tuple_expected_project_ip_categories)
 
-    # 分别保留公开 namespace，供调用方直接按名称查询。
-    # 归一化 UNISIM profile，使其端口事实可供 VG097 使用。
+    # 归一化 UNISIM profile 并保留公开 namespace，使端口事实可供 VG097 和调用方查询。
     dict_unisim = _normalize_namespace(dict_payload["unisim"], "UNISIM")  # UNISIM 端口和边界事实
 
     # 把 XPM CDC/FIFO profile 归一化为层级规则可消费的边界事实。
@@ -237,8 +235,7 @@ def _normalize_profile(
     # 复制 JSON profile，避免缓存对象被写回。
     dict_result = deepcopy(dict_profile)  # 当前 profile 的可修改副本
 
-    # 身份字段由固定清单名称覆盖，防止资产内部名称与清单不一致。
-    # 先写入 profile 的可读显示名称。
+    # 用固定清单名称覆盖资产内部名称，先写入 profile 的可读显示名称。
     dict_result["name"] = str_name  # profile 对外显示名称
 
     # 再写入实例绑定使用的模块名称。
@@ -247,8 +244,7 @@ def _normalize_profile(
     # 明确 profile 的公开库来源。
     dict_result["library"] = str_library  # profile 所属公开库
 
-    # 缺省元数据只描述可信范围，不伪造工具内部实现。
-    # family 供报告按器件族聚合原语来源。
+    # 缺省元数据只描述可信范围，并用 family 供报告按器件族聚合原语来源。
     dict_result["family"] = str(dict_result.get("family") or "unknown")  # profile 器件族来源
 
     # support_level 表明规则最多能信任到哪一层语义。
@@ -333,8 +329,7 @@ def _normalize_port(str_name: str, value: Any) -> dict[str, Any]:
         ValueError: 端口对象或其字段类型不符合 Verilog 合同。
     """
 
-    # 端口必须是对象，禁止用字符串猜测方向。
-    # 端口对象校验失败时阻断当前原语 profile。
+    # 端口必须是对象；对象校验失败时阻断当前原语 profile，禁止用字符串猜测方向。
     if not isinstance(value, dict):
 
         # 端口结构错误必须在目录加载阶段暴露。

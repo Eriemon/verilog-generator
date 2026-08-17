@@ -696,8 +696,7 @@ def _semantic_summary_fields(
         dict[str, Any]: semantic_ready、mismatch、drift 和定位置信度字段。
     """
 
-    # semantic_ready 优先来自 semantic gate，缺失时回退 interface gate。
-    # semantic gate 提供 mismatch、drift 和 failed case 细节。
+    # semantic_ready 优先来自 semantic gate，缺失时回退 interface gate，并保留 mismatch、drift 和 failed case 细节。
     return {
         "semantic_ready": _first_available_field(semantic_result, interface_result, "semantic_ready"),
         "mismatched_cases": _list_field(semantic_result, "mismatched_cases"),

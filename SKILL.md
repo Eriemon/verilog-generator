@@ -52,6 +52,8 @@ Generated RTL must remain synthesizable Verilog-2001. Prefer the governed interf
 
 VG151-VG155 provide module-independent structural contracts. Parameter constraints are selected automatically from the identifiers in each restricted expression; `module`, `instance`, `hierarchy`, and `scope` fields are invalid. VG152 reports large dynamically selected packed storage with a configurable positive threshold and offers structured case/FSM, inferred-memory, or vendor-memory alternatives. VG153/VG154 expose read-without-driver and unused declaration evidence, including reg/wire/function/task facts. VG155 uses explicit top-level ready-valid role facts and requires both valid and ready for a transfer consumer; no target module name is part of these contracts.
 
+Before generating or repairing declarations, apply VG156-VG158 as design-time naming and comment constraints, not only as a final audit. VG156 checks every module/function/task variable declaration by underscore token: a token containing digits is valid only when its complete case-insensitive text appears in the governed protocol/algorithm/rate allowlist. VG157 forbids ordinary-comment version markers such as `v2` or `version 3`; only the formatter-recognized fixed bilingual header and revision-history range is exempt. VG158 repeatedly removes the governed direction/type prefixes and `_o`, then requires at least one functional token outside the closed meaningless-token set; unknown domain terms pass. The formatter must assign each declaration to exactly one region using the shared conflict priority, place the first group comment directly below its banner, place later group comments after exactly one blank line, leave no empty group, keep one trailing blank line per non-empty region, and produce byte-identical output on the second pass.
+
 ## Existing RTL
 
 - `analyze_existing_verilog(...)` owns structural analysis and durable design explanation.
@@ -93,7 +95,9 @@ The first outer command group is the generated-deliverable gate:
 python -m scripts.python.validation.generated_deliverable_gate <rtl-file-or-dir> --json <report.json> --markdown <report.md>
 ```
 
-When `--markdown` is omitted, Markdown is written to `reports/readable/deliverable_gate.md` under the caller's current working directory. Runtime reports must never be written back to the source or installed skill root.
+When either report option is omitted, the CLI writes both reports under the caller's current working directory: `reports/readable/deliverable_gate.json` and `reports/readable/deliverable_gate.md`. The focused quality CLI follows the same policy with `quality_gate.json` and `quality_gate.md`. Supplying one explicit path only overrides that format; JSON and Markdown paths must resolve to different files. Runtime reports must never be written back to the source or installed skill root.
+
+Both CLIs publish v3 reports and print compact `[Python]` finding lines containing the VG rule, status, confirmed location, concrete problem, and direct fix instruction. The JSON and Markdown files contain the full evidence, ordered repair steps, risk and human-review obligation, plus bad/good examples. Exit code `1` means the gate found RTL issues; exit code `2` means invocation, diagnostic-contract, or report-publication failure.
 
 The second outer command group is package validation:
 

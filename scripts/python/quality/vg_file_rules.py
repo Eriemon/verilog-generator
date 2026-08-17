@@ -277,7 +277,7 @@ def evaluate_file_gate(gate_id: str, files: tuple[VgFileFacts, ...]) -> VgEvalua
         tuple_findings = tuple(  # 每个不可读文件对应一个稳定错误 finding
             VgFinding(  # 构造统一模型可消费的错误证据
                 path=file_fact.path,  # 失败文件的公开路径
-                line=1,  # 文件级错误固定定位首行
+                line=None,  # 读取失败没有可验证的源码行，保留文件级定位
                 message="文件无法读取，命名与角色预检未完成。",  # 稳定错误说明
                 evidence=file_fact.read_error or "读取失败",  # 不泄露绝对路径的证据
             )
@@ -1221,7 +1221,7 @@ def _evaluate_vg148(files: tuple[VgFileFacts, ...]) -> VgEvaluation:
         list_findings.append(
             VgFinding(
                 path=file_fact.path,
-                line=1,
+                line=None,
                 message="文件名末尾包含版本号或无功能含义的独立数字段。",
                 evidence=match_suffix.group("matched_suffix"),
                 metadata=(
@@ -1269,7 +1269,7 @@ def _evaluate_vg149(files: tuple[VgFileFacts, ...]) -> VgEvaluation:
             list_ambiguous_findings.append(
                 VgFinding(
                     path=file_fact.path,  # 待确认文件的公开路径
-                    line=1,  # 文件角色事实固定定位首行
+                    line=None,  # 角色事实没有单一源码行，保留文件级定位
                     message="文件内容疑似 testbench，需要用户二次确认。",  # 面向宿主的询问原因
                     evidence=",".join(file_fact.role_evidence),  # 命中的不同证据组
                     metadata=(  # 宿主二次确认所需的结构化上下文
@@ -1315,7 +1315,7 @@ def _evaluate_vg149(files: tuple[VgFileFacts, ...]) -> VgEvaluation:
         list_findings.append(
             VgFinding(
                 path=file_fact.path,
-                line=1,
+                line=None,
                 message="测试平台文件必须使用非空 tb_<功能名> 命名。",
                 evidence=str_stem,
                 metadata=(

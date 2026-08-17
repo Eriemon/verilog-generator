@@ -1,20 +1,58 @@
 {
-  "version": 7,
+  "version": 9,
   "name": "verilog_quality_gate_catalog",
   "description": "Unified VG catalog for readable Verilog RTL generation, review, and semantic validation.",
-  "total_rules": 133,
-  "active_rules": 133,
+  "total_rules": 136,
+  "active_rules": 136,
   "reserved_rules": 0,
   "status_counts": {
-    "active": 133
+    "active": 136
   },
   "active_level_counts": {
-    "BLOCKER": 61,
+    "BLOCKER": 64,
     "WARNING": 72
   },
   "policy": {
     "active": "Every catalog rule executes through the unified Verilog quality gate.",
     "strict": "Any non-pass BLOCKER blocks delivery; WARNING findings also block strict delivery."
+  },
+  "diagnostic_contract": {
+    "report_version": 3,
+    "contract_version": 1,
+    "finding_fields": [
+      "rule_id",
+      "status",
+      "severity",
+      "location",
+      "problem",
+      "evidence",
+      "guidance"
+    ],
+    "location_scopes": [
+      "source",
+      "file",
+      "cross_file",
+      "project"
+    ],
+    "statuses": [
+      "failed",
+      "inconclusive",
+      "error",
+      "not_run"
+    ],
+    "risk_levels": [
+      "low",
+      "medium",
+      "high",
+      "critical"
+    ],
+    "example_kinds": [
+      "verilog",
+      "pseudocode",
+      "configuration",
+      "none"
+    ],
+    "status_obligation": "Every applicable active non-passed rule must emit at least one actionable finding; passed rules emit no finding."
   },
   "config": {
     "max_combinational_operations_per_target": 3,
@@ -1084,6 +1122,30 @@
       "status": "active",
       "topic": "接口握手",
       "summary": "可确认的 ready-valid 通道消费行为必须同时受同一通道 valid 与 ready 控制，角色来自接口事实而非固定模块或目标名称。"
+    },
+    {
+      "gate_id": "VG156",
+      "rule_key": "naming.declaration_digit_tokens",
+      "level": "BLOCKER",
+      "status": "active",
+      "topic": "变量命名",
+      "summary": "变量声明名称按下划线切分后，任何含数字 token 必须完整命中受管协议、算法或速率白名单；v1、v2、w0、1、2 等序号式 token 禁止交付。"
+    },
+    {
+      "gate_id": "VG157",
+      "rule_key": "comments.version_markers",
+      "level": "BLOCKER",
+      "status": "active",
+      "topic": "注释",
+      "summary": "普通 RTL 注释不得出现 vN、verN、version N 或版本 N 等版本字样；仅 formatter 识别的固定双语文件头与修订历史范围豁免。"
+    },
+    {
+      "gate_id": "VG158",
+      "rule_key": "naming.functional_declaration",
+      "level": "BLOCKER",
+      "status": "active",
+      "topic": "变量命名",
+      "summary": "变量声明名称重复剥离受管前缀和 _o 后缀后，必须至少保留一个非占位、非泛化的功能词；未知领域术语默认视为有效。"
     }
   ]
 }

@@ -20,6 +20,9 @@ from .quality_gate_types import (
     QualityIssue,
 )
 
+# v3 诊断适配器保证原生与语义规则使用相同 finding 合同。
+from .vg_diagnostics import VgDiagnosticContractError, diagnostic_from_mapping
+
 # 其余上下文类型继续保留旧导入面，避免调用方改路径。
 from .quality_gate_types import (
     CommentReuseCandidate,
@@ -341,23 +344,22 @@ def _native_vg_rule_results(
         # 当前规则只消费与其固定编号相同的原生诊断。
         list_rule_issues = dict_issues_by_code.get(str_gate_id, [])  # 当前规则全部诊断
 
+        # 无源码时规则保持 not_run，避免把“没有输入”伪装成 passed。
+        str_status = "failed" if list_rule_issues else ("not_run" if not bool_has_sources else "passed")  # 当前规则执行状态
+
         # 公开模型始终保留规则元数据、状态和逐项证据。
         list_results.append(
             {
                 "gate_id": str_gate_id,
+                "rule_id": str_gate_id,
                 "rule_key": dict_rule["rule_key"],
                 "level": dict_rule["level"],
                 "catalog_status": "active",
-                "status": "failed" if list_rule_issues else "passed",
+                "status": str_status,
                 "applicable": bool_has_sources,
                 "message": "" if bool_has_sources else "No Verilog source was discovered.",
                 "findings": [
-                    {
-                        "path": quality_issue.path or "",
-                        "line": quality_issue.line or 1,
-                        "message": quality_issue.message,
-                        "evidence": quality_issue.rule or "",
-                    }
+                    _native_issue_finding(dict_rule, quality_issue)
                     for quality_issue in list_rule_issues
                 ],
             }
@@ -365,6 +367,49 @@ def _native_vg_rule_results(
 
     # 返回值保持 catalog 的稳定顺序。
     return list_results
+
+# _native_issue_finding 让历史 QualityIssue 进入统一 v3 finding 合同。
+def _native_issue_finding(
+    dict_rule: dict[str, Any],
+    quality_issue: QualityIssue,
+) -> dict[str, Any]:
+    """绑定原生 issue 的 catalog 上下文并保留真实坐标。
+
+    参数:
+        dict_rule: 当前 catalog 规则元数据。
+        quality_issue: 原生质量门已经生成的 issue。
+    返回:
+        可执行的 v3 finding 字典。
+    异常:
+        VgDiagnosticContractError: 原生 issue 未生成完整 v3 诊断。
+    """
+
+    # QualityIssue 已在构造阶段生成兼容 v3 诊断。
+    dict_issue = quality_issue.to_dict()  # 原生 issue 的 v3/legacy 兼容字典
+
+    # non-strict warning 需要保留 finding 级 WARNING，不被 BLOCKER catalog 覆盖。
+    str_finding_severity = "WARNING" if quality_issue.severity == "warning" else str(dict_rule["level"])  # 原生 finding 的公开治理等级
+
+    # 重新绑定 catalog 规则编号和机器键，避免 legacy 占位污染公开结果。
+    dict_finding = {  # 原生 finding 的稳定 v3 字段集合
+        "rule_id": str(dict_rule["gate_id"]),  # catalog 固定规则编号
+        "rule_key": str(dict_rule["rule_key"]),  # catalog 稳定机器键
+        "severity": str_finding_severity,  # 保留 non-strict warning 与 catalog blocker 的区别
+        "location": dict_issue["location"],  # 真实路径和可选行号
+        "problem": dict_issue["problem"],  # 原生 issue 问题正文
+        "evidence": dict_issue["evidence"],  # 原生 issue 观察事实
+        "guidance": dict_issue["guidance"],  # 兼容适配生成的修改指导
+        "status": "failed",  # 原生 issue 已经阻断当前规则
+        "code": str(dict_rule["gate_id"]),  # 兼容规则编号别名
+        "path": dict_issue.get("path"),  # 兼容文件路径别名
+        "line": dict_issue.get("line"),  # 兼容真实行号别名
+        "message": dict_issue["message"],  # 兼容问题文本别名
+        "rule": dict_rule["rule_key"],  # 兼容机器规则键别名
+        "metadata": dict(dict_issue.get("metadata") or {}),  # 兼容扩展元数据
+    }
+
+    # 写入逐规则结果前再次校验完整字段契约。
+    return diagnostic_from_mapping(dict_finding)
 
 # _append_semantic_issues 让语义结果参与统一 errors/warnings 判定。
 def _append_semantic_issues(
@@ -381,6 +426,8 @@ def _append_semantic_issues(
         strict: 是否把 WARNING 级非通过结果升级为 error。
     返回:
         无；诊断直接追加到 ``list_issues``。
+    异常:
+        VgDiagnosticContractError: 语义规则缺失可执行 finding 或字段不完整。
     """
 
     # 每条未通过结果按 finding 粒度映射为统一诊断。
@@ -392,20 +439,25 @@ def _append_semantic_issues(
             # 继续处理其他语义规则。
             continue
 
-        # 没有定位证据时仍生成规则级 fail-closed 诊断。
-        list_findings = list(dict_result["findings"]) or [  # 当前规则的定位证据或规则级回退
-            {
-                "path": None,  # 规则级回退没有文件位置
-                "line": None,  # 规则级回退没有源码行号
-                "message": dict_result["message"] or "VG semantic rule did not pass.",  # 非通过原因
-            }
-        ]
+        # 非通过且适用的规则必须由语义 emitter 提供 actionable finding。
+        list_findings = list(dict_result["findings"])  # 当前规则的结构化定位证据
+
+        # 缺失 finding 属于规则实现合同错误，禁止回退泛化行号。
+        if dict_result["applicable"] and not list_findings:
+
+            # 质量门 facade 不能替规则 emitter 发明 problem/evidence。
+            raise VgDiagnosticContractError(
+                "> ERR: [Python] semantic rule returned no actionable finding."
+            )
 
         # 每个 finding 独立保留路径、行号和规则键。
         for dict_finding in list_findings:
 
+            # finding 必须已经满足 v3 字段合同，禁止只消费旧 message。
+            dict_diagnostic = diagnostic_from_mapping(dict_finding)  # 通过契约校验的 v3 finding
+
             # finding 可覆盖 catalog 的默认治理等级。
-            str_finding_level = str(dict_finding.get("severity") or dict_result["level"])  # finding 级或目录级治理等级
+            str_finding_level = str(dict_diagnostic.get("severity") or dict_result["level"])  # finding 级或目录级治理等级
 
             # strict 模式把 WARNING 非通过状态统一升级为 error。
             str_severity = "error" if str_finding_level == "BLOCKER" or strict else "warning"  # 当前阻断策略
@@ -415,10 +467,11 @@ def _append_semantic_issues(
                 QualityIssue(
                     str(dict_result["gate_id"]),
                     str_severity,
-                    str(dict_finding["message"]),
-                    dict_finding.get("path"),
-                    dict_finding.get("line"),
+                    str(dict_diagnostic["problem"]),
+                    dict_diagnostic["location"].get("file"),
+                    dict_diagnostic["location"].get("line_start"),
                     str(dict_result["rule_key"]),
+                    vg_diagnostic=dict_diagnostic,
                 )
             )
 

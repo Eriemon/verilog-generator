@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "catalog_version": 6,
+  "catalog_version": 9,
   "description": "Self-contained three-way fixture routing for every active VG semantic gate.",
   "fixtures": {
     "canonical_clean": "module dut (\n    input wire clk,\n    input wire [3:0] a,\n    output reg y\n);\nalways @(posedge clk) begin\n    y <= a[0];\nend\nendmodule\n",
@@ -108,7 +108,13 @@
     "vg147_three_iterations": "module dut\n(\n    input wire [2:0] data,\n    output reg parity\n);\ninteger i;\nalways @(*) begin\n    parity = 1'b0;\n    for (i = 0; i < 3; i = i + 1) begin\n        parity = parity ^ data[i];\n    end\nend\nendmodule\n",
     "vg147_four_iterations": "module dut\n(\n    input wire [3:0] data,\n    output reg parity\n);\ninteger i;\nalways @(*) begin\n    parity = 1'b0;\n    for (i = 0; i < 4; i = i + 1) begin\n        parity = parity ^ data[i];\n    end\nend\nendmodule\n",
     "vg147_unknown_iterations": "module dut\n#(\n    parameter C_COUNT = 3\n)\n(\n    input wire [3:0] data,\n    output reg parity\n);\ninteger i;\nalways @(*) begin\n    parity = 1'b0;\n    for (i = 0; i < C_COUNT; i = i + 1) begin\n        parity = parity ^ data[i];\n    end\nend\nendmodule\n",
-    "vg150_workflow_evidence": "module dut (\n    input wire clk,\n    input wire d,\n    output reg q\n);\n// 图谱审核证据\nalways @(posedge clk) begin\n    q <= d;\nend\nendmodule\n"
+    "vg150_workflow_evidence": "module dut (\n    input wire clk,\n    input wire d,\n    output reg q\n);\n// 图谱审核证据\nalways @(posedge clk) begin\n    q <= d;\nend\nendmodule\n",
+    "vg156_protocol_digit_allow": "module dut (\n    input wire axi4_data,\n    output wire data\n);\nassign data = axi4_data;\nendmodule\n",
+    "vg156_numeric_token_reject": "module dut (\n    input wire data_1,\n    output wire data\n);\nassign data = data_1;\nendmodule\n",
+    "vg157_comment_clean": "module dut (\n    input wire data,\n    output wire result\n);\n// 数据直通逻辑\nassign result = data;\nendmodule\n",
+    "vg157_comment_version_reject": "module dut (\n    input wire data,\n    output wire result\n);\n// version 2 数据直通逻辑\nassign result = data;\nendmodule\n",
+    "vg158_functional_name_allow": "module dut (\n    input wire data,\n    output wire result\n);\nassign result = data;\nendmodule\n",
+    "vg158_meaningless_name_reject": "module dut (\n    input wire data,\n    output wire result\n);\nwire tmp;\nassign tmp = data;\nassign result = tmp;\nendmodule\n"
   },
   "shared_fixtures": {
     "positive": "canonical_clean",
@@ -1179,6 +1185,24 @@
     "VG150": {
       "positive": "canonical_clean",
       "negative": "vg150_workflow_evidence",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "VG156": {
+      "positive": "vg156_protocol_digit_allow",
+      "negative": "vg156_numeric_token_reject",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "VG157": {
+      "positive": "vg157_comment_clean",
+      "negative": "vg157_comment_version_reject",
+      "inconclusive": "formatter_parse_error",
+      "allowed_overlaps": []
+    },
+    "VG158": {
+      "positive": "vg158_functional_name_allow",
+      "negative": "vg158_meaningless_name_reject",
       "inconclusive": "formatter_parse_error",
       "allowed_overlaps": []
     }

@@ -283,11 +283,9 @@ def _structured_comment_item_issues(
             _missing_structured_comment_issue(structured_context)
         ]
 
-    # fallback、空洞中文和语言策略按优先级检查。
     # 深度诊断覆盖 fallback、空洞中文和语言策略三类语义问题。
     list_issues.extend(_structured_comment_depth_issues(str_comment, structured_context))
 
-    # 泛化占位注释单独登记 warning。
     # 泛化诊断单独保留 warning 语义，不和缺失注释合并。
     list_issues.extend(_generic_structured_comment_issues(str_comment, structured_context))
 

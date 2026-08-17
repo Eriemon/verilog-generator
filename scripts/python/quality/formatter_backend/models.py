@@ -525,7 +525,26 @@ class FunctionFormalFact:
     width_text: str  # formal 位宽文本
 
     # 声明位置用于后续将 formal 诊断回贴源码。
-    span: SourceSpan  # 函数形参声明行列区间
+    span: SourceSpan | None  # 函数形参声明行列区间；报告层补齐前保持为空
+
+    # 相对 function 起点的行偏移用于报告层回贴真实源码位置。
+    line_offset: int = 0  # formal 声明相对行号
+
+@dataclass(frozen=True)
+class SubprogramDeclarationFact:
+    """保存 function/task 内部变量声明的最小公共事实。"""
+
+    # name 是命名门禁实际检查的局部变量标识符。
+    name: str  # 子程序局部变量名
+
+    # kind 保留 reg、wire、integer 等声明类型。
+    kind: str  # 子程序局部声明类型
+
+    # line_offset 由 block parser 按原始行顺序给出。
+    line_offset: int  # 相对子程序起始行偏移
+
+    # span 在报告层回贴完成前保持为空，禁止制造 line=1 证据。
+    span: SourceSpan | None = None  # 子程序局部声明真实位置
 
 # 函数定义事实由唯一 formatter function block parser 产生。
 @dataclass(frozen=True)
@@ -544,14 +563,39 @@ class FunctionDefinitionFact:
     # 函数体表达式保存 formatter 分离出的返回赋值事实。
     body_expressions: tuple[dict[str, object], ...]  # 函数体表达式事实
 
+    # 局部声明覆盖 function 内部 reg、wire、integer 等变量。
+    local_declarations: tuple[SubprogramDeclarationFact, ...]  # function 局部变量声明
+
     # 定义范围覆盖 function 到 endfunction。
-    span: SourceSpan  # function 定义源位置
+    span: SourceSpan | None  # function 定义源位置；报告层补齐前保持为空
 
     # 完整标志决定函数体是否可以进入跨层 tracing。
     parse_complete: bool  # function 定义是否完整
 
     # 递归或不支持声明只在当前 function 内标记。
     unsupported_reason: str = ""  # 函数定义无法完整展开的局部原因
+
+@dataclass(frozen=True)
+class TaskDefinitionFact:
+    """保存 formatter 解析出的 task 声明与局部变量事实。"""
+
+    # name 是 task 定义标识符，本任务不对其执行变量命名门禁。
+    name: str  # 排除在变量命名门禁之外的任务标识符
+
+    # formals 保留 input、output、inout 的源码顺序。
+    formals: tuple[FunctionFormalFact, ...]  # task 形参声明
+
+    # local_declarations 保存 task 内部变量，不含 task 名本身。
+    local_declarations: tuple[SubprogramDeclarationFact, ...]  # 纳入 VG156 和 VG158 的任务内部变量
+
+    # span 只在报告层完成真实位置回贴后公开。
+    span: SourceSpan | None  # task 定义源位置
+
+    # parse_complete 控制命名门禁是否可对该 task 给出确定结论。
+    parse_complete: bool  # task 声明事实是否完整
+
+    # unsupported_reason 解释局部解析不完整原因。
+    unsupported_reason: str = ""  # 阻止任务声明覆盖给出确定通过的 parser 原因
 
 # 函数调用事实保存 callee、位置 actual 和调用点身份。
 @dataclass(frozen=True)
@@ -678,6 +722,9 @@ class TaskBlock:
 
     # 任务前说明常描述复用过程意图，渲染时需绑定 task。
     leading_comments: list[str] = field(default_factory=list)  # task 过程说明行
+
+    # definition 由 task block parser 产生，命名门禁只消费该结构化事实。
+    definition: TaskDefinitionFact | None = None  # 结构化 task 定义事实
 
 # raw block 模型用于保留 formatter 尚未识别的 module body 片段。
 @dataclass

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 # 标准库依赖只承担文本匹配、路径和时间字段兼容。
 import re
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
@@ -51,7 +52,9 @@ from .models import (
     FunctionBlock,
     FunctionDefinitionFact,
     FunctionFormalFact,
+    SubprogramDeclarationFact,
     TaskBlock,
+    TaskDefinitionFact,
     # raw/preprocessor 模型保留无法结构化重写的 body 片段。
     RawBlock,
     PreprocessorConditional,
@@ -222,8 +225,7 @@ class ControlParseMixin(ControlNodeParseMixin):
         # always 列表保存结构化 payload，供后续分组和渲染复用。
         items["always"].append(payload)
 
-        # blocks 列表保存 body 顺序，确保 formatter 输出顺序兼容旧后端。
-        # str_block_kind 把内部 main_task 分类折回 formatter 需要的组合/时序类型。
+        # str_block_kind 在保留 body 顺序时把 main_task 折回兼容的组合或时序类型。
         str_block_kind = (  # 顺序块里区分 always_comb、always_seq 或原始 block_kind
             payload.block_kind  # 非 main_task 时沿用分析器给出的块类型
             if payload.block_kind != "main_task"  # 只有 main_task 需要兼容旧分类
@@ -349,11 +351,11 @@ class ControlParseMixin(ControlNodeParseMixin):
         # str_stripped 提供空白、行注释和块注释识别的当前行文本。
         str_stripped = list_body_lines[int_line_index].strip()  # 注释/空行预处理使用的候选文本
 
-        # 空行切断前导注释链，防止跨结构误挂。
+        # 空行只由 renderer 规范化间距，不应切断已经收集的分组注释。
         if not str_stripped:
 
-            # 空行不产生结构节点，返回清空后的前导注释状态。
-            return True, int_line_index + 1, []
+            # 保留待绑定注释；banner、未知结构和已消费结构仍负责清理边界。
+            return True, int_line_index + 1, list_pending_comments
 
         # 普通行注释在遇到非 banner 时挂到下一条结构上。
         if str_stripped.startswith("//"):
@@ -2405,12 +2407,114 @@ class ControlParseMixin(ControlNodeParseMixin):
             # int_index 推进到下一行，继续寻找 function 闭合关键字。
             int_index += 1  # function 下一候选行下标
 
-        # 未遇到 endfunction 时报告结构错误。
-        self._raise_control_parse_error(
-            "unsupported_shape",
-            lines[start].strip(),
-            "> ERR: [Python] Close each function block with endfunction before formatting.",
+        # 先复用正常定义构建器提取已观察到的名称、formal 和局部声明。
+        function_definition_observed = self._build_function_definition(list_block_lines)  # 已观察到的 function 定义成员
+
+        # 稳定原因码供 VG 层区分语法未闭合与其他局部不支持形态。
+        str_incomplete_reason = "missing_endfunction"  # function 未闭合原因码
+
+        # 替换字段集中描述不完整 function 的状态变化。
+        dict_incomplete_fields = {"parse_complete": False, "unsupported_reason": str_incomplete_reason}  # 不完整状态字段
+
+        # 未闭合 function 保留成员事实，但明确关闭完整性声明。
+        function_definition_incomplete = replace(function_definition_observed, **dict_incomplete_fields)  # 不完整 function 事实
+
+        # 返回到 body 尾部，使 AST 能报告真实 function 事实并由严格门禁 fail-closed。
+        return (
+            FunctionBlock(
+                lines=list_block_lines,
+                definition=function_definition_incomplete,
+            ),
+            len(lines),
         )
+
+    # 子程序局部声明由 function 与 task 共用同一行级解析口径。
+    def _subprogram_local_declarations(
+        self,
+        lines: list[str],
+    ) -> tuple[tuple[SubprogramDeclarationFact, ...], str]:
+        """提取 function/task 内部变量声明并返回局部不支持原因。
+
+        参数:
+            lines: 已确认闭合的 function 或 task 源码行。
+        返回:
+            按源码顺序冻结的局部声明，以及声明覆盖不完整原因。
+        """
+
+        # 声明列表保持子程序正文中的自然出现顺序。
+        list_declarations: list[SubprogramDeclarationFact] = []  # 已确认的局部变量声明
+
+        # 空原因表示当前子程序的局部声明已获得完整覆盖。
+        str_reason = ""  # 阻止命名门禁确定通过的局部 parser 原因
+
+        # 声明模式只接受 formatter 当前明确支持的单行 Verilog 声明形态。
+        pattern_declaration = re.compile(  # 子程序局部声明的完整行模式
+            r"^(?P<kind>reg|wire|logic|integer|real|time)\b\s*",  # 声明类型和间隔
+            re.IGNORECASE,  # 声明类型关键字按 Verilog 兼容口径忽略大小写
+        )
+
+        # 名称尾部模式独立校验可选 signed/range 后的分隔声明列表。
+        pattern_declaration_tail = re.compile(  # 类型之后的可选宽度和名称列表
+            r"^(?:signed\s*)?(?:\[[^\]]+\]\s*)?(?P<names>[^;]+);$",  # 声明剩余文本
+            re.IGNORECASE,  # signed 与名称尾部沿用声明类型的大小写口径
+        )
+
+        # 每行独立记录偏移，供报告层回贴文件级真实位置。
+        for int_line_offset, str_line in enumerate(lines):
+
+            # 行尾注释不属于变量声明语法。
+            str_code = str_line.split("//", 1)[0].strip()  # 当前行去除尾随注释后的代码
+
+            # 先匹配受支持声明类型，再解析其余声明文本。
+            match_kind = pattern_declaration.match(str_code)  # 当前行受支持的声明类型匹配
+
+            # 非声明行不影响局部声明覆盖。
+            if match_kind is None:
+
+                # 继续检查子程序正文中的下一行。
+                continue
+
+            # 类型之后的文本必须满足单行名称列表合同。
+            str_tail = str_code[match_kind.end():]  # 当前声明去除类型前缀后的文本
+
+            # 宽度和名称列表使用独立模式，避免重复捕获 kind。
+            match_declaration = pattern_declaration_tail.match(str_tail)  # 当前声明的名称列表匹配
+
+            # 已识别声明类型但不支持其剩余形态时必须标记覆盖不完整。
+            if match_declaration is None:
+
+                # VG156 和 VG158 对该子程序只能给出 inconclusive。
+                str_reason = "unsupported_subprogram_local_declaration"  # 当前子程序含未覆盖声明
+
+                # 继续寻找其余仍可确认的局部声明。
+                continue
+
+            # 逗号分隔的每个名称分别成为命名门禁候选。
+            for str_name_fragment in match_declaration.group("names").split(","):
+
+                # 数组维度或初始化尾部不影响首个标识符提取。
+                match_name = re.match(r"\s*(?P<name>[A-Za-z_]\w*)", str_name_fragment)  # 当前名称片段的标识符
+
+                # 无法恢复名称时保留不完整原因并跳过当前片段。
+                if match_name is None:
+
+                    # 其他可解析名称仍继续收集，确定违规优先报告。
+                    str_reason = "unsupported_subprogram_local_declaration"  # 当前名称片段无法恢复
+
+                    # 当前片段没有可信声明候选。
+                    continue
+
+                # 局部声明事实只保留名称、类型和相对子程序偏移。
+                list_declarations.append(
+                    SubprogramDeclarationFact(
+                        name=match_name.group("name"),
+                        kind=match_kind.group("kind").lower(),
+                        line_offset=int_line_offset,
+                    )
+                )
+
+        # 元组冻结声明顺序，原因字符串明确表示覆盖状态。
+        return tuple(list_declarations), str_reason
 
     # function 事实构建只消费 FunctionBlock 已收集的边界内文本。
     def _build_function_definition(self, lines: list[str]) -> FunctionDefinitionFact:
@@ -2443,7 +2547,8 @@ class ControlParseMixin(ControlNodeParseMixin):
                 formals=(),  # 无法安全绑定 formal
                 return_target="",  # 缺名称时没有隐式返回目标
                 body_expressions=(),  # 禁止从不完整声明推导函数体事实
-                span=SourceSpan(1, 1, 1, 1),  # 兼容默认函数位置
+                local_declarations=(),  # 缺少定义边界时不推导局部声明
+                span=None,  # 报告层尚无真实函数位置
                 parse_complete=False,  # 定义声明不完整
                 unsupported_reason="unsupported_function_declaration",  # 稳定局部失败原因
             )
@@ -2470,7 +2575,8 @@ class ControlParseMixin(ControlNodeParseMixin):
                         position=len(list_formals),  # formal 声明顺序位置
                         direction="input",  # Verilog function 只接受输入形参
                         width_text=match_formal.group("width").strip(),  # signed 与 range 文本
-                        span=SourceSpan(1, 1, 1, 1),  # 等待 report 层补齐位置
+                        span=None,  # 报告层回贴前不制造占位位置
+                        line_offset=str_source[: match_formal.start()].count("\n"),  # formal 相对函数起始行
                     )
                 )
 
@@ -2521,7 +2627,7 @@ class ControlParseMixin(ControlNodeParseMixin):
             list_body_expressions.append(dict_body_fact)
 
         # 函数体内调用自身形成局部递归停止原因。
-        str_reason = (  # 当前函数定义局部不完整原因
+        str_recursive_reason = (  # 当前函数定义局部不完整原因
             "recursive_function"  # 递归边禁止无限展开
             if re.search(  # 从声明头之后查找自身调用
                 rf"\b{re.escape(str_name)}\s*\(",  # 当前函数名调用形态
@@ -2529,6 +2635,14 @@ class ControlParseMixin(ControlNodeParseMixin):
             )
             else ""  # 非递归函数保持空原因
         )
+
+        # 局部变量声明只由 formatter 子程序 parser 建立一次。
+        tuple_local_declarations, str_declaration_reason = self._subprogram_local_declarations(  # function 局部声明与覆盖状态
+            lines  # 已闭合 function 的完整源码行
+        )
+
+        # 递归原因优先；否则保留局部声明无法完整识别的原因。
+        str_reason = str_recursive_reason or str_declaration_reason  # function 局部不完整原因
 
         # 返回 immutable definition 供 report 和特化层复用。
         return FunctionDefinitionFact(
@@ -2538,9 +2652,10 @@ class ControlParseMixin(ControlNodeParseMixin):
             # 返回目标和函数体事实保持 Verilog 隐式返回语义。
             return_target=str_name,  # Verilog function 隐式返回信号
             body_expressions=tuple(list_body_expressions),  # 返回赋值表达式事实
+            local_declarations=tuple_local_declarations,  # function 内部变量声明
 
             # 定义位置和完整性控制后续递归展开边界。
-            span=SourceSpan(1, 1, 1, 1),  # report 层补齐前的兼容位置
+            span=None,  # report 层回贴前不制造占位位置
             parse_complete=not bool(str_reason),  # 非递归定义可进入展开
             unsupported_reason=str_reason,  # 递归定义的局部停止原因
         )
@@ -2578,7 +2693,10 @@ class ControlParseMixin(ControlNodeParseMixin):
             if str_normalized_line.startswith("endtask"):
 
                 # payload_task 封装任务源码，保持 task 渲染入口独立。
-                payload_task = TaskBlock(lines=list_block_lines)  # 完整 task 回放模型
+                payload_task = TaskBlock(  # 完整 task 回放模型
+                    lines=list_block_lines,  # 从 task 到 endtask 的原始行
+                    definition=self._build_task_definition(list_block_lines),  # 已解析声明事实
+                )
 
                 # 返回任务模型和 endtask 后的继续扫描位置。
                 return payload_task, int_index + 1
@@ -2591,6 +2709,89 @@ class ControlParseMixin(ControlNodeParseMixin):
             "unsupported_shape",
             lines[start].strip(),
             "> ERR: [Python] Close each task block with endtask before formatting.",
+        )
+
+    # task 定义复用 function formal 模型并保留 input/output/inout 方向。
+    def _build_task_definition(self, lines: list[str]) -> TaskDefinitionFact:
+        """从已闭合 task block 构建 formal 与局部变量事实。
+
+        参数:
+            lines: formatter 已确认闭合的 task 源码行。
+        返回:
+            名称、形参、局部声明和解析状态完整的不可变 task 事实。
+        """
+
+        # 拼接文本只用于跨声明行搜索 formal，原始行列表保持不变。
+        str_source = "\n".join(lines)  # 当前 task 的完整源码文本
+
+        # task 名只能从定义首行取得，避免正文调用被误识别。
+        str_header = lines[0] if lines else ""  # 当前 task 定义头文本
+
+        # 名称模式兼容可选 automatic 修饰符。
+        match_name = re.search(  # 当前 task 定义名称匹配
+            r"\btask\b(?:\s+automatic)?\s+(?P<name>[A-Za-z_]\w*)",  # task 声明头形态
+            str_header,  # 仅搜索定义首行
+        )
+
+        # 无名称时不能继续生成形式参数或局部声明的确定证据。
+        if match_name is None:
+
+            # 显式不完整事实使命名门禁返回 inconclusive。
+            return TaskDefinitionFact(
+                name="",  # 未恢复 task 名称
+                formals=(),  # 名称失败时不公开 formal
+                local_declarations=(),  # 名称失败时不公开局部声明
+                span=None,  # 文件级范围由报告层回贴
+                parse_complete=False,  # 当前 task 声明解析不完整
+                unsupported_reason="unsupported_task_declaration",  # 名称恢复失败原因
+            )
+
+        # formal 列表保持 input、output、inout 在源码中的声明顺序。
+        list_formals: list[FunctionFormalFact] = []  # 当前 task 已确认的形式参数
+
+        # 完整 formal 模式只为符合方向、可选类型、宽度和名称合同的文本生成事实。
+        pattern_formal_full = re.compile(  # 不完整 task formal 不会进入命名门禁候选
+            r"\b(?P<direction>input|output|inout)\b\s*"  # 捕获 formal 方向
+            r"(?:reg\s+|wire\s+)?"  # 接受可选 reg 或 wire 修饰符
+            r"(?P<width>(?:signed\s*)?(?:\[[^\]]+\]\s*)?)"  # 捕获可选 signed 和位宽
+            r"(?P<names>[A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)",  # 捕获逗号分隔名称
+            re.IGNORECASE,  # 完整 formal 匹配沿用 Verilog 关键字口径
+        )
+
+        # 每个 formal 声明匹配可包含多个逗号分隔名称。
+        for match_formal in pattern_formal_full.finditer(str_source):
+
+            # 匹配前的换行数量就是 formal 相对 task 起点的行偏移。
+            int_line_offset = str_source[: match_formal.start()].count("\n")  # 当前 formal 声明相对行号
+
+            # 同一声明中的每个名称分别保存稳定 position。
+            for str_formal_name in match_formal.group("names").split(","):
+
+                # FunctionFormalFact 同时承载 function 和 task 的参数事实。
+                list_formals.append(
+                    FunctionFormalFact(
+                        name=str_formal_name.strip(),
+                        position=len(list_formals),
+                        direction=match_formal.group("direction").lower(),
+                        width_text=match_formal.group("width").strip(),
+                        span=None,
+                        line_offset=int_line_offset,
+                    )
+                )
+
+        # task 局部变量复用共享子程序声明解析器。
+        tuple_local_declarations, str_reason = self._subprogram_local_declarations(  # 任务命名门禁候选及阻断原因
+            lines  # 名称和 formal 已恢复后的任务块源码
+        )
+
+        # 返回不可变事实，真实文件范围由 AST 报告层统一回贴。
+        return TaskDefinitionFact(
+            name=match_name.group("name"),  # 当前 task 定义名称
+            formals=tuple(list_formals),  # 按源码顺序冻结的 formal
+            local_declarations=tuple_local_declarations,  # 纳入命名门禁的局部变量
+            span=None,  # 报告层回贴前不制造文件级范围
+            parse_complete=not bool(str_reason),  # 局部声明完整时才允许确定通过
+            unsupported_reason=str_reason,  # 局部声明解析不完整原因
         )
 
     # initial 块解析兼容单语句、同行 begin 和下一行 begin 三种写法。

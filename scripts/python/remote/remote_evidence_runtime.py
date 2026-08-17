@@ -568,8 +568,7 @@ def write_remote_test_evidence(
         dict_phase_payloads,  # targeted、regression、full 的真实阶段摘要
     )
 
-    # Agent 审核调用独立函数，避免总表生成器承担过多职责。
-    # 生成 outer run 根的 Agent 审核文件。
+    # 由独立函数在 outer run 根生成 Agent 审核文件，避免总表生成器承担过多职责。
     write_agent_review(
         path_smoke_root,  # 本轮 retained reports 目录
         run_id,  # Agent 审核绑定的运行槽位

@@ -324,8 +324,7 @@ def build_parser() -> argparse.ArgumentParser:
     # 返回 parser 供 main 或测试使用。
     return parser
 
-# main 编排三种入口：写工具链选择、报告 retained runs、执行远端验证。
-# _validate_fixed_remote_root 固定新验证写入根，拒绝旧目录漂移。
+# main 编排工具链选择、retained runs 报告和远端验证；_validate_fixed_remote_root 固定新验证写入根并拒绝旧目录漂移。
 def _validate_fixed_remote_root(dict_settings: dict[str, Any]) -> str:
     """校验并返回固定的远端验证根目录。
 
@@ -1068,8 +1067,7 @@ def run_remote_validation_requests(
             )
         )
 
-    # 远端执行命令包含 compile、smoke、fixture 和 readiness 验证。
-    # reports 与 workspace skill 根保持两级相对关系，避免硬编码路径散落。
+    # 远端执行命令包含 compile、smoke、fixture 和 readiness 验证，reports 与 workspace skill 根保持两级相对关系。
     str_report_root = _build_outer_run_relative_path("reports")  # outer run 的直接 reports 目录
 
     # Agent 审核文件由权威路径表命名，并与 reports 同级保留。

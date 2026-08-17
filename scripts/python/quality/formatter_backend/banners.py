@@ -8,6 +8,9 @@ from dataclasses import dataclass
 import re
 import unicodedata
 
+# 声明区域标题来自共享分类策略，防止横幅目录维护第二份枚举。
+from ..declaration_region_policy import DECLARATION_REGION_TITLES
+
 # display_width 为横幅生成提供中英文混排宽度基准。
 def display_width(text: str) -> int:
     """
@@ -63,15 +66,7 @@ REGION_LABELS = {
     "task_block": "任务定义区域",  # task 声明区域标题
     "config_param": "配置参数区域",  # 配置类 parameter/localparam 区域标题
     "state_param": "状态参数区域",  # 状态编码参数区域标题
-    "instance_signal": "模块实例化信号",  # 子模块连接信号区域标题
-    "counter_signal": "计数信号",  # counter/reg 计数区域标题
-    "state_signal": "状态机信号",  # 状态寄存器区域标题
-    "register_signal": "寄存器信号",  # 普通寄存器声明区域标题
-    "flag_signal": "标志信号",  # flag 类信号声明区域标题
-    "encoder_signal": "编码信号",  # 编码路径信号区域标题
-    "decoder_signal": "译码信号",  # 译码路径信号区域标题
-    "other_signal": "其他信号",  # 未分类信号兜底区域标题
-    "output_internal": "输出信号",  # 输出相关内部信号标题
+    **DECLARATION_REGION_TITLES,  # 声明区域标题与 formatter/门禁共享同一权威映射
     "other_assign": "其他信号连线",  # 未分类 assign 区域标题
     "output_assign": "输出信号连线",  # 输出 assign 区域标题
     "output_always": "输出信号处理区域",  # 输出 always 块区域标题

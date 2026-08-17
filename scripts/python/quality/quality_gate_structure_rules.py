@@ -14,6 +14,11 @@ from typing import Any
 # formatter_ast 与 rulebook 仍是这些子模块依赖的唯一结构化入口。
 from .formatter_backend.banners import display_width
 from .formatter_ast import build_ast_report_for_path, iter_verilog_sources, read_verilog_source
+from .declaration_region_policy import (
+    declaration_region_title,
+    instance_signal_names_from_module,
+    resolve_declaration_region,
+)
 from scripts.python.validation.rulebook import load_verilog_rulebook
 
 # 低有效复位名称统一按下划线语义段识别。
@@ -1274,6 +1279,12 @@ def _iter_region_expectations(
     # list_items 保存动态结构的区域期望。
     list_items: list[dict[str, Any]] = []  # 动态 AST 区域期望项
 
+    # 实例连接集合来自 formatter actual 引用事实，不再把普通连线宽泛放行到实例区。
+    set_instance_signal_names = instance_signal_names_from_module(dict_module)  # 当前模块实例连接信号名
+
+    # 命名前缀由 rulebook 权威配置提供，区域门禁不内置另一份业务枚举。
+    dict_naming = load_verilog_rulebook().raw.get("naming", {})  # formatter 命名策略
+
     # localparam 是实际出现在 module body 区域中的参数实体。
     for dict_param in dict_module.get("localparams", []) or []:
 
@@ -1288,7 +1299,12 @@ def _iter_region_expectations(
             {
                 "item": dict_decl,
                 "label": _span_item_label(dict_decl),
-                "regions": _expected_decl_regions(dict_decl),
+                "regions": _expected_decl_regions(
+                    dict_decl,
+                    set_output_ports,
+                    set_instance_signal_names,
+                    dict_naming,
+                ),
                 "rule": "regions.declaration",
             }
         )
@@ -1431,58 +1447,39 @@ def _region_owner_issue_for_item(
     ]
 
 # 供 `_expected_decl_regions` 复用的拆分 helper，专门处理内部声明允许出现的区域集合。
-def _expected_decl_regions(dict_decl: dict[str, Any]) -> tuple[str, ...]:
+def _expected_decl_regions(
+    dict_decl: dict[str, Any],
+    set_output_signal_names: set[str],
+    set_instance_signal_names: set[str],
+    dict_naming: dict[str, Any],
+) -> tuple[str, ...]:
     """
     返回内部声明允许出现的区域集合。
 
     :param dict_decl: formatter AST 内部声明条目。
+    :param set_output_signal_names: 模块 output 端口关联的内部信号名集合。
+    :param set_instance_signal_names: 实例端口 actual 引用的信号名集合。
+    :param dict_naming: 权威规则资产中的命名分类配置。
     :return: 允许区域标题元组。
     """
 
-    # str_name 用于按 Erie 命名前缀识别区域。
+    # 声明名称参与功能命名、output 和实例信号优先级判断。
     str_name = str(dict_decl.get("name") or "")  # 内部声明名称
 
-    # str_kind 表示 wire/reg/logic 等声明类型。
+    # 声明类型用于区分 reg、wire、integer 等基础类别。
     str_kind = str(dict_decl.get("kind") or "")  # 内部声明类型
 
-    # list_region_rules 按优先级保存声明名称与目标区域的映射。
-    list_region_rules: list[tuple[bool, tuple[str, ...]]] = []  # 内部声明区域推断规则
+    # 共享策略返回唯一内部区域，门禁与 formatter 不再维护两份优先级。
+    str_region = resolve_declaration_region(  # 当前声明唯一允许出现的内部区域
+        str_name,  # 当前声明名称
+        str_kind,  # 当前声明类型
+        set_output_signal_names,  # output 关联信号集合
+        set_instance_signal_names,  # 实例端口 actual 引用集合
+        dict_naming,  # 权威命名分类配置
+    )
 
-    # 输出桥接内部信号必须进入输出信号区域。
-    list_region_rules.append((str_name.endswith("_o"), ("输出信号",)))
-
-    # 计数器前缀信号必须进入计数信号区域。
-    list_region_rules.append((str_name.startswith("cnt_"), ("计数信号",)))
-
-    # 状态寄存器前缀信号必须进入状态机信号区域。
-    list_region_rules.append((str_name.startswith("state_"), ("状态机信号",)))
-
-    # 握手、完成和请求类标志必须进入标志信号区域。
-    list_region_rules.append((str_name.startswith("flag_"), ("标志信号",)))
-
-    # 编码类命名或语义词命中时进入编码信号区域。
-    list_region_rules.append((str_name.startswith("enc_") or _looks_encoder(str_name), ("编码信号",)))
-
-    # 译码类命名或语义词命中时进入译码信号区域。
-    list_region_rules.append((str_name.startswith("dec_") or _looks_decoder(str_name), ("译码信号",)))
-
-    # 其他寄存器声明按寄存器信号区域处理。
-    list_region_rules.append((str_name.startswith("reg_") or str_kind == "reg", ("寄存器信号",)))
-
-    # 按优先级返回第一个命中的声明区域。
-    for bool_matched, tuple_regions in list_region_rules:
-
-        # 当前规则未命中时继续检查下一项。
-        if not bool_matched:
-
-            # 保持区域规则优先级顺序。
-            continue
-
-        # 返回当前命中的区域集合。
-        return tuple_regions
-
-    # 其他内部连线允许放入其他信号或实例化信号区。
-    return ("其他信号", "模块实例化信号")
+    # 横幅校验使用标题元组接口，即使共享策略只返回一个区域。
+    return (declaration_region_title(str_region),)
 
 # 按 always 类型返回可接受的区域标题，用于 block 落区验证。
 def _expected_always_regions(dict_always: dict[str, Any]) -> tuple[str, ...]:

@@ -15,6 +15,13 @@ from .formatter_backend.expression_facts import (
     attach_instance_expression_facts,
 )
 from .formatter_backend.models import SourceSpan
+from .formatter_comments import build_comment_facts
+
+# 声明区域策略是 formatter 与 AST 报告的唯一归属来源。
+from .declaration_region_policy import (
+    instance_signal_names_from_module,
+    resolve_declaration_region as resolve_decl_region,
+)
 
 # formatter 配置工厂提供唯一受控的 parser/backend 入口。
 from .formatter_backend import FormatterBackend, VerilogFormatterError
@@ -219,6 +226,9 @@ def build_ast_report_for_text(
     # modules 字段描述 formatter 识别出的 module 结构。
     list_modules = tuple_parse[1]  # module 结构列表
 
+    # header_end 只来自 formatter 已识别并剥离的固定文件头范围。
+    int_header_end = tuple_parse[2]  # formatter 识别的文件头排他结束偏移
+
     # 表达式事实由 formatter 层一次构建，后续语义门禁不得重新解析源码文本。
     attach_expression_facts(list_modules)
 
@@ -242,6 +252,7 @@ def build_ast_report_for_text(
         "profile": profile,
         "ok": int_parse_errors == 0 and int_formatter_errors == 0,
         "header": dict_header,
+        "comment_facts": build_comment_facts(source, int_header_end),
         "formatter_violations": list_formatter_violations,
         "diagnostics": list_diagnostics,
         "modules": list_modules,
@@ -316,7 +327,7 @@ def _parse_source_with_formatter(
     formatter_engine: Any,
     source: str,
     list_diagnostics: list[dict[str, Any]],
-) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]], int]:
     """调用 formatter parser 提取 header 和 module 列表。
 
     参数:
@@ -324,7 +335,7 @@ def _parse_source_with_formatter(
         source: 待解析的 Verilog 源文本。
         list_diagnostics: 调用方维护的 AST 诊断列表。
     返回:
-        可选 header 字典和 module 字典列表。
+        可选 header 字典、module 字典列表和 formatter 识别的文件头结束偏移。
     异常:
         本函数会捕获 formatter parser 异常并转换为诊断，不向外抛出。
     """
@@ -334,6 +345,9 @@ def _parse_source_with_formatter(
 
     # module 列表为空时由 parser 诊断记录 error。
     list_modules: list[dict[str, Any]] = []  # 报告顶层 modules 字段内容
+
+    # 文件头排他结束偏移只在 formatter 明确认出 header 时设置。
+    int_header_end = 0  # 可豁免版本字段的固定 header 边界
 
     # 复用随包 formatter parser，避免 AST 报告引入另一套 Verilog 解析器。
     try:
@@ -346,6 +360,18 @@ def _parse_source_with_formatter(
 
         # header dataclass 安全转换为 JSON 字典。
         dict_header = _safe_dataclass_dict(tuple_header[0]) if tuple_header[0] is not None else None  # JSON 化文件头字段
+
+        # clean source 是原文后缀时，其起点即 formatter 已识别 header 的真实尾边界。
+        if tuple_header[0] is not None:
+
+            # 只豁免 formatter 实际剥离的固定双语 header/revision-history 范围。
+            int_header_end = source.find(str_clean_source)  # formatter 剥离前缀的排他结束偏移
+
+            # 定位失败时保持零，禁止扩大 header 豁免范围。
+            if int_header_end < 0:
+
+                # 零边界使所有注释继续按普通注释接受 VG157 检查。
+                int_header_end = 0  # 定位失败时关闭全部文件头版本豁免
 
         # module section 保留 formatter 的模块切分边界。
         list_module_sections = formatter_engine._split_module_sections(str_clean_source)  # module 边界切分结果
@@ -382,6 +408,25 @@ def _parse_source_with_formatter(
             # 行号标注只基于 formatter 已切出的结构文本，不重新解析 Verilog 语义。
             _attach_module_line_spans(dict_module, source, str_module_text, int_module_offset)
 
+            # 缺少 endfunction 的事实必须保留，同时产生全门禁 fail-closed 的解析诊断。
+            for dict_function in dict_module.get("functions", []) or []:
+
+                # 只把明确的未闭合原因提升为文件级 parser error。
+                if dict_function.get("unsupported_reason") == "missing_endfunction":
+
+                    # 真实 function 起始行可用时进入诊断，未知时保持 None。
+                    int_function_line = dict_function.get("line_start")  # 未闭合 function 一基起始行
+
+                    # 稳定错误码让 VG156/VG157 等激活门禁统一返回 inconclusive error。
+                    list_diagnostics.append(
+                        _diagnostic(
+                            "error",
+                            "FORMATTER_AST_INCOMPLETE_SUBPROGRAM",
+                            "Function is missing endfunction; declaration coverage is incomplete.",
+                            line=int_function_line if isinstance(int_function_line, int) else None,
+                        )
+                    )
+
             # 当前 module 结构报告追加到文件级报告。
             list_modules.append(dict_module)
 
@@ -398,7 +443,7 @@ def _parse_source_with_formatter(
         list_diagnostics.append(_diagnostic("error", "FORMATTER_AST_PARSE", str(exc)))
 
     # 返回 header 和 module 列表给主报告。
-    return dict_header, list_modules
+    return dict_header, list_modules, int_header_end
 
 # _formatter_violations 封装 check_text 的异常容错。
 def _formatter_violations(
@@ -510,6 +555,63 @@ def _parse_module_with_formatter(
             module_offset,  # 把实例模块内偏移换算成文件偏移的基准
         )
 
+    # 实例先序列化一次，声明区域与最终报告复用同一结构化 actual 事实。
+    list_instance_dicts = [_instance_to_dict(item) for item in list_instances]  # 当前模块实例报告列表
+
+    # output 端口集合用于确认简单 bridge assign 的右值身份。
+    set_output_port_names: set[str] = set()  # 当前模块 output 端口名称集合
+
+    # 端口模型由 formatter module parser 提供，方向与名称均为结构化字段。
+    for obj_port in list_raw_ports:
+
+        # 只有 output 端口可能建立内部代理映射。
+        if str(getattr(obj_port, "direction", "")) == "output":
+
+            # 保存规范端口名供 assign 左值执行精确成员判断。
+            set_output_port_names.add(str(getattr(obj_port, "name", "")))
+
+    # output bridge 的简单右值是共享区域优先级所需的显式内部信号证据。
+    set_output_signals: set[str] = set()  # 由 output bridge assign 确认的内部信号集合
+
+    # 连续赋值只在 lhs 是 output 且 rhs 是单一标识符时提供 bridge 证据。
+    for dict_assign in list_assigns:
+
+        # 当前 assign 左值用于确认是否直接驱动模块输出。
+        str_assign_lhs = str(dict_assign.get("lhs") or "")  # 当前连续赋值左值
+
+        # 当前 assign 右值候选必须是单一内部标识符。
+        str_assign_rhs = str(dict_assign.get("rhs") or "")  # 当前连续赋值右值
+
+        # 复杂表达式不能被误报成一个输出内部声明名称。
+        if str_assign_lhs in set_output_port_names and re.fullmatch(r"[A-Za-z_]\w*", str_assign_rhs):
+
+            # 保存 formatter 已确认的简单 output bridge 右值。
+            set_output_signals.add(str_assign_rhs)
+
+    # 实例 actual 引用只从最终报告使用的结构事实收集。
+    dict_instance_module = {"instances": list_instance_dicts}  # 声明区域 helper 使用的最小模块事实
+
+    # 连接信号集合复用最终报告中的结构化 actual 引用。
+    set_instance_signals = instance_signal_names_from_module(dict_instance_module)  # 当前模块实例连接信号集合
+
+    # 命名配置由当前 formatter profile 提供，禁止 AST 层内置另一份前缀表。
+    dict_naming = formatter_engine.config["naming"]  # 当前 formatter 命名分类配置
+
+    # 每个声明在 AST 唯一序列化出口写入共享的单一区域归属。
+    for dict_declaration in list_declarations:
+
+        # 名称和声明类型是共享区域策略的直接输入。
+        str_name = str(dict_declaration.get("name") or "")  # 当前声明名称
+
+        # 声明类型参与普通 reg 与其他信号的兜底归属判断。
+        str_kind = str(dict_declaration.get("kind") or "")  # 当前声明类型
+
+        # region 与 formatter 渲染器、VG061 共用完全相同的优先级函数。
+        str_region = resolve_decl_region(str_name, str_kind, set_output_signals, set_instance_signals, dict_naming)  # 共享区域
+
+        # AST 消费方直接读取稳定区域键，不再重复推导。
+        dict_declaration["region"] = str_region  # 当前声明共享区域键
+
     # 返回字段沿用 formatter AST quality gate 的既有契约。
     return {
         "index": index,
@@ -521,11 +623,11 @@ def _parse_module_with_formatter(
         "decls": list_declarations,
         "assigns": list_assigns,
         "always": list_always_blocks,
-        "instances": [_instance_to_dict(item) for item in list_instances],
+        "instances": list_instance_dicts,
         "generates": [_block_to_dict(item) for item in dict_body_items.get("generates", [])],
         "initials": [_block_to_dict(item) for item in dict_body_items.get("initials", [])],
         "functions": [_function_to_dict(item) for item in dict_body_items.get("functions", [])],
-        "tasks": [_block_to_dict(item) for item in dict_body_items.get("tasks", [])],
+        "tasks": [_task_to_dict(item) for item in dict_body_items.get("tasks", [])],
         "raw_blocks": [_block_to_dict(item) for item in dict_body_items.get("raw_blocks", [])],
         "conditionals": [_block_to_dict(item) for item in dict_body_items.get("conditionals", [])],
         "counts": _body_item_counts(dict_body_items),
@@ -985,18 +1087,57 @@ def _function_to_dict(item: Any) -> dict[str, Any]:
                 "formals": [],  # 未能恢复的 formal 列表
                 "return_target": "",  # 未能恢复的函数返回目标
                 "body_expressions": [],  # 未能恢复的函数体表达式事实
-                "span": {
-                    "line_start": 1,  # 非权威占位起始行
-                    "column_start": 1,  # 非权威占位起始列
-                    "line_end": 1,  # 非权威占位结束行
-                    "column_end": 1,  # 非权威占位结束列
-                },
+                "local_declarations": [],  # 未能恢复的函数局部声明
+                "span": None,  # 未知位置不得伪造第一行范围
                 "parse_complete": False,  # 明确禁止把兼容默认值当成完整证据
                 "unsupported_reason": "missing_function_definition",  # 定义事实缺失原因
             }
         )
 
     # 返回保持旧 block 字段并附加公共函数事实的条目。
+    return dict_item
+
+# task 定义事实与 function 使用同一提升形态，供命名门禁统一消费。
+def _task_to_dict(item: Any) -> dict[str, Any]:
+    """序列化 task block，并提升 formal 与局部声明事实。
+
+    参数:
+        item: formatter parser 生成的 task block 对象。
+    返回:
+        可写入模块 AST 报告的 task 字典。
+    """
+
+    # 基础字段保留 task 原始文本、行数和块级解析状态。
+    dict_item = _block_to_dict(item)  # 当前 task 块的基础报告字段
+
+    # definition 承载已解析的名称、形参、局部声明和真实范围。
+    dict_definition = dict_item.pop("definition", None)  # formatter task 定义事实
+
+    # 成功解析的 definition 直接提升，统一 function 与 task 报告形态。
+    if isinstance(dict_definition, dict):
+
+        # 保留 definition 字段的稳定序列化顺序。
+        for str_key, value in dict_definition.items():
+
+            # 模块 task 条目公开当前定义字段。
+            dict_item[str_key] = value  # task 定义字段提升到模块 task 条目
+
+    # 兼容旧 block 对象时必须显式标记不完整，禁止制造通过证据。
+    else:
+
+        # 默认字段保持结构兼容，同时让命名门禁返回 inconclusive。
+        dict_item.update(
+            {
+                "name": "",  # 未能恢复的 task 名称
+                "formals": [],  # 未能恢复的 task formal
+                "local_declarations": [],  # 未能恢复的 task 局部声明
+                "span": None,  # 外层位置未知时禁止伪造第一行
+                "parse_complete": False,  # 缺少 task 定义时不得宣称解析完整
+                "unsupported_reason": "missing_task_definition",  # 触发命名门禁不确定状态
+            }
+        )
+
+    # 返回保持旧 block 字段并附加公共 task 定义事实的条目。
     return dict_item
 
 # _block_to_dict 转换 formatter block 模型并补充行数指标。
@@ -1084,6 +1225,12 @@ def _attach_module_line_spans(
 
         # 块集合定位失败时保留缺失 span，由质量门决定是否阻断。
         _attach_block_collection_spans(dict_module, str_key, list_module_lines, tuple_module_span[0])
+
+    # 子程序成员只使用已回贴的真实外层范围换算，未知外层位置继续保持 None。
+    for str_key in ("functions", "tasks"):
+
+        # 当前集合中的 formal 和局部声明共享同一范围回贴算法。
+        _attach_subprogram_member_spans(dict_module, str_key)
 
 # _attach_token_collection_spans 按名称 token 标注简单结构行号。
 def _attach_token_collection_spans(
@@ -1392,6 +1539,75 @@ def _attach_block_collection_spans(
 
             # 同类块后续定位从当前块尾部继续。
             int_cursor = int_line_index + int_line_count  # 下一个普通块的搜索起点
+
+# 子程序 formal 与局部声明按 parser 给出的相对行偏移回贴真实位置。
+def _attach_subprogram_member_spans(
+    dict_module: dict[str, Any],
+    str_collection_name: str,
+) -> None:
+    """为 function/task 定义及其变量声明补充文件级真实行号。
+
+    参数:
+        dict_module: 已回贴模块级位置的 formatter AST 字典。
+        str_collection_name: `functions` 或 `tasks` 集合键。
+    返回:
+        None；子程序及其成员 span 原地写回 dict_module。
+    """
+
+    # 每个子程序独立使用其块级起止行换算成员位置。
+    for dict_subprogram in dict_module.get(str_collection_name, []) or []:
+
+        # 外层起始行是成员相对偏移的唯一换算基准。
+        int_line_start = dict_subprogram.get("line_start")  # 子程序一基起始行候选
+
+        # 外层结束行限制恢复成员位置不能越过子程序范围。
+        int_line_end = dict_subprogram.get("line_end")  # 子程序一基结束行候选
+
+        # 任一外层位置未知时，子程序和成员都不能制造文件级位置。
+        if not isinstance(int_line_start, int) or not isinstance(int_line_end, int):
+
+            # 明确清空兼容对象可能携带的伪范围。
+            dict_subprogram["span"] = None  # 当前子程序没有可信文件级范围
+
+            # 继续处理同类集合中的下一个子程序。
+            continue
+
+        # 子程序块边界来自上游块集合的真实源码回贴结果。
+        dict_subprogram["span"] = {  # 当前子程序的文件级范围
+            "line_start": int_line_start,  # 子程序声明起始行
+            "column_start": 1,  # formatter 当前只确认到行级精度
+            "line_end": int_line_end,  # endfunction 或 endtask 所在行
+            "column_end": 1,  # 行级范围不猜测结束列
+        }
+
+        # formal 与 local declaration 均由 parser 提供相对子程序起点的偏移。
+        for str_member_key in ("formals", "local_declarations"):
+
+            # 同类成员保持 parser 捕获的声明顺序。
+            for dict_member in dict_subprogram.get(str_member_key, []) or []:
+
+                # 相对偏移为零表示成员与子程序声明位于同一行。
+                int_line_offset = dict_member.get("line_offset")  # 当前成员的非负相对行偏移
+
+                # 非整数或负偏移不能映射为可信文件级行号。
+                if not isinstance(int_line_offset, int) or int_line_offset < 0:
+
+                    # 未知成员位置保持显式 None。
+                    dict_member["span"] = None  # 当前成员没有可信文件级范围
+
+                    # 继续处理同一子程序的下一声明成员。
+                    continue
+
+                # 上限裁剪防止恢复 parser 的异常偏移越过子程序结尾。
+                int_member_line = min(int_line_start + int_line_offset, int_line_end)  # 当前成员的一基文件行
+
+                # 成员声明当前按单行范围公开，不推测具体列宽。
+                dict_member["span"] = {  # 当前 formal 或局部声明的文件级范围
+                    "line_start": int_member_line,  # 成员声明所在行
+                    "column_start": 1,  # 成员声明以行首作为唯一可信列坐标
+                    "line_end": int_member_line,  # 单行声明的结束行等于起始行
+                    "column_end": 1,  # 单行成员范围在可信行首闭合
+                }
 
 # _line_span_from_offsets 把字符偏移转换为一基行号范围。
 def _line_span_from_offsets(str_source: str, int_start: int, int_end: int) -> tuple[int, int]:

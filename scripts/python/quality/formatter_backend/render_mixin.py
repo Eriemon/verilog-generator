@@ -769,6 +769,12 @@ class RenderMixin:
                     bool_rendered_decl,  # 当前区域是否已有声明
                 )
 
+            # 新定义组的前导注释与上一组之间固定一个空行，首组则紧贴区域横幅。
+            if decl.leading_comments:
+
+                # helper 会去重布局标签已插入的空行，保证二次格式化字节幂等。
+                self._ensure_single_blank_line_before_cluster(list_lines, bool_rendered_decl)
+
             # 声明前导注释保持 parser 捕获的相对位置。
             list_lines.extend(self._render_leading_comments(decl.leading_comments, 1))
 

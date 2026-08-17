@@ -61,8 +61,7 @@ def load_primitive_facts(
     # 公开查询结果与缓存目录断开引用。
     dict_result = deepcopy(dict(dict_profile))  # profile 独立副本
 
-    # 兼容最小化 profile 夹具时补齐稳定名称字段。
-    # 为查询结果补上稳定的公开名称字段。
+    # 兼容最小化 profile 夹具，为查询结果补齐稳定的公开名称字段。
     dict_result.setdefault("name", str_name)  # profile 对外显示名称
 
     # 为下游实例绑定补上模块身份字段。
@@ -586,29 +585,25 @@ def _semantic_projection(
     # ports 影响 VG097 接口宽度和 VG132 formal 角色。
     if "ports" in set_fields:
 
-        # 深拷贝避免比较过程持有调用方容器。
-        # 端口事实决定位宽匹配和 formal 角色。
+        # 深拷贝端口事实，避免比较过程持有调用方容器，并保留位宽匹配与 formal 角色。
         dict_projection["ports"] = deepcopy(dict(profile.get("ports", {})))  # 保留端口语义
 
     # outputs 影响 VG146/VG147 跨层边界。
     if "outputs" in set_fields:
 
-        # 保留端口级 boundary 选择。
-        # 输出边界决定跨层传播是否透明。
+        # 保留端口级 boundary 选择，使输出边界决定跨层传播是否透明。
         dict_projection["outputs"] = deepcopy(dict(profile.get("outputs", {})))  # 保留输出边界
 
     # clock_capable 影响 profile 的时钟能力元数据。
     if "clock_capable" in set_fields:
 
-        # 布尔值统一后进入冲突比较。
-        # 时钟能力决定原语端口是否能承载时钟角色。
+        # 布尔值统一后进入冲突比较，由时钟能力决定原语端口是否能承载时钟角色。
         dict_projection["clock_capable"] = bool(profile.get("clock_capable", False))  # 保留时钟能力
 
     # support_level 影响原语覆盖级别和报告说明。
     if "support_level" in set_fields:
 
-        # 缺省空字符串而不猜测未知级别。
-        # 支持级别决定报告中的语义可信范围。
+        # 缺省空字符串而不猜测未知级别，支持级别决定报告中的语义可信范围。
         dict_projection["support_level"] = str(profile.get("support_level") or "")  # 保留支持级别
 
     # 返回规范投影。

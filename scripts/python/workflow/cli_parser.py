@@ -69,8 +69,7 @@ def arg(*flags: str, **kwargs: Any) -> ArgSpec:
     # 返回不可变参数规格，供命令注册阶段直接展开。
     return ArgSpec(tuple_flags, kwargs)
 
-# _build_command_specs 固定旧版 verilog-gen 的 help 顺序，保护 smoke 与安装后命令发现断言。
-# _template_command_specs 这些入口覆盖从输入规格到模型响应拆包的前半段生成合同。
+# _build_command_specs 固定旧版 verilog-gen 的 help 顺序；_template_command_specs 覆盖从输入规格到模型响应拆包的前半段生成合同。
 def _template_command_specs() -> tuple[CommandSpec, ...]:
     """构造模板、prompt 和提取类子命令规格。
 

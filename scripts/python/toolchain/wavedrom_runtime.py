@@ -314,8 +314,7 @@ def check_runtime(
         # 记录精确版本、入口和查询退出码的合并结果。
         dict_report["wavedrom"]["ok"] = bool_package_ok  # WaveDrom 安装结果
 
-    # 缺失项以稳定字符串暴露给依赖管理器和 CLI。
-    # Node 缺失或版本过低都归入可操作提示。
+    # 将 Node 缺失或版本过低统一转换为稳定字符串，供依赖管理器和 CLI 给出可操作提示。
     if not dict_report["node"]["ok"]:
 
         # 写入 Node 运行时缺失标识。
@@ -576,8 +575,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         dest="command", required=True  # 要求调用方选择子命令
     )  # CLI 子命令集合
 
-    # check 不接受额外参数，默认会执行真实冒烟。
-    # 注册 check 子命令及其帮助文本。
+    # 注册不接受额外参数且默认执行真实冒烟的 check 子命令及其帮助文本。
     sub_parsers_action_subparsers.add_parser("check", help="Check Node, npm, and WaveDrom.")
 
     # install 需要显式 --yes 才允许全局写入。

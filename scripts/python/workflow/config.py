@@ -936,8 +936,7 @@ def _validate_dependency_item(item: Any, list_name: str) -> None:
     # alternative_skill_sets 描述可替代的技能组合。
     list_alternatives = item.get("alternative_skill_sets", [])  # 可替代技能组合列表
 
-    # 非空 alternatives 必须是二维非空字符串列表。
-    # 将 alternatives 结构校验拆成命名条件，避免长条件块难读。
+    # 将非空 alternatives 的二维非空字符串结构拆成命名条件，避免长条件块难读。
     bool_alternatives_valid = isinstance(list_alternatives, list) and all(  # alternatives 整体结构是否可用于依赖满足性判断
         isinstance(skill_group, list)  # 每组替代技能必须以列表表达
         and skill_group  # 每组至少提供一个候选技能

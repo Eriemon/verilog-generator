@@ -354,10 +354,10 @@ def cleanup_fpga_agent_skills(
     # 备份目录带时间戳，避免覆盖历史迁移。
     path_backup_dir = path_backup_root / f"fpga-agent-skills.bak.{time.strftime('%Y%m%dT%H%M%S')}"  # 本轮备份目录
 
-    # moved 记录实际迁移的子 skill。
-    list_moved: list[str] = []  # 已移动 FPGA-Agent 子 skill 列表
+    # moved 记录实际迁移的 FPGA-Agent skill。
+    list_moved: list[str] = []  # 已移动 FPGA-Agent skill 列表
 
-    # 遍历旧 FPGA-Agent 子 skill 集合。
+    # 遍历旧 FPGA-Agent skill 集合。
     for str_skill in TUPLE_FPGA_AGENT_CHILD_SKILLS:
 
         # source 是可能存在的旧子 skill 目录。
@@ -383,8 +383,8 @@ def cleanup_fpga_agent_skills(
         # 需要移动时才创建备份目录。
         path_backup_dir.mkdir(parents=True, exist_ok=True)
 
-        # target 是备份目录中的同名子目录。
-        path_target = path_backup_dir / str_skill  # 子 skill 备份目标目录
+        # target 是备份目录中的同名 skill 目录。
+        path_target = path_backup_dir / str_skill  # skill 备份目标目录
 
         # 目标路径必须位于备份根目录内。
         path_target.parent.resolve().relative_to(path_resolved_backup_root)
@@ -405,7 +405,7 @@ def cleanup_fpga_agent_skills(
     return {
         "moved": list_moved,  # 实际移动的子 skill id
         "backup_dir": str(path_backup_dir),  # 备份目录路径
-        "skills_root": str(path_skills_root),  # 旧 FPGA-Agent 子 skill 来源根
+        "skills_root": str(path_skills_root),  # 旧 FPGA-Agent skill 来源根
         "plugin_cache": str(path_plugin_cache),  # 本次确认 developer skill 的插件缓存
         "developer_vendors": dict_developer_status["available_vendors"],  # 允许清理的已安装 vendor
     }

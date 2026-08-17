@@ -701,7 +701,19 @@ for source_name, gate_id, expected_status, expected_count, expected_path in hier
     if expected_status == "failed":
         assert probe_result.returncode != 0, probe_result.returncode
     if expected_count is not None:
-        evidence = "\\n".join(item["evidence"] for item in gate_result["findings"])
+        def evidence_text(finding):
+            evidence_value = finding.get("evidence")
+            if isinstance(evidence_value, dict):
+                return str(
+                    evidence_value.get("detail")
+                    or evidence_value.get("source_excerpt")
+                    or ""
+                )
+            return str(evidence_value or "")
+
+        evidence = "\\n".join(
+            evidence_text(item) for item in gate_result["findings"]
+        )
         assert f"operation_count={{expected_count}}" in evidence, evidence
         assert expected_path in evidence, evidence
 for name in fixtures:

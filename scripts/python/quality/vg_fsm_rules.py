@@ -334,8 +334,7 @@ def _fsm_min_transition_flips(facts: VgFacts) -> VgEvaluation:
             # 继续检查下一个可信 module。
             continue
 
-        # 只保留状态寄存器非阻塞赋值中的声明状态名称。
-        # 先提取所有状态寄存器的非阻塞赋值目标。
+        # 先提取状态寄存器非阻塞赋值目标，只保留其中的声明状态名称。
         list_destinations = re.findall(  # 状态寄存器赋值目标序列
             r"\bstate\w*\s*<=\s*([A-Za-z_]\w*)\s*;",  # 状态寄存器赋值模式
             str_module_text,  # 当前 formatter 可信 module 文本
@@ -351,8 +350,7 @@ def _fsm_min_transition_flips(facts: VgFacts) -> VgEvaluation:
             # 当前 module 没有足够的确定转换证据。
             continue
 
-        # 当前批次以稳定出现顺序选择首个可证明转换。
-        # 已发现可比较状态转换。
+        # 当前批次已发现可比较状态转换，后续按稳定出现顺序选择首个可证明转换。
         bool_applicable = True  # 当前规则具有实际检查对象
 
         # 稳定序列的首个状态作为源状态。

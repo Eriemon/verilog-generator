@@ -82,8 +82,6 @@ class LayoutMixin:
             # 告诉调用方该端口名不能参与规范化重命名。
             return True
 
-            # 按配置的正则模式判断 Vitis wrapper 等固定端口。
-
         # 这里把any、re、fullmatch作为当前 helper 的最终结果一并交回调用方。
         return any(re.fullmatch(pattern, name) for pattern in dict_naming_config.get("preserve_port_patterns", []))
 
@@ -145,8 +143,6 @@ class LayoutMixin:
                 # raw_text 端口已经被原样保留，本轮进入下一个端口。
                 continue
 
-                # 去掉已知方向前缀后再决定新的端口基础名。
-
             # 去掉原端口名里自带的方向前缀后，只保留统一命名阶段会复用的基础部分。
             str_base_name = self._normalize_port_base_name(port.name)  # 不含既有方向前缀的端口名
 
@@ -178,12 +174,8 @@ class LayoutMixin:
                 # 输入、inout 和直连输出都映射到最终外部端口名。
                 dict_rename_map[port.name] = str_new_name  # 输入端口、inout 端口或直连输出最终映射到的外部名称
 
-                # 将归一化后的名称写回结构化端口声明。
-
             # 端口名称策略已经确定后，这里把新名字写回端口副本，继续累积最终输出顺序。
             list_normalized_ports.append(self._copy_port_decl(port, name=str_new_name))
-
-            # 返回保持旧 API 字段名的端口和重命名元数据。
 
         # 这里连同重命名表和内部承接信号表一起返回，供后续表达式改写和端口渲染阶段复用。
         return list_normalized_ports, {
@@ -256,23 +248,17 @@ class LayoutMixin:
             # 返回原始端口名，满足 wrapper 或用户配置的命名约束。
             return port.name
 
-            # 输入端口使用项目配置里的输入前缀规范。
-
         # 只有在 port.direction 等于 "input" 时，当前分支里的布局处理才有意义。
         if port.direction == "input":
 
             # 返回输入端口规范化后的外部接口名。
             return self._normalize_input_port_name(str_base_name)
 
-            # 输出端口先生成模块接口名，内部信号另由调用方决定。
-
         # 只有在 当前端口方向是 output 时，当前分支里的布局处理才有意义。
         if port.direction == "output":
 
             # 返回输出端口带方向前缀的接口名。
             return self._apply_prefix(str_base_name, self.config["naming"]["output_prefix"])
-
-            # inout 端口使用双向端口前缀，保持旧配置语义。
 
         # 这里把applyprefix、去掉既有方向前缀后的基础端口名、config作为当前 helper 的最终结果一并交回调用方。
         return self._apply_prefix(str_base_name, self.config["naming"]["inout_prefix"])
@@ -344,8 +330,6 @@ class LayoutMixin:
                 )
             )
 
-            # 返回给后续声明渲染流程继续使用。
-
         # 这里把renamedports列表作为当前 helper 的最终结果一并交回调用方。
         return list_renamed_ports
 
@@ -368,15 +352,11 @@ class LayoutMixin:
             # 返回空端口序列，兼容旧调用方的真值判断。
             return []
 
-            # raw_text 端口保留手写顺序，formatter 不重新分组。
-
         # 只有在 any(端口仍保留原始文本声明 for port 属于 ports) 时，当前分支里的布局处理才有意义。
         if any(port.raw_text for port in ports):
 
             # 返回原始端口列表，避免破坏不可解析声明。
             return ports
-
-            # 清理从旧注释推断出的非法 section，防止错误分组扩散。
 
         # 先复制并清理每个端口自带的布局提示，避免旧的 group/section 标记干扰这轮重新分段。
         list_sanitized_ports = [self._sanitize_port_layout_hints(port) for port in ports]  # 可安全重新布局的端口
@@ -432,8 +412,6 @@ class LayoutMixin:
                 # 当前显式分组段已经完成，继续处理后续端口。
                 continue
 
-                # 无显式 group 的连续端口需要由名称推断协议分组。
-
             # 这一段连续端口到底在哪一项结束，需要先把右边界定位出来。
             int_end = self._find_port_segment_end(  # 当前无分组段的结束序号
                 ports,  # 当前待整理的完整端口列表
@@ -447,8 +425,6 @@ class LayoutMixin:
 
             # 切换到下一段端口。
             int_start = int_end  # 下一段无分组端口的扫描起点
-
-            # 返回已完成一层布局整理的端口列表。
 
         # 这里返回的是已经按显式分组、协议分组和 subgroup 规则重新整理过的整段端口列表。
         return list_prepared_ports
@@ -491,8 +467,6 @@ class LayoutMixin:
                 # 当前端口仍属于这段未分组片段，右边界继续向后扩展即可。
                 continue
 
-                # 无分组段只吸收 group 为空的连续端口。
-
             # 只有在 当前处于未显式分组模式且后面的端口也还没有 group 时，当前分支里的布局处理才有意义。
             if not bool_grouped and not ports[int_end].group:
 
@@ -502,12 +476,8 @@ class LayoutMixin:
                 # 当前端口仍属于本段，继续检查下一项。
                 continue
 
-                # 遇到不同分组边界时结束本段扫描。
-
             # 右边界或目标位置已经确认后，继续扫描只会重复工作，所以这里立刻结束循环。
             break
-
-            # 返回半开区间右边界，供调用方切片。
 
         # 这里把当前片段扫描到的右边界索引作为当前 helper 的最终结果一并交回调用方。
         return int_end
@@ -1336,8 +1306,6 @@ class LayoutMixin:
             # 返回空列表，保持旧调用方的空输入行为。
             return []
 
-            # 克隆端口列表，避免在调用方持有的列表对象上原地改写。
-
         # 这里先复制一份端口列表，后面的 subgroup 写回都在副本上完成。
         list_updated_ports = list(ports)  # 带 subgroup 推断结果的端口列表
 
@@ -1361,8 +1329,6 @@ class LayoutMixin:
 
             # 当前片段写回完成后，扫描起点直接跳到该片段右边界。
             int_start = int_end  # 下一段待补 subgroup 片段的起始索引
-
-            # 返回补充分组信息后的端口声明。
 
         # 全部 group/section 片段都补完 subgroup 后，返回整份更新后的端口列表。
         return list_updated_ports
@@ -1399,8 +1365,6 @@ class LayoutMixin:
 
             # 右边界向后移动一项。
             int_end += 1  # 同组同小节连续段右边界
-
-            # 返回供切片使用的半开右边界。
 
         # 扫描结束后拿到的这个右边界，正好就是当前 group/section 连续片段的切片终点。
         return int_end
@@ -1454,8 +1418,6 @@ class LayoutMixin:
                 # 当前端口不参与自动 subgroup，继续检查后续端口。
                 continue
 
-                # 根据端口名派生 subgroup 键，例如 DATA接口。
-
             # 当前 cluster 的 subgroup 名先从起点端口推导出来，再决定这段端口是否能并为一组。
             str_subgroup = self._derive_port_subgroup_key(list_segment[int_cursor])  # 当前 cluster 推导出的 subgroup 名称
 
@@ -1467,8 +1429,6 @@ class LayoutMixin:
 
                 # 当前端口没有稳定 subgroup 键，继续扫描。
                 continue
-
-                # 找到与当前 subgroup 键连续一致的端口簇边界。
 
             # 聚类结束索引。
             int_cluster_end = self._find_subgroup_cluster_end(  # 当前 subgroup 簇的结束序号
@@ -1488,12 +1448,8 @@ class LayoutMixin:
                     str_subgroup,
                 )
 
-                # 当前簇已经检查完成，跳到簇后继续。
-
             # 处理完一个 subgroup cluster 后，游标直接跳到它的末尾继续扫描。
             int_cursor = int_cluster_end  # 当前 cluster 处理完成后的游标位置
-
-            # 返回当前段内补充后的端口列表。
 
         # 当前片段里所有满足条件的 subgroup 都已回写完毕，这里交回更新后的端口切片副本。
         return list_segment
@@ -1530,8 +1486,6 @@ class LayoutMixin:
             # 当前端口属于同一 subgroup 簇，右边界后移。
             int_cluster_end += 1  # subgroup 连续簇右边界
 
-            # 返回当前 subgroup 连续簇的半开右边界。
-
         # 这里把聚类结束索引作为当前 helper 的最终结果一并交回调用方。
         return int_cluster_end
 
@@ -1554,8 +1508,6 @@ class LayoutMixin:
 
             # 返回 False 表示当前端口不能并入自动 subgroup 簇。
             return False
-
-            # 派生键一致时，当前端口可并入连续 subgroup 簇。
 
         # 这里把derive端口子分组key、端口、子分组文本作为当前 helper 的最终结果一并交回调用方。
         return self._derive_port_subgroup_key(port) == str_subgroup
@@ -2437,8 +2389,6 @@ class LayoutMixin:
 
                 # 返回解析出的槽位和成员名。
                 return str_slot, str_payload
-
-                # 没有 fallback 正则时，该协议只接受 token 形式。
 
         # 没有回退正则时，这个协议只接受 token 形式命名，不再尝试历史命名兼容。
         if not fallback_pattern:

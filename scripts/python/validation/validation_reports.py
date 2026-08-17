@@ -407,8 +407,7 @@ def _unexpected_artifact_issues(root: Path) -> list[ValidationIssue]:
                 )
             )
 
-    # 返回泄漏诊断。
-    # 占位扫描结束后返回全部命中记录。
+    # 占位扫描结束后返回全部泄漏命中记录。
     return list_issues
 
 # 返回输出 artifact 相对路径。

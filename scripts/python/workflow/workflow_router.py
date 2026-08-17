@@ -396,8 +396,7 @@ def _collect_route_facts(route_request: RouteRequest) -> RouteFacts:
     # validation_present 表示报告输入可供 evidence-first 使用。
     bool_validation_present = _value_present(route_request.validation) or bool(dict_validation_payload)  # validation 可用状态
 
-    # 缺失 artifact 路径用于 risk flag 和 missing input。
-    # missing kwargs 传入显式 artifact 路径和已归一化路径列表。
+    # 将显式 artifact 路径和已归一化路径列表传入 missing kwargs，供 risk flag 和 missing input 检查。
     dict_missing_kwargs = {  # _missing_artifact_paths 需要检查的 artifact 输入
         "spec": route_request.spec,  # 规格路径或字典输入
         "codegen_plan": route_request.codegen_plan,  # codegen plan 路径或字典输入
@@ -712,7 +711,7 @@ def _next_action(entry_mode: str, *, remote_validation_requested: bool, plan_rea
                 "and the validation gate before RTL use."
             )
 
-        # plan 未 ready 时先处理 open questions。
+        # plan 处于待确认状态时先处理 open questions。
         return "Review open codegen_plan questions before any RTL emission."
 
     # existing RTL 入口先分析或验证已有代码。
@@ -775,8 +774,7 @@ def _blocking_findings(route_facts: RouteFacts) -> list[str]:
     # validation issue 中的 toolchain_issue 也进入阻断发现。
     list_validation_issues = _validation_issues(route_facts.validation_payload)  # validation 报告 issue 列表
 
-    # toolchain source 说明验证工具链本身可能失败。
-    # 默认没有发现 toolchain issue。
+    # toolchain source 可能说明验证工具链失败；当前默认没有发现 toolchain issue。
     bool_has_toolchain_issue = False  # validation issues 是否包含 source=toolchain_issue
 
     # 逐条扫描 issue，避免多行 any 表达式触发可读性误判。

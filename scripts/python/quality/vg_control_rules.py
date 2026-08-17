@@ -142,8 +142,7 @@ def _for_body_nonindex_arithmetic(facts: VgFacts) -> VgEvaluation:
                     )
                 )
 
-            # 循环体文本限定后续赋值扫描范围。
-            # 命名捕获组提供 formatter 边界内的循环体文本。
+            # 循环体文本及命名捕获组共同限定 formatter 边界内的赋值扫描范围。
             str_body = obj_loop.group("body")  # formatter 边界内的循环体文本
 
             # 每条简单赋值独立判断目标角色和算术运算。
@@ -158,8 +157,7 @@ def _for_body_nonindex_arithmetic(facts: VgFacts) -> VgEvaluation:
                     # 继续检查同一循环体中的其他赋值。
                     continue
 
-                # 把循环体内偏移换算为原 module 的一基源码行号。
-                # 循环体相对偏移叠加主体起点得到 module 内位置。
+                # 把循环体相对偏移叠加主体起点，换算为 module 内的一基源码行号。
                 int_offset = obj_loop.start("body") + obj_assignment.start()  # 当前赋值的 module 文本偏移
 
                 # module 内位置用于计算稳定的一基行号。

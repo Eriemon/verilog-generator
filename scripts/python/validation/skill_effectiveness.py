@@ -44,6 +44,10 @@ from scripts.python.workflow.verilog_gate_catalog import (
 from scripts.python.quality.quality_gate import run_verilog_quality_gate
 from scripts.python.quality.vg_comb_cone import build_comb_target_cones
 from scripts.python.quality.vg_comb_model import CombTargetCone
+from scripts.python.quality.vg_diagnostics import (
+    VgDiagnosticContractError,
+    diagnostic_from_mapping,
+)
 from scripts.python.quality.vg_semantic_facts import build_vg_facts
 
 # JSON 写出继续复用 workflow 层的确定性实现。
@@ -240,8 +244,7 @@ def evaluate_skill_effectiveness(
             "summary": dict_summary,  # 顶层通过计数和 ok 状态
         }  # CLI 写出的 skill-effectiveness 报告
 
-        # 远程 direct reports 归档需要以 outer run 为受控 workspace 锚点。
-        # 该解析只返回通过固定命名和祖先层级校验的 retained run 根。
+        # 远程 direct reports 归档只允许使用通过固定命名和祖先层级校验的 retained run 根。
         path_archive_root = _direct_validation_archive_root(out_path)  # use_workspace_root 绑定的 direct validation run 根
 
         # 只有固定 runs/validation_*/reports 形状才允许跨 staged workspace 写报告。
@@ -717,6 +720,96 @@ def _evaluate_rtl_md_constraint_case(
 
     # 动态期望会按规则码展开成多条可诊断的检查项。
     dict_checks: dict[str, bool] = {}  # 约束 case 的检查集合
+
+    # v3 报告和 catalog 版本必须与 eval 契约同步。
+    if dict_expectations.get("report_version") is not None:
+
+        # 版本字段决定下游是否按 actionable finding 解码。
+        object_report_version = dict_blocked_report.get("version")  # 质量报告实际 schema 版本
+
+        # eval 期望固定公开 v3 schema。
+        object_expected_report_version = dict_expectations["report_version"]  # eval 声明的 schema 版本
+
+        # 公开报告版本必须满足 actionable finding 契约。
+        dict_checks["report_version"] = object_report_version == object_expected_report_version  # v3 schema 版本检查
+
+    # 目录版本必须来自同一公开质量报告。
+    if dict_expectations.get("catalog_version") is not None:
+
+        # 报告目录版本、catalog 顶层版本和 eval 期望必须一致。
+        int_report_catalog_version: int | None = dict_blocked_report.get("vg_catalog_version")  # 报告中的 catalog 版本
+
+        # catalog loader 提供权威目录版本。
+        int_catalog_version: int | None = dict_catalog.get("version")  # 当前规则目录版本
+
+        # eval 固定本轮需要验证的 catalog 版本。
+        int_expected_catalog_version: int = int(dict_expectations["catalog_version"])  # eval 声明的目录版本
+
+        # 报告版本缺失时必须失败关闭。
+        bool_report_catalog_present = int_report_catalog_version is not None  # 报告是否提供 catalog 版本
+
+        # 报告版本必须与 loader 版本相等。
+        bool_report_catalog_match = int_report_catalog_version == int_catalog_version  # 报告与 loader 版本一致
+
+        # loader 版本必须与 eval 期望相等。
+        bool_expected_catalog_match = int_catalog_version == int_expected_catalog_version  # loader 与 eval 版本一致
+
+        # 报告与 loader 先形成共同版本判断。
+        bool_report_and_loader_match = bool_report_catalog_present and bool_report_catalog_match  # 报告与 loader 可比较
+
+        # 三个来源同时满足才通过目录版本检查。
+        bool_catalog_versions_match = bool_report_and_loader_match and bool_expected_catalog_match  # 报告、目录和 eval 版本一致
+
+        # 一致性结果进入公开 effectiveness 检查集合。
+        dict_checks["catalog_version"] = bool_catalog_versions_match  # 目录版本一致性检查
+
+    # 每个适用的非通过 VG 结果都必须能独立指导修复。
+    if dict_expectations.get("failed_results_actionable"):
+
+        # 先乐观初始化，遇到首个缺失或非法 finding 即失败。
+        bool_failed_results_actionable = True  # 非通过规则的 finding 是否都可指导修复
+
+        # 逐条检查非通过且适用的规则结果。
+        for dict_result in dict_blocked_report.get("vg_rule_results", []):
+
+            # 通过或不适用规则不承担失败 finding 义务。
+            if dict_result.get("status") == "passed" or not dict_result.get("applicable"):
+
+                # 当前规则不需要进入 actionable 检查。
+                continue
+
+            # 非通过适用规则不得没有 finding。
+            list_findings = dict_result.get("findings", [])  # 当前规则的 v3 finding 列表
+
+            # 非通过规则缺失 finding 时报告无法指导 Agent 修复。
+            if not list_findings:
+
+                # 缺失 finding 会让 Agent 无法定位和修复。
+                bool_failed_results_actionable = False  # 缺失 finding 使当前检查失败
+
+                # 当前规则已确定违反 actionable finding 契约。
+                break
+
+            # 每个 finding 必须满足完整 v3 契约。
+            try:
+
+                # 逐条验证当前规则提供的完整 finding。
+                for dict_finding in list_findings:
+
+                    # 复用公开 validator，禁止 evaluator 自定义弱化规则。
+                    diagnostic_from_mapping(dict_finding)
+
+            # validator 异常表示 finding 字段无法安全消费。
+            except (TypeError, VgDiagnosticContractError):
+
+                # 任一 finding 不合法即阻断 effectiveness 结论。
+                bool_failed_results_actionable = False  # 非法 finding 使当前检查失败
+
+                # 终止当前规则的 finding 校验循环并保留失败证据。
+                break
+
+        # 把结构化 finding 义务写入报告检查集合。
+        dict_checks["failed_results_actionable"] = bool_failed_results_actionable  # 所有非通过规则均可指导修复
 
     # 每个期望阻断码都必须在 bad fixture lint 中出现。
     for str_code in dict_expectations.get("failed_gate_ids", []):
@@ -1676,7 +1769,7 @@ def _evaluate_batch_case(
             "case_count_matches": (  # 汇总数量必须与展开后的输入数一致
                 dict_result["summary"]["case_count"] == len(list_specs)  # 汇总中的 case 数量
             ),  # summary 中的 case 数量是否与输入一致
-            "all_cases_passed": all(  # 每个 batch 子 case 都必须保持 passed
+            "all_cases_passed": all(  # 汇总状态取决于所有 batch case 均为 passed
                 dict_item.get("status") == "passed"  # 单个 batch case 的状态字段
                 for dict_item in dict_result.get("cases", [])  # 逐个遍历 batch 汇总里的 case 条目
             ),  # 每个 batch case 是否都通过
@@ -2148,8 +2241,7 @@ def _evaluate_verify_existing_rtl_repair_case(
         run_external=False,  # 多文件阻断场景不接外部工具链
     )  # 多文件阻断结果
 
-    # 读取关键 JSON 产物用于检查 patch 状态。
-    # resume verification_result 记录确认后是否应用 RTL patch。
+    # 读取 resume verification_result，确认恢复后是否已经应用 RTL patch。
     dict_resumed_payload = _read_json(Path(dict_resumed["verification_result_path"]))  # 确认恢复后的验证结果
 
     # resume patch_candidate 记录备份路径和应用约束。

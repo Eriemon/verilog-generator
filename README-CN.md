@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="Apache-2.0 许可证" src="https://img.shields.io/badge/license-Apache--2.0-2ad4ee"></a>
-  <img alt="VERSION v1.2.1" src="https://img.shields.io/badge/version-v1.2.1-8ce85d">
+  <img alt="VERSION v1.3.1" src="https://img.shields.io/badge/version-v1.3.1-8ce85d">
   <img alt="Verilog-2001" src="https://img.shields.io/badge/RTL-Verilog--2001-ffb85c">
   <img alt="Codex 技能" src="https://img.shields.io/badge/target-Codex%20skill-8ce85d">
 </p>
@@ -102,6 +102,12 @@ Verilog Generator 是一个面向实际 Verilog-2001 工作的 Codex 技能。�
 - 只包含实际运行检查结果的审查、修复、静态检查、仿真或工具报告；
 - 对剩余假设、警告和未验证范围的简洁说明。
 
+## 审查并交付
+
+![可审查的交付](assets/readme/evidence-guard-cn.png)
+
+接受交付前，先查看生成的文件和实际运行过的检查；剩余假设与未验证范围应保持清楚可见。
+
 ## 结果示例
 
 下面的示例是一个 32 位 AXI-Stream 计量器。它只在 `TVALID` 与 `TREADY` 完成传输后统计字节，在完成传输的 `TLAST` 上统计数据包，并在达到上限后饱和，不发生回卷。
@@ -148,7 +154,7 @@ Jiyuan Liu、He Li · Southeast University（东南大学）· HIQC（Heterogene
   author       = {Jiyuan Liu and He Li},
   title        = {{Verilog Generator}: An Agent Skill for Verilog-2001 RTL Workflows},
   year         = {2026},
-  version      = {1.2.1},
+  version      = {1.3.1},
   date         = {2026-08-12},
   url          = {https://github.com/Eriemon/verilog-generator},
   license      = {Apache-2.0},

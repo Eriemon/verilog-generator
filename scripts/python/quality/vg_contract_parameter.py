@@ -179,7 +179,7 @@ def _finding(
     # 关键字参数保持公开 finding 调用的可读顺序。
     *,
     # 行号是报告中唯一的一基定位字段。
-    line: int,  # 一基源码行号。
+    line: int | None,  # 一基源码行号；无法验证时保持为空。
     # 消息和 evidence 共同构成用户与机器证据。
     message: str,  # 面向用户的违规说明。
     evidence: str,  # 机器可读的定位证据。
@@ -191,7 +191,7 @@ def _finding(
     参数:
         obj_source: 当前源码文件事实。
         dict_module: 当前 formatter 模块事实。
-        line: finding 的一基源码行号。
+        line: finding 的一基源码行号；未知时传 None。
         message: 面向用户的违规说明。
         evidence: 机器可读的定位证据。
         metadata: 额外结构化证据键值。
@@ -208,10 +208,13 @@ def _finding(
     # 统一追加 module 定位到结构化 metadata。
     tuple_metadata = (("module", str_module), *tuple(metadata))  # 当前 finding 结构化证据
 
+    # 只有正的一基坐标才可声明为 source scope；未知坐标保持文件级事实。
+    int_line = line if isinstance(line, int) and not isinstance(line, bool) and line > 0 else None  # 可信源码行
+
     # 返回稳定的 finding 模型。
     return VgFinding(
         path=str_path,
-        line=max(1, int(line)),
+        line=int_line,
         message=message,
         evidence=evidence,
         metadata=tuple_metadata,
@@ -278,7 +281,7 @@ def _parameter_contract_findings(
                 _finding(
                     obj_source,
                     dict_module,
-                    line=1,
+                    line=None,
                     message="参数合同无法确定求值结果。",
                     evidence=str(dict_record["expression"]),
                     metadata=(
@@ -300,7 +303,7 @@ def _parameter_contract_findings(
                 _finding(
                     obj_source,
                     dict_module,
-                    line=1,
+                    line=None,
                     message=str(dict_record["message"]),
                     evidence=str(dict_record["expression"]),
                     metadata=(
@@ -362,7 +365,7 @@ def evaluate_parameter_gate(facts: VgFacts) -> VgEvaluation:
                 _finding(
                     obj_source,
                     dict_module,
-                    line=1,
+                    line=None,
                     message="参数合同结构不合法。",
                     evidence=str_issue,
                     metadata=(("reason", str_issue),),
@@ -395,7 +398,7 @@ def evaluate_parameter_gate(facts: VgFacts) -> VgEvaluation:
                 _finding(
                     obj_source,
                     dict_module,
-                    line=1,
+                    line=None,
                     message="参数默认值无法在受限环境中确定。",
                     evidence=", ".join(tuple_unknown_names),
                     metadata=(("reason", "unknown_parameter_value"), ("unknown_parameters", list(tuple_unknown_names))),
@@ -434,7 +437,7 @@ def evaluate_parameter_gate(facts: VgFacts) -> VgEvaluation:
                 _finding(
                     obj_source,
                     dict_module,
-                    line=int(dict_parameter.get("line_start") or 1),
+                    line=dict_parameter.get("line_start"),
                     message="公开 parameter 没有适用的参数合同。",
                     evidence=str_name,
                     metadata=(("parameter", str_name), ("reason", "parameter_not_covered")),
