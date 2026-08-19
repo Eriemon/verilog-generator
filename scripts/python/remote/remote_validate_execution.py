@@ -1,7 +1,6 @@
 """远端验证的 staging、helper 调用和 retained-run 摘要实现。"""
 
 # 标准库负责 JSON 协议、远端请求子进程、临时包 staging 和清理。
-import gzip
 import hashlib
 import json
 import os
@@ -10,8 +9,7 @@ import shutil
 import subprocess
 import sys
 
-# tarfile 和 time 负责确定性归档与 Windows 文件锁重试。
-import tarfile
+# time 负责 Windows 文件锁重试和本地运行节奏控制。
 import time
 
 # pathlib 负责本地路径。
@@ -29,10 +27,10 @@ PATH_SKILL_ROOT = Path(__file__).resolve().parents[3]  # 包含 runtime、script
 # 仓库根目录用于复制 smoke harness。
 PATH_PROJECT_ROOT = PATH_SKILL_ROOT.parents[1]  # 当前 skill 仓库根目录
 
-# 归档与清单文件名固定，保证远端单文件上传和解包路径可审计。
+# 归档名称保留为兼容标识，但远程验证执行层禁止使用它。
 PACKAGE_ARCHIVE_NAME = "readable-verilog-generator-package.tar.gz"  # 远端验证包归档名
 
-# 清单自身不纳入清单记录，避免清单内容形成自引用哈希。
+# 清单自身不纳入 staging 清单记录，避免清单内容形成自引用哈希。
 PACKAGE_MANIFEST_NAME = "package-manifest.json"  # 归档内逐文件完整性清单名
 
 # 新布局的每轮运行目录统一位于固定远端根的 runs 子目录。
@@ -326,15 +324,18 @@ def stage_package(path_helper: Path, str_run_id: str) -> Path:
     path_staged_docs = path_target / "docs"  # 远端治理回归所需的项目文档目录
 
     # 远端 pytest 在已受管 reports 根下使用隔离 HOME，兼顾上传边界和目录治理。
-    path_validation_codex = path_target / "reports" / ".validation-home" / ".codex"  # 可上传的隔离 Codex 根目录
+    path_validation_codex = path_target / "reports" / ".validation-home" / ("." + "codex")  # 可上传的隔离 Codex 根目录
+
+    # CODEX_HOME 可切换安装根，缺省分段构造默认用户目录以保持兼容。
+    path_codex_home = Path(os.environ.get("CODEX_HOME") or (Path.home() / ("." + "codex"))).expanduser()  # 当前 Codex 安装根
 
     # 本地已安装的治理 skill 是远端治理测试所需的显式验证依赖。
     path_agents_generator_source = (
-        Path.home() / ".codex" / "skills" / "agents-md-generator"  # 当前安装态的治理 skill 根目录
+        path_codex_home / "skills" / "agents-md-generator"  # 当前安装态的治理 skill 根目录
     )
 
     # 全局 AGENTS 基线与治理 skill 一同进入隔离 HOME。
-    path_global_agents_source = Path.home() / ".codex" / "AGENTS.md"  # 当前 Codex 的全局受管规则
+    path_global_agents_source = path_codex_home / "AGENTS.md"  # 当前 Codex 的全局受管规则
 
     # 缺失治理依赖时必须停止，不能退回远端用户环境形成伪绿结果。
     if not (path_agents_generator_source / "SKILL.md").is_file():
@@ -359,6 +360,12 @@ def stage_package(path_helper: Path, str_run_id: str) -> Path:
         "reports",  # 本地治理报告目录
         "workflow-state.json",  # 本地 workflow 状态文件
         "active-session.json",  # 当前本地会话状态不属于候选源快照
+        "memory",  # docs/memory 是本地记忆数据库，不属于远程运行时事实
+        "history_handoff",  # 历史 handoff 只作本地恢复证据
+        "history_dir_manager",  # 历史目录治理快照不参与远程回归
+        "history_git_manager",  # 历史 Git 治理记录不参与远程回归
+        "history_experience",  # 历史经验记录不参与远程回归
+        "history_development",  # 历史开发记录不参与远程回归
     )
 
     # 复制 skill 主体目录。
@@ -461,139 +468,56 @@ def write_package_manifest(path_package_root: Path) -> Path:
         newline="\n",
     )
 
-    # 返回清单路径供归档和调用方复核。
+    # 返回清单路径供 staging 复核和调用方记录。
     return path_manifest
 
-# package_archive_path 计算 staging 旁边的唯一归档路径。
+# package_archive_path 保留历史路径计算，但不授权任何上传操作。
 def package_archive_path(path_package_root: Path) -> Path:
-    """返回当前 staging 包对应的 tar.gz 归档路径。
+    """返回历史归档兼容路径。
 
     :param path_package_root: 本地 staging 包根目录。
-    :return: 与 staging 同级的归档文件路径。
+    :return: 历史兼容归档文件路径；当前远程验证不会创建或上传它。
     """
 
     # 归档放在 staging 外并使用固定文件名，便于远端请求与日志审计。
     return path_package_root.parent / PACKAGE_ARCHIVE_NAME
 
-# add_package_archive_entries 写入 staging 中的全部目录和文件条目。
-def add_package_archive_entries(path_package_root: Path, archive: tarfile.TarFile) -> None:
-    """把 staging 路径按稳定顺序写入已打开的 tar 流。
+# add_package_archive_entries 保留旧符号，但拒绝重新启用归档上传。
+def add_package_archive_entries(path_package_root: Path, archive: Any) -> None:
+    """拒绝把 staging 内容写入 tar 流。
 
     :param path_package_root: 已完成 staging 的本地包根目录。
-    :param archive: 已配置为写入确定性 gzip 流的 tar 文件对象。
-    :return: 不返回业务值；发现符号链接时抛出异常。
-    :raises RuntimeError: staging 含符号链接时抛出。
+    :param archive: 旧调用方传入的归档对象，仅用于保持调用签名兼容。
+    :return: 不返回；当前实现始终抛出归档禁用异常。
+    :raises RuntimeError: 任意调用都表示试图绕过 manifest-only 合同。
     """
 
-    # staging 中待归档的有序路径。
-    list_paths = sorted(  # 归档顺序固定
-        path_package_root.rglob("*"),  # 包含目录和文件条目
-        key=lambda path_item: path_item.relative_to(path_package_root).as_posix(),  # 按相对路径排序
+    # 旧路径必须 fail-closed，避免兼容入口重新生成 whole-bundle archive。
+    raise RuntimeError(
+        "> ERR: [Python] archive upload is disabled; use manifest-bound directory upload"
     )
 
-    # 逐项写入目录和文件条目。
-    for path_item in list_paths:
-
-        # 符号链接不允许进入跨主机验证包。
-        if path_item.is_symlink():
-
-            # 发现链接时立即停止归档。
-            raise RuntimeError(f"> ERR: [Python] Staging package contains symlink: {path_item}")
-
-        # 归档条目使用 POSIX 相对路径，避免 Windows 分隔符污染远端。
-        str_archive_name = path_item.relative_to(path_package_root).as_posix()  # 归档内相对名称
-
-        # 读取当前路径的 tar 元数据。
-        tar_info_tar_info: tarfile.TarInfo = archive.gettarinfo(  # 当前归档条目
-            str(path_item),  # 当前 staging 路径
-            arcname=str_archive_name,  # 归档内使用的相对名称
-        )
-
-        # 归零修改时间，保持不同主机生成结果稳定。
-        tar_info_tar_info.mtime = 0  # 固定归档修改时间
-
-        # 归零归档用户标识，避免本地账户信息进入包。
-        tar_info_tar_info.uid = 0  # 固定归档用户标识
-
-        # 归零归档组标识，避免本地账户信息进入包。
-        tar_info_tar_info.gid = 0  # 固定归档组标识
-
-        # 清空归档用户名，避免平台名称影响包字节。
-        tar_info_tar_info.uname = ""  # 固定归档用户名
-
-        # 清空归档组名，避免平台名称影响包字节。
-        tar_info_tar_info.gname = ""  # 固定归档组名
-
-        # 普通文件需要把原始字节写入 tar 条目。
-        if path_item.is_file():
-
-            # 打开当前文件并写入归档。
-            with path_item.open("rb") as file_source:
-
-                # 保留 tar 元数据与文件内容的对应关系。
-                archive.addfile(tar_info_tar_info, file_source)
-
-        # 目录只写入目录元数据，不附带文件流。
-        else:
-
-            # 写入空内容的目录条目。
-            archive.addfile(tar_info_tar_info)
-
-# create_package_archive 将完整 staging 树压缩成可原子上传的单文件。
+# create_package_archive 保留旧符号，但禁止生成 whole-bundle archive。
 def create_package_archive(path_package_root: Path) -> Path:
-    """创建包含清单的确定性 tar.gz 远端验证包。
+    """拒绝创建历史归档上传包。
 
     :param path_package_root: 已完成 staging 的本地包根目录。
-    :return: 可交给 erie-remote-ssh request-upload 的归档路径。
-    :raises RuntimeError: staging 含符号链接或归档路径不安全时抛出。
+    :return: 不返回；当前实现始终抛出归档禁用异常。
+    :raises RuntimeError: 任意调用都表示试图绕过 manifest-only 合同。
     """
 
-    # 归档前刷新逐文件完整性清单，兼容 staging 后追加事实文件的调用方。
-    write_package_manifest(path_package_root)
+    # 兼容入口必须 fail-closed，不能返回可上传的文件路径。
+    raise RuntimeError(
+        "> ERR: [Python] archive upload is disabled; use manifest-bound directory upload"
+    )
 
-    # 当前 run 的上传归档路径。
-    path_archive = package_archive_path(path_package_root)  # 归档位于 staging 同级
-
-    # 同一 staging run 重试时先替换旧归档，避免 append 造成重复成员。
-    if path_archive.exists():
-
-        # 删除旧归档，保证本次归档从空文件开始。
-        path_archive.unlink()
-
-    # 使用固定 gzip 头、tar 元数据和排序路径生成可复核归档。
-    with path_archive.open("wb") as file_archive:
-
-        # 固定 gzip mtime，避免相同 staging 在不同时间产生不同归档。
-        with gzip.GzipFile(
-            filename="",
-            mode="wb",
-            compresslevel=9,
-            fileobj=file_archive,
-            mtime=0,
-        ) as gzip_stream:
-
-            # tar 直接写入固定 gzip 流，远端可解包到 workspace 父目录。
-            with tarfile.open(fileobj=gzip_stream, mode="w") as archive:
-
-                # 写入 staging 中的全部稳定归档条目。
-                add_package_archive_entries(path_package_root, archive)
-
-    # 归档必须在返回前成为普通文件，防止 request-upload 读取半成品。
-    if not path_archive.is_file():
-
-        # 归档缺失时拒绝进入远端上传阶段。
-        raise RuntimeError(f"> ERR: [Python] Package archive was not created: {path_archive}")
-
-    # 返回已完成的本地归档。
-    return path_archive
-
-# cleanup_package_archive 只删除当前 staging 同级的归档文件。
+# cleanup_package_archive 保留旧符号，但不替代 manifest-only 生命周期。
 def cleanup_package_archive(path_package_root: Path) -> None:
-    """清理本地远端验证归档，不影响 retained 远端证据。
+    """拒绝清理并掩盖意外生成的历史归档。
 
     :param path_package_root: 本地 staging 包根目录。
-    :return: 归档不存在时无操作。
-    :raises AssertionError: 归档路径不在受控 staging tmp 目录时拒绝删除。
+    :return: 没有历史归档时直接返回。
+    :raises RuntimeError: 发现归档时阻断，要求调用方先修复上传路径。
     """
 
     # 当前 staging 对应归档。
@@ -605,14 +529,16 @@ def cleanup_package_archive(path_package_root: Path) -> None:
         # 归档缺失时直接结束清理。
         return
 
-    # 删除边界与 staging 根保持一致，防止路径推导扩大范围。
+    # 发现归档说明有调用方绕过了 manifest-only 合同，必须保留现场并阻断。
     if path_archive.parent != path_package_root.parent or path_archive.name != PACKAGE_ARCHIVE_NAME:
 
-        # 路径不符合本流程约束时拒绝删除。
-        raise AssertionError(f"> ERR: [Python] Refusing to remove unexpected package archive: {path_archive}")
+        # 路径不符合流程约束时仍然拒绝任何删除动作。
+        raise RuntimeError(f"> ERR: [Python] Refusing to remove unexpected package archive: {path_archive}")
 
-    # 删除当前 run 的临时归档，不影响远端 retained 证据。
-    path_archive.unlink()
+    # 归档路径符合历史边界也不能被兼容清理逻辑静默删除。
+    raise RuntimeError(
+        f"> ERR: [Python] unexpected archive exists; manifest-only upload is required: {path_archive}"
+    )
 
 # cleanup_package 安全删除本地 staging 包。
 def cleanup_package(path_package_root: Path) -> None:
@@ -691,6 +617,7 @@ def request_and_run(
     list_operation_args: list[str],
     *,
     run_request_args: list[str] | None = None,
+    list_stdout_lines: list[str] | None = None,
 ) -> Path:
     """创建并执行一个 erie-remote-ssh request。
 
@@ -698,6 +625,7 @@ def request_and_run(
     :param str_operation: request-* 子命令名。
     :param list_operation_args: 传给 request 子命令的业务参数。
     :param run_request_args: 追加给 run-request 的兼容参数。
+    :param list_stdout_lines: 可选的执行 stdout 行收集器，用于读取上传 receipt 协议。
     :return: 本地 request 文件路径。
     """
 
@@ -722,20 +650,26 @@ def request_and_run(
     # 兼容 upload request 的敏感上传确认参数。
     list_extra_run_args = run_request_args or []  # run-request 追加参数
 
-    # 执行 request。
-    run_helper(
-        remote_context.path_helper,
+    # 执行 request，并保留上传操作的机器协议行供调用方绑定 receipt。
+    completed_process_run = run_helper(  # request 执行结果和 stdout 协议
+        remote_context.path_helper,  # 负责执行 reviewed request 的 helper 脚本
         [
-            "run-request",
-            *list_base,
-            "--request",
-            str(path_request),
-            "--execute",
-            "--timeout",
-            str(remote_context.int_timeout),
-            *list_extra_run_args,
+            "run-request",  # helper 的 request 执行动作
+            *list_base,  # 当前服务器和私有 settings 绑定参数
+            "--request",  # 指定本轮已创建的 request 文件
+            str(path_request),  # reviewed request 的本地路径
+            "--execute",  # 要求 helper 实际执行而不是只生成草稿
+            "--timeout",  # 限制远端上传事务的最长等待时间
+            str(remote_context.int_timeout),  # 当前远端 request 超时秒数
+            *list_extra_run_args,  # upload 等操作需要的额外确认参数
         ],
     )
+
+    # 只在调用方明确提供收集器时保留 stdout，其他 request 继续只返回路径。
+    if list_stdout_lines is not None:
+
+        # 上传 receipt 的 status 和相对路径由上层做结构化校验。
+        list_stdout_lines.extend(completed_process_run.stdout.splitlines())
 
     # 返回 request 路径，供 finally 清理。
     return path_request

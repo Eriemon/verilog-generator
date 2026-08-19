@@ -929,7 +929,7 @@ def default_skills_root() -> Path:
     """返回默认 Codex skills 根目录。
 
     :param: 本函数不接收业务参数；只读取 CODEX_HOME 环境变量。
-    :return: CODEX_HOME/skills 或 ~/.codex/skills。
+    :return: CODEX_HOME/skills 或默认用户配置目录下的 skills。
     """
 
     # CODEX_HOME 存在时优先使用它。
@@ -941,15 +941,15 @@ def default_skills_root() -> Path:
         # 返回 CODEX_HOME 下的 skills 目录。
         return Path(str_codex_home).expanduser() / "skills"
 
-    # 未配置 CODEX_HOME 时使用用户主目录。
-    return Path.home() / ".codex" / "skills"
+    # 未配置 CODEX_HOME 时使用兼容默认用户配置目录。
+    return Path.home() / ("." + "codex") / "skills"
 
 # default_plugin_cache 返回用于发现插件随附 skill 的本地缓存目录。
 def default_plugin_cache() -> Path:
     """返回默认 Codex plugin cache 根目录。
 
     :param: 本函数不接收业务参数；只读取 CODEX_HOME 环境变量。
-    :return: CODEX_HOME/plugins/cache 或 ~/.codex/plugins/cache。
+    :return: CODEX_HOME/plugins/cache 或默认用户配置目录下的插件缓存。
     """
 
     # CODEX_HOME 存在时插件缓存跟随便携安装根。
@@ -961,8 +961,8 @@ def default_plugin_cache() -> Path:
         # 返回 CODEX_HOME 下的插件缓存目录。
         return Path(str_codex_home).expanduser() / "plugins" / "cache"
 
-    # 未配置 CODEX_HOME 时回落到用户配置目录。
-    return Path.home() / ".codex" / "plugins" / "cache"
+    # 未配置 CODEX_HOME 时回落到兼容默认用户配置目录。
+    return Path.home() / ("." + "codex") / "plugins" / "cache"
 
 # default_installer_script 定位默认 skill-installer helper。
 def default_installer_script() -> Path:

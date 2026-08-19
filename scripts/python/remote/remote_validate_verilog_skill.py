@@ -94,12 +94,6 @@ module_type_stage_manifest_support = _load_local_support_module(  # facade 绑�
     "readable_verilog_remote_stage_manifest",  # execution 动态导入使用的稳定模块别名
 )
 
-# 归档完整性模块先载入，供归档验证片段使用。
-module_type_archive_integrity_support = _load_local_support_module(  # facade 绑定归档完整性支撑模块
-    "remote_archive_integrity.py",  # 承载归档解包、manifest 和摘要校验脚本生成逻辑
-    "readable_verilog_remote_archive_integrity",  # 归档验证模块别名
-)
-
 # reports 处置模块先载入，供输出策略包装器使用。
 module_type_output_cleanup_support = _load_local_support_module(  # facade 绑定输出处置支撑模块
     "remote_output_cleanup.py",  # 承载 retained reports 路径检查脚本生成逻辑
@@ -868,29 +862,23 @@ def run_remote_validation(
     # 打包本地 skill 和 smoke 目录到临时 staging 根。
     path_package_root = stage_package(remote_context.path_helper, str_run_id)  # 本地临时上传包根目录
 
-    # 归档或摘要生成失败时立即清理 staging，避免半成品留在本地临时目录。
+    # 实际上传根或 source digest 计算失败时立即清理 staging，避免半成品留在本地临时目录。
     try:
 
-        # 将 staging 树封装成单文件，避免递归 SCP 在目录树中静默遗漏模块。
-        path_upload_archive = create_package_archive(path_package_root)  # 本轮唯一上传源归档
+        # erie-remote-ssh 的 source manifest 必须覆盖真正上传的 selected project 目录。
+        path_staged_source = path_package_root / "readable-verilog-generator"  # manifest-bound directory upload 的本地根
 
-        # 摘要必须在上传前对最终 staging 计算，后续 completion 与调用方都绑定该值。
-        str_source_digest = staged_source_digest(path_package_root)  # 本轮上传包的稳定 SHA-256 身份
+        # 摘要只覆盖实际上传根，避免 staging 外层 marker 或 package manifest 污染 source identity。
+        str_source_digest = staged_source_digest(path_staged_source)  # 实际上传目录的稳定 SHA-256 身份
 
-    # 归档或摘要阶段发生异常时进入本地临时资源清理分支。
+    # staging 或摘要阶段发生异常时进入本地临时资源清理分支。
     except BaseException:
 
-        # 失败时清理归档和 staging；原始异常继续交给上层报告。
-        cleanup_package_archive(path_package_root)
-
-        # 删除归档来源目录，避免下一轮误用半成品。
+        # 失败时只清理 staging；原始异常继续交给上层报告。
         cleanup_package(path_package_root)
 
         # 保留原始异常类型和堆栈，禁止把失败伪装成成功。
         raise
-
-    # 归档放在远端 skill 目录内，解包目标为其父级 workspace。
-    str_remote_archive_name = PACKAGE_ARCHIVE_NAME  # 远端解包使用的归档文件名
 
     # 请求列表在 try 前初始化，保证失败清理路径也可访问。
     list_request_paths: list[Path] = []  # 本轮创建的 erie-remote-ssh request 文件
@@ -908,8 +896,6 @@ def run_remote_validation(
         str_source_digest=str_source_digest,  # completion 绑定的上传包身份
         str_remote_server=remote_context.str_server,  # 远端环境指纹绑定的服务器标识
         str_remote_reports=str_remote_reports,  # outer run 的直接报告目录
-        path_upload_archive=path_upload_archive,  # 本地 tar.gz 上传源
-        str_remote_archive_name=str_remote_archive_name,  # 远端 skill 目录内的归档文件名
     )
 
     # 远端执行可能失败，但本地 staging 和 request 文件必须进入清理路径。
@@ -932,6 +918,9 @@ def run_remote_validation(
             cleanup_remote=cleanup_remote,  # 是否删除远端 retained run
         )
 
+    # 上传 request 的 manifest hash 是 erie-remote-ssh source identity 的最终权威值。
+    str_source_digest = run_config.str_source_digest  # uploaded_verified receipt 绑定的 source manifest 摘要
+
     # 远端 gate 全流程通过。
     print("> INFO: [Python] Readable Verilog generator remote confidence gate passed.")
 
@@ -940,6 +929,7 @@ def run_remote_validation(
         {
             "run_id": str_run_id,
             "source_digest": str_source_digest,
+            "upload_receipt": run_config.str_upload_receipt_relative,
             "status": "passed",
         }
     )
@@ -964,6 +954,113 @@ def _build_outer_run_relative_path(str_leaf: str) -> str:
     # POSIX 序列化结果不接受外部父目录输入，保持报告布局可审计。
     return path_outer_run.as_posix()  # workspace 到 outer run 的稳定相对引用
 
+# read_upload_manifest_sha256 读取 erie-remote-ssh request 绑定的 canonical source manifest。
+def read_upload_manifest_sha256(path_request: Path) -> str:
+    """读取并校验 upload request 的 source manifest 摘要。
+
+    :param path_request: 已创建的 erie-remote-ssh upload request JSON 路径。
+    :return: request 顶层与嵌套 manifest 一致的 SHA-256 摘要。
+    :raises ValueError: request 不是 upload、manifest 缺失或摘要不一致时抛出。
+    """
+
+    # request JSON 是本地审批载荷，读取后只保留上传合同字段。
+    try:
+
+        # 解析 request 文件以读取 payload.source_manifest_sha256。
+        dict_request = json.loads(path_request.read_text(encoding="utf-8"))  # upload request 原始载荷
+
+    # JSON 语法或文件读取失败都不能继续远程执行。
+    except (OSError, json.JSONDecodeError) as exc:
+
+        # 保留文件位置和原始异常类型，便于定位 request 生成问题。
+        raise ValueError(f"> ERR: [Python] upload request cannot be read: {path_request}") from exc
+
+    # 读取 upload request 的业务载荷，后续核对 source_manifest_sha256。
+    dict_payload = dict_request.get("payload") if isinstance(dict_request, dict) else None  # 取出承载文件清单、计数和摘要的 upload 业务载荷
+
+    # 缺失或错误操作不能被当作 manifest-bound upload。
+    if (
+        not isinstance(dict_request, dict)
+        or dict_request.get("operation") != "upload"
+        or not isinstance(dict_payload, dict)
+    ):
+
+        # 直接拒绝非 upload request，避免错误 request 继续执行。
+        raise ValueError(
+            "> ERR: [Python] remote upload request must contain operation=upload and an object payload"
+        )
+
+    # 顶层摘要用于快速绑定，嵌套摘要用于完整 manifest 校验。
+    str_manifest_sha256 = str(dict_payload.get("source_manifest_sha256", "")).strip()  # request 顶层 manifest 摘要
+
+    # 嵌套 manifest 必须重复相同摘要，防止 request 字段被拆改。
+    dict_manifest = dict_payload.get("source_manifest")  # request 内嵌的逐文件 source manifest
+
+    # 摘要格式和双字段一致性都必须在本地先通过。
+    if (
+        len(str_manifest_sha256) != 64
+        or not isinstance(dict_manifest, dict)
+        or str(dict_manifest.get("manifest_sha256", "")) != str_manifest_sha256
+    ):
+
+        # 不接受缺失、截断或顶层/嵌套不一致的 source identity。
+        raise ValueError(
+            "> ERR: [Python] remote upload source manifest identity is incomplete or inconsistent"
+        )
+
+    # 返回 erie-remote-ssh request 已计算的 canonical source manifest 摘要。
+    return str_manifest_sha256
+
+# parse_upload_receipt_reference 校验 uploaded_verified 的机器输出。
+def parse_upload_receipt_reference(list_stdout_lines: list[str]) -> str:
+    """解析上传成功状态和受控 receipt 相对路径。
+
+    :param list_stdout_lines: erie-remote-ssh run-request 返回的 stdout 行。
+    :return: receipts/uploads 下的 POSIX receipt 相对路径。
+    :raises ValueError: 缺少 uploaded_verified、receipt 或路径越界时抛出。
+    """
+
+    # 成功状态必须由 helper 明确输出，不能只依据进程退出码。
+    bool_uploaded_verified = False  # 是否观察到 uploaded_verified 终态
+
+    # receipt 只允许保留相对引用，不写入本地绝对路径或连接信息。
+    str_receipt_relative = ""  # helper 返回的 receipt 相对路径
+
+    # 逐行读取 helper 机器协议，忽略普通人类日志。
+    for str_line in list_stdout_lines:
+
+        # uploaded_verified 是 erie-remote-ssh 上传事务的终态标识。
+        if str_line.strip() == "status: uploaded_verified":
+
+            # 记录已完成远端和本地 manifest 双重校验的终态。
+            bool_uploaded_verified = True  # helper 已完成远端和本地源快照校验
+
+        # receipt 行只接受固定字段前缀。
+        if str_line.startswith("receipt:"):
+
+            # 冒号后的内容是 reports 根下的相对 receipt 引用。
+            str_receipt_relative = str_line.split(":", 1)[1].strip()  # 上传事务返回的受控回执相对引用
+
+    # 解析 POSIX 相对路径并拒绝绝对路径、父目录和其他 receipt 根。
+    path_receipt = PurePosixPath(str_receipt_relative)  # 受控 POSIX receipt 路径对象
+
+    # 上传 proof 不完整时必须阻断最终远程命令。
+    if (
+        not bool_uploaded_verified
+        or not str_receipt_relative
+        or path_receipt.is_absolute()
+        or ".." in path_receipt.parts
+        or path_receipt.parts[:2] != ("receipts", "uploads")
+    ):
+
+        # 缺少或越界 receipt 不能成为 source-bound 证据。
+        raise ValueError(
+            "> ERR: [Python] uploaded_verified receipt is missing or outside receipts/uploads"
+        )
+
+    # 返回已限制在 helper reports 根下的 POSIX 相对路径。
+    return path_receipt.as_posix()
+
 # run_remote_validation_requests 创建并执行远端验证需要的三个 request。
 def run_remote_validation_requests(
     remote_context: RemoteHelperContext,
@@ -974,6 +1071,8 @@ def run_remote_validation_requests(
     :param remote_context: erie-remote-ssh helper 调用上下文。
     :param run_config: 本次远端 retained run 的上传和执行参数。
     :return: 本轮创建的本地 request 文件路径列表。
+    :raises ValueError: archive 字段、manifest 摘要或上传 receipt 不符合合同。
+    :raises SystemExit: erie-remote-ssh request 执行失败时沿用 helper 退出码。
     """
 
     # 已创建的 request 文件需要在 finally 中清理。
@@ -1002,70 +1101,51 @@ def run_remote_validation_requests(
         )
     )
 
-    # 归档上传需要先创建最终 skill 目录，避免 scp 把归档落到错误层级。
-    if run_config.path_upload_archive is not None and run_config.str_remote_archive_name:
+    # 非空历史归档字段表示调用方试图绕过 manifest-only 合同。
+    if run_config.path_upload_archive is not None or run_config.str_remote_archive_name:
 
-        # 记录创建归档解包目录的远端请求。
-        list_request_paths.append(
-
-            # 通过统一 helper 创建远端目录。
-            request_and_run(
-                remote_context,
-                "request-mkdir",
-                [
-                    "--path",
-                    run_config.str_remote_skill,
-                    "--reason",
-                    "prepare Verilog skill archive extraction directory",
-                ],
-            )
+        # 执行层拒绝所有 archive/tar 上传，不提供兼容降级路径。
+        raise ValueError(
+            "> ERR: [Python] archive upload is disabled; use manifest-bound directory upload"
         )
 
-    # 优先上传单一归档；旧调用方未提供归档时保留目录上传兼容路径。
-    if run_config.path_upload_archive is not None and run_config.str_remote_archive_name:
+    # 上传 stdout 只收集 status 和 receipt 行，避免把原始命令载荷带入结构化证据。
+    list_upload_stdout: list[str] = []  # uploaded_verified 协议行收集器
 
-        # 记录单一归档上传请求。
-        list_request_paths.append(
+    # manifest-bound upload 的本地根必须与 source digest 使用同一 selected project 目录。
+    path_upload_source = run_config.path_package_root / "readable-verilog-generator"  # 实际 request-upload 本地目录
 
-            # 通过统一 helper 上传确定性归档。
-            request_and_run(
-                remote_context,
-                "request-upload",
-                [
-                    "--local",
-                    str(run_config.path_upload_archive),
-                    "--remote",
-                    remote_join(run_config.str_remote_skill, run_config.str_remote_archive_name),
-                    "--reason",
-                    "upload Verilog skill validation package archive",
-                    "--confirm-sensitive-local-upload",
-                ],
-                run_request_args=["--confirm-sensitive-local-upload"],
-            )
-        )
+    # 通过 erie-remote-ssh directory upload 创建并执行逐文件 source manifest request。
+    path_upload_request = request_and_run(  # 该路径指向 erie upload request，读取它可校验逐文件清单与执行回执
+        remote_context,  # 让创建与执行共享 server_1 的私有连接配置
+        "request-upload",  # 触发逐文件目录上传并生成 source manifest
+        [
+            "--local",  # 绑定本地 selected project 目录
+            str(path_upload_source),  # 实际 source manifest 的本地根
+            "--remote",  # 绑定远端 workspace 内的 skill 目录
+            run_config.str_remote_skill,  # 远端 manifest commit 目标
+            "--reason",  # 审计记录中的上传原因字段
+            "upload Verilog skill source with manifest verification",  # 明确逐文件校验意图
+            "--confirm-sensitive-local-upload",  # 复用受控 staging 的上传确认
+        ],
+        run_request_args=["--confirm-sensitive-local-upload"],  # 执行阶段的上传确认参数
+        list_stdout_lines=list_upload_stdout,  # 收集 uploaded_verified 和 receipt 协议行
+    )
 
-    # 未配置归档时继续使用旧的递归目录上传兼容路径。
-    else:
+    # request payload 的 canonical manifest hash 是上传源的最终身份。
+    str_manifest_sha256 = read_upload_manifest_sha256(path_upload_request)  # 用 erie 审批单摘要替换预上传本地摘要
 
-        # 记录兼容目录上传请求。
-        list_request_paths.append(
+    # uploaded_verified receipt 必须存在且只能引用受控 receipts/uploads 相对路径。
+    str_upload_receipt_relative = parse_upload_receipt_reference(list_upload_stdout)  # erie-remote-ssh 成功 receipt 引用
 
-            # 通过统一 helper 上传 staging skill 目录。
-            request_and_run(
-                remote_context,
-                "request-upload",
-                [
-                    "--local",
-                    str(run_config.path_package_root / "readable-verilog-generator"),
-                    "--remote",
-                    run_config.str_remote_skill,
-                    "--reason",
-                    "upload Verilog skill validation package",
-                    "--confirm-sensitive-local-upload",
-                ],
-                run_request_args=["--confirm-sensitive-local-upload"],
-            )
-        )
+    # 远端命令和最终 JSON 统一使用 request manifest 摘要，避免 staging 自定义摘要脱离上传事务。
+    run_config.str_source_digest = str_manifest_sha256  # 让 completion 使用 erie request 核验的 source manifest hash
+
+    # 将 erie 回执引用带入父级 final JSON，便于复核 reports/receipts/uploads。
+    run_config.str_upload_receipt_relative = str_upload_receipt_relative  # 父级协议中的 uploaded_verified receipt 引用
+
+    # 上传 request 进入统一 finally 清理，receipt 本体由 erie-remote-ssh reports 保留。
+    list_request_paths.append(path_upload_request)
 
     # 远端执行命令包含 compile、smoke、fixture 和 readiness 验证，reports 与 workspace skill 根保持两级相对关系。
     str_report_root = _build_outer_run_relative_path("reports")  # outer run 的直接 reports 目录
@@ -1076,7 +1156,7 @@ def run_remote_validation_requests(
     )
 
     # 依据固定 outer run 目录生成完整远端验证命令。
-    str_command = remote_validation_command(  # 远端 bash 验证脚本
+    str_command = remote_validation_command(  # 该 bash 载荷驱动三阶段 pytest 和 smoke 证据写入本轮 retained run
         run_config.str_remote_skill,  # bash gate 执行根目录
         run_config.str_remote_python,  # 远端 Python 可执行命令
 
@@ -1098,14 +1178,11 @@ def run_remote_validation_requests(
         # outer run 身份进入最终 completion 清单。
         run_id=run_config.str_run_id,  # 最终完成清单绑定的 outer run 身份
 
-        # staging 摘要阻止其他源码包复用本轮完成证据。
-        source_digest=run_config.str_source_digest,  # completion 绑定的上传包 SHA-256
+        # source manifest 摘要阻止其他源码树复用本轮完成证据。
+        source_digest=run_config.str_source_digest,  # completion 绑定 erie manifest SHA-256，锁定本轮源码身份
 
         # 服务器标识进入远端环境和测试证据，不写入连接凭据。
         remote_server_id=run_config.str_remote_server,  # 本轮远端服务器身份
-
-        # 归档文件名用于远端解包和逐文件完整性校验。
-        package_archive_name=run_config.str_remote_archive_name,  # skill 目录内的 tar.gz 名称
     )
 
     # 将完整 bash 正文压缩后再进入 request，避免 Windows OpenSSH argv 超过上限。
@@ -1164,10 +1241,7 @@ def finalize_remote_validation_run(
         # 详细 retained 路径已由 remote_location_lines 在启动阶段打印。
         print("> INFO: [Python] remote validation artifacts retained.")
 
-    # 先清理 staging 同级的确定性归档，避免 reports/tmp 持续增长。
-    cleanup_package_archive(run_config.path_package_root)
-
-    # 再清理归档来源目录。
+    # 清理 manifest-bound upload 的本地 staging 来源目录。
     cleanup_package(run_config.path_package_root)
 
     # 删除本地 request 文件，远端执行证据仍留在 retained run 中。

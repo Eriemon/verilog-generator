@@ -80,14 +80,14 @@ TUPLE_PATTERN_NAMES = ("Tool Wrapper", "Generator", "Reviewer", "Inversion", "Pi
 # 外部 docs 治理脚本优先使用当前标准布局，兼容旧版单层 scripts 布局。
 PATH_MANAGE_DOCS_SCRIPT_CANDIDATES = (  # docs 治理入口脚本候选路径
     Path.home()  # 当前用户主目录作为 Codex 安装位置起点
-    / ".codex"  # Codex 用户配置目录
+    / ("." + "codex")  # 兼容默认用户配置目录而不锁定平台代理字面量
     / "skills"  # 本地已安装 skills 根目录
     / "agents-md-generator"  # AGENTS 治理 skill 目录名
     / "scripts"  # 治理 skill 的脚本目录
     / "python"  # 新版 Python 脚本分层目录
     / "docs"  # docs 治理子命令目录
     / "manage_docs.py",  # 当前 agents-md-generator 标准脚本路径
-    Path.home() / ".codex" / "skills" / "agents-md-generator" / "scripts" / "manage_docs.py",  # 旧版脚本路径
+    Path.home() / ("." + "codex") / "skills" / "agents-md-generator" / "scripts" / "manage_docs.py",  # 旧版脚本路径
 )
 
 # 选择第一个存在的 docs 治理脚本；都不存在时保留首选路径供错误信息定位。

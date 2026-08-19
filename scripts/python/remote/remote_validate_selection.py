@@ -44,7 +44,8 @@ class RemoteHelperContext:
     # timeout 只用于执行已创建的远端请求。
     int_timeout: int  # 远端请求执行超时时间
 
-@dataclass(frozen=True)
+# 执行配置需要在 upload request 完成后补全 source manifest 和 receipt。
+@dataclass
 class RemoteValidationRunConfig:
     """保存一次远端 retained run 的上传和执行参数。
 
@@ -58,8 +59,12 @@ class RemoteValidationRunConfig:
     :param str_run_id: 本次 outer retained run 的唯一标识。
     :param str_source_digest: 上传 staging 内容的 SHA-256 摘要。
     :param str_remote_server: 本次远端验证使用的服务器标识。
-    :param path_upload_archive: 本地完整验证包归档路径。
-    :param str_remote_archive_name: 远端 skill 目录内的归档文件名。
+    :param path_upload_archive: 历史归档字段；非空时执行层必须拒绝。
+    :param str_remote_archive_name: 历史归档字段；非空时执行层必须拒绝。
+    :param str_upload_receipt_relative: erie-remote-ssh uploaded_verified receipt 的相对引用。
+
+    上传 request 完成后才知道 canonical source manifest 和 receipt，因此该执行配置允许
+    在 request 阶段补全这两个晚期身份；helper context 仍保持不可变。
     """
 
     # staging 包是 request-upload 的本地源目录。
@@ -95,11 +100,14 @@ class RemoteValidationRunConfig:
     # 新布局把 reports 固定放在 runs/<run-id>/ 下，避免嵌套 smoke_runs 目录。
     str_remote_reports: str = ""  # 本次 run 的直接报告目录
 
-    # 单文件归档替代易出现部分缺失的递归目录上传。
+    # 历史归档字段只保留兼容形状，默认值为空且执行层禁止非空值。
     path_upload_archive: Path | None = None  # 本地 tar.gz 上传源
 
-    # 归档目标固定在远端 skill 目录内，解包后恢复 workspace 结构。
+    # 历史归档目标只保留兼容形状，默认值为空且执行层禁止非空值。
     str_remote_archive_name: str = ""  # 远端 tar.gz 文件名
+
+    # 上传 request 的 verified receipt 用相对引用写入最终机器协议。
+    str_upload_receipt_relative: str = ""  # uploaded_verified receipt 相对路径
 
 # _ensure_runtime_import_path 只在需要 runtime helper 时调整导入路径。
 def _ensure_runtime_import_path() -> None:

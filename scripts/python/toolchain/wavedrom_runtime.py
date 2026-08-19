@@ -18,14 +18,25 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
+from xml.etree import ElementTree
 
 # 固定包名，确保依赖检查和安装命令使用同一标识。
 WAVEDROM_PACKAGE = "wavedrom"  # WaveDrom npm 包的规范名称
 
 # 固定版本，避免图形渲染结果因全局升级而漂移。
 WAVEDROM_VERSION = "3.6.1"  # 规范文档允许的 WaveDrom 版本
+
+# 视口左侧安全区，抵消不同 SVG 查看器替代字体造成的信号名宽度误差。
+WAVEDROM_LEFT_PADDING_PX = Decimal("32")  # WaveDrom SVG 左边界安全区像素
+
+# SVG 命名空间用于严格定位根节点和画布背景。
+SVG_NAMESPACE = "http://www.w3.org/2000/svg"  # SVG 元素命名空间
+
+# xlink 命名空间用于序列化时保持 WaveDrom defs 引用不变。
+XLINK_NAMESPACE = "http://www.w3.org/1999/xlink"  # SVG xlink 命名空间
 
 # 官方包的运行时前置条件，低于该版本时直接失败闭合。
 MIN_NODE_VERSION = (20, 0, 0)  # Node.js 的最低主次补丁版本
@@ -458,6 +469,281 @@ def install_runtime(
     # 将结构化安装结果交给依赖管理器。
     return dict_result
 
+# 将 SVG 数值属性解析为有限 Decimal，阻止不完整几何进入发布阶段。
+def _parse_svg_decimal(str_value: str | None, str_field: str) -> Decimal:
+    """
+    解析 WaveDrom SVG 的十进制几何字段。
+
+    :param str_value: SVG 属性原文；缺失值用 ``None`` 表示。
+    :param str_field: 用于错误诊断的字段名称。
+    :return: 可参与精确几何计算的有限 Decimal。
+    :raises RuntimeError: 属性缺失、格式非法或数值非有限时抛出。
+    """
+
+    # 缺少属性时无法证明 SVG 的发布边界。
+    if str_value is None or not str_value.strip():
+
+        # 将缺失字段定位到 WaveDrom 输出几何合同。
+        raise RuntimeError(
+            "> ERR: [Python] WaveDrom SVG geometry is invalid: missing {}.".format(
+                str_field
+            )
+        )
+
+    # Decimal 避免浮点舍入改变 viewBox 的边界值。
+    try:
+
+        # 只接受属性原文中的十进制数，不隐式解释单位或表达式。
+        decimal_value = Decimal(str_value.strip())  # 解析后的 SVG 几何数值
+
+    # 非数字属性必须阻断发布，而不是猜测单位或默认值。
+    except InvalidOperation as exc:
+
+        # 保留原始解析异常作为调试链路，同时给出稳定的业务错误。
+        raise RuntimeError(
+            "> ERR: [Python] WaveDrom SVG geometry is invalid: {} is not numeric.".format(
+                str_field
+            )
+        ) from exc
+
+    # NaN 和无穷值不能构成可渲染的 SVG 视口。
+    if not decimal_value.is_finite():
+
+        # 非有限数值会让不同查看器采用不一致的裁剪结果。
+        raise RuntimeError(
+            "> ERR: [Python] WaveDrom SVG geometry is invalid: {} is not finite.".format(
+                str_field
+            )
+        )
+
+    # 返回已经通过有限性检查的精确数值。
+    return decimal_value
+
+# 将 Decimal 几何值格式化为稳定且无科学计数法的 SVG 属性文本。
+def _format_svg_decimal(decimal_value: Decimal) -> str:
+    """
+    格式化 SVG 几何数值，避免无意义的小数或指数表示。
+
+    :param decimal_value: 已通过有限性检查的 Decimal 几何值。
+    :return: 可直接写入 SVG 属性的十进制文本。
+    """
+
+    # 零值统一输出为单个字符，避免负零和尾随小数进入 viewBox。
+    if decimal_value == 0:
+
+        # SVG 对零的几何语义与符号无关，统一保持可读输出。
+        return "0"
+
+    # 使用普通十进制格式，保留真实小数精度并禁止科学计数法。
+    str_formatted = format(decimal_value, "f")  # SVG 几何文本
+
+    # 只有带小数点的值需要去除无意义的尾随零。
+    if "." in str_formatted:
+
+        # 保留整数部分，同时删除不会改变几何意义的末尾字符。
+        str_formatted = str_formatted.rstrip("0").rstrip(".")  # 规范化后的几何文本
+
+    # 防止极端输入留下空文本或负零。
+    if str_formatted in {"", "-0"}:
+
+        # 空文本不能成为合法 SVG 属性，因此回退为规范零值。
+        return "0"
+
+    # 返回稳定的十进制属性文本。
+    return str_formatted
+
+# 在原子写入前扩展 WaveDrom SVG 左侧视口并同步画布背景。
+def _expand_svg_left_boundary(str_svg_text: str) -> str:
+    """
+    为 WaveDrom SVG 增加固定左侧安全区并保留图形内容。
+
+    :param str_svg_text: WaveDrom CLI 返回的 SVG 文本。
+    :return: 扩展根 viewBox、根宽度和背景后的 SVG 文本。
+    :raises RuntimeError: XML、几何字段或背景画布不满足发布合同。
+    """
+
+    # XML 解析先于任何输出文件操作，确保失败不会覆盖旧 SVG。
+    try:
+
+        # ElementTree 只在内存中解析 CLI 输出，不读取外部资源。
+        element_root = ElementTree.fromstring(  # 解析 SVG 以校验根视口和画布合同
+            str_svg_text  # 传入待校验的 WaveDrom SVG 文本
+        )
+
+    # 非 XML 输出不得进入原子发布阶段。
+    except ElementTree.ParseError as exc:
+
+        # 将解析错误收敛为当前 runtime 的可审计异常类型。
+        raise RuntimeError(
+            "> ERR: [Python] WaveDrom SVG geometry is invalid: malformed XML."
+        ) from exc
+
+    # 只接受 SVG 命名空间下的根节点。
+    if element_root.tag != "{{{}}}svg".format(SVG_NAMESPACE):
+
+        # HTML 或其他 XML 文档不能伪装成 WaveDrom 图形。
+        raise RuntimeError(
+            "> ERR: [Python] WaveDrom SVG geometry is invalid: root is not svg."
+        )
+
+    # 读取根宽度，后续用于保持像素宽度与 viewBox 宽度一致。
+    decimal_root_width = _parse_svg_decimal(  # SVG 根像素宽度
+        element_root.attrib.get("width"), "svg.width"  # 读取根宽度属性
+    )
+
+    # 读取根高度，后续用于确认纵向几何没有被修改。
+    decimal_root_height = _parse_svg_decimal(  # SVG 根像素高度
+        element_root.attrib.get("height"), "svg.height"  # 读取根高度属性
+    )
+
+    # 读取根 viewBox 原文，保留查看器使用的二维坐标合同。
+    str_viewbox = element_root.attrib.get("viewBox", "")  # SVG 根视口文本
+
+    # 将空格或逗号分隔的 viewBox 统一拆成四个边界值。
+    list_viewbox_parts = str_viewbox.replace(",", " ").split()  # viewBox 边界字段
+
+    # viewBox 必须由 x、y、宽度和高度四个数值组成。
+    if len(list_viewbox_parts) != 4:
+
+        # 缺少任一边界值时不能推导安全的左扩展结果。
+        raise RuntimeError(
+            "> ERR: [Python] WaveDrom SVG geometry is invalid: viewBox must have four numbers."
+        )
+
+    # 解析 viewBox 的 x 边界，后续使用 Decimal 做精确加减。
+    decimal_viewbox_x = _parse_svg_decimal(  # 原始水平起点
+        list_viewbox_parts[0], "svg.viewBox.x"  # 读取水平起点
+    )
+
+    # 解析 viewBox 的 y 边界，保证垂直起点保持不变。
+    decimal_viewbox_y = _parse_svg_decimal(  # 原始垂直起点
+        list_viewbox_parts[1], "svg.viewBox.y"  # 读取垂直起点
+    )
+
+    # 解析 viewBox 宽度，作为根宽度和右边界的基准。
+    decimal_viewbox_width = _parse_svg_decimal(  # 原始水平范围
+        list_viewbox_parts[2], "svg.viewBox.width"  # 读取水平范围
+    )
+
+    # 解析 viewBox 高度，作为纵向不变性的校验基准。
+    decimal_viewbox_height = _parse_svg_decimal(  # 原始垂直范围
+        list_viewbox_parts[3], "svg.viewBox.height"  # 读取垂直范围
+    )
+
+    # 宽高必须为正数，零宽或零高无法形成可视图形。
+    if (
+        decimal_root_width <= 0
+        or decimal_root_height <= 0
+        or decimal_viewbox_width <= 0
+        or decimal_viewbox_height <= 0
+    ):
+
+        # 拒绝会导致查看器按空画布处理的几何合同。
+        raise RuntimeError(
+            "> ERR: [Python] WaveDrom SVG geometry is invalid: width and height must be positive."
+        )
+
+    # 根尺寸与 viewBox 尺寸不一致时，无法保证新增 32px 不改变缩放比例。
+    if (
+        decimal_root_width != decimal_viewbox_width
+        or decimal_root_height != decimal_viewbox_height
+    ):
+
+        # 保持固定 WaveDrom 输出合同，避免猜测查看器的缩放策略。
+        raise RuntimeError(
+            "> ERR: [Python] WaveDrom SVG geometry is invalid: root size and viewBox size differ."
+        )
+
+    # 画布背景位于 WaveDrom 的 waves 分组内，需要从整个 SVG 树中精确定位。
+    list_background_rects: list[ElementTree.Element] = []  # 匹配画布尺寸的白色背景集合
+
+    # 仅接受同时匹配画布宽高且声明白色填充的 rect，排除 defs 中的波形原语。
+    for element_candidate in element_root.iter(
+        "{{{}}}rect".format(SVG_NAMESPACE)
+    ):
+
+        # 没有 style 的 rect 不是 WaveDrom 发布画布的可靠候选。
+        str_candidate_style = element_candidate.attrib.get("style", "")  # 候选背景样式
+
+        # 删除样式空白以稳定识别 fill:white 的画布声明。
+        str_compact_style = str_candidate_style.replace(" ", "").lower()  # 归一化背景样式
+
+        # 不含白色填充的矩形可能是 defs 原语或波形状态，不得修改。
+        if "fill:white" not in str_compact_style:
+
+            # 当前候选不属于发布背景，继续检查后续 rect。
+            continue
+
+        # 画布宽度和高度必须与原 viewBox 完全一致。
+        if (
+            element_candidate.attrib.get("width")
+            != _format_svg_decimal(decimal_viewbox_width)
+            or element_candidate.attrib.get("height")
+            != _format_svg_decimal(decimal_viewbox_height)
+        ):
+
+            # 尺寸不同的白色矩形不代表整张 WaveDrom 画布。
+            continue
+
+        # 保存唯一候选，稍后统一验证数量并更新边界。
+        list_background_rects.append(element_candidate)
+
+    # 缺失或多重背景都会让扩展结果变得不可审计。
+    if len(list_background_rects) != 1:
+
+        # 不猜测应修改的矩形，直接阻断并保留已有 SVG。
+        raise RuntimeError(
+            "> ERR: [Python] WaveDrom SVG geometry is invalid: background rect is missing or ambiguous."
+        )
+
+    # 向左扩展固定安全区，保持原图形右边界位置不变。
+    decimal_new_viewbox_x: Decimal = (  # 扩展后的左边界
+        decimal_viewbox_x - WAVEDROM_LEFT_PADDING_PX  # 左边界左移固定像素
+    )
+
+    # 增加安全区宽度，使根宽度和 viewBox 仍然保持一比一。
+    decimal_new_viewbox_width: Decimal = (  # 扩展后的视口宽度
+        decimal_viewbox_width + WAVEDROM_LEFT_PADDING_PX  # 增加固定安全区
+    )
+
+    # 分别格式化四个边界，避免拼接时改变原有坐标语义。
+    list_new_viewbox_parts: list[str] = [  # 扩展后的 viewBox 四段文本
+        _format_svg_decimal(decimal_new_viewbox_x),  # 左边界文本
+        _format_svg_decimal(decimal_viewbox_y),  # 垂直起点文本
+        _format_svg_decimal(decimal_new_viewbox_width),  # 新视口宽度文本
+        _format_svg_decimal(decimal_viewbox_height),  # 视口高度文本
+    ]
+
+    # 组合扩展后的 viewBox，供根 SVG 和查看器共同使用。
+    str_new_viewbox = " ".join(list_new_viewbox_parts)  # 扩展后的 viewBox 属性
+
+    # 根宽度使用与 viewBox 相同的像素数，避免缩放波形主体。
+    str_new_width = _format_svg_decimal(decimal_new_viewbox_width)  # 扩展后的根宽度文本
+
+    # 选出已经验证过的唯一画布背景元素。
+    element_background_rect: ElementTree.Element = list_background_rects[0]  # WaveDrom 画布背景
+
+    # 根宽度增加安全区，保持原波形的像素比例。
+    element_root.set("width", str_new_width)
+
+    # 根 viewBox 左移并变宽，使左侧信号名称落入可见范围。
+    element_root.set("viewBox", str_new_viewbox)
+
+    # 背景向左延伸，覆盖新增安全区的左侧区域。
+    element_background_rect.set("x", _format_svg_decimal(decimal_new_viewbox_x))
+
+    # 背景宽度同步扩展，避免输出 SVG 出现透明色带。
+    element_background_rect.set("width", str_new_width)
+
+    # 注册默认 SVG 命名空间，避免序列化生成 ns0 前缀。
+    ElementTree.register_namespace("", SVG_NAMESPACE)
+
+    # 注册 xlink 命名空间，保持 WaveDrom defs 的引用属性不变。
+    ElementTree.register_namespace("xlink", XLINK_NAMESPACE)
+
+    # 返回完整 SVG 文本，调用方随后仍使用同目录临时文件原子替换。
+    return ElementTree.tostring(element_root, encoding="unicode")
+
 # 把 WaveJSON 渲染成 SVG，并在验证通过后才发布目标文件。
 def render_waveform(
     input_path: Path,
@@ -526,6 +812,9 @@ def render_waveform(
 
         # 拒绝把非图像文本写入目标文件。
         raise RuntimeError("> ERR: [Python] WaveDrom did not produce SVG output.")
+
+    # 扩展 SVG 左边界并在内存中完成几何校验，失败时不触碰目标路径。
+    str_svg = _expand_svg_left_boundary(str_svg)  # 通过安全区校正后的 SVG 文本
 
     # 先创建父目录，再用同目录临时文件实现原子替换。
     output_path.parent.mkdir(parents=True, exist_ok=True)

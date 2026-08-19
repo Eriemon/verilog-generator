@@ -14,7 +14,6 @@ from typing import Any
 
 # 支撑模块。
 try:
-    from .remote_archive_integrity import build_package_integrity_snippet
     from .remote_output_cleanup import build_remote_output_cleanup_snippet
     from .remote_validate_gates import (
         filename_gate_remote_snippet as build_filename_gate_remote_snippet,
@@ -22,7 +21,6 @@ try:
 
 # 包导入失败时回退。
 except ImportError:
-    from readable_verilog_remote_archive_integrity import build_package_integrity_snippet
     from readable_verilog_remote_output_cleanup import build_remote_output_cleanup_snippet
     from readable_verilog_remote_validate_gates import (
         filename_gate_remote_snippet as build_filename_gate_remote_snippet,
@@ -255,6 +253,26 @@ run_pytest_phase() {{
     # 返回可嵌入远端主命令体的阶段函数文本。
     return str_phase_runner
 
+# ensure_manifest_only_options 拒绝历史 archive 上传参数。
+def ensure_manifest_only_options(dict_options: dict[str, Any]) -> None:
+    """校验远程命令选项只能选择 manifest-bound directory upload。
+
+    :param dict_options: 远程命令的兼容关键字载荷。
+    :return: 不返回业务值；选项通过时结束。
+    :raises ValueError: 发现非空历史 archive 参数时抛出。
+    """
+
+    # 归档参数只保留兼容读取，不能改变当前上传合同。
+    str_archive_name = str(dict_options.get("package_archive_name", "")).strip()  # 历史 archive 参数
+
+    # 非空归档名表示调用方试图绕过逐文件 source manifest。
+    if str_archive_name:
+
+        # 执行层拒绝所有 archive/tar 上传，不提供兼容降级路径。
+        raise ValueError(
+            "> ERR: [Python] archive upload is disabled; use manifest-bound directory upload"
+        )
+
 # _prepare_remote_validation_context 解析选项并生成远端命令片段。
 def _prepare_remote_validation_context(
     str_remote_skill: str,
@@ -267,7 +285,11 @@ def _prepare_remote_validation_context(
     :param str_remote_python: 远端 Python 命令。
     :param dict_options: 兼容旧关键词的远程执行选项。
     :return: 可供主命令渲染器读取的具名上下文。
+    :raises ValueError: 远程选项违反 manifest-only 合同时抛出。
     """
+
+    # 所有调用都必须先通过 manifest-only 选项门禁。
+    ensure_manifest_only_options(dict_options)
 
     # 从兼容关键词映射中提取本轮 smoke 输出处置策略。
     bool_cleanup_outputs = bool(dict_options.get("cleanup_outputs", False))  # 是否清理远端 smoke 输出
@@ -287,9 +309,6 @@ def _prepare_remote_validation_context(
     # 从兼容关键词映射中提取远程服务器标识。
     str_remote_server_id = str(dict_options.get("remote_server_id", ""))  # 当前 SSH 目标 server 身份
 
-    # 归档文件名为空时保持旧目录上传调用的命令兼容性。
-    str_package_archive_name = str(dict_options.get("package_archive_name", "")).strip()  # 远端 skill 目录内的 tar.gz 名称
-
     # 新布局把报告目录作为 outer run 的直接子目录传入，旧调用默认 reports。
     str_report_root = str(dict_options.get("report_root", "reports")) or "reports"  # 本轮直接报告目录
 
@@ -304,9 +323,6 @@ def _prepare_remote_validation_context(
 
     # Agent 审核路径独立 quoting，保证 outer run 绑定不被 shell 改写。
     str_agent_review_path_quoted = sh_quote(str_agent_review_path)  # Agent 审核路径的安全 shell 文本
-
-    # 归档名进入 shell 前必须独立 quoting，防止路径元字符改变解包目标。
-    str_package_archive_name_quoted = sh_quote(str_package_archive_name)  # 归档文件名的安全 shell 文本
 
     # cleanup、fixture 和工具链片段均在本地生成后注入主命令。
     str_cleanup_snippet = remote_output_cleanup_snippet(bool_cleanup_outputs, str_remote_python)  # smoke 输出处置脚本片段
@@ -363,8 +379,6 @@ def _prepare_remote_validation_context(
         "str_run_id": str_run_id,
         "str_source_digest": str_source_digest,
         "str_remote_server_id": str_remote_server_id,
-        "str_package_archive_name": str_package_archive_name,
-        "str_package_archive_name_quoted": str_package_archive_name_quoted,
         "str_vivado_snippet": str_vivado_snippet,
         "str_simulator_priority_snippet": str_simulator_priority_snippet,
         "str_phase_runner": str_phase_runner,
@@ -402,19 +416,6 @@ def remote_validation_command(
 
     # 主命令正文仍使用本地 quoting 后的 Python 命令。
     str_py = dict_context["str_py"]  # shell quoting 后的远端 Python 命令
-
-    # 归档上传模式先解包并逐文件校验；旧目录上传调用保持空片段兼容。
-    str_package_integrity_snippet = ""  # 默认不追加归档完整性片段
-
-    # 只有归档上传模式需要在远端解包并校验逐文件清单。
-    if dict_context["str_package_archive_name"]:
-
-        # 生成远端解包、清单和整体摘要校验脚本。
-        str_package_integrity_snippet = build_package_integrity_snippet(  # 归档完整性脚本正文
-            str_py,  # 已完成 shell quoting 的远端 Python 命令
-            dict_context["str_package_archive_name_quoted"],  # 已完成 quoting 的归档名
-            sh_quote(dict_context["str_source_digest"]),  # 已完成 quoting 的 staging 摘要
-        )
 
     # 先生成不含完成清单的主命令体，命令摘要以此稳定文本为准。
     str_command_body = f"""
@@ -491,8 +492,7 @@ PY
 }}
 trap write_agent_review_on_exit EXIT
 
-# 归档模式在 pytest 前恢复完整 workspace 并验证每个文件；校验失败立即 fail-closed。
-{str_package_integrity_snippet}
+# erie-remote-ssh 已在执行 request 前完成 source manifest 校验；此处直接使用已提交 workspace。
 
 # 上传包把隔离 Codex 事实放在 skill 下，启动前复制到 outer reports 的 HOME 映射。
 validation_home_source="$PWD/reports/.validation-home"
@@ -553,9 +553,6 @@ is_post_pytest_phase_enabled=1
 name_post_pytest_phase="smoke"
 printf '{{"phase":"post_pytest","status":"started","exit_code":0,"timestamp":"%s"}}\n' \\
   "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" > "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_post_pytest_phase.json"
-
-# full 后清理归档。
-rm -f "${{package_archive_path:-}}"
 
 # workflow CLI 的生成目录必须留在 staged skill workspace，完成后再复制到 outer reports 归档。
 workflow_workspace_root="$PWD/.smoke-scratch"
