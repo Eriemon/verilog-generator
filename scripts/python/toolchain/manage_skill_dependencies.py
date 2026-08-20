@@ -462,8 +462,8 @@ def _run_query_command(context: CliContext) -> int | None:
         # JSON stdout 是该 CLI 的显式机器可读协议。
         print_json(dict_report)
 
-        # check 成功完成时退出码为 0。
-        return 0
+        # readiness 不满足时返回一，JSON 仍保留完整机器协议。
+        return 0 if bool(dict_report.get("ok")) else 1
 
     # prompt 子命令输出供 agent 展示给用户的安装提示。
     if str_command == "prompt":

@@ -556,6 +556,9 @@ def verify_legacy_terms(
     # 旧 public wrapper 命令走独立审计规则，不能借 legacy allowlist 豁免。
     verify_obsolete_public_commands(source_audit_context)
 
+    # 工具链 glob 由当前 defaults 提供，审计器不复制具体环境路径。
+    tuple_configured_settings_globs = _configured_vivado_settings_globs(settings)  # 当前配置声明的 settings glob
+
     # list_violations 累积命中禁止 legacy 领域词的路径与行号。
     list_violations: list[str] = []  # legacy 词违规列表
 
@@ -593,7 +596,11 @@ def verify_legacy_terms(
             bool_has_legacy_term = any(str_term in str_line for str_term in source_audit_context.tuple_legacy_terms)  # 当前行是否命中任一 legacy 领域词片段
 
             # bool_line_allowed 表示当前路径与当前文本组合在解释性规则里被允许。
-            bool_line_allowed = _allowed_dependency_term_line(str_relative_path, str_line)  # 当前行是否属于允许场景
+            bool_line_allowed = _allowed_dependency_term_line(  # 结合路径与配置判断当前术语是否可放行
+                str_relative_path,  # 当前扫描文件的 skill 相对路径
+                str_line,  # 当前正在审计的文本行
+                tuple_configured_settings_globs,  # 当前 defaults 声明的工具链 glob
+            )  # 当前行是否属于允许场景
 
             # 命中 legacy 词且不在允许场景内时，登记违规位置。
             if bool_has_legacy_term and not bool_line_allowed:
@@ -638,99 +645,65 @@ def verify_dependency_schema(settings: dict[str, Any]) -> None:
     # dict_routing 保存当前 defaults 里的 FPGA developer 路由配置。
     dict_routing = fpga_developer_routing_settings(settings)  # FPGA developer 路由配置字典
 
-    # set_required_urls 汇总强制依赖组对外声明的全部 URL。
-    set_required_urls = {item["url"] for item in dict_dependencies["required"]}  # required 依赖 URL 集合
+    # required 工具列表由 settings authority 统一提供，禁止重复 id。
+    list_required_tools = dict_tools.get("required")  # 外部工具记录列表
 
-    # set_recommended_urls 汇总可选增强能力的推荐依赖 URL。
-    set_recommended_urls = {item["url"] for item in dict_dependencies["recommended"]}  # 推荐增强能力依赖 URL 的去重集合
+    # 工具记录缺失时无法绑定 runtime 证据。
+    if not isinstance(list_required_tools, list) or not list_required_tools:
 
-    # set_manual_fallback_urls 汇总缺失开发者 skill 时的手动回退依赖 URL。
-    set_manual_fallback_urls = {item["url"] for item in dict_dependencies["manual_fallback"]}  # 缺失开发者 skill 时的回退依赖 URL 去重集合
+        # 不报告具体身份，保持 authority 可替换。
+        raise AssertionError("> ERR: [Python] tool_dependencies.required must be a non-empty list.")
 
-    # required 依赖只能包含 RemoteSSH 仓库。
-    if set_required_urls != {"https://github.com/Eriemon/remote-ssh.git"}:
+    # 逐项校验工具记录类型和 id 唯一性。
+    set_tool_ids: set[str] = set()  # 已观察的工具身份集合
 
-        # required 依赖 URL 集合一旦偏离约束，就立即阻断校验。
-        raise AssertionError(f"> ERR: [Python] Unexpected required dependency URLs: {sorted(set_required_urls)}")
+    # 遍历 authority 提供的工具记录。
+    for dict_item in list_required_tools:
 
-    # recommended 依赖只保留 context-engineering，其他外部技能组均不纳入。
-    if set_recommended_urls != {
-        "https://github.com/muratcankoylan/Agent-Skills-for-Context-Engineering.git",
-    }:
+        # 非对象或空 id 无法形成稳定 runtime 绑定。
+        if not isinstance(dict_item, dict) or not isinstance(dict_item.get("id"), str) or not dict_item["id"].strip():
 
-        # 推荐依赖组一旦偏离增强能力清单，就立即阻断当前配置。
-        raise AssertionError(
-            f"> ERR: [Python] Unexpected recommended dependency URLs: {sorted(set_recommended_urls)}"
-        )
+            # 结构错误必须 fail-closed。
+            raise AssertionError("> ERR: [Python] tool_dependencies.required contains an invalid record.")
 
-    # manual fallback 依赖只能包含 FPGA-Agent-skills 单一仓库。
-    if set_manual_fallback_urls != {"https://github.com/adeleempurpled290/FPGA-Agent-skills.git"}:
+        # 重复 id 会让报告无法唯一归属。
+        if dict_item["id"] in set_tool_ids:
 
-        # 手动回退依赖 URL 集合一旦偏离约束，就立即阻断校验。
-        raise AssertionError(
-            f"> ERR: [Python] Unexpected manual fallback dependency URLs: {sorted(set_manual_fallback_urls)}"
-        )
+            # authority 不允许两个 runtime 记录共享身份。
+            raise AssertionError("> ERR: [Python] tool_dependencies.required ids must be unique.")
 
-    # WaveDrom 依赖必须锁定 npm 包、命令和版本，避免 CLI 实现漂移。
-    dict_wavedrom = dict_tools.get("wavedrom", {})  # 固定 WaveDrom 依赖对象
+        # 登记当前工具 id，继续检查后续条目。
+        set_tool_ids.add(dict_item["id"])  # 当前工具身份登记
 
-    # 逐项确认 npm 包、版本和可执行入口保持锁定。
-    if (
-        dict_wavedrom.get("package_manager") != "npm"  # npm 是唯一安装器
-        or dict_wavedrom.get("package") != "wavedrom"  # 包名必须固定
-        or dict_wavedrom.get("version") != "3.6.1"  # 版本必须锁定
-        or dict_wavedrom.get("executable") != "wavedrom"  # CLI 入口必须固定
-    ):
+    # manual_fallback 可为空；存在时仍需保持依赖条目的基础结构。
+    list_manual_fallback = dict_dependencies.get("manual_fallback", [])  # 可选人工回退依赖列表
 
-        # 依赖合同漂移时阻断验证，避免生成不可复现的波形。
-        raise AssertionError("> ERR: [Python] tool_dependencies.wavedrom must remain npm wavedrom@3.6.1.")
+    # 逐项验证 fallback 条目 id，具体 skill 身份由 settings authority 决定。
+    for dict_item in list_manual_fallback:
 
-    # dict_fpga_dependency 提取 manual_fallback 里 FPGA-Agent-skills 的配置项。
-    dict_fpga_dependency = next(  # FPGA-Agent-skills 对应的手动回退依赖配置
-        item  # manual_fallback 里的当前依赖项
-        for item in dict_dependencies["manual_fallback"]  # 遍历全部手动回退依赖项
-        if item["id"] == "fpga-agent-skills"  # 只保留 FPGA-Agent-skills 的依赖配置
-    )
+        # 空条目无法生成可审计的人工安装提示。
+        if not isinstance(dict_item, dict) or not isinstance(dict_item.get("id"), str) or not dict_item["id"].strip():
 
-    # FPGA-Agent-skills 依赖必须覆盖全部 8 个 Vivado/Vitis 技能。
-    if len(dict_fpga_dependency["skills"]) != 8:
+            # 结构错误必须阻断，而不是忽略 fallback。
+            raise AssertionError("> ERR: [Python] skill_dependencies.manual_fallback contains an invalid item.")
 
-        # 技能数量不足 8 个时，立即阻断手动回退依赖校验。
-        raise AssertionError("> ERR: [Python] FPGA-Agent-skills dependency must include all 8 Vivado/Vitis skills.")
+    # 路由 authority 允许为空；存在 vendors 时每项只要求 skills 列表。
+    dict_vendors = dict_routing.get("vendors", {}) if isinstance(dict_routing, dict) else {}  # 可选厂商路由映射
 
-    # selection_policy 必须保持首次 FPGA workflow 询问策略。
-    if dict_routing["selection_policy"] != "ask_on_first_fpga_workflow":
+    # 路由映射类型错误时立即阻断后续 skills 遍历。
+    if not isinstance(dict_vendors, dict):
 
-        # 路由策略偏离首次询问合同后，立即阻断配置校验。
-        raise AssertionError("> ERR: [Python] FPGA developer routing must ask on first FPGA workflow.")
+        # 厂商路由对象缺失时无法解析开发者 skill 集合。
+        raise AssertionError("> ERR: [Python] fpga_developer_routing.vendors must be an object.")
 
-    # value_fpga_required 保存“开发者 skill 存在时是否仍强制 FPGA-Agent-skills”的当前配置。
-    value_fpga_required = dict_routing["fpga_agent_required_when_developer_present"]  # FPGA-Agent-skills 强制开关
+    # 每个厂商条目保持可枚举的 skills 列表，具体名称由 authority 提供。
+    for dict_vendor in dict_vendors.values():
 
-    # 当配置仍是布尔真值时，说明错误地把 FPGA-Agent-skills 设成了强制依赖。
-    if isinstance(value_fpga_required, bool) and value_fpga_required:
+        # 空或错误 skills 容器不能参与路由匹配。
+        if not isinstance(dict_vendor, dict) or not isinstance(dict_vendor.get("skills"), list):
 
-        # 检测到错误的强制依赖语义时，立即阻断当前路由配置。
-        raise AssertionError(
-            "> ERR: [Python] FPGA-Agent-skills must not be required when a developer skill is installed."
-        )
-
-    # AMD-Xilinx 路由必须稳定识别 vivado-developer 和 vitis-developer。
-    if dict_routing["vendors"]["amd_xilinx"]["skills"] != [
-        "vivado-developer",
-        "vitis-developer",
-    ]:
-
-        # AMD-Xilinx 路由技能集偏离约束时，立即阻断厂商路由校验。
-        raise AssertionError(
-            "> ERR: [Python] AMD-Xilinx developer routing must recognize vivado-developer and vitis-developer."
-        )
-
-    # Pangomicro 路由必须稳定识别板卡流程绑定的 pds-developer 技能。
-    if dict_routing["vendors"]["pangomicro"]["skills"] != ["pds-developer"]:
-
-        # PangoMicro 厂商路由缺少唯一开发者技能时，立即阻断配置校验。
-        raise AssertionError("> ERR: [Python] PangoMicro developer routing must recognize pds-developer.")
+            # 只报告结构合同，不写入当前厂商身份。
+            raise AssertionError("> ERR: [Python] fpga_developer_routing vendor skills must be lists.")
 
 # verify_hardcoded_paths 扫描硬编码绝对路径，只允许配置和集成文档保留。
 def verify_hardcoded_paths(source_audit_context: SourceAuditContext) -> None:
@@ -793,34 +766,39 @@ def verify_hardcoded_paths(source_audit_context: SourceAuditContext) -> None:
             + str_violation_summary
         )
 
-# verify_no_ref_dependencies 扫描活跃文件和候选 release，确保不再依赖 ref 临时目录。
-def verify_no_ref_dependencies(source_audit_context: SourceAuditContext) -> None:
+# _collect_ref_audit_paths 收集 ref 依赖审计所需的活跃路径和发布候选。
+def _collect_ref_audit_paths(
+    source_audit_context: SourceAuditContext,
+) -> tuple[list[Path], Path | None]:
     """
-    扫描活跃文件与候选 release，确认不存在 ref 临时目录依赖。
+    收集 ref 依赖审计需要检查的活跃文件和候选 release 目录。
 
-    :param source_audit_context: ref 依赖审计依赖的路径与规则上下文。
-    :return: 不返回业务值；通过时表示活跃文件与候选 release 未依赖 ref 临时目录。
-    :raises AssertionError: 当活跃文件或候选 release 仍然引用 ref 临时目录时抛出。
+    :param source_audit_context: 提供 skill 根目录、仓库根目录和布局标记的审计上下文。
+    :return: 活跃文件路径列表与当前版本候选 release 目录。
     """
 
-    # list_violations 累积所有命中 ref 临时目录依赖的文件。
-    list_violations: list[str] = []  # ref 临时目录依赖违规列表
+    # list_active_paths 先从技能入口开始，确保公共说明文件也接受审计。
+    list_active_paths: list[Path] = [  # ref 审计的起始文件集合
+        source_audit_context.path_skill_root / "SKILL.md",  # 技能入口文件作为最小审计起点
+    ]
 
-    # list_active_paths 先从 SKILL.md 开始收集必须扫描的活跃文件。
-    list_active_paths = [source_audit_context.path_skill_root / "SKILL.md"]  # 活跃文件初始集合
+    # path_candidate_release 默认为空，非源码布局不应猜测发布目录。
+    path_candidate_release: Path | None = None  # 当前布局对应的候选 release 目录
 
-    # 源码仓布局下，还要把仓库级治理文件和对应 release 目录纳入扫描。
+    # 源码仓布局需要同时检查治理入口、smoke 入口和当前版本发布目录。
     if source_audit_context.bool_source_repository_layout:
 
-        # version 只在源码仓布局下才需要读取，用来定位候选 release 目录。
+        # version 只在源码仓布局下读取，用于绑定当前版本发布目录。
         from scripts.python.version import __version__
 
-        # path_candidate_release 指向当前版本实际应检查的候选 release 目录。
-        path_candidate_release = (  # 当前版本候选 release 目录
-            source_audit_context.path_project_root / "dist" / f"readable-verilog-generator-v{__version__}"  # 当前版本号对应的 dist 目录
+        # path_candidate_release 锁定与源码版本一致的发布候选目录。
+        path_candidate_release = (  # 当前版本号对应的 dist 发布目录
+            source_audit_context.path_project_root  # 仓库根目录用于定位版本化发布区
+            / "dist"  # 发布包统一存放在 dist 目录
+            / f"readable-verilog-generator-v{__version__}"  # 当前源码版本对应的发布目录
         )
 
-        # 把仓库级治理与 smoke 入口一并纳入活跃文件扫描范围。
+        # 治理与 smoke 文件属于源码仓布局的活动审计边界。
         list_active_paths.extend(
             [
                 source_audit_context.path_project_root / "AGENTS.md",
@@ -831,84 +809,150 @@ def verify_no_ref_dependencies(source_audit_context: SourceAuditContext) -> None
             ]
         )
 
-    # 非源码仓布局没有 dist 扫描目标，直接保留空 release 指针。
-    else:
+    # references 顶层资源属于安装技能的可审计文档边界。
+    list_active_paths.extend(
+        sorted((source_audit_context.path_skill_root / "references").glob("*"))
+    )
 
-        # 非源码仓布局下没有 dist 目录需要继续扫描。
-        path_candidate_release = None  # 非源码仓布局下没有候选 release 目录
+    # path_scripts_root 指向技能内可执行资源的统一入口。
+    path_scripts_root = source_audit_context.path_skill_root / "scripts"  # 扫描脚本目录下的发布与运行时边界声明
 
-    # 把 references 顶层资源加入活跃文件扫描列表。
-    list_active_paths.extend(sorted((source_audit_context.path_skill_root / "references").glob("*")))
-
-    # path_scripts_root 指向本轮 ref 依赖扫描要展开的 scripts 根目录。
-    path_scripts_root = source_audit_context.path_skill_root / "scripts"  # 活跃文件扫描使用的 scripts 根目录
-
-    # 把 scripts 根目录下的直接子资源并入活跃文件扫描列表。
+    # scripts 根目录的直接资源可能包含发布或运行时边界声明。
     list_active_paths.extend(sorted(path_scripts_root.glob("*")))
 
-    # path_python_scripts_root 锚定后续 rglob 展开的 Python helper 子树根。
-    path_python_scripts_root = path_scripts_root / "python"  # 递归纳入活跃文件扫描的 Python helper 子树根目录
+    # path_python_scripts_root 锚定所有需要递归检查的 Python helper。
+    path_python_scripts_root = path_scripts_root / "python"  # 递归扫描 Python helper 的根目录
 
-    # Python scripts 目录存在时，要递归纳入全部活跃 helper。
+    # Python helper 目录存在时，递归纳入其全部文件和子目录。
     if path_python_scripts_root.exists():
 
-        # 把 Python helper 树完整并入活跃文件扫描范围。
+        # 递归展开 helper，保持原有 ref 依赖覆盖范围。
         list_active_paths.extend(sorted(path_python_scripts_root.rglob("*")))
 
-    # 逐个扫描活跃文件里的 ref 临时目录依赖。
+    # 返回路径集合和候选 release，扫描职责由后续 helper 负责。
+    return list_active_paths, path_candidate_release
+
+# _scan_active_ref_dependencies 扫描活跃源码和文档中的 ref 依赖。
+def _scan_active_ref_dependencies(
+    source_audit_context: SourceAuditContext,
+    list_active_paths: list[Path],
+) -> list[str]:
+    """
+    扫描活跃源码与文档文件中的 ref 临时目录依赖。
+
+    :param source_audit_context: 提供文本匹配规则和项目相对路径函数的审计上下文。
+    :param list_active_paths: 需要逐个读取的活跃路径集合。
+    :return: 未被允许白名单覆盖的违规文件相对路径。
+    """
+
+    # list_violations 只保存真正命中且不在允许范围内的活跃文件。
+    list_violations: list[str] = []  # 活跃文件中的 ref 依赖违规
+
+    # 逐个读取活动边界，目录和缺失路径不进入文本审计。
     for path_file in list_active_paths:
 
-        # 缺失路径或目录条目都不参与文本扫描。
+        # 缺失路径或目录条目都不能提供有效文件内容。
         if not path_file.exists() or not path_file.is_file():
 
-            # 目录或已消失条目不参与 ref 临时目录文本扫描。
+            # 跳过不可读取的路径，保持原有扫描边界。
             continue
 
-        # str_relative_path 把当前活跃文件压成项目相对路径。
-        str_relative_path = source_audit_context.func_project_relative(path_file)  # 当前活跃文件项目相对路径
+        # str_relative_path 用于同时生成证据和判断路径白名单。
+        str_relative_path = source_audit_context.func_project_relative(path_file)  # 活跃文件相对路径
 
-        # str_text 统一以忽略解码错误的方式读取，避免混合编码阻断审计。
-        str_text = path_file.read_text(encoding="utf-8", errors="ignore")  # 当前活跃文件全文
+        # str_text 以宽容 UTF-8 解码读取，避免混合编码阻断审计。
+        str_text = path_file.read_text(encoding="utf-8", errors="ignore")  # 当前活跃文件文本
 
-        # 命中 ref 依赖且当前路径不在允许白名单时，登记违规文件。
+        # 仅把命中 ref 且不在允许路径中的文件登记为违规。
         if (
             source_audit_context.pattern_ref_dependency.search(str_text)
             and not allowed_ref_dependency_path(str_relative_path)
         ):
 
-            # 记录当前活跃文件里命中的 ref 临时目录依赖。
-            list_violations.append(source_audit_context.func_project_relative(path_file))
+            # 记录当前活跃文件，供上层统一抛出阻断错误。
+            list_violations.append(str_relative_path)
 
-    # 候选 release 目录存在时，还要递归扫描其中的发布内容。
-    if path_candidate_release is not None and path_candidate_release.exists():
+    # 返回活跃文件扫描结果，不在此处改变原有错误边界。
+    return list_violations
 
-        # 逐个扫描候选 release 中的文件，继续检查 ref 依赖泄漏。
-        for path_file in path_candidate_release.rglob("*"):
+# _scan_release_ref_dependencies 扫描候选 release 中的 ref 依赖泄漏。
+def _scan_release_ref_dependencies(
+    source_audit_context: SourceAuditContext,
+    path_candidate_release: Path | None,
+) -> list[str]:
+    """
+    扫描当前版本候选 release 中泄漏的 ref 临时目录依赖。
 
-            # 目录条目不参与文本扫描。
-            if not path_file.is_file():
+    :param source_audit_context: 提供匹配规则和项目相对路径函数的审计上下文。
+    :param path_candidate_release: 当前版本候选发布目录；为空时表示没有发布扫描目标。
+    :return: 候选 release 中命中 ref 依赖的文件相对路径。
+    """
 
-                # 目录节点不参与候选 release 文件内容扫描。
-                continue
+    # 空目录指针或尚未生成的 release 不产生候选文件违规。
+    if path_candidate_release is None or not path_candidate_release.exists():
 
-            # Python 缓存和编译产物不属于发布内容依赖检查范围。
-            if "__pycache__" in path_file.parts or path_file.suffix.lower() in {".pyc", ".pyo"}:
+        # 非源码布局或未打包状态都保持原有跳过语义。
+        return []
 
-                # 缓存或编译产物不代表真实发布内容，直接跳过。
-                continue
+    # list_violations 累积候选 release 中的发布卫生违规。
+    list_violations: list[str] = []  # release 内容中的 ref 依赖违规
 
-            # 命中 ref 依赖时，把候选 release 文件登记为违规。
-            if source_audit_context.pattern_ref_dependency.search(
-                path_file.read_text(encoding="utf-8", errors="ignore")
-            ):
+    # release 目录递归展开后逐个检查真实文件。
+    for path_file in path_candidate_release.rglob("*"):
 
-                # 记录候选 release 中命中的 ref 临时目录依赖文件。
-                list_violations.append(source_audit_context.func_project_relative(path_file))
+        # 目录节点没有文本内容，不参与发布依赖审计。
+        if not path_file.is_file():
+
+            # 继续扫描下一个候选条目。
+            continue
+
+        # 缓存和编译产物不代表发布正文，沿用原有排除策略。
+        if "__pycache__" in path_file.parts or path_file.suffix.lower() in {".pyc", ".pyo"}:
+
+            # 跳过生成缓存，避免把环境残留误报为发布正文依赖。
+            continue
+
+        # 读取当前发布文件并判断是否包含 ref 临时目录依赖。
+        str_text = path_file.read_text(encoding="utf-8", errors="ignore")  # 当前发布文件文本
+
+        # 命中 ref 依赖的发布文件必须保留其相对路径证据。
+        if source_audit_context.pattern_ref_dependency.search(str_text):
+
+            # 记录候选 release 文件，供上层统一阻断发布卫生校验。
+            list_violations.append(source_audit_context.func_project_relative(path_file))  # 发布文件相对路径证据
+
+    # 返回候选 release 的完整违规列表。
+    return list_violations
+
+# verify_no_ref_dependencies 扫描活跃文件和候选 release，确保不再依赖 ref 临时目录。
+def verify_no_ref_dependencies(source_audit_context: SourceAuditContext) -> None:
+    """
+    扫描活跃文件与候选 release，确认不存在 ref 临时目录依赖。
+
+    :param source_audit_context: ref 依赖审计依赖的路径与规则上下文。
+    :return: 不返回业务值；通过时表示活跃文件与候选 release 未依赖 ref 临时目录。
+    :raises AssertionError: 当活跃文件或候选 release 仍然引用 ref 临时目录时抛出。
+    """
+
+    # tuple_ref_audit_paths 同时保存活跃文件和候选 release，避免调用边界丢失布局信息。
+    tuple_ref_audit_paths = _collect_ref_audit_paths(source_audit_context)  # ref 审计路径与发布候选
+
+    # list_active_paths 提取需要读取的活动文件集合。
+    list_active_paths = tuple_ref_audit_paths[0]  # 活跃文件扫描集合
+
+    # path_candidate_release 提取当前版本对应的发布目录。
+    path_candidate_release = tuple_ref_audit_paths[1]  # 当前版本发布扫描候选
+
+    # list_violations 先接收活跃文件扫描结果，再合并发布目录结果。
+    list_violations = _scan_active_ref_dependencies(source_audit_context, list_active_paths)  # 活跃文件 ref 依赖违规
+
+    # 候选 release 存在时追加发布正文中的 ref 依赖违规。
+    list_violations.extend(_scan_release_ref_dependencies(source_audit_context, path_candidate_release))  # 合并发布目录 ref 依赖违规
 
     # 任一活跃文件或发布文件仍依赖 ref 时，都要阻断发布卫生通过。
     if list_violations:
 
-        # 只要还有 ref 依赖留在活跃文件里，就立即阻断发布卫生校验。
+        # 只要还有 ref 依赖留在活动边界内，就立即阻断发布卫生校验。
         raise AssertionError("> ERR: [Python] Ref temporary directory dependencies remain in active files.")
 
 # line_contains_any 统一判断当前行是否包含任一允许标记片段。
@@ -924,32 +968,79 @@ def line_contains_any(str_line: str, tuple_markers: tuple[str, ...]) -> bool:
     # 把包含关系判定收束到单一 helper，避免各路径规则重复写 `any(...)`。
     return any(str_marker in str_line for str_marker in tuple_markers)
 
+# _configured_vivado_settings_globs 从当前治理配置读取工具链 glob。
+def _configured_vivado_settings_globs(settings: dict[str, Any]) -> tuple[str, ...]:
+    """返回 defaults 中声明的 Vivado/Vitis settings glob。
+
+    :param settings: 当前 validate 链路加载出的治理配置。
+    :return: 返回非空字符串 glob；配置缺失或形状不符时返回空元组。
+    """
+
+    # remote 配置承载跨环境工具链路径，不在审计器里复制具体路径。
+    dict_remote_settings = settings.get("remote", {})  # 远程工具链配置
+
+    # 远程配置形状不正确时保持严格审计而不是猜测默认值。
+    if not isinstance(dict_remote_settings, dict):
+
+        # 缺失或损坏的配置不能产生动态白名单条目。
+        return ()
+
+    # validation 子配置集中保存 settings glob 与其他远程门禁参数。
+    dict_remote_validation = dict_remote_settings.get("validation", {})  # 远程验证配置
+
+    # validation 形状不正确时不放宽 legacy 术语审计。
+    if not isinstance(dict_remote_validation, dict):
+
+        # 仅返回空元组，让调用方继续执行既有静态规则。
+        return ()
+
+    # 读取配置声明的 glob 集合，避免把环境路径复制进源码规则。
+    value_settings_globs = dict_remote_validation.get("vivado_settings_globs", ())  # 配置中的工具链 glob 原值
+
+    # 只有序列形状才能安全转换为字符串集合。
+    if not isinstance(value_settings_globs, (list, tuple)):
+
+        # 非序列配置不应隐式放行任何文本。
+        return ()
+
+    # 过滤空值并统一分隔符，保证 Windows 展开路径仍能匹配 JSON 文本。
+    return tuple(
+        str_glob.replace("\\", "/")
+        for str_glob in value_settings_globs
+        if isinstance(str_glob, str) and str_glob
+    )
+
 # 文档白名单只处理 defaults、SKILL 与两份 integration 契约。
 def _allowed_document_dependency_line(
     str_relative_path: str,
     str_line: str,
+    tuple_configured_settings_globs: tuple[str, ...] = (),
 ) -> bool | None:
     """判断文档或默认配置中的 legacy 依赖术语是否允许。
 
     :param str_relative_path: 当前文件的 skill 相对路径。
     :param str_line: 当前待检查的单行文本。
+    :param tuple_configured_settings_globs: defaults 声明的工具链 glob 白名单。
     :return: 命中文档路径时返回判定结果；非文档路径返回 None。
     """
 
     # defaults 配置只接受既有依赖名与开发者路由标记。
     if str_relative_path == "config/defaults.json":
 
-        # 保留原有大小写敏感的 defaults 白名单。
+        # 动态 glob 与原有依赖路由标记共同构成 defaults 行白名单。
+        tuple_static_markers = (  # defaults 既有依赖路由标记
+            "fpga-agent-skills",  # 依赖仓库标记
+            "Vivado/Vitis",  # 工具链路由标记
+            "vitis-hls-synthesis",  # HLS 技能标记
+            "vitis-developer",  # Vitis 开发技能标记
+            '"skill": "vitis-',  # 技能字段前缀
+            '"source_path": "vitis-',  # 来源字段前缀
+        )
+
+        # 只放行配置实际声明的 glob，不把当前环境路径写入审计器。
         return line_contains_any(
             str_line,
-            (
-                "fpga-agent-skills",
-                "Vivado/Vitis",
-                "vitis-hls-synthesis",
-                "vitis-developer",
-                '"skill": "vitis-',
-                '"source_path": "vitis-',
-            ),
+            tuple_static_markers + tuple_configured_settings_globs,
         )
 
     # 文档路径的部分术语按原契约使用大小写无关匹配。
@@ -1107,7 +1198,6 @@ def _allowed_test_dependency_line(
                 "vitis-hls-synthesis",
                 "vitis-developer",
                 "vitis_command",
-                "/tools/Xilinx/Vitis/2022.2/settings64.sh",
                 "/tools/Xilinx/Vitis/*/settings64.sh",
                 "Configured Xilinx settings64.sh",
                 "Multiple Xilinx toolchain settings64.sh candidates",
@@ -1141,7 +1231,6 @@ def _allowed_test_dependency_line(
                 "vitis-hls-synthesis",
                 "vitis-developer",
                 "vitis_command",
-                "/tools/Xilinx/Vitis/2022.2/settings64.sh",
                 "/tools/Xilinx/Vitis/*/settings64.sh",
                 "Configured Xilinx settings64.sh",
                 "Multiple Xilinx toolchain settings64.sh candidates",
@@ -1167,17 +1256,34 @@ def _allowed_test_dependency_line(
     return None
 
 # _allowed_dependency_term_line 按文档、运行时和测试顺序组合原有白名单。
-def _allowed_dependency_term_line(str_relative_path: str, str_line: str) -> bool:
+def _allowed_dependency_term_line(
+    str_relative_path: str,
+    str_line: str,
+    tuple_configured_settings_globs: tuple[str, ...] = (),
+) -> bool:
     """根据相对路径判断 legacy 术语是否落在允许说明文本里。
 
     :param str_relative_path: 当前文件的 skill 相对路径。
     :param str_line: 当前待检查的单行文本。
+    :param tuple_configured_settings_globs: defaults 声明的工具链 glob 白名单。
     :return: 返回布尔值；True 表示当前路径和文本组合属于允许场景。
     """
 
-    # 三类 helper 返回 None 时表示当前路径不归该类负责。
+    # 文档 helper 需要共享配置来源，避免审计器复制工具链路径。
+    optional_allowed: bool | None = _allowed_document_dependency_line(  # 查询文档职责域的白名单结论
+        str_relative_path,  # 文档规则正在判定的文件相对路径
+        str_line,  # 文档规则需要匹配的配置文本
+        tuple_configured_settings_globs,  # 供文档白名单比对的配置 glob
+    )
+
+    # 文档路径一旦被识别，就直接返回该路径的白名单结论。
+    if optional_allowed is not None:
+
+        # 当前路径已由文档规则接管，不再叠加其他职责域规则。
+        return optional_allowed
+
+    # 运行时与测试 helper 仍按原顺序处理各自路径。
     for func_checker in (
-        _allowed_document_dependency_line,
         _allowed_runtime_dependency_line,
         _allowed_test_dependency_line,
     ):

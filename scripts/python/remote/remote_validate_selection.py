@@ -100,6 +100,9 @@ class RemoteValidationRunConfig:
     # 新布局把 reports 固定放在 runs/<run-id>/ 下，避免嵌套 smoke_runs 目录。
     str_remote_reports: str = ""  # 本次 run 的直接报告目录
 
+    # 远端 workspace 项目目录由 validation authority 声明，避免绑定当前仓库名称。
+    str_project_directory: str = ""  # 远端 workspace 中的项目相对目录
+
     # 历史归档字段只保留兼容形状，默认值为空且执行层禁止非空值。
     path_upload_archive: Path | None = None  # 本地 tar.gz 上传源
 

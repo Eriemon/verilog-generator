@@ -211,7 +211,7 @@ compile, execute, or implement readiness with external execution disabled, valid
 remote-required status in metrics.
 
 That fallback order is a general compatibility capability, not this repository's release acceptance
-matrix. The current release gate is fixed to `server_1` with xsim; VCS+Verdi remains an optional
+matrix. The release gate uses the server and simulator selected by the settings authority; VCS+Verdi remains an optional
 compatible backend and is not a required release condition.
 
 Verification testbenches remain Verilog-2001 `.v` artifacts. Source RTL and generated

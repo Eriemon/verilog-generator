@@ -147,8 +147,8 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 | VG143 | BLOCKER | simulation_system_task_in_rtl | active |
 | VG144 | BLOCKER | fsm_three_segment_procedural_next_state | active |
 | VG145 | BLOCKER | comb_cone_max_three_sources | active |
-| VG146 | BLOCKER | comb_operation_budget | active |
-| VG147 | BLOCKER | for_comb_operation_budget | active |
+| VG146 | BLOCKER | settings-authority combinational operation-budget contract | active |
+| VG147 | BLOCKER | settings-authority loop operation-budget contract | active |
 | VG148 | BLOCKER | functional_verilog_filename | active |
 | VG149 | BLOCKER | testbench_filename_prefix | active |
 | VG150 | WARNING | comments.semantic_integrity | active |
@@ -180,7 +180,7 @@ This reference is the stable, install-safe view of the authoritative catalog in 
 - VG146/VG147 evidence names `definition_root`, `instance_path`, `specialization`, `target`, `child_output`, `operation_count`, `limit`, `inconclusive_reason`, and `loop_presence`. Remediation must be based on this complete identity and must not waive a failure by moving the same chain across module or procedural syntax.
 - Over-budget remediation must prefer pipeline registers, registered flags or predecode, and multi-cycle FSM steps. These changes can alter visible latency. If the protocol latency is immutable, the gate remains blocking and requires manual architecture review; rewriting the same chain into another combinational syntax is not a valid waiver.
 - VG148 applies independently to every readable `.v` and `.sv` file. It rejects only a terminal independent version or pure-number suffix: `_vN`, `-vN`, `_verN`, `-verN`, `_versionN`, `-versionN`, `_N`, or `-N`, case-insensitively. Digits embedded in functional identities such as `axi4_lite`, `crc32`, `i2c_master`, and `ad9361_if` remain valid.
-- VG149 recognizes testbench role from a `tb_`, `_tb`, or `testbench` filename marker, an exact `tb`/`testbench`/`sim` directory segment, a user confirmation, or at least two independent content evidence groups. Every resolved testbench must use `tb_<function>`; `_tb` is evidence but never a naming waiver, so `counter_tb.v` is explicitly rejected.
+- VG149 recognizes testbench role from a `tb_`, `_tb`, or `testbench` filename marker, an exact `tb`/`testbench`/`sim` directory segment, a user confirmation, or at least two independent content evidence groups. Every resolved testbench must use `tb_<function>`; `_tb` is evidence but never a naming waiver, so an authority-selected `<function>_tb.v` name is explicitly rejected.
 - The VG149 content evidence groups are `initial_process`, `simulation_task`, `clock_stimulus`, and `dut_self_check`. Comments and strings are masked before evidence detection. An ordinary filename with at least two groups remains `inconclusive` and sets `confirmation_required` until `file_role_confirmations` resolves it. A `design` confirmation makes VG149 not applicable; a `testbench` confirmation still fails until the file is renamed with `tb_`.
 - VG150 evaluates only formatter-bound entity comments. Configured workflow evidence markers such as graph, test, verification, review, and evidence-chain phrases fail closed on the entity line; evidence belongs in the gate report rather than RTL comments. It also rejects a high-confidence rotation family only when one entity label has at least eight candidates, four distinct fixed tails of length four to eight, at least four Chinese prefix characters, three changing positions, and two complete repeated cycles. A learned shorter tail is checked only after that family is established. Ordinary Chinese descriptions and isolated words do not fail solely because they contain a Chinese word.
 - Unreadable `.v`/`.sv` input fails closed. VG148 and VG149 return `error`, and the aggregate public report preserves the same stable relative-path read error through `VG000/file.encoding` without duplicating the `.v` diagnostic.

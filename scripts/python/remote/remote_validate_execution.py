@@ -288,11 +288,16 @@ def resolve_helper_skill_root(path_helper: Path) -> Path:
     return path_helper_resolved.parents[1]
 
 # stage_package 复制 skill 主体、完整测试和治理事实源到临时上传包。
-def stage_package(path_helper: Path, str_run_id: str) -> Path:
+def stage_package(
+    path_helper: Path,
+    str_run_id: str,
+    str_project_directory: str | None = None,
+) -> Path:
     """创建远端验证使用的本地 staging 包。
 
     :param path_helper: erie-remote-ssh helper 脚本路径，用于定位 reports/tmp。
     :param str_run_id: 本次远端 retained run id。
+    :param str_project_directory: authority 声明的 staging 项目目录；缺省从 skill 根目录推导。
     :return: staging 包根目录路径。
     :raises FileNotFoundError: 本地安装态治理 skill 或全局 AGENTS 基线缺失时抛出。
     """
@@ -300,16 +305,19 @@ def stage_package(path_helper: Path, str_run_id: str) -> Path:
     # helper skill 根决定受上传策略允许的本地 staging 边界。
     path_remote_skill_root = resolve_helper_skill_root(path_helper)  # staging 所属的 helper skill 根目录
 
+    # 未传 authority 时从 skill 根目录推导目录名，保持旧调用面的可复用性。
+    str_staging_project = str_project_directory or PATH_SKILL_ROOT.name  # staging 项目目录标识
+
     # 每次 run 使用独立 staging 目录。
     path_package_root = (  # 当前 run 上传前使用的本地 staging 根
-        path_remote_skill_root / "reports" / "tmp" / f"readable-verilog-generator-{str_run_id}"  # run 专属临时上传包目录
+        path_remote_skill_root / "reports" / "tmp" / f"{str_staging_project}-{str_run_id}"  # run 专属临时上传包目录
     )
 
     # 复用 run id 时先删除旧 staging 目录。
     cleanup_package(path_package_root)
 
     # 上传目标目录保持与仓库根近似的结构。
-    path_target = path_package_root / "readable-verilog-generator"  # 上传包工作区根
+    path_target = path_package_root / str_staging_project  # 上传包工作区根
 
     # skill 源码复制到 skills/readable-verilog-generator 下。
     path_staged_skill = path_target / "skills" / "readable-verilog-generator"  # staging 中的 skill 目录

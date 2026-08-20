@@ -118,6 +118,12 @@ module_type_receipt_support = _load_local_support_module(  # facade 绑定测试
     "readable_verilog_remote_test_evidence_receipt",  # 供 facade 使用的稳定模块别名
 )
 
+# authority context 支撑模块先载入，供 snippets 直运行回退导入。
+module_type_context_support = _load_local_support_module(  # facade 绑定 authority 上下文支撑模块
+    "remote_validation_context.py",  # 承载 authority 归一化与 shell 上下文构造
+    "readable_verilog_remote_validation_context",  # 供 snippets 直运行回退导入
+)
+
 # snippets 支撑模块承载 shell 片段、远端路径工具和固定常量。
 module_type_snippets_support = _load_local_support_module(  # facade 绑定 shell 片段与路径常量模块
     "remote_validate_snippets.py",  # 承载 shell 片段和远端路径工具的实现文件
@@ -232,6 +238,54 @@ REMOTE_SUMMARY_PATHS = {  # 单轮远程报告需要下载或定位的证据相�
     "agent_review_json": str(REMOTE_AGENT_REVIEW_JSON),  # outer run 根的 Agent 审核
 }
 
+# _configured_max_runs 从 validation authority 读取 retained run 默认窗口。
+def _configured_max_runs(dict_settings: dict[str, Any] | None = None) -> int:
+    """读取 settings authority 声明的 retained run 默认数量。
+
+    参数:
+        dict_settings: 可选已加载 settings；缺省时读取 bundled defaults。
+    返回:
+        大于零的 retained run 默认窗口。
+    异常:
+        ValueError: authority 缺失、不可解析或小于一时抛出。
+    """
+
+    # 复用统一 settings loader，保证 parser 与运行时使用同一 authority。
+    if dict_settings is None:
+
+        # 只有独立调用 helper 时才读取 bundled defaults。
+        dict_settings = load_settings(PATH_SKILL_ROOT / "config" / "defaults.json")  # parser 使用的完整 settings
+
+    # 提取远程 validation 段，读取 retained run 窗口配置。
+    dict_remote = dict_settings.get("remote", {})  # 远程 settings 对象
+
+    # 将 validation authority 单独取出，供 max_runs 解析。
+    dict_validation = dict_remote.get("validation", {}) if isinstance(dict_remote, dict) else {}  # 远程验证 authority
+
+    # 读取 authority 的 max_runs 值，禁止在 parser 中写入业务默认值。
+    value_max_runs = dict_validation.get("max_runs") if isinstance(dict_validation, dict) else None  # retained run 窗口配置
+
+    # 将 authority 值转换为 report_remote_runs 接受的正整数。
+    try:
+
+        # 保持 CLI 默认与 settings 配置同步。
+        int_max_runs = int(value_max_runs)  # retained run 默认窗口
+
+    # 非数字配置统一转为稳定错误。
+    except (TypeError, ValueError) as exc:
+
+        # 缺失或非法值不能被隐式替换。
+        raise ValueError("> ERR: [Python] remote.validation.max_runs must be a positive integer.") from exc
+
+    # 零或负数窗口无法形成有效 retained run 查询。
+    if int_max_runs < 1:
+
+        # 维持 report_remote_runs 的正数边界。
+        raise ValueError("> ERR: [Python] remote.validation.max_runs must be a positive integer.")
+
+    # 返回 authority 提供的 parser 默认值。
+    return int_max_runs
+
 # build_parser 负责组装 CLI 合同，避免 main 承担参数细节。
 def build_parser() -> argparse.ArgumentParser:
     """构造远端验证脚本的命令行解析器。
@@ -272,8 +326,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="List retained remote validation runs without staging a new run.",
     )
 
-    # max-runs 控制 retained run 报告大小，避免枚举过多历史目录。
-    parser.add_argument("--max-runs", type=int, default=5, help="Maximum retained runs to include with --report-runs.")
+    # max-runs 控制 retained run 报告大小，默认值来自 validation authority。
+    parser.add_argument(
+        "--max-runs",
+        type=int,
+        default=None,
+        help="Maximum retained runs to include with --report-runs.",
+    )
 
     # run-id 让自动化调用方只读取刚完成的 outer run，避免并发时误取其他证据。
     parser.add_argument("--run-id", help="Read one exact retained run with --report-runs.")
@@ -318,13 +377,13 @@ def build_parser() -> argparse.ArgumentParser:
     # 返回 parser 供 main 或测试使用。
     return parser
 
-# main 编排工具链选择、retained runs 报告和远端验证；_validate_fixed_remote_root 固定新验证写入根并拒绝旧目录漂移。
+# main 编排工具链选择、retained runs 报告和远端验证；_validate_authority_remote_root 校验 authority 声明的写入根。
 def _validate_fixed_remote_root(dict_settings: dict[str, Any]) -> str:
-    """校验并返回固定的远端验证根目录。
+    """校验并返回 settings authority 声明的远端验证根目录。
 
     :param dict_settings: 已加载的 readable-verilog-generator 配置。
-    :return: 固定为 .readable-verilog-generator 的远端根目录。
-    :raises ValueError: settings 声明其他远端根时抛出。
+    :return: authority 声明的远端根目录。
+    :raises ValueError: settings 与 authority 的远端根不一致时抛出。
     """
 
     # 读取配置声明，保留 require helper 对相对路径的安全校验。
@@ -333,16 +392,31 @@ def _validate_fixed_remote_root(dict_settings: dict[str, Any]) -> str:
         "settings.remote.remote_root",  # 错误消息中的配置字段名
     )
 
-    # 旧根只读兼容，新写入必须固定在用户指定的根目录。
-    if str_configured_remote_root != ".readable-verilog-generator":
+    # authority layout 是新写入根的唯一来源，避免把当前部署目录写进实现。
+    dict_remote = dict_settings.get("remote", {})  # 读取远端 settings 段
 
-        # 配置漂移时 fail closed，避免在错误远端位置产生不可追溯报告。
+    # validation 段承载远端布局、案例目录和工件命名，避免实现依赖部署事实。
+    dict_validation = dict_remote.get("validation", {}) if isinstance(dict_remote, dict) else {}  # 保存远端验证布局、案例和工件 authority
+
+    # layout 段只保存远端相对目录，不携带机器绝对路径。
+    dict_layout = dict_validation.get("layout", {}) if isinstance(dict_validation, dict) else {}  # 提取远端布局
+
+    # 先限制 authority 根为相对路径，后续所有 retained 证据目录复用同一锚点。
+    str_authority_remote_root = require_remote_relative_path(  # 该值作为所有 retained 运行目录的单一相对根锚点
+        dict_layout.get("remote_root") or str_configured_remote_root,  # 优先使用 authority 布局根并兼容缺省配置
+        "settings.remote.validation.layout.remote_root",  # 保留 authority 字段名用于错误定位
+    )  # 将 authority 根限制在合法远端相对路径内
+
+    # 配置漂移时 fail closed，避免在错误远端位置产生不可追溯报告。
+    if str_configured_remote_root != str_authority_remote_root:
+
+        # 根目录漂移会使 retained 证据失去可追溯性。
         raise ValueError(
-            "> ERR: [Python] settings.remote.remote_root must be .readable-verilog-generator."
+            "> ERR: [Python] settings.remote.remote_root must match settings authority layout."
         )
 
     # 返回单一写入边界，后续函数不再重复信任配置文本。
-    return ".readable-verilog-generator"
+    return str_authority_remote_root
 
 # _resolve_cli_runtime 读取设置并组装远端验证所需的稳定上下文。
 def _resolve_cli_runtime(
@@ -359,6 +433,12 @@ def _resolve_cli_runtime(
     # settings 载荷决定 helper、服务器、超时和远端 Python。
     dict_settings = load_settings(args.settings)  # readable-verilog-generator 治理配置
 
+    # parser 只在 settings 已加载后解析 max-runs，兼容最小 CLI settings。
+    if args.max_runs is None:
+
+        # 将 authority 默认窗口注入当前调用，不写入 parser 常量。
+        args.max_runs = _configured_max_runs(dict_settings)  # 将 settings 窗口绑定到本次 CLI 查询
+
     # 组装 erie-remote-ssh 调用上下文，后续请求复用同一对象。
     remote_helper_context_cli = build_remote_context(  # helper 连接上下文
         dict_settings,  # 已解析的 skill settings
@@ -373,7 +453,7 @@ def _resolve_cli_runtime(
     )
 
     # 校验远端根并固定后续所有写入路径的锚点。
-    str_remote_root = _validate_fixed_remote_root(dict_settings)  # .readable-verilog-generator 远端写入边界
+    str_remote_root = _validate_fixed_remote_root(dict_settings)  # authority 声明的远端写入边界
 
     # runtime 配置必须位于固定远端根内，禁止落到 server default workdir 其他位置。
     str_remote_runtime_config = require_remote_relative_path(  # 远端 runtime 配置路径
@@ -387,14 +467,21 @@ def _resolve_cli_runtime(
     # 远端 Python 命令仍按 settings 选择，保持现有兼容接口。
     str_remote_python = remote_setting(dict_settings, "python")  # 远端执行 Python 命令
 
+    # validation authority 统一提供 layout、case 和 artifact 路由。
+    dict_remote = dict_settings.get("remote", {})  # 为 runtime 返回值提取远端 settings 段
+
+    # 保存 authority 对象，供 run_remote_validation 复用同一份配置。
+    dict_validation_authority = dict_remote.get("validation", {}) if isinstance(dict_remote, dict) else {}  # 远端验证 authority
+
     # 返回主编排所需的具名上下文和路径合同。
-    return {
-        "remote_context": remote_helper_context_cli,
-        "local_runtime_config": path_local_runtime_config,
-        "remote_root": str_remote_root,
-        "remote_runtime_config": str_remote_runtime_config,
-        "remote_python": str_remote_python,
-    }
+    return dict(
+        remote_context=remote_helper_context_cli,
+        local_runtime_config=path_local_runtime_config,
+        remote_root=str_remote_root,
+        remote_runtime_config=str_remote_runtime_config,
+        remote_python=str_remote_python,
+        validation_authority=dict_validation_authority,
+    )
 
 # _handle_toolchain_selection 处理用户确认后的工具链配置同步分支。
 def _handle_toolchain_selection(
@@ -476,7 +563,7 @@ def _handle_report_mode(
     # 报告模式只要求本地 helper 和配置文件可读。
     ensure_local_prerequisites(dict_runtime["remote_context"])
 
-    # 只读预检确认 server_1 和 workspace 当前可达。
+    # 只读预检确认 authority 选定的服务器与 workspace 当前可达。
     ensure_remote_read_prerequisites(dict_runtime["remote_context"])
 
     # 读取指定窗口内的 retained run 机器摘要。
@@ -733,6 +820,7 @@ def main(argv: list[str] | None = None) -> int:
         dict_runtime["remote_root"],  # 新验证固定使用的 retained 根目录
         dict_runtime["remote_python"],  # settings 选择的远端 Python 入口
         dict_runtime["remote_runtime_config"],  # 固定根内持久化 runtime 配置
+        validation_authority=dict_runtime["validation_authority"],  # settings authority 路由
         cleanup_remote=cleanup_remote_requested(args),  # 显式 cleanup 开关
     )
 
@@ -816,7 +904,7 @@ def run_remote_validation(
     str_remote_python: str,
     str_remote_runtime_config: str,
     *,
-    cleanup_remote: bool,
+    validation_authority: dict[str, Any] | None = None, cleanup_remote: bool,
 ) -> int:
     """执行完整远端信心门禁。
 
@@ -824,22 +912,53 @@ def run_remote_validation(
     :param str_remote_root: 远端 retained run 根目录。
     :param str_remote_python: 远端 Python 命令。
     :param str_remote_runtime_config: 远端 runtime 配置相对路径。
+    :param validation_authority: settings.remote.validation authority；缺省时使用通用目录名推导。
     :param cleanup_remote: 是否在 gate 后删除远端验证目录。
     :return: 进程退出码，0 表示远端 gate 成功。
     :raises BaseException: staging、归档、远端请求或验证阶段失败时继续抛出原始异常。
     """
 
+    # 读取 authority layout，避免把当前部署目录和项目名称写进执行路径。
+    dict_authority = validation_authority or {}  # 当前远端验证 authority
+
+    # layout 段提供 runs、workspace、reports 和项目目录的相对名称。
+    dict_layout = dict_authority.get("layout", {}) if isinstance(dict_authority, dict) else {}  # 读取本轮 authority 布局
+
+    # retained run 的根目录由 authority 声明，缺省仅保留通用协议兼容值。
+    str_runs_root = str(dict_layout.get("runs_root") or "runs") if isinstance(dict_layout, dict) else "runs"  # retained run 目录起点
+
+    # 为上传请求确定 workspace 相对根。
+    str_workspace_root = str(  # 将 authority workspace 名称用于远端源码路径拼接
+        str(dict_layout.get("workspace_root") or "workspace")  # 读取上传根字段，缺省保持通用路径兼容
+        if isinstance(dict_layout, dict)  # workspace authority 类型判断
+        else "workspace"  # 通用 workspace 兼容值
+    )
+
+    # 为证据落盘确定 reports 相对根。
+    str_reports_root = str(  # 将 authority reports 名称用于远端证据路径拼接
+        str(dict_layout.get("reports_root") or "reports")  # 读取证据根字段，缺省保持报告布局兼容
+        if isinstance(dict_layout, dict)  # 只在 authority 对象中读取 reports 字段
+        else "reports"  # reports 字段缺失时使用协议默认
+    )
+
+    # 为 manifest 绑定确定项目目录。
+    str_project_directory = str(  # 将 authority project 名称用于 manifest 和上传路径拼接
+        str(dict_layout.get("project_directory") or PATH_SKILL_ROOT.name)  # 读取项目字段，缺省沿用模块目录名
+        if isinstance(dict_layout, dict)  # project 字段仅在 layout 对象有效时读取
+        else PATH_SKILL_ROOT.name  # project 字段缺失时使用 skill 目录名
+    )
+
     # 每次远端验证都使用高熵 run id，避免同秒并发共享 retained 目录。
     str_run_id = new_remote_run_id()  # 远端 retained run 目录名
 
-    # 远端 outer run 固定位于 remote_root/runs/<validation-id>。
-    str_remote_parent = remote_join(str_remote_root, "runs", str_run_id)  # 本次远端 run 目录
+    # 远端 outer run 位于 authority 声明的 runs 根和当前 validation id 下。
+    str_remote_parent = remote_join(str_remote_root, str_runs_root, str_run_id)  # 本次远端 run 目录
 
     # 上传包放在 run/workspace，避免源码与 reports 直接混在 outer 根。
-    str_remote_skill = remote_join(str_remote_parent, "workspace", "readable-verilog-generator")  # 远端 skill 包目录
+    str_remote_skill = remote_join(str_remote_parent, str_workspace_root, str_project_directory)  # 远端 skill 包目录
 
-    # 报告直接位于 outer run/reports，禁止再次嵌套 smoke_runs_*。
-    str_remote_reports = remote_join(str_remote_parent, "reports")  # 本次 run 的直接报告目录
+    # 报告直接位于 authority 声明的 reports 根，禁止再次嵌套 smoke_runs_*。
+    str_remote_reports = remote_join(str_remote_parent, str_reports_root)  # 本次 run 的直接报告目录
 
     # 打印远端保留位置，便于用户后续 SSH 查看证据。
     for str_line in remote_location_lines(str_remote_parent, str_remote_skill, cleanup_remote):
@@ -860,13 +979,13 @@ def run_remote_validation(
     )
 
     # 打包本地 skill 和 smoke 目录到临时 staging 根。
-    path_package_root = stage_package(remote_context.path_helper, str_run_id)  # 本地临时上传包根目录
+    path_package_root = stage_package(remote_context.path_helper, str_run_id, str_project_directory)  # 创建 authority 项目目录下的本地 staging 包
 
     # 实际上传根或 source digest 计算失败时立即清理 staging，避免半成品留在本地临时目录。
     try:
 
         # erie-remote-ssh 的 source manifest 必须覆盖真正上传的 selected project 目录。
-        path_staged_source = path_package_root / "readable-verilog-generator"  # manifest-bound directory upload 的本地根
+        path_staged_source = path_package_root / str_project_directory  # manifest-bound directory upload 的本地根
 
         # 摘要只覆盖实际上传根，避免 staging 外层 marker 或 package manifest 污染 source identity。
         str_source_digest = staged_source_digest(path_staged_source)  # 实际上传目录的稳定 SHA-256 身份
@@ -896,6 +1015,7 @@ def run_remote_validation(
         str_source_digest=str_source_digest,  # completion 绑定的上传包身份
         str_remote_server=remote_context.str_server,  # 远端环境指纹绑定的服务器标识
         str_remote_reports=str_remote_reports,  # outer run 的直接报告目录
+        str_project_directory=str_project_directory,  # authority 声明的 workspace 项目目录
     )
 
     # 远端执行可能失败，但本地 staging 和 request 文件必须进入清理路径。
@@ -1112,12 +1232,15 @@ def run_remote_validation_requests(
     # 上传 stdout 只收集 status 和 receipt 行，避免把原始命令载荷带入结构化证据。
     list_upload_stdout: list[str] = []  # uploaded_verified 协议行收集器
 
-    # manifest-bound upload 的本地根必须与 source digest 使用同一 selected project 目录。
-    path_upload_source = run_config.path_package_root / "readable-verilog-generator"  # 实际 request-upload 本地目录
+    # manifest-bound upload 的本地根必须与 source digest 使用同一 authority 项目目录。
+    str_project_directory = run_config.str_project_directory or PATH_SKILL_ROOT.name  # 缺省从当前 skill 根解析项目目录
+
+    # 上传请求必须指向已选项目目录，而不是 staging 父目录。
+    path_upload_source = run_config.path_package_root / str_project_directory  # 实际 request-upload 本地目录
 
     # 通过 erie-remote-ssh directory upload 创建并执行逐文件 source manifest request。
     path_upload_request = request_and_run(  # 该路径指向 erie upload request，读取它可校验逐文件清单与执行回执
-        remote_context,  # 让创建与执行共享 server_1 的私有连接配置
+        remote_context,  # 让创建与执行共享 authority 选定的私有连接配置
         "request-upload",  # 触发逐文件目录上传并生成 source manifest
         [
             "--local",  # 绑定本地 selected project 目录

@@ -373,6 +373,7 @@ def run_existing_rtl_boundary_flows(
     path_smoke_dir: Path,
     *,
     path_skill_root: Path,
+    dict_settings: dict[str, Any] | None = None,
     func_run_verilog_cli: Callable[..., None],
 ) -> None:
     """
@@ -380,22 +381,66 @@ def run_existing_rtl_boundary_flows(
 
     :param path_smoke_dir: 当前 smoke 运行目录根。
     :param path_skill_root: readable-verilog-generator skill 根目录。
+    :param dict_settings: 可选 settings authority，声明 existing RTL 资产路径。
     :param func_run_verilog_cli: 外层注入的 workflow CLI 执行回调。
     :return: 不返回业务值；通过时表示 existing RTL 边界场景未发现阻断。
     :raises AssertionError: 当 semi_auto 边界或 augment 合同被破坏时抛出。
     """
 
-    # existing RTL 示例统一位于 skill 资产目录下，供 verify-existing 直接复用。
-    path_existing_examples_dir = path_skill_root / "assets" / "examples" / "existing_rtl"  # 边界场景共享的 existing RTL 样例目录
+    # existing RTL 示例目录和三个资产路径由 settings authority 声明。
+    if dict_settings is not None:
 
-    # ready_valid_slice fixture 作为 semi_auto 边界验证的固定 RTL 输入。
-    path_existing_fixture = path_existing_examples_dir / "ready_valid_slice.v"  # 半自动确认边界用的 RTL 样例
+        # 延迟导入路径读取器，避免 smoke helper 在纯静态导入时加载完整配置。
+        from scripts.python.workflow.config import path_setting
 
-    # ready_valid_slice_spec 为 verify-existing 提供对应的规格文档。
-    path_existing_spec = path_existing_examples_dir / "ready_valid_slice_spec.md"  # 半自动确认边界对应的规格文档
+        # 读取 authority 声明的 existing RTL 资产目录。
+        path_existing_examples_dir = path_setting(dict_settings, "existing_rtl_examples_dir")  # 定位可替换的 existing RTL 资产目录
 
-    # augment 场景显式提供一个现成 testbench，验证原路径能否被保留。
-    path_existing_tb = path_existing_examples_dir / "tb_ready_valid_slice.v"  # augment 场景显式传入的 testbench
+        # 读取 authority 声明的 semi_auto 输入文件。
+        path_existing_fixture = path_setting(dict_settings, "existing_rtl_fixture")  # 为确认边界提供 authority RTL 输入
+
+        # 读取 authority 声明的规格文档路径。
+        path_existing_spec = path_setting(dict_settings, "existing_rtl_spec")  # 将输入 RTL 绑定到 authority 规格文档
+
+        # 读取 authority 声明的 augment testbench 路径。
+        path_existing_tb = path_setting(dict_settings, "existing_rtl_testbench")  # 为 augment 保留显式 authority testbench
+
+    # 直接库调用缺少 settings 时，从资产目录推导首个可用案例，避免绑定案例名称。
+    else:
+
+        # 缺省路径用于无 settings 的直接库调用。
+        path_existing_examples_dir = path_skill_root / "assets" / "examples" / "existing_rtl"  # 推导 skill 内 existing RTL 资产目录
+
+        # 只选择非 testbench 的首个 Verilog 资产作为输入案例。
+        list_fixture_paths = sorted(  # 收集可推导的非 testbench 输入案例
+            path_item  # 保留每个可推导输入路径
+            for path_item in path_existing_examples_dir.glob("*.v")  # 遍历 authority 资产目录
+            if not path_item.name.startswith("tb_")  # 排除显式 testbench 文件
+        )
+
+        # 缺少可推导输入时必须明确失败，而不是伪造案例路径。
+        if not list_fixture_paths:
+
+            # 缺少输入资产时必须阻断，而不是生成伪造案例。
+            raise FileNotFoundError("> ERR: [Python] no existing RTL fixture is available.")
+
+        # 规格路径跟随输入 RTL stem，保持案例可替换。
+        path_existing_fixture = list_fixture_paths[0]  # 选择排序后的 authority 输入资产
+
+        # 规格文件名跟随输入 stem，保持案例替换时的路径一致。
+        path_existing_spec = path_existing_examples_dir / f"{path_existing_fixture.stem}_spec.md"  # 绑定输入 stem 对应的规格文档
+
+        # testbench 资产同样由前缀约定推导，不写死具体案例名。
+        list_testbench_paths = sorted(path_existing_examples_dir.glob("tb_*.v"))  # 收集可替换的 augment testbench
+
+        # augment 必须有显式 testbench 资产。
+        if not list_testbench_paths:
+
+            # augment 缺少显式 testbench 时必须阻断，避免伪造覆盖证据。
+            raise FileNotFoundError("> ERR: [Python] no existing RTL testbench is available.")
+
+        # 选择排序后的首个 testbench 作为可重复输入。
+        path_existing_tb = list_testbench_paths[0]  # 推导出的 augment testbench
 
     # semi_auto 路径单独落在专属目录里，便于读取确认边界结果。
     path_verify_existing_dir = path_smoke_dir / "cli-verify-existing"  # 半自动确认边界场景的运行目录
@@ -457,63 +502,69 @@ def run_existing_rtl_boundary_flows(
         # testbench 来源一旦漂移，就阻断 existing RTL augment 场景。
         raise AssertionError("> ERR: [Python] verify-existing augment did not preserve explicit testbench source.")
 
-# run_existing_rtl_patch_flows 负责三类 patch 恢复场景的顺序覆盖。
+# run_existing_rtl_patch_flows 负责 authority 声明的 patch 恢复场景顺序覆盖。
 def run_existing_rtl_patch_flows(
     path_smoke_dir: Path,
     *,
     path_skill_root: Path,
+    dict_settings: dict[str, Any] | None = None,
     func_run_verilog_cli: Callable[..., None],
 ) -> None:
+    """覆盖 settings authority 声明的 existing RTL patch 恢复流程。
+
+    参数:
+        path_smoke_dir: 当前 smoke 运行目录根。
+        path_skill_root: readable-verilog-generator skill 根目录。
+        dict_settings: 可选 settings authority；缺省读取 bundled defaults。
+        func_run_verilog_cli: 外层注入的 workflow CLI 执行回调。
+    返回:
+        不返回业务值；通过时表示 authority 案例未发现阻断。
+
+    异常:
+        ValueError: settings 缺少 existing_rtl_patch_cases authority 时抛出。
     """
-    覆盖 reset、control、timing 三类 existing RTL patch 恢复流程。
 
-    :param path_smoke_dir: 当前 smoke 运行目录根。
-    :param path_skill_root: readable-verilog-generator skill 根目录。
-    :param func_run_verilog_cli: 外层注入的 workflow CLI 执行回调。
-    :return: 不返回业务值；通过时表示三类 patch 恢复场景未发现阻断。
-    """
+    # 直接库调用缺少 settings 时加载 bundled authority。
+    if dict_settings is None:
 
-    # reset 场景验证 conservative 模式下的 reset 缺口修复恢复流程。
-    patch_case_reset = ExistingPatchCase(  # reset 缺口恢复场景对象
-        "cli-verify-existing-rtl-fix",  # 复位缺口场景使用的 smoke 目录名
-        "reset_gap_counter.v",  # 指向缺少 reset 收尾逻辑的原始 RTL
-        "reset_gap_counter_spec.md",  # 约束复位补丁行为的规格文件
-        "reset_gap_counter.v",  # 落入 smoke 目录后等待修复的 RTL 副本
-        "conservative",  # 先要求人工确认的保守自动化模式
-        "approved low-risk reset patch",  # 恢复 apply 流程时写入的批准结论
-    )
+        # 延迟导入避免 smoke helper 导入阶段加载完整配置。
+        from scripts.python.workflow.config import load_settings
 
-    # control 场景验证 auto_apply 高风险时能否降级为 confirm_before_apply。
-    patch_case_control = ExistingPatchCase(  # 缺省分支补全场景对象
-        "cli-verify-existing-rtl-control",  # 缺省分支场景使用的 smoke 目录名
-        "fsm_without_default.v",  # 锁定没有 default 分支的状态机 RTL
-        "fsm_without_default_spec.md",  # 描述 default 补全约束的规格文件
-        "fsm_without_default.v",  # 复制到 smoke 目录中的状态机副本
-        "auto_apply",  # 先触发高风险自动应用的降级判断
-        "approved control logic patch",  # 恢复执行时提交的控制补丁批准文本
-        "case_default_completion",  # 期望识别出的缺省分支 patch 分类
-        "control logic patch",  # 失败提示里使用的 control 标签
-    )
+        # 读取 bundled settings 作为案例 authority。
+        dict_settings = load_settings()  # bundled patch 案例配置
 
-    # 最后这个场景专门检查缺少输出寄存器时，auto_apply 入口是否仍会先停在确认边界。
-    patch_case_timing = ExistingPatchCase(  # 输出寄存器补全场景对象
-        "cli-verify-existing-rtl-timing",  # 输出寄存场景使用的 smoke 目录名
-        "missing_output_register.v",  # 选取缺少输出寄存器的输入 RTL
-        "missing_output_register_spec.md",  # 约束输出寄存补丁的规格文件
-        "missing_output_register.v",  # 复制到 smoke 目录后的时序 RTL 副本
-        "auto_apply",  # 先验证高风险自动应用是否被拦截
-        "approved timing register patch",  # 恢复执行时提交的时序补丁批准文本
-        "output_register_completion",  # 期望识别出的输出寄存 patch 分类
-        "timing patch",  # 让失败断言明确指向时序补丁分支
-    )
+    # 从 validation 段读取可替换 patch 案例列表。
+    dict_validation = dict_settings.get("validation", {})  # 读取 validation authority 配置段
 
-    # 三个 patch 场景按固定顺序执行，保证回归输出稳定可复现。
-    tuple_patch_cases = (patch_case_reset, patch_case_control, patch_case_timing)  # 按 reset/control/timing 顺序执行的 patch 场景集合
+    # 读取可替换的 patch 案例配置列表。
+    list_case_settings = dict_validation.get("existing_rtl_patch_cases", [])  # 保存 patch 案例 authority
 
-    # 逐个执行 patch fixture，确保每条恢复路径都经过同样的确认流程。
+    # 至少需要一个 authority 案例，避免空 smoke 被误判为通过。
+    if not isinstance(list_case_settings, list) or not list_case_settings:
+
+        # 配置缺失时 fail closed。
+        raise ValueError("> ERR: [Python] existing_rtl_patch_cases authority is empty.")
+
+    # 将 settings authority 的目录、资产、模式和确认字段转换成下游 patch helper 所需的稳定对象序列。
+    tuple_patch_cases = tuple(  # 组装有序案例集合，后续循环按此集合创建 smoke 产物
+        ExistingPatchCase(  # 创建单个案例对象并绑定目录、文件、模式和确认字段
+            str(dict_case["case_dir"]),  # 保存案例 smoke 输出目录名称
+            str(dict_case["source_name"]),  # 保存案例 existing RTL 输入文件名
+            str(dict_case["spec_name"]),  # 绑定输入 RTL 的行为规格文档
+            str(dict_case["copy_name"]),  # 保存复制到 smoke 目录的 RTL 文件名
+            str(dict_case["automation_mode"]),  # 保存首次检查使用的自动化模式
+            str(dict_case["decision_evidence"]),  # 保存恢复 patch 所需的确认证据文本
+            str(dict_case["expected_category"]) if dict_case.get("expected_category") else None,  # 保存可选的结果断言分类
+            str(dict_case["error_label"]) if dict_case.get("error_label") else None,  # 保存可选的失败诊断标签
+        )
+        for dict_case in list_case_settings  # 遍历 authority 声明的 patch 案例记录
+        if isinstance(dict_case, dict)  # 仅保留结构合法的案例映射
+    )  # 输出供 patch 恢复循环使用的完整案例对象序列
+
+    # 逐个执行 authority patch fixture，确保每条恢复路径经过相同确认流程。
     for patch_case in tuple_patch_cases:
 
-        # 当前 patch fixture 的首次检查与 decision 恢复交给专用 helper 处理。
+        # 当前 patch fixture 的检查与 decision 恢复交给专用 helper。
         run_existing_rtl_patch_case(
             path_smoke_dir,
             patch_case,

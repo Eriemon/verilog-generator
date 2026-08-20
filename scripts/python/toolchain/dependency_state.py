@@ -122,19 +122,44 @@ def _required_tool_status(
     # 每个工具都复用同一份 runtime 诊断，避免版本读取漂移。
     for dict_tool in tool_settings["required"]:
 
-        # 只有 wavedrom 条目可以由当前 runtime 报告证明存在。
-        bool_present = (  # 当前工具是否满足 required 可用性
-            bool(wavedrom_runtime.get("ok"))  # WaveDrom runtime 的整体可用标志
-            if dict_tool["id"] == "wavedrom"  # 只把 wavedrom 配置映射到 runtime
-            else False  # 未知工具默认视为未满足
-        )  # 工具存在性判定
+        # runtime checker 的总体 ok 是当前 required 工具的可用性证据。
+        bool_present = bool(wavedrom_runtime.get("ok"))  # 当前工具是否通过 runtime 检查
 
-        # 单独提取版本，避免在报告字典中重复长表达式。
-        str_tool_version = (  # 当前工具的机器可读版本文本
-            wavedrom_runtime.get("wavedrom", {}).get("version")  # 读取 WaveDrom 精确版本
-            if dict_tool["id"] == "wavedrom"  # 只为 wavedrom 提供版本证据
-            else None  # 未知工具没有可推断版本
-        )  # 工具版本证据
+        # 按 settings 的 runtime 键提取版本，避免把工具身份写入代码。
+        str_runtime_key = str(dict_tool.get("runtime") or dict_tool.get("id"))  # 选择对应 runtime 节点的 settings 键
+
+        # 读取指定工具的 runtime 节点，缺失时保留空对象。
+        dict_runtime_tool = wavedrom_runtime.get(str_runtime_key, {})  # 当前工具状态节点
+
+        # 优先从工具节点读取版本，兼容只有顶层版本的报告。
+        if isinstance(dict_runtime_tool, dict) and dict_runtime_tool.get("version") is not None:
+
+            # 工具节点版本是配置项与实际环境的对应证据。
+            str_tool_version = dict_runtime_tool.get("version")  # 当前工具版本
+
+        # 旧报告没有嵌套节点时使用顶层版本字段。
+        else:
+
+            # 从报告中动态寻找唯一带 version 的工具节点，避免固定身份键。
+            list_runtime_versions: list[Any] = []  # 可观察的工具版本候选
+
+            # 遍历所有嵌套节点，避免把工具身份写入实现。
+            for dict_value in wavedrom_runtime.values():
+
+                # 只收集含有效 version 字段的 runtime 节点。
+                if isinstance(dict_value, dict) and dict_value.get("version") is not None:
+
+                    # 保存动态节点版本供 required 状态记录使用。
+                    list_runtime_versions.append(dict_value["version"])  # 当前候选版本
+
+            # 先准备兼容旧报告的顶层版本兜底值。
+            str_tool_version = wavedrom_runtime.get("version")  # 顶层版本候选
+
+            # 发现动态节点时优先使用其版本证据。
+            if list_runtime_versions:
+
+                # 动态节点顺序与 runtime 报告保持一致。
+                str_tool_version = list_runtime_versions[0]  # 当前工具版本证据
 
         # 追加保持旧字段合同的外部工具状态记录。
         list_required_tools.append(

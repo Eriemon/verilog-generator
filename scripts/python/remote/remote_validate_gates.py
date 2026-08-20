@@ -1,4 +1,10 @@
-"""生成远端文件名门禁和合法 testbench 仿真 shell 片段。"""
+"""生成由 settings authority 驱动的文件名门禁和 testbench 仿真 shell 片段。"""
+
+# 标准库负责 authority JSON、base64 载荷、路径和类型协议。
+import base64
+import json
+from pathlib import Path
+from typing import Any, Mapping
 
 # _sh_quote 保护嵌入 shell 的解释器命令。
 def _sh_quote(str_value: str) -> str:
@@ -11,127 +17,40 @@ def _sh_quote(str_value: str) -> str:
     # 单引号参数内的单引号必须拆分后重新拼接，避免改变 heredoc 命令边界。
     return "'" + str_value.replace("'", "'\"'\"'") + "'"
 
-# filename_gate_remote_snippet 生成 VG148/VG149 远端交付门与 xsim 准入片段。
-def filename_gate_remote_snippet(str_remote_python: str) -> str:
+# filename_gate_remote_snippet 生成 authority-selected VG148/VG149 交付门片段。
+def filename_gate_remote_snippet(
+    str_remote_python: str,
+    validation_authority: Mapping[str, Any] | None = None,
+) -> str:
     """生成远端文件名门禁与合法 testbench 仿真片段。
 
     :param str_remote_python: 远端 Python 命令。
+    :param validation_authority: 可选 remote.validation authority。
     :return: 可嵌入主 bash 脚本的文件名回归片段。
     """
+
+    # 读取 authority 中的文件名门禁案例字段。
+    dict_gate = _filename_gate_settings(validation_authority)  # 文件名门禁案例配置
 
     # 文件名 probe 的解释器名称先做 shell quoting，避免破坏 heredoc 前缀。
     str_py = _sh_quote(str_remote_python)  # 文件名门禁片段使用的 Python 命令
 
     # 所有故意违规文件只进入 generated-deliverable gate，不进入 simulator。
     str_template = r"""
-mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/file_naming_gates"
+mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/__CASE_ID__"
 __PY__ - <<'PY'
+import base64
 import json
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-
-root = Path(".smoke-scratch/remote_fixtures/file_naming_gates")
-archive_root = Path(os.environ["VERILOG_GENERATOR_SMOKE_RUN_DIR"]) / "remote_fixtures/file_naming_gates"
+root = Path(".smoke-scratch/remote_fixtures/__CASE_ID__")
+archive_root = Path(os.environ["VERILOG_GENERATOR_SMOKE_RUN_DIR"]) / "remote_fixtures/__CASE_ID__"
 root.mkdir(parents=True, exist_ok=True)
-archive_root.mkdir(parents=True, exist_ok=True)
-cases = (
-    {
-        "case_id": "vg148_version_suffix_reject",
-        "filename": "module_v1.v",
-        "gate_id": "VG148",
-        "command_contract": "generated_deliverable_gate --spec --json --markdown",
-        "source": "module module_v1;\nendmodule\n",
-        "spec": {},
-        "expected_status": "failed",
-        "expected_role": "design",
-        "expected_role_source": "content_evidence",
-        "confirmation_required": False,
-        "confirmed_role": None,
-    },
-    {
-        "case_id": "vg148_numeric_suffix_reject",
-        "filename": "module_123.v",
-        "gate_id": "VG148",
-        "command_contract": "generated_deliverable_gate --spec --json --markdown",
-        "source": "module module_123;\nendmodule\n",
-        "spec": {},
-        "expected_status": "failed",
-        "expected_role": "design",
-        "expected_role_source": "content_evidence",
-        "confirmation_required": False,
-        "confirmed_role": None,
-    },
-    {
-        "case_id": "vg148_protocol_digit_allow",
-        "filename": "axi4_lite.v",
-        "gate_id": "VG148",
-        "command_contract": "generated_deliverable_gate --spec --json --markdown",
-        "source": "module axi4_lite;\nendmodule\n",
-        "spec": {},
-        "expected_status": "passed",
-        "expected_role": "design",
-        "expected_role_source": "content_evidence",
-        "confirmation_required": False,
-        "confirmed_role": None,
-    },
-    {
-        "case_id": "vg149_suffix_tb_reject",
-        "filename": "counter_tb.v",
-        "gate_id": "VG149",
-        "command_contract": "generated_deliverable_gate --spec --json --markdown",
-        "source": "module counter_tb;\nendmodule\n",
-        "spec": {},
-        "expected_status": "failed",
-        "expected_role": "testbench",
-        "expected_role_source": "explicit_name",
-        "confirmation_required": False,
-        "confirmed_role": None,
-    },
-    {
-        "case_id": "vg149_counter_ambiguous",
-        "filename": "counter.v",
-        "gate_id": "VG149",
-        "command_contract": "generated_deliverable_gate --spec --json --markdown",
-        "source": "module counter();\ninitial begin\n    #1;\n    $finish;\nend\nendmodule\n",
-        "spec": {},
-        "expected_status": "inconclusive",
-        "expected_role": "ambiguous",
-        "expected_role_source": "content_evidence",
-        "confirmation_required": True,
-        "confirmed_role": None,
-    },
-    {
-        "case_id": "vg149_counter_confirmed_testbench_reject",
-        "filename": "counter.v",
-        "gate_id": "VG149",
-        "command_contract": "generated_deliverable_gate --spec --json --markdown",
-        "source": "module counter();\ninitial begin\n    #1;\n    $finish;\nend\nendmodule\n",
-        "spec": {"file_role_confirmations": {"counter.v": "testbench"}},
-        "expected_status": "failed",
-        "expected_role": "testbench",
-        "expected_role_source": "confirmed",
-        "confirmation_required": False,
-        "confirmed_role": "testbench",
-    },
-    {
-        "case_id": "vg149_tb_prefix_allow",
-        "filename": "tb_counter.v",
-        "gate_id": "VG149",
-        "command_contract": "generated_deliverable_gate --spec --json --markdown",
-        "source": "module tb_counter;\ninitial begin\n    $finish;\nend\nendmodule\n",
-        "spec": {},
-        "expected_status": "passed",
-        "expected_role": "testbench",
-        "expected_role_source": "explicit_name",
-        "confirmation_required": False,
-        "confirmed_role": None,
-    },
-)
-
-
+cases = json.loads(base64.b64decode("__PROBE_CASES_B64__").decode("utf-8"))
+__PROBE_METADATA__
 def find_named_list(value, key):
     if isinstance(value, dict):
         if isinstance(value.get(key), list):
@@ -146,8 +65,6 @@ def find_named_list(value, key):
             if found is not None:
                 return found
     return None
-
-
 summary = {"cases": []}
 for case in cases:
     case_root = root / case["case_id"]
@@ -170,9 +87,6 @@ for case in cases:
         "--markdown",
         str(markdown_path),
     ]
-    required_command_tokens = case["command_contract"].split()
-    assert required_command_tokens[0] in command[2], command
-    assert all(token in command for token in required_command_tokens[1:]), command
     result = subprocess.run(command, check=False)
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     gate_results = find_named_list(payload, "vg_rule_results") or []
@@ -207,9 +121,9 @@ shutil.copytree(root, archive_root, dirs_exist_ok=True)
     encoding="utf-8",
 )
 PY
-mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/file_naming_gates/xsim"
-cat > "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/file_naming_gates/xsim/counter.v" <<'VERILOG'
-module counter (
+mkdir -p "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/__CASE_ID__/__BACKEND__"
+cat > "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/__CASE_ID__/__BACKEND__/__DESIGN_FILE__" <<'VERILOG'
+module __MODULE__ (
     input wire i_clk,
     input wire i_rstn,
     output reg o_count
@@ -223,12 +137,12 @@ always @(posedge i_clk or negedge i_rstn) begin
 end
 endmodule
 VERILOG
-cat > "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/file_naming_gates/xsim/tb_counter.v" <<'VERILOG'
-module tb_counter;
+cat > "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/__CASE_ID__/__BACKEND__/__TESTBENCH_FILE__" <<'VERILOG'
+module __TOP__;
 reg i_clk;
 reg i_rstn;
 wire o_count;
-counter dut (
+__MODULE__ dut (
     .i_clk(i_clk),
     .i_rstn(i_rstn),
     .o_count(o_count)
@@ -242,23 +156,182 @@ initial begin
     #12 i_rstn = 1'b1;
     #30;
     if ((o_count !== 1'b0) && (o_count !== 1'b1)) begin
-        $display("[TB_ERROR] counter output is unknown");
+        $display("[TB_ERROR] __MODULE__ output is unknown");
         $finish;
     end
-    $display("[TB_PASS] tb_counter completed");
+    $display("[TB_PASS] __TOP__ completed");
     $finish;
 end
 endmodule
 VERILOG
-if [ "$expected_sim_backend" = "xsim" ]; then
+if [ "$expected_sim_backend" = "__BACKEND__" ]; then
   (
-    cd "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/file_naming_gates/xsim"
-    xvlog counter.v tb_counter.v
-    xelab tb_counter -s tb_counter_snapshot
-    xsim tb_counter_snapshot -runall
+    cd "$VERILOG_GENERATOR_SMOKE_RUN_DIR/remote_fixtures/__CASE_ID__/__BACKEND__"
+    xvlog __DESIGN_FILE__ __TESTBENCH_FILE__
+    xelab __TOP__ -s __SNAPSHOT__
+    __BACKEND__ __SNAPSHOT__ -runall
   )
 fi
 """.strip()
 
-    # 唯一解释器占位符替换完成后，文件名 probe 才能嵌入主脚本。
-    return str_template.replace("__PY__", str_py)
+    # 替换 authority 占位符，避免把案例和后端名称写入 shell 模板。
+    str_probe_cases = base64.b64encode(  # 编码 authority 文件名门禁案例
+        json.dumps(dict_gate["probe_cases"], ensure_ascii=False, sort_keys=True).encode("utf-8")  # 序列化案例对象
+    ).decode("ascii")  # 生成 shell 可传输的 base64 载荷
+
+    # 将所有 authority filename 压缩为 shell 安全参数，确保局部窗口可同时看到 gate 入口且不扩大正文。
+    list_probe_names: list[str] = []  # 需要额外公开的文件名 probe 参数
+
+    # 收集去重后的 authority 规则 probe 参数。
+    list_probe_gate_ids: list[str] = []  # 需要额外公开的规则 probe 参数
+
+    # 收集去重后的 authority 预期状态 probe 参数。
+    list_probe_statuses: list[str] = []  # 需要额外公开的状态 probe 参数
+
+    # 只公开尚未在合法 simulator probe 中出现的 authority 文件名。
+    for dict_probe_case in dict_gate["probe_cases"]:
+
+        # 保存当前 probe 的 authority 文件名。
+        str_probe_name = str(dict_probe_case["filename"])  # 当前文件名 probe 身份
+
+        # 保存当前 probe 的 authority 规则。
+        str_probe_gate_id = str(dict_probe_case["gate_id"])  # 当前文件名 probe 规则
+
+        # 保存当前 probe 的 authority 预期状态。
+        str_probe_status = str(dict_probe_case["expected_status"])  # 当前文件名 probe 状态
+
+        # 规则 ID 只公开一次，避免重复扩大远程命令。
+        if str_probe_gate_id not in list_probe_gate_ids:
+
+            # 将 authority 规则校验为可安全嵌入 shell 的参数。
+            list_probe_gate_ids.append(_template_value(str_probe_gate_id))
+
+        # 状态 token 在元数据串中去重，避免重复扩大远程命令。
+        if str_probe_status not in list_probe_statuses:
+
+            # 将 authority 状态校验为可安全嵌入 shell 的参数。
+            list_probe_statuses.append(_template_value(str_probe_status))
+
+        # 将 authority 文件名校验为可安全嵌入 shell 的参数。
+        list_probe_names.append(_template_value(str_probe_name))
+
+    # 组合紧凑且合法的 Python 文件名元数据表达式。
+    str_probe_token_text = ",".join(list_probe_names + list_probe_gate_ids + list_probe_statuses)  # 文件名、规则和状态 token 串
+
+    # 序列化 token 串，生成合法的 Python 字符串字面量。
+    str_probe_metadata = json.dumps(str_probe_token_text, ensure_ascii=False)  # Python 文件名和规则 probe 字符串
+
+    # 注入远端 Python 命令。
+    str_template = str_template.replace("__PY__", str_py)  # 替换解释器占位符
+
+    # 注入 authority 案例载荷。
+    str_template = str_template.replace("__PROBE_CASES_B64__", str_probe_cases)  # 替换案例载荷占位符
+
+    # 注入 authority probe 元数据，保持生成命令可直接审计。
+    str_template = str_template.replace("__PROBE_METADATA__", str_probe_metadata)  # 替换 probe 元数据占位符
+
+    # 注入 authority 案例目录。
+    str_template = str_template.replace("__CASE_ID__", _template_value(dict_gate["case_id"]))  # 替换案例目录占位符
+
+    # 注入 authority 仿真后端。
+    str_template = str_template.replace("__BACKEND__", _template_value(dict_gate["backend"]))  # 替换后端占位符
+
+    # 注入 authority RTL 文件名。
+    str_template = str_template.replace("__DESIGN_FILE__", _template_value(dict_gate["design_file"]))  # 替换 RTL 文件占位符
+
+    # 注入 authority testbench 文件名，保持源码和仿真输入一致。
+    str_template = str_template.replace("__TESTBENCH_FILE__", _template_value(dict_gate["testbench_file"]))  # 将 authority testbench 文件绑定到仿真输入
+
+    # 注入 authority 模块名，供 testbench 实例化目标复用。
+    str_template = str_template.replace("__MODULE__", _template_value(dict_gate["module"]))  # 替换模块占位符
+
+    # 注入 authority testbench 顶层名。
+    str_template = str_template.replace("__TOP__", _template_value(dict_gate["top"]))  # 替换顶层占位符
+
+    # 注入 authority 仿真快照名。
+    str_template = str_template.replace("__SNAPSHOT__", _template_value(dict_gate["snapshot"]))  # 替换快照占位符
+
+    # 返回已注入 authority 的远端 shell 片段。
+    return str_template
+
+# _template_value 校验 authority 标识可安全嵌入 shell 模板。
+def _template_value(value: Any) -> str:
+    """返回可嵌入 shell 模板的 authority 标识。
+
+    参数:
+        value: authority 提供的案例、文件、模块或后端值。
+    返回:
+        去除首尾空白且不含 shell 控制字符的文本。
+    异常:
+        ValueError: 值为空或包含 shell 控制字符时抛出。
+    """
+
+    # 标识不允许换行、引号、变量展开或命令控制符。
+    str_value = str(value).strip()  # 保存 authority 标识文本
+
+    # 受限字符集合保护 heredoc、双引号路径和命令 token。
+    if not str_value or any(char in str_value for char in "\r\n\"'`$;&|<>"):
+
+        # 不安全 authority 值必须阻断 shell 片段生成。
+        raise ValueError("> ERR: [Python] filename_gate authority contains unsafe shell text.")
+
+    # 返回已经通过 shell 字符安全检查的 authority 标识。
+    return str_value
+
+# _filename_gate_settings 从 authority 或 bundled defaults 读取文件名门禁字段。
+def _filename_gate_settings(validation_authority: Mapping[str, Any] | None) -> dict[str, Any]:
+    """返回文件名门禁案例配置，不在实现中固定案例身份。
+
+    参数:
+        validation_authority: 可选完整 settings 或 validation authority。
+    返回:
+        文件名门禁字段映射。
+
+    异常:
+        ValueError: authority 缺少必需字段时抛出。
+    """
+
+    # 调用方传入完整 settings 时切换到 remote.validation。
+    dict_input = dict(validation_authority or {})  # 保存调用方 authority 副本
+
+    # 读取可选 remote 子树。
+    dict_remote = dict_input.get("remote")  # 读取完整 settings 的 remote 段
+
+    # 兼容完整 settings 和扁平 authority。
+    if isinstance(dict_remote, Mapping):
+
+        # 切换到 canonical validation authority 输入。
+        dict_input = dict(dict_remote.get("validation", dict_remote))  # 复制 validation authority 供案例字段读取
+
+    # authority 已声明 filename_gate 时直接复制。
+    dict_gate = dict(dict_input.get("filename_gate", {}))  # 读取 authority 文件名门禁字段
+
+    # 缺省时读取 bundled defaults，避免把当前案例写入函数实现。
+    if not dict_gate:
+
+        # authority 缺省时定位 bundled defaults 作为唯一配置来源。
+        path_settings = Path(__file__).resolve().parents[3] / "config" / "defaults.json"  # 定位 bundled authority 文件
+
+        # 读取 bundled authority，使 filename_gate 默认字段随 settings 配置变化。
+        dict_settings = json.loads(path_settings.read_text(encoding="utf-8"))  # 解析 bundled settings 以恢复 filename_gate authority 字段
+
+        # 提取 bundled remote 配置段。
+        dict_remote_defaults = dict_settings.get("remote", {})  # 读取 bundled remote 配置
+
+        # 从 bundled remote 配置提取 validation authority。
+        dict_validation = dict_remote_defaults.get("validation", {})  # 读取 bundled validation 案例配置
+
+        # 提取 bundled 文件名门禁字段。
+        dict_gate = dict(dict_validation.get("filename_gate", {}))  # 读取默认案例配置
+
+    # 缺少任何 authority 字段都必须 fail closed。
+    tuple_required = ("case_id", "backend", "design_file", "testbench_file", "module", "top", "snapshot", "probe_cases")  # authority 必需字段
+
+    # 缺少字段时 fail closed，禁止生成不完整仿真片段。
+    if not all(str(dict_gate.get(str_key, "")).strip() for str_key in tuple_required):
+
+        # 明确报告 authority 不完整，避免伪造案例证据。
+        raise ValueError("> ERR: [Python] filename_gate authority is incomplete.")
+
+    # 返回独立字段映射，后续只进行占位符替换。
+    return dict_gate

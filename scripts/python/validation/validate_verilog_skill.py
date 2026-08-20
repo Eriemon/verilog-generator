@@ -897,6 +897,7 @@ def run_cli_gate(settings: dict, smoke_dir: Path) -> None:
     module_type_module_validation_smoke_gate.run_existing_rtl_boundary_flows(
         smoke_dir,
         path_skill_root=PATH_SKILL_ROOT,
+        dict_settings=settings,
         func_run_verilog_cli=run_verilog_cli,
     )
 
@@ -904,6 +905,7 @@ def run_cli_gate(settings: dict, smoke_dir: Path) -> None:
     module_type_module_validation_smoke_gate.run_existing_rtl_patch_flows(
         smoke_dir,
         path_skill_root=PATH_SKILL_ROOT,
+        dict_settings=settings,
         func_run_verilog_cli=run_verilog_cli,
     )
 

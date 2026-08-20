@@ -17,7 +17,7 @@ A real RTL definition wins over a same-name built-in profile. A built-in profile
 
 ## 2. Complete catalog
 
-The current catalog contains 49 UNISIM primitives, 19 XPM primitives or macro modules, and 10 project-IP manifest categories. `validated_vivado_versions` is 2022.2 and 2023.2. Validation parts are `xc7a35tcpg236-1`, `xcku040-ffva1156-2-e`, and `xcu55c-fsvh2892-2L-e`. These facts define this governed scope; unlisted devices or versions do not receive an automatic exemption. Other toolchain projects still require their own compile and simulation evidence.
+The machine-readable primitive catalog is the authority for primitive families, project-IP manifest categories, validated toolchain versions, and validation parts. These catalog entries define this governed scope; unlisted devices or versions do not receive an automatic exemption. Other toolchain projects still require their own compile and simulation evidence.
 
 ### 2.1 UNISIM: 49 exact names
 

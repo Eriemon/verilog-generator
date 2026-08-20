@@ -68,11 +68,11 @@
 
 ### 2.2 Verilog/SystemVerilog 文件名角色
 
-- `.v` 与 `.sv` 文件名必须表达真实功能。`axi4_lite.v`、`crc32.v`、`counter_32bit.v`、`i2c_master.v`、`ad9361_if.v` 中的数字属于功能名称，允许使用。
+- `.v` 与 `.sv` 文件名必须表达真实功能；功能名称中的数字由命名合同判定，不得把版本号或当前案例名当作设计语义。
 - `VG148` 只禁止文件主名末尾的独立版本或无功能数字后缀：`_vN`、`-vN`、`_verN`、`-verN`、`_versionN`、`-versionN`、`_N`、`-N`，匹配不区分大小写。例如 `module_v1.v`、`module-ver2.sv`、`module_123.v` 必须改为真实功能名。
-- 通过文件主名 `tb_`、`_tb`、`testbench`，或精确目录段 `tb`、`testbench`、`sim` 识别出的测试文件，统一使用 `tb_<function>.v` 或 `tb_<function>.sv`。`counter_tb.v` 会被识别为 testbench，但因不是 `tb_` 前缀而由 `VG149` 显式拒绝。
+- 通过文件主名 `tb_`、`_tb`、`testbench`，或精确目录段 `tb`、`testbench`、`sim` 识别出的测试文件，统一使用 `tb_<function>.v` 或 `tb_<function>.sv`。authority 选定的 `<function>_tb.v` 会被识别为 testbench，但因不是 `tb_` 前缀而由 `VG149` 显式拒绝。
 - 普通命名文件若内容同时命中至少两个独立测试证据组，会进入二次确认而不是直接判定。证据组为 `initial_process`、`simulation_task`、`clock_stimulus`、`dut_self_check`；注释或字符串中的关键词不计入证据。
-- 用户通过 `file_role_confirmations` 把文件确认成 `design` 后，`VG149` 对该文件不适用；确认成 `testbench` 后仍必须改名为 `tb_<function>`，确认本身不能豁免命名规则。例如 `counter.v` 确认为 testbench 后仍失败，重命名为 `tb_counter.v` 后才通过。
+- 用户通过 `file_role_confirmations` 把文件确认成 `design` 后，`VG149` 对该文件不适用；确认成 `testbench` 后仍必须改名为 `tb_<function>`，确认本身不能豁免命名规则。具体文件名由调用方案例 authority 提供，确认不会替代前缀合同。
 - 无法读取的 `.v`/`.sv` 文件不能静默跳过；文件门禁返回 `error`，并由公开报告保留稳定的相对路径读取诊断。
 
 ### 2.3 Profile 使用规范

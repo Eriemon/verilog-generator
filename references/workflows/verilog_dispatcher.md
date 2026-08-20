@@ -26,7 +26,7 @@ When implementation work touches Python, first use `readable-python-generator`: 
 
 ### `generate`
 
-Confirm the intent contract first: module name, ports, clock/reset, interface family, behavior, latency/pipeline expectations, reset values, test cases, and deliverable files. Every generated or modified module also needs a same-name `<module>_spec.md` with at least one WaveDrom timing diagram; use the registered `workflow.write-spec` path and fail closed when the exact `wavedrom@3.6.1` runtime is unavailable. Generated RTL must pass the final deliverable gate; model self-review is never enough.
+Confirm the intent contract first: module name, ports, clock/reset, interface family, behavior, latency/pipeline expectations, reset values, test cases, and deliverable files. Every generated or modified module also needs a same-name `<module>_spec.md` with at least one WaveDrom timing diagram; use the registered `workflow.write-spec` path and fail closed when the renderer runtime declared by settings is unavailable. Generated RTL must pass the final deliverable gate; model self-review is never enough.
 
 ### `modify`
 

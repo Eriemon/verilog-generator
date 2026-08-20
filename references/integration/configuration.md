@@ -52,7 +52,7 @@ Run the dependency manager from the skill root through the canonical module entr
 python -m scripts.python.toolchain.manage_skill_dependencies check --settings .\config\defaults.json
 python -m scripts.python.toolchain.manage_skill_dependencies prompt --settings .\config\defaults.json
 python -m scripts.python.toolchain.manage_skill_dependencies install --settings .\config\defaults.json --dependency-id erie-remote-ssh --yes
-python -m scripts.python.toolchain.manage_skill_dependencies install --settings .\config\defaults.json --dependency-id wavedrom --yes
+python -m scripts.python.toolchain.manage_skill_dependencies install --settings .\config\defaults.json --dependency-id <renderer-dependency-id> --yes
 python -m scripts.python.toolchain.manage_skill_dependencies adapt --settings .\config\defaults.json
 ```
 
@@ -60,7 +60,7 @@ python -m scripts.python.toolchain.manage_skill_dependencies adapt --settings .\
 
 `fpga_developer_routing` records vendor-level developer skill preferences. AMD-Xilinx work recognizes `vivado-developer` and `vitis-developer`; PangoMicro work recognizes `pds-developer`. When any developer skill is installed, FPGA-Agent-Skills is not required and its Vivado/Vitis skills are not installed by this skill. If no developer skill is installed, FPGA-Agent-Skills remains a manual fallback only: `install --dependency-id fpga-agent-skills --yes` still skips it, and installation requires the additional `--allow-fpga-agent-fallback` flag. If both vendor families are available, ask the user which vendor to use for the current FPGA workflow and persist only that vendor choice in the project-local state file.
 
-`tool_dependencies.wavedrom` locks the external waveform runtime to npm package `wavedrom@3.6.1`, executable `wavedrom`, and Node.js `>=20.0.0`. The bundled `scripts/python/toolchain/wavedrom_runtime.py` is the only install/check/render route: it runs `npm install --global wavedrom@3.6.1 --yes` only after explicit confirmation, checks the exact version, and captures SVG from `wavedrom --input <wavejson> --indent 2`. The separate `wavedrom-cli` package is not a supported dependency.
+The first `tool_dependencies.required` record in settings declares the external waveform runtime package, version, executable, and Node/npm floor. The bundled `scripts/python/toolchain/wavedrom_runtime.py` is the only install/check/render route: it builds the install and render argv from that record, requires explicit confirmation for installation, checks the configured version, and captures SVG from the configured executable. A separately named renderer package is unsupported unless it is declared by the settings authority.
 
 Developer routing commands:
 
@@ -134,13 +134,13 @@ The optional top-level spec field `file_role_confirmations` resolves only ordina
 ```json
 {
   "file_role_confirmations": {
-    "rtl/counter.v": "design",
-    "verification/counter.sv": "testbench"
+    "<rtl-file>.v": "design",
+    "<verification-file>.sv": "testbench"
   }
 }
 ```
 
-A confirmation may not contradict explicit filename/directory testbench evidence. Confirming `testbench` resolves the role only; VG149 still requires renaming `verification/counter.sv` to a `tb_<function>.sv` name. Confirming `design` makes VG149 not applicable to an otherwise ambiguous ordinary filename. Unknown paths, duplicate normalized paths, unsupported role values, and paths outside the current scan root fail closed.
+A confirmation may not contradict explicit filename/directory testbench evidence. Confirming `testbench` resolves the role only; VG149 still requires renaming the authority-selected verification file to a `tb_<function>.sv` name. Confirming `design` makes VG149 not applicable to an otherwise ambiguous ordinary filename. Unknown paths, duplicate normalized paths, unsupported role values, and paths outside the current scan root fail closed.
 
 ## Remote Validation
 
@@ -153,7 +153,7 @@ The default remote settings point to:
 - local server list: `<workspace-root>/.settings/server_list.local.json`; `erie-remote-ssh` owns this file and the Verilog skill only reads it
 - local remote selection: `<workspace-root>/.settings/remote-selection.local.json`; store only the user-confirmed `server_id` here
 - local Verilog project settings: `<workspace-root>/.settings/verilog.local.json`; store local tools, commands, and remote-first policy here, but do not store server identifiers here
-- remote runtime config: `.readable-verilog-generator/.settings/verilog.remote.json` relative to the selected server-default workdir; store `remote.toolchain.simulator_backend`, `remote.toolchain.vivado_settings64`, and any remote-only environment overrides there
+- remote runtime config: `<remote-root>/.settings/verilog.remote.json` relative to the selected server workdir; store `remote.toolchain.simulator_backend`, `remote.toolchain.vivado_settings64`, and any remote-only environment overrides there
 
 Run the remote gate:
 
@@ -161,21 +161,21 @@ Run the remote gate:
 python -m scripts.python.remote.remote_validate_verilog_skill --settings .\config\defaults.json --server <selected-server>
 ```
 
-The remote script uses `python -X utf8` to avoid Windows console decoding failures while invoking `erie-remote-ssh`. It performs `discover`, `list`, `check`, `scan-software`, and `workspace-check`, then stages a temporary validation copy on the remote server through `request-mkdir`, `request-upload`, `request-command`, and `run-request --execute`. The default synchronous timeout is 600 seconds so the same reviewed request can finish authoritative `pytest`, effectiveness checks, and real simulation without inheriting the helper's short-task timeout. The validation package keeps its isolated Codex `HOME` under the governed `reports/` root, so tests do not depend on the remote account's installed skills and directory governance does not treat validation dependencies as source. Before selecting a simulator, the remote command scans Xilinx `settings64.sh` candidates from `$XILINX_VIVADO`, `/tools/Xilinx/Vivado/*/settings64.sh`, `/tools/Xilinx/Vitis/*/settings64.sh`, and `/opt/Xilinx/Vivado/*/settings64.sh`. If more than one candidate exists and no user-confirmed config is present, the gate fails with `TOOLCHAIN_SELECTION_REQUIRED=1` and prints the available choices.
+The remote script uses `python -X utf8` to avoid Windows console decoding failures while invoking `erie-remote-ssh`. It performs the discovery, inventory, check, software-scan, and workspace-check operations declared by the remote helper, then stages a temporary validation copy through the governed request flow. Timeout, report roots, simulator candidates, and selection markers come from settings authority; ambiguous candidates fail with a selection-required status until the user confirms one. The validation package keeps its isolated Codex `HOME` under the configured reports root, so tests do not depend on the remote account's installed skills and directory governance does not treat validation dependencies as source.
 
 Write a confirmed toolchain choice after the user selects a version:
 
 ```powershell
-python -m scripts.python.remote.remote_validate_verilog_skill --settings .\config\defaults.json --server <selected-server> --write-toolchain-selection --simulator-backend xsim --vivado-settings /tools/Xilinx/<toolchain>/<version>/settings64.sh
+python -m scripts.python.remote.remote_validate_verilog_skill --settings .\config\defaults.json --server <selected-server> --write-toolchain-selection --simulator-backend <simulator-backend> --vivado-settings <settings64-path>
 ```
 
-The dedicated local selection file records only the selected `server_id`. The remote workdir `.readable-verilog-generator/.settings/verilog.remote.json` records the active simulator backend and optional `vivado_settings64`. A selected backend can also be `iverilog`; in that case Xilinx toolchain activation is skipped and validation uses the configured simulator priority override for that run.
+The dedicated local selection file records only the selected server identity field declared by settings. The remote workdir `<remote-root>/.settings/verilog.remote.json` records the active simulator backend and optional toolchain settings path. Backend activation and simulator priority are authority-driven for each run.
 
 For confidence-sensitive gates, the active server is always the one stored in `.settings/remote-selection.local.json` or explicitly passed through `--remote-server`. The toolchain source of truth is the remote workdir `.settings/verilog.remote.json`; local legacy toolchain caches must not satisfy the active gate.
 
-Remote validation directories are retained by default and printed as `remote_parent` and `remote_skill`. Each new run uses a collision-resistant `validation_<UTC>_<time-ns>_<nonce8>` identity below the fixed server-default workdir root `.readable-verilog-generator/runs/`. The selected project directory is uploaded to `runs/<run-id>/workspace/readable-verilog-generator/` only through erie-remote-ssh `upload_contract_version=2` source-manifest directory upload; tar/tar.gz and whole-bundle archive transport are forbidden. The upload request and its `uploaded_verified` receipt bind the canonical `source_manifest_sha256` before the remote command starts. All execution logs and reports are written directly to `runs/<run-id>/reports/`, and Agent self-review is atomically written to `runs/<run-id>/agent_review.json`. The successful and failed reports remain available without manual review confirmation. The old `.readable-verilog-generator-validation/run-*` tree is retained for exact `--report-runs --run-id` read-only compatibility and is never migrated or written by the new flow. The legacy `--keep-remote` flag is accepted but no longer changes behavior because keeping is the default. `--cleanup-remote` remains an explicit opt-in compatibility action for deleting only the current retained run; the default path never deletes successful or failed evidence.
+Remote validation directories are retained by default and printed as `remote_parent` and `remote_skill`. Each new run uses the collision-resistant run identity and layout declared by the settings authority. The selected project directory is uploaded only through the governed source-manifest directory contract; archive and whole-bundle transport remain forbidden. The upload request and its verification receipt bind the canonical source manifest before the remote command starts. Execution logs, reports, fixture artifacts, and Agent self-review use the configured relative artifact paths. Older retained layouts are read-only compatibility sources and are never migrated or written by the new flow. Cleanup remains an explicit opt-in action for only the current retained run; the default path never deletes successful or failed evidence.
 
-Each remote gate validates authoritative pytest, the canonical workflow, and the fixed RTL fixtures in `assets/examples/remote_fixtures`: `comb_operation_budget`, `comb_hierarchy_budget`, `comb_parity_mux`, `pipeline_delay`, and `ready_valid_slice`. `comb_operation_budget` first proves that its standalone bad source is rejected by VG146, then simulates the registered replacement and checks its visible two-edge latency, ready/backpressure behavior, stalled-output stability, and accepted-versus-delivered transaction conservation. `comb_hierarchy_budget` runs four independent source-closure probes before simulation: child 1 plus parent 2 operations passes VG146, child 2 plus parent 2 fails VG146 with count 4 and a child evidence path, a registered child Q cuts upstream expansion, and a child constant loop is owned and rejected by VG147. Its generated two-module design and self-checking testbench then compile and run with the selected simulator. Under the direct `runs/<run-id>/reports/` directory, `remote_pytest.log` retains the compatibility aggregate and `remote_pytest_summary.json` records the aggregate counts. The authoritative pytest evidence is phase-scoped and retained as `remote_pytest_targeted.log`/`remote_pytest_targeted_summary.json`, `remote_pytest_regression.log`/`remote_pytest_regression_summary.json`, and `remote_pytest_full.log`/`remote_pytest_full_summary.json`; the phases run in that order and each summary binds the exact command hash, exit code, timestamp, and counts. Immediately after the full summary and before smoke begins, `remote_post_pytest_phase.json` records the post-pytest phase start; `remote_post_pytest.log` captures smoke output through `tee`, and the marker is updated for smoke, workflow, fixture, implement, and evidence-runtime failures. `remote_environment.json`, `remote_cwd.json`, `skill_pressure_report.json`, `validation_archive_manifest.json`, and `remote_test_evidence.json` bind the server identity, actual working directory, pressure report, retained artifact inventory, and phase evidence; `validation_archive_manifest.json` is not an upload archive. `agent_review.json` records the Agent's automatic pass/fail review. Fixture reports are retained under `remote_fixtures/<fixture>/validation.json`, with a combined `remote_fixtures/summary.json` that records the selected simulator backend, executed tools, and generated RTL/testbench paths.
+Each remote gate validates the authority-selected pytest phases, canonical workflow, and case catalog from settings under the configured fixture root. Case-specific prechecks, source names, operation budgets, latency expectations, testbench names, and simulator commands are all catalog data rather than workflow constants. Phase summaries bind the exact command hash, exit code, timestamp, and counts; post-test, environment, cwd, pressure, manifest, evidence, completion, and Agent-review artifacts use the configured artifact names. Fixture reports use the authority-selected case identifier and validation filename, with a combined summary recording the selected backend, executed tools, and generated RTL/testbench paths.
 
 List retained runs without staging a new run:
 

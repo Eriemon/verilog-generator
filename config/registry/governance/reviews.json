@@ -166,18 +166,6 @@
     },
     {
       "command_ids": [
-        "remote.validate"
-      ],
-      "decision": "mapped",
-      "kind": "option",
-      "rationale": "",
-      "sources": [
-        "references/integration/configuration.md"
-      ],
-      "value": "--cleanup-remote"
-    },
-    {
-      "command_ids": [
         "registry.document-governance"
       ],
       "decision": "mapped",
@@ -225,16 +213,6 @@
       "value": "--evals"
     },
     {
-      "command_ids": [],
-      "decision": "not_public",
-      "kind": "option",
-      "rationale": "该选项属于 erie-remote-ssh 的 run-request 外部调用，不是本技能 remote_validate_verilog_skill 的公开参数。",
-      "sources": [
-        "references/integration/configuration.md"
-      ],
-      "value": "--execute"
-    },
-    {
       "command_ids": [
         "validation.generated-deliverable",
         "quality.verilog"
@@ -247,36 +225,6 @@
         "references/skill/script-guide.md"
       ],
       "value": "--external-interface-source"
-    },
-    {
-      "command_ids": [],
-      "decision": "not_public",
-      "kind": "option",
-      "rationale": "WaveDrom runtime 的全局安装开关只由 bundled runtime 固定调用，依赖治理入口不暴露自由组合参数。",
-      "sources": [
-        "references/integration/configuration.md"
-      ],
-      "value": "--global"
-    },
-    {
-      "command_ids": [],
-      "decision": "not_public",
-      "kind": "option",
-      "rationale": "WaveDrom 缩进值属于 bundled runtime 的固定渲染参数，不是技能公开工作流选项。",
-      "sources": [
-        "references/integration/configuration.md"
-      ],
-      "value": "--indent"
-    },
-    {
-      "command_ids": [],
-      "decision": "not_public",
-      "kind": "option",
-      "rationale": "WaveDrom 渲染输入由 bundled runtime 负责传递，宿主只使用 write-spec 的规范 JSON 入口。",
-      "sources": [
-        "references/integration/configuration.md"
-      ],
-      "value": "--input"
     },
     {
       "command_ids": [
@@ -294,18 +242,6 @@
         "references/skill/script-guide.md"
       ],
       "value": "--json"
-    },
-    {
-      "command_ids": [
-        "remote.validate"
-      ],
-      "decision": "mapped",
-      "kind": "option",
-      "rationale": "",
-      "sources": [
-        "references/integration/configuration.md"
-      ],
-      "value": "--keep-remote"
     },
     {
       "command_ids": [

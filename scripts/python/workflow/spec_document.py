@@ -18,8 +18,15 @@ from typing import Any, Callable, Mapping, Sequence
 # 所有外部 wavedrom 调用集中在受控 runtime，避免 workflow 自行拼接命令。
 from scripts.python.toolchain.wavedrom_runtime import render_waveform
 
+# renderer 前对齐 WaveJSON lane 结束时间。
+from scripts.python.workflow.waveform_alignment import align_wavejson_ends
+
 # 公共 IO 入口独立承载便捷读取和语义化渲染别名。
-from scripts.python.workflow.spec_document_io import read_spec_document, render_spec_bundle
+from scripts.python.workflow.spec_document_io import (
+    read_spec_document,
+    render_spec_bundle,
+    render_waveform_with_settings,
+)
 
 # 模块头正则同时覆盖 ANSI 与旧式端口声明。
 MODULE_SOURCE_PATTERN = r"\bmodule\s+(?P<name>[A-Za-z_]\w*)\s*(?:#\s*\(.*?\))?\s*\((?P<ports>.*?)\)\s*;"  # 模块头文本规则
@@ -262,12 +269,17 @@ def _normalize_port(value: Any, field_path: str) -> dict[str, Any]:
     return dict_port
 
 # 时序图 helper 在调用 WaveDrom 前确认信号元数据完整。
-def _normalize_diagram(value: Any, field_path: str) -> dict[str, Any]:
+def _normalize_diagram(
+    value: Any,
+    field_path: str,
+    waveform_policy: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """校验一张 WaveDrom 时序图合同。
 
     参数:
         value: timing_diagrams 中的单个图对象。
         field_path: 图对象所在规格路径。
+        waveform_policy: 可选的 lane 结束时间策略。
 
     返回:
         含图元数据和 WaveJSON 的归一化字典。
@@ -353,6 +365,12 @@ def _normalize_diagram(value: Any, field_path: str) -> dict[str, Any]:
     # 只复制 signal 数组，避免共享嵌套容器的可变引用。
     dict_wavejson["signal"] = [dict(signal) for signal in wavejson_value["signal"]]  # 信号记录副本
 
+    # 统一 lane 公共右边界。
+    obj_alignment = align_wavejson_ends(dict_wavejson, waveform_policy or {})  # WaveJSON 对齐结果
+
+    # 对齐副本作为 JSON5/SVG 输入。
+    dict_wavejson = obj_alignment.normalized_wavejson  # 已完成结束时间归一化的 WaveJSON
+
     # 规范化图对象只保留文档合同字段。
     dict_diagram: dict[str, Any] = {  # 时序图合同
         "id": str_id,  # 图标识字段
@@ -408,12 +426,17 @@ def _normalize_parameters(value: Any, field_path: str) -> list[Any]:
     raise SpecDocumentError("> ERR: [Python] {} must be a list or object.".format(field_path))
 
 # 模块 helper 组合端口、行为、约束和波形的必需字段。
-def _normalize_module(module_value: Any, int_index: int) -> dict[str, Any]:
+def _normalize_module(
+    module_value: Any,
+    int_index: int,
+    waveform_policy: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """校验单个模块的接口、行为和波形合同。
 
     参数:
         module_value: modules 数组中的原始对象。
         int_index: 模块在数组中的零基索引。
+        waveform_policy: 可选的 lane 结束时间策略。
 
     返回:
         可供文档和渲染流程消费的模块字典。
@@ -479,7 +502,11 @@ def _normalize_module(module_value: Any, int_index: int) -> dict[str, Any]:
 
     # 每张图单独校验元数据和信号状态。
     list_diagrams = [  # 归一化模块 WaveDrom 图清单
-        _normalize_diagram(item, "{}.timing_diagrams[{}]".format(str_prefix, index))  # 当前图归一化
+        _normalize_diagram(  # 对齐当前图 WaveJSON
+            item,  # 原始图对象
+            "{}.timing_diagrams[{}]".format(str_prefix, index),  # 诊断路径
+            waveform_policy,  # 对齐策略
+        )  # 归一化当前图
         for index, item in enumerate(diagrams_value)  # 图顺序遍历
     ]  # 规范时序图列表
 
@@ -556,11 +583,16 @@ def _normalize_module(module_value: Any, int_index: int) -> dict[str, Any]:
     return dict_module
 
 # 顶层归一化 helper 维护模块名和 RTL 路径的全局唯一性。
-def normalize_spec_document(raw: Mapping[str, Any]) -> dict[str, Any]:
+def normalize_spec_document(
+    raw: Mapping[str, Any],
+    *,
+    waveform_policy: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """归一化单模块或多模块规格文档。
 
     参数:
         raw: 单模块对象或包含 modules 列表的对象。
+        waveform_policy: 可选的 lane 结束时间策略。
 
     返回:
         含规范化 modules 数组的文档对象。
@@ -615,7 +647,7 @@ def normalize_spec_document(raw: Mapping[str, Any]) -> dict[str, Any]:
     for int_index, module_value in enumerate(list_raw_modules):
 
         # 当前模块的字段规则集中在 helper 内。
-        dict_module = _normalize_module(module_value, int_index)  # 当前规范模块
+        dict_module = _normalize_module(module_value, int_index, waveform_policy)  # 当前规范模块
 
         # 重复名称会覆盖同名 Markdown 和 SVG。
         if dict_module["name"] in set_names:
@@ -654,12 +686,18 @@ def normalize_spec_document(raw: Mapping[str, Any]) -> dict[str, Any]:
     return dict_normalized
 
 # 公共验证入口把领域异常转换成稳定机器可读报告。
-def validate_spec_document(raw: Mapping[str, Any], *, source_paths: Sequence[Path] | None = None) -> dict[str, Any]:
+def validate_spec_document(
+    raw: Mapping[str, Any],
+    *,
+    source_paths: Sequence[Path] | None = None,
+    waveform_policy: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """返回规格结构和可选 RTL 交叉核验的机器可读报告。
 
     参数:
         raw: 单模块或多模块原始规格对象。
         source_paths: 可选 Verilog 文件路径序列。
+        waveform_policy: 可选的 lane 结束时间策略。
 
     返回:
         含 ``ok``、``issues`` 和 ``spec`` 的报告字典；失败时 spec 为 None。
@@ -669,7 +707,7 @@ def validate_spec_document(raw: Mapping[str, Any], *, source_paths: Sequence[Pat
     try:
 
         # 归一化阶段只检查 JSON 合同，不读取 RTL。
-        dict_spec = normalize_spec_document(raw)  # 规范化规格
+        dict_spec = normalize_spec_document(raw, waveform_policy=waveform_policy)  # 规范化规格
 
         # 只有调用方显式传入 source_paths 时才核验源接口。
         list_source_issues = validate_verilog_sources(dict_spec, source_paths or []) if source_paths else []  # RTL 交叉核验结果
@@ -1199,6 +1237,7 @@ def _write_waveforms(
     module: Mapping[str, Any],
     paths: Mapping[str, Path],
     renderer: Callable[..., Any] | None,
+    runtime_settings: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """写入单模块 WaveJSON 并调用 WaveDrom 渲染器。
 
@@ -1206,6 +1245,7 @@ def _write_waveforms(
         module: 已归一化模块对象。
         paths: 模块暂存目录路径集合。
         renderer: 可选测试替身或真实 ``render_waveform``。
+        runtime_settings: 可选的外部工具 settings。
 
     返回:
         每张图的 JSON5、SVG 和渲染报告路径记录。
@@ -1238,23 +1278,15 @@ def _write_waveforms(
         # 写入 JSON5 后再调用 renderer，保证输入文件已经可读取。
         path_json.write_text(str_wavejson + "\n", encoding="utf-8")
 
-        # 测试替身可接受路径或已解析对象两种稳定调用形态。
-        try:
-
-            # 真实 runtime 接受 JSON 文件路径并把 SVG 写入目标路径。
-            dict_render = func_renderer(path_json, path_svg)  # 路径形式渲染结果
-
-        # 仅在注入替身不接受路径时尝试对象形式。
-        except TypeError:
-
-            # 默认 runtime 的 TypeError 必须原样暴露，避免隐藏真实错误。
-            if renderer is None:
-
-                # 裸 re-raise 保留渲染器堆栈和错误类型。
-                raise
-
-            # 仅在显式注入 renderer 时调用替身，并传入已经校验过的 WaveJSON 对象。
-            dict_render = func_renderer(diagram_value["wavejson"], path_svg)  # 对象形式渲染结果
+        # 统一调用适配器，保持真实 runtime 与测试替身的参数合同。
+        dict_render = render_waveform_with_settings(  # 统一当前图的 runtime 与替身渲染结果
+            func_renderer,  # 当前真实 renderer 或显式替身
+            renderer,  # 显式替身标识
+            path_json,  # 已写入的 WaveJSON 路径
+            path_svg,  # SVG 输出路径
+            runtime_settings,  # 外部工具 settings authority
+            diagram_value["wavejson"],  # 已完成校验的 WaveJSON 对象
+        )  # 当前图渲染结果
 
         # 记录当前图的所有交付路径和 renderer 摘要。
         list_outputs.append(
@@ -1328,6 +1360,8 @@ def write_spec_bundle(
     source_paths: Sequence[Path] | None = None,
     language: str = "zh",
     renderer: Callable[..., Any] | None = None,
+    waveform_policy: Mapping[str, Any] | None = None,
+    runtime_settings: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """原子生成每个模块的 ``*_spec.md``、WaveJSON 和 SVG。
 
@@ -1337,6 +1371,8 @@ def write_spec_bundle(
         source_paths: 可选 RTL 文件集合，用于接口交叉核验。
         language: 文档语言，支持 ``zh`` 和 ``en``。
         renderer: 可选 WaveDrom 渲染替身。
+        waveform_policy: 可选的 lane 结束时间策略。
+        runtime_settings: 可选的外部工具 settings。
 
     返回:
         含 ``ok``、``spec_root`` 和模块输出清单的报告。
@@ -1373,7 +1409,11 @@ def write_spec_bundle(
         dict_raw_spec = dict(spec)  # 内存规格副本
 
     # 先完成完整结构和可选源接口验证。
-    dict_validation = validate_spec_document(dict_raw_spec, source_paths=source_paths)  # 规格验证报告
+    dict_validation = validate_spec_document(  # 规格结构和 WaveJSON 归一化报告
+        dict_raw_spec,  # 已解析的原始规格对象
+        source_paths=source_paths,  # 可选 RTL 交叉核验路径
+        waveform_policy=waveform_policy,  # 当前 WaveJSON 对齐策略
+    )  # 规格验证报告
 
     # 任何诊断都会阻断暂存目录和目标目录写入。
     if not dict_validation["ok"]:
@@ -1421,7 +1461,7 @@ def write_spec_bundle(
             dict_paths["wave_dir"].mkdir(parents=True, exist_ok=True)
 
             # 波形全部成功后才生成 Markdown，避免出现断链文档。
-            list_wave_outputs = _write_waveforms(module_value, dict_paths, renderer)  # 当前模块波形报告
+            list_wave_outputs = _write_waveforms(module_value, dict_paths, renderer, runtime_settings)  # 当前模块波形报告
 
             # Markdown 读取同一组已渲染波形的相对路径。
             str_markdown = _render_markdown(module_value, dict_paths, language)  # 当前模块 Markdown

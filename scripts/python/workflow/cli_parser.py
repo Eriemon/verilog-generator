@@ -105,6 +105,11 @@ def _template_command_specs() -> tuple[CommandSpec, ...]:
                     type=Path,
                     help="Optional Verilog source for exact module/port cross-check.",
                 ),
+                arg(
+                    "--settings",
+                    type=Path,
+                    help="Optional workspace settings JSON that supplies tool and waveform policies.",
+                ),
                 arg("--language", choices=("zh", "en"), default="zh"),
             ),
             trace=True,

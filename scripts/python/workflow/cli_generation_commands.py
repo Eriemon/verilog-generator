@@ -8,6 +8,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any, Mapping
 
 # prompt 报告和 readiness helper 支撑生成链路。
 from .cli_support import (
@@ -29,6 +30,7 @@ from .cli_support import (
 from .extractor import extract_response
 from .prompt import render_prompt
 from .spec import read_spec, scaffold_spec, write_spec
+from .config import load_settings
 from .spec_document import write_spec_bundle
 from .trace import append_trace_event, safe_path, spec_summary
 
@@ -88,12 +90,53 @@ def cmd_write_spec(args: argparse.Namespace) -> int:
         for path_source in (args.source or [])  # 迭代用户显式提供的 RTL 源文件
     ]
 
+    # settings 路径可选；显式路径必须留在工作区内，避免 CLI 越界读取配置。
+    path_settings: Path | None = None  # 未指定时让 load_settings 选择默认配置
+
+    # 显式 settings 路径必须先通过工作区边界校验。
+    if args.settings is not None:
+
+        # 保存已经验证过的配置路径，供统一 settings loader 使用。
+        path_settings = require_workspace_path(args.settings, purpose="workflow settings", must_exist=True)  # 显式配置路径
+
+    # 统一加载工具、波形和远程策略，避免命令处理器重新声明配置值。
+    dict_settings = load_settings(path_settings)  # 合并后的工作流配置
+
+    # 读取权威 waveform_alignment，兼容旧版顶层和 workflow 覆盖。
+    dict_workflow = dict_settings.get("workflow", {})  # 工作流配置区段
+
+    # 新版顶层 waveform_alignment 直接承载 align_wavejson_ends policy。
+    dict_waveform = dict_settings.get("waveform_alignment", {})  # 权威波形对齐策略
+
+    # 旧版顶层 waveform 配置仅作为兼容迁移输入。
+    if not dict_waveform:
+
+        # 读取旧版顶层波形配置。
+        dict_waveform = dict_settings.get("waveform", {})  # 旧版顶层波形配置
+
+    # 新版配置把 waveform_policy 收敛到 workflow authority。
+    if not dict_waveform and isinstance(dict_workflow, dict):
+
+        # 读取 workflow authority 中的对齐策略。
+        dict_waveform = dict_workflow.get("waveform_policy", {})  # 工作流波形策略
+
+    # 以显式映射承载对齐策略，避免把配置值复制到命令代码。
+    mapping_dict_waveform_policy: Mapping[str, Any] = {}  # 缺省为空策略
+
+    # 仅接受对象形式的波形配置，其他类型按缺省策略处理。
+    if isinstance(dict_waveform, dict):
+
+        # 兼容嵌套 alignment 形状，同时支持顶层直接 policy。
+        mapping_dict_waveform_policy = dict_waveform.get("alignment", dict_waveform)  # settings 对齐策略
+
     # write_spec_bundle 只在全部波形渲染成功后发布旧 bundle 的替换内容。
     dict_report = write_spec_bundle(  # 统一写出规范、WaveDrom JSON 与 SVG 结果
         path_spec,  # 规范 JSON 输入路径
         path_out_dir,  # 规范与波形产物输出目录
         source_paths=list_sources,  # 用于接口集合比对的源文件
         language=args.language,  # Markdown 文档语言
+        waveform_policy=mapping_dict_waveform_policy,  # 将对齐策略传入统一 spec 发布层
+        runtime_settings=dict_settings,  # 将同一 settings 传入实际 renderer
     )
 
     # 记录模块数量和输出根，不在终端倾倒完整 JSON 报告。

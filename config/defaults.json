@@ -6,6 +6,10 @@
     "reports_dir": "${project_root}/reports",
     "example_spec": "${skill_dir}/assets/examples/rtl_erie_verilog_spec.json",
     "use_case_examples_dir": "${skill_dir}/assets/examples/use_case_templates",
+    "existing_rtl_examples_dir": "${skill_dir}/assets/examples/existing_rtl",
+    "existing_rtl_fixture": "${skill_dir}/assets/examples/existing_rtl/ready_valid_slice.v",
+    "existing_rtl_spec": "${skill_dir}/assets/examples/existing_rtl/ready_valid_slice_spec.md",
+    "existing_rtl_testbench": "${skill_dir}/assets/examples/existing_rtl/tb_ready_valid_slice.v",
     "use_case_template_catalog": "${skill_dir}/assets/use_case_templates/catalog.json",
     "quick_validate": "${home}/.codex/skills/.system/skill-creator/scripts/quick_validate.py",
     "audit_skill": "${home}/.codex/skills/agents-md-generator/scripts/python/verify/audit_skill.py",
@@ -177,6 +181,7 @@
   },
   "tool_dependencies": {
     "wavedrom": {
+      "legacy_alias": true,
       "id": "wavedrom",
       "display_name": "WaveDrom",
       "required": true,
@@ -185,6 +190,8 @@
       "version": "3.6.1",
       "executable": "wavedrom",
       "runtime": "wavedrom",
+      "node_executable": "node",
+      "npm_executable": "npm",
       "minimum_node_version": "20.0.0"
     },
     "required": [
@@ -195,11 +202,18 @@
         "package_manager": "npm",
         "package": "wavedrom",
         "version": "3.6.1",
-          "executable": "wavedrom",
-          "runtime": "wavedrom",
-          "minimum_node_version": "20.0.0"
+        "executable": "wavedrom",
+        "runtime": "wavedrom",
+        "node_executable": "node",
+        "npm_executable": "npm",
+        "minimum_node_version": "20.0.0"
       }
     ]
+  },
+  "waveform_alignment": {
+    "mode": "extend_to_max_end",
+    "include_node_extent": true,
+    "left_padding_px": 32
   },
   "fpga_developer_routing": {
     "state_path": ".readable-verilog-generator-state/dependency-state.json",
@@ -246,6 +260,11 @@
     "local_readiness": "static",
     "remote_readiness": "execute",
     "blocked_implement_readiness": "implement",
+    "existing_rtl_patch_cases": [
+      {"case_dir": "cli-verify-existing-rtl-fix", "source_name": "reset_gap_counter.v", "spec_name": "reset_gap_counter_spec.md", "copy_name": "reset_gap_counter.v", "automation_mode": "conservative", "decision_evidence": "approved low-risk reset patch"},
+      {"case_dir": "cli-verify-existing-rtl-control", "source_name": "fsm_without_default.v", "spec_name": "fsm_without_default_spec.md", "copy_name": "fsm_without_default.v", "automation_mode": "auto_apply", "decision_evidence": "approved control logic patch", "expected_category": "case_default_completion", "error_label": "control logic patch"},
+      {"case_dir": "cli-verify-existing-rtl-timing", "source_name": "missing_output_register.v", "spec_name": "missing_output_register_spec.md", "copy_name": "missing_output_register.v", "automation_mode": "auto_apply", "decision_evidence": "approved timing patch", "expected_category": "output_register_completion", "error_label": "output register patch"}
+    ],
     "external_tools": [
       "xvlog",
       "xelab",
@@ -338,7 +357,106 @@
     },
     "python": "python3",
     "remote_root": ".readable-verilog-generator",
-    "timeout_s": 600
+    "timeout_s": 600,
+    "validation": {
+    "workflow_module": "scripts.python.workflow.cli",
+    "max_runs": 5,
+    "quality_gate_module": "scripts.python.quality.verilog_quality_gate",
+      "remote_identity_field": "remote_server_id",
+      "remote_identity_env": "VERILOG_GENERATOR_REMOTE_SERVER_ID",
+      "workflow_spec": "skills/readable-verilog-generator/assets/examples/rtl_erie_verilog_spec.json",
+      "fixture_asset_root": "skills/readable-verilog-generator/assets/examples/remote_fixtures",
+      "simulator_backends": ["xsim", "vcs_verdi", "iverilog"],
+      "case_catalog": {
+        "simulation": [
+          "comb_operation_budget",
+          "comb_hierarchy_budget",
+          "comb_parity_mux",
+          "pipeline_delay",
+          "ready_valid_slice"
+        ],
+        "all": [
+          "comb_operation_budget",
+          "comb_hierarchy_budget",
+          "comb_parity_mux",
+          "pipeline_delay",
+          "ready_valid_slice",
+          "file_naming_gates"
+        ],
+        "prechecks": {
+          "bad_quality": {
+            "case": "comb_operation_budget",
+            "source": "comb_operation_budget_bad.v",
+            "rule": "VG146"
+          },
+          "hierarchy_case": "comb_hierarchy_budget",
+          "hierarchy": [
+            {"source": "hierarchy_within_budget.v", "rule": "VG146", "status": "passed"},
+            {"source": "hierarchy_over_budget.v", "rule": "VG146", "status": "failed", "operation_count": 4, "path": "hierarchy_2_plus_2/u_child"},
+            {"source": "hierarchy_q_cut.v", "rule": "VG146", "status": "passed"},
+            {"source": "hierarchy_child_loop.v", "rule": "VG147", "status": "failed", "operation_count": 4, "path": "hierarchy_child_loop/u_child"}
+          ]
+        }
+      },
+      "layout": {
+        "remote_root": ".readable-verilog-generator",
+        "runs_root": "runs",
+        "project_directory": "readable-verilog-generator",
+        "workspace_root": "workspace",
+        "reports_root": "reports",
+        "attempt": "attempt-001",
+        "execute_root": "remote_execute/attempt-001",
+        "fixture_root": "remote_fixtures",
+        "fixture_scratch_root": ".smoke-scratch/remote_fixtures",
+        "agent_review_relative": "../../agent_review.json",
+        "execute_validation": "remote_execute/attempt-001/validation.json",
+        "execute_rtl": "remote_execute/attempt-001/rtl/generated/rtl/erie_adapter.v",
+        "execute_testbench": "remote_execute/attempt-001/rtl/generated/tb/tb_erie_adapter.v",
+        "fixture_summary": "remote_fixtures/summary.json"
+      },
+      "artifacts": {
+        "pytest_summary": "remote_pytest_summary.json",
+        "pytest_targeted_summary": "remote_pytest_targeted_summary.json",
+        "pytest_regression_summary": "remote_pytest_regression_summary.json",
+        "pytest_full_summary": "remote_pytest_full_summary.json",
+        "post_pytest_log": "remote_post_pytest.log",
+        "post_pytest_phase": "remote_post_pytest_phase.json",
+        "environment": "remote_environment.json",
+        "cwd": "remote_cwd.json",
+        "pressure": "skill_pressure_report.json",
+        "archive_manifest": "validation_archive_manifest.json",
+        "test_evidence": "remote_test_evidence.json",
+        "completion": "completion.json",
+        "agent_review": "agent_review.json"
+      },
+      "testbench_prefix": "tb_",
+      "testbench_suffix": ".v",
+      "filename_gate": {
+        "case_id": "file_naming_gates",
+        "backend": "xsim",
+        "design_file": "counter.v",
+        "testbench_file": "tb_counter.v",
+        "module": "counter",
+        "top": "tb_counter",
+        "snapshot": "tb_counter_snapshot",
+        "probe_cases": [
+          {"case_id": "vg148_version_suffix_reject", "filename": "module_v1.v", "gate_id": "VG148", "command_contract": "generated_deliverable_gate --spec --json --markdown", "source": "module module_v1;\nendmodule\n", "spec": {}, "expected_status": "failed", "expected_role": "design", "expected_role_source": "content_evidence", "confirmation_required": false, "confirmed_role": null},
+          {"case_id": "vg148_numeric_suffix_reject", "filename": "module_123.v", "gate_id": "VG148", "command_contract": "generated_deliverable_gate --spec --json --markdown", "source": "module module_123;\nendmodule\n", "spec": {}, "expected_status": "failed", "expected_role": "design", "expected_role_source": "content_evidence", "confirmation_required": false, "confirmed_role": null},
+          {"case_id": "vg148_protocol_digit_allow", "filename": "axi4_lite.v", "gate_id": "VG148", "command_contract": "generated_deliverable_gate --spec --json --markdown", "source": "module axi4_lite;\nendmodule\n", "spec": {}, "expected_status": "passed", "expected_role": "design", "expected_role_source": "content_evidence", "confirmation_required": false, "confirmed_role": null},
+          {"case_id": "vg149_suffix_tb_reject", "filename": "counter_tb.v", "gate_id": "VG149", "command_contract": "generated_deliverable_gate --spec --json --markdown", "source": "module counter_tb;\nendmodule\n", "spec": {}, "expected_status": "failed", "expected_role": "testbench", "expected_role_source": "explicit_name", "confirmation_required": false, "confirmed_role": null},
+          {"case_id": "vg149_counter_ambiguous", "filename": "counter.v", "gate_id": "VG149", "command_contract": "generated_deliverable_gate --spec --json --markdown", "source": "module counter();\ninitial begin\n    #1;\n    $finish;\nend\nendmodule\n", "spec": {}, "expected_status": "inconclusive", "expected_role": "ambiguous", "expected_role_source": "content_evidence", "confirmation_required": true, "confirmed_role": null},
+          {"case_id": "vg149_counter_confirmed_testbench_reject", "filename": "counter.v", "gate_id": "VG149", "command_contract": "generated_deliverable_gate --spec --json --markdown", "source": "module counter();\ninitial begin\n    #1;\n    $finish;\nend\nendmodule\n", "spec": {"file_role_confirmations": {"counter.v": "testbench"}}, "expected_status": "failed", "expected_role": "testbench", "expected_role_source": "confirmed", "confirmation_required": false, "confirmed_role": "testbench"},
+          {"case_id": "vg149_tb_prefix_allow", "filename": "tb_counter.v", "gate_id": "VG149", "command_contract": "generated_deliverable_gate --spec --json --markdown", "source": "module tb_counter;\ninitial begin\n    $finish;\nend\nendmodule\n", "spec": {}, "expected_status": "passed", "expected_role": "testbench", "expected_role_source": "explicit_name", "confirmation_required": false, "confirmed_role": null}
+        ]
+      },
+      "vivado_settings_globs": [
+        "${XILINX_VIVADO:-}/settings64.sh",
+        "${XILINX_VIVADO:-}/../settings64.sh",
+        "/tools/Xilinx/Vivado/*/settings64.sh",
+        "/tools/Xilinx/Vitis/*/settings64.sh",
+        "/opt/Xilinx/Vivado/*/settings64.sh"
+      ]
+    }
   }
 }
 

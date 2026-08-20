@@ -51,7 +51,7 @@ LEGACY_REMOTE_SERVER_LIST_REL = ".erie-verilog-generator-state/server_list.local
 # 路径模板中的 ${name} 片段由配置加载器统一展开。
 _token_re = re.compile(r"\$\{([^}]+)\}")  # settings 字符串模板占位符匹配器
 
-# 顶层 settings 合同固定为当前默认配置暴露的八个键。
+# 顶层 settings 合同固定为当前默认配置暴露的键集合。
 SETTINGS_TOP_LEVEL_KEYS = {  # 本轮强校验允许的顶层键集合
     "version",  # settings 版本号键
     "paths",  # 路径配置段键
@@ -59,10 +59,14 @@ SETTINGS_TOP_LEVEL_KEYS = {  # 本轮强校验允许的顶层键集合
     "remote",  # 远程配置段键
     "skill_dependencies",  # 依赖路由配置段键
     "tool_dependencies",  # npm/Node 外部工具依赖配置段键
+    "waveform_alignment",  # WaveJSON 公共结束时间策略键
     "validation",  # 校验配置段键
     "workflow",  # 工作流配置段键
     "fpga_developer_routing",  # FPGA developer 路由配置段键
 }
+
+# required 工具记录的结构字段是协议不变量，具体包名和版本仍由 settings 提供。
+TOOL_POLICY_FIELDS = ("id", "package_manager", "package", "version", "executable", "minimum_node_version")  # 工具记录字段
 
 # 除 version 外，其余顶层段都应保持 JSON object 结构。
 SETTINGS_TOP_LEVEL_OBJECT_KEYS = {  # 必须保持 object 结构的顶层段集合
@@ -71,6 +75,7 @@ SETTINGS_TOP_LEVEL_OBJECT_KEYS = {  # 必须保持 object 结构的顶层段集�
     "remote",  # 远程配置段必须是 object
     "skill_dependencies",  # 依赖路由配置段必须是 object
     "tool_dependencies",  # 外部工具依赖配置段必须是 object
+    "waveform_alignment",  # 波形对齐策略配置段必须是 object
     "validation",  # 校验配置段必须是 object
     "workflow",  # 工作流配置段必须是 object
     "fpga_developer_routing",  # FPGA developer 路由配置段必须是 object
@@ -360,6 +365,21 @@ def load_settings(path: str | Path | None = None) -> dict[str, Any]:
 
     # 缺省版本号保证旧配置仍能通过版本字段检查。
     dict_payload.setdefault("version", 1)
+
+    # 旧调用方需要 renderer 映射；只在内存中由 required 首项补齐兼容别名。
+    dict_tools = dict_payload.get("tool_dependencies")  # 当前工具配置对象
+
+    # 仅在缺少旧映射时执行兼容迁移，不改变磁盘 authority。
+    if isinstance(dict_tools, dict) and "wavedrom" not in dict_tools:
+
+        # 磁盘 authority 保持 required 列表唯一，兼容映射不回写配置文件。
+        list_required_tools = dict_tools.get("required")  # authority required 工具列表
+
+        # 只有存在首个工具记录时才可建立旧映射。
+        if isinstance(list_required_tools, list) and list_required_tools:
+
+            # 复制首个工具记录，避免旧调用方修改 required 列表本体。
+            dict_tools["wavedrom"] = deepcopy(list_required_tools[0])  # 内存兼容的 renderer 映射
 
     # settings 元数据供诊断、远程同步和 smoke 报告复用。
     dict_payload["__verilog_settings_meta__"] = {
@@ -652,14 +672,23 @@ def skill_dependency_settings(settings: dict[str, Any] | None = None) -> dict[st
     # 写回包含迁移项的 manual_fallback 列表。
     dict_result["manual_fallback"] = list_manual_fallback  # 人工处理依赖列表
 
-    # required 与 recommended 都必须是非空列表。
+    # required 必须非空，recommended 允许为空以支持最小化 authority。
     for list_name in ("required", "recommended"):
 
         # 提取当前依赖列表。
         list_items = dict_result.get(list_name)  # 当前待校验依赖列表
 
-        # 依赖列表必须存在且非空。
-        if not isinstance(list_items, list) or not list_items:
+        # 缺省 recommended 使用空列表，required 缺失仍然阻断。
+        if list_items is None and list_name == "recommended":
+
+            # 可选依赖没有条目时不影响 required 治理。
+            list_items = []  # 空的推荐依赖集合
+
+            # 写回规范化后的空推荐列表，保持后续遍历统一。
+            dict_result[list_name] = list_items  # 推荐依赖集合归一化
+
+        # 依赖列表必须是列表，required 还必须至少有一项。
+        if not isinstance(list_items, list) or (list_name == "required" and not list_items):
 
             # 缺少依赖列表会让安装提示失去依据。
             raise ValueError(f"> ERR: [Python] settings.skill_dependencies.{list_name} must be a non-empty list.")
@@ -691,14 +720,14 @@ def skill_dependency_settings(settings: dict[str, Any] | None = None) -> dict[st
     # 返回规范化后的依赖治理配置。
     return dict_result
 
-# WaveDrom npm 依赖通过此 facade 读取并校验。
+# 外部工具依赖通过此 facade 读取并校验。
 def tool_dependency_settings(settings: dict[str, Any] | None = None) -> dict[str, Any]:
     """
     返回并校验外部工具依赖配置。
 
     :param settings: 可选的已加载 settings；为空时重新加载默认 settings。
     :return: 规范化后的 ``tool_dependencies`` 配置副本。
-    :raises ValueError: 当工具依赖缺失或 WaveDrom 合同漂移时抛出。
+    :raises ValueError: 当工具依赖缺失或记录字段类型漂移时抛出。
     """
 
     # 使用调用方 settings 或默认 settings 作为工具配置来源。
@@ -713,7 +742,7 @@ def tool_dependency_settings(settings: dict[str, Any] | None = None) -> dict[str
         # 错误信息明确指出 defaults.json 的结构位置。
         raise ValueError("> ERR: [Python] settings.tool_dependencies must be an object.")
 
-    # required 列表提供 WaveDrom 固定版本的唯一来源。
+    # required 列表提供所有外部工具 policy 的唯一来源。
     list_required = dict_tools.get("required")  # required 工具配置列表
 
     # 空列表和错误类型都不允许绕过工具依赖检查。
@@ -725,7 +754,7 @@ def tool_dependency_settings(settings: dict[str, Any] | None = None) -> dict[str
     # 深拷贝避免调用方在运行中修改版本锁定。
     dict_result = deepcopy(dict_tools)  # 返回前隔离工具配置副本
 
-    # 逐项验证 required 工具的固定字段。
+    # 逐项验证 required 工具的结构字段。
     for int_index, dict_item in enumerate(list_required):
 
         # 每个工具条目必须是对象，才能读取字段合同。
@@ -734,8 +763,8 @@ def tool_dependency_settings(settings: dict[str, Any] | None = None) -> dict[str
             # 错误消息携带条目索引，便于定位配置。
             raise ValueError(f"> ERR: [Python] tool_dependencies.required[{int_index}] must be an object.")
 
-        # 固定字段必须存在且为非空字符串。
-        for str_key in ("id", "package_manager", "package", "version", "executable", "minimum_node_version"):
+        # 协议字段必须存在且为非空字符串，具体值不在代码中限定。
+        for str_key in TOOL_POLICY_FIELDS:
 
             # 当前字段为空时阻断安装器参数生成。
             if not isinstance(dict_item.get(str_key), str) or not dict_item[str_key].strip():
@@ -743,18 +772,13 @@ def tool_dependency_settings(settings: dict[str, Any] | None = None) -> dict[str
                 # 错误消息携带字段名，避免静默回退默认值。
                 raise ValueError(f"> ERR: [Python] tool_dependencies.required[{int_index}].{str_key} is required.")
 
-        # WaveDrom 条目必须保持 npm、包名、版本和可执行入口固定。
-        if dict_item["id"] == "wavedrom" and (
-            dict_item["package_manager"] != "npm"  # npm 是唯一支持的安装器
-            or dict_item["package"] != "wavedrom"  # 包名必须保持官方名称
-            or dict_item["version"] != "3.6.1"  # 版本必须锁定为当前合同
-            or dict_item["executable"] != "wavedrom"  # CLI 入口必须可发现
-        ):
+    # 返回经结构校验的外部工具配置，值继续由调用方 settings 控制。
+    if list_required:
 
-            # 合同漂移时阻断，避免生成无法复现的 SVG。
-            raise ValueError("> ERR: [Python] wavedrom tool dependency must remain npm wavedrom@3.6.1.")
+        # 仅在内存返回值中保留旧版工具映射别名，磁盘 authority 仍为 required 列表。
+        dict_result["wavedrom"] = deepcopy(list_required[0])  # 兼容旧调用方读取首个 renderer
 
-    # 返回经字段校验的外部工具配置。
+    # 返回结构校验完成且已完成旧调用方兼容归一化的配置。
     return dict_result
 
 # FPGA developer 路由配置读取入口。

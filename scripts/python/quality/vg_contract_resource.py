@@ -9,7 +9,7 @@ from typing import Any
 
 # 资源门禁读取共享 RTL 事实和统一评估模型。
 from .vg_semantic_facts import VgFacts
-from .vg_rule_models import VgEvaluation, VgFinding, failed, passed
+from .vg_rule_models import VgEvaluation, VgFinding, failed, inconclusive, passed
 
 # 复用模块枚举、finding 构造和参数表达式计算。
 from .vg_contract_parameter import _finding, _source_modules

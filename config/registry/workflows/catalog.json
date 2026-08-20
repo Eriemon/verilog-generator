@@ -19,9 +19,9 @@
     },
     {
       "id": "workflow.remote-confidence",
-      "title": "server_1 远程验证闭环",
+      "title": "authority-selected 远程验证闭环",
       "summary": "发现配置、确认目标、检查工具链并通过受审远程请求运行 pytest 和真实仿真。",
-      "aliases": {"zh": ["远程信心闭环", "server_1 pytest xsim"], "en": ["remote confidence workflow", "server_1 pytest xsim"]},
+      "aliases": {"zh": ["远程信心闭环", "authority-selected pytest simulator"], "en": ["remote confidence workflow", "authority-selected pytest simulator"]},
       "steps": ["remote.discover", "remote.choices", "toolchain.preflight", "remote.validate", "workflow.evaluate"],
       "boundaries": ["不直接同步技能开发目录", "不部署本地 settings", "真实执行工具和报告必须明确列出"]
     },
